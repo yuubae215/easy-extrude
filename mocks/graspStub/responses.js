@@ -7,7 +7,7 @@
  * unusual, not malformed — and the conformance suite validates them against the
  * schema alongside the solved ones.
  */
-import { stubSolve, envelopeCoveringSamples } from './solve.js'
+import { stubSolve, envelopeCoveringSamples, interferencePhaseRows } from './solve.js'
 import { STUB_SCENARIO } from './scenarios.js'
 
 /**
@@ -68,6 +68,9 @@ function funnel({
     graspNearestMiss,
     // ADR-152 (v7): the fixed scenarios send no grasp spec — a stated empty table.
     graspSpecs,
+    // ADR-157 (v8): the fixed scenarios declare no hand and no lift, so only the
+    // approach is evaluated and every interference rejection is attributed to it.
+    ...interferencePhaseRows({}, interference),
   }
 }
 

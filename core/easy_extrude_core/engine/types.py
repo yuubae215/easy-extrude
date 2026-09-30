@@ -498,6 +498,15 @@ class HandPart:
     center: Vec3
     half: Vec3
 
+    @property
+    def is_finger(self) -> bool:
+        """爪か (ADR-157 D4 — 閉じる相で動くのはこの部品だけ)。名前の比較はここにだけ書く。"""
+        return self.name == FINGER_PART_NAME
+
+
+#: 平行ジョーの爪の部品名。adapter が付け、`HandPart.is_finger` だけが読む (§1.1)。
+FINGER_PART_NAME = "finger"
+
 
 @dataclass(frozen=True)
 class HandShape:
@@ -648,6 +657,31 @@ class TargetObject:
         return self.spec_samples if candidate.spec_id is not None else self.surface_samples
 
 
+class LiftAlong(str, Enum):
+    """引き上げの向き (ADR-157 D5)。閉じた語彙 — 未宣言の向きは adapter が throw する。
+
+    - REVERSE_APPROACH: 進入してきた向きを逆にたどる (候補ごとに方向が違う)
+    - WORLD_UP: ワールド +Z (ROS REP-103)
+    """
+
+    REVERSE_APPROACH = "reverseApproach"
+    WORLD_UP = "worldUp"
+
+
+@dataclass(frozen=True)
+class LiftSpec:
+    """宣言された引き上げ (ADR-157 D5)。未宣言は Problem.lift = None で表し、既定で埋めない。"""
+
+    along: LiftAlong
+    distance: float
+
+    def direction(self, candidate: "GraspCandidate") -> Vec3:
+        """この候補での引き上げ方向 (単位)。"""
+        if self.along is LiftAlong.WORLD_UP:
+            return Vec3(0.0, 0.0, 1.0)
+        return candidate.pose.approach.normalized().scaled(-1.0)
+
+
 @dataclass(frozen=True)
 class Problem:
     """段階0 探索の入力ドメイン (純粋データ)。契約宣言から adapter で構築する。
@@ -676,6 +710,8 @@ class Problem:
     strategy: GraspStrategy = field(default_factory=GraspStrategy)
     # フランジ→TCP (robot.toolLength, ADR-150)。手の形を置く位置と深さのゲートが使う。
     tool_length: float = 0.0
+    # 引き上げの宣言 (ADR-157 D5)。None = 未宣言 = 引き上げ相は判定しない (既定で埋めない)。
+    lift: "LiftSpec | None" = None
 
     # objective の正規化で参照する絶対基準の追加パラメータ (objectives.py が使う)。
     # 進入経路クリアランスを 0-1 化する基準距離 (これ以上離れていれば満点)。

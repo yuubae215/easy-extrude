@@ -64,6 +64,8 @@ function fakeStore() {
       // ADR-117 / ADR-119 — the derived target roster, now carrying each target's
       // resolved grasp-location declaration (same sole writer).
       contextSetGraspTargets(t) { state.context.graspTargets = t },
+      // ADR-157 D6 — the all-phase analysis, its own slot (same sole writer).
+      contextSetGraspAnalysis(a) { state.context.graspAnalysis = a },
     },
   }
   return { getState: () => state, _state: state }
@@ -1355,4 +1357,101 @@ test('文書が無いとき把持仕様の編集は黙って消えず、理由�
   await gc.setGraspFeature('widget', { kind: 'anywhere' })
   assert.equal(wrote, 0)
   assert.ok(ctrl._uiView.toasts.some(t => /context document/.test(t.msg)))
+})
+
+// ── ADR-157: the lift declaration and the background all-phase analysis ─────
+
+test('a declared lift rides the request in metres; an undeclared one does not ride at all', async () => {
+  const lifted = { ...LAYOUT, entities: LAYOUT.entities.map(e => (e.ref === 'widget' ? { ...e, lift: { along: 'worldUp', distance: 50 } } : e)) }
+  const rec = recordingBff()
+  const { gc } = setup({ bff: rec.bff, layoutDsl: lifted })
+  await gc.runGraspSearch({})
+  assert.deepEqual(rec.sent.graspSearch.target.lift, { along: 'worldUp', distance: 0.05 })
+
+  const rec2 = recordingBff()
+  const plain = setup({ bff: rec2.bff })
+  await plain.gc.runGraspSearch({})
+  assert.equal('lift' in rec2.sent.graspSearch.target, false, 'never a default lift (原則 #31)')
+})
+
+test('a malformed lift stops the run with the reason — it is not dropped', async () => {
+  const broken = { ...LAYOUT, entities: LAYOUT.entities.map(e => (e.ref === 'widget' ? { ...e, lift: { along: 'sideways', distance: 50 } } : e)) }
+  const rec = recordingBff()
+  const { gc, grasp } = setup({ bff: rec.bff, layoutDsl: broken })
+  await gc.runGraspSearch({})
+  assert.equal(rec.sent, null)
+  assert.equal(grasp().status, 'no-target')
+  assert.match(grasp().reason, /lift\.along/)
+})
+
+test('the results carry obstacle names index-aligned with the wire obstacles', async () => {
+  const rec = recordingBff()
+  const { gc, grasp } = setup({ bff: rec.bff })
+  await gc.runGraspSearch({})
+  assert.equal(grasp().obstacleLabels.length, rec.sent.graspSearch.obstacles.length)
+})
+
+/** A BFF whose analysis request can be held open, so the test can act meanwhile. */
+function analysingBff() {
+  const rec = { sent: [], release: null }
+  rec.bff = {
+    async compileLayout() { return { objects: [] } },
+    graspSearch(req) {
+      rec.sent.push(req)
+      if (req.graspSearch.interferenceAnalysis !== 'allPhases') {
+        return Promise.resolve({ candidates: [], diagnostics: DIAG_OK })
+      }
+      return new Promise(resolve => {
+        rec.release = () => resolve({ candidates: [], diagnostics: { ...DIAG_OK,
+          interferenceAnalysis: { kind: 'allPhases', candidatesAnalysed: 1, phases: [] } } })
+      })
+    },
+  }
+  return rec
+}
+
+test('the analysis runs in its own slot: the search is untouched and can be re-run meanwhile', async () => {
+  const rec = analysingBff()
+  const { gc, store, grasp } = setup({ bff: rec.bff })
+  store.getState().bffConnected = true
+  await gc.runGraspSearch({})
+  const searched = grasp()
+  const pending = gc.runInterferenceAnalysis()
+  assert.equal(store.getState().context.graspAnalysis.status, 'running')
+  assert.equal(grasp(), searched, 'starting the analysis does not touch the search slot')
+  assert.equal(rec.sent.at(-1).graspSearch.interferenceAnalysis, 'allPhases')
+  assert.equal(rec.sent.at(-1).graspSearch.target, searched.request.graspSearch.target, 'it re-checks THAT search')
+
+  await gc.runGraspSearch({})   // the user keeps working
+  assert.notEqual(grasp().request, searched.request)
+
+  rec.release()
+  await pending
+  const a = store.getState().context.graspAnalysis
+  assert.equal(a.status, 'done')
+  assert.equal(a.request, searched.request, 'the result stays tied to the search it analysed (stale is derived)')
+  assert.notEqual(a.request, grasp().request)
+})
+
+test('the analysis is refused in the stub lane and without a backend — with the reason', async () => {
+  const rec = analysingBff()
+  const stub = setup({ bff: rec.bff }, { stubLane: true })
+  stub.store.getState().bffConnected = true
+  await stub.gc.runGraspSearch({})
+  await stub.gc.runInterferenceAnalysis()
+  assert.equal(stub.store.getState().context.graspAnalysis, undefined)
+  assert.match(stub.ctrl._uiView.toasts.at(-1).msg, /real backend/)
+
+  const offline = setup({ bff: rec.bff })
+  await offline.gc.runGraspSearch({})
+  await offline.gc.runInterferenceAnalysis()
+  assert.match(offline.ctrl._uiView.toasts.at(-1).msg, /backend/)
+})
+
+test('a backend that ignores the ask is a failure, not "no hits"', async () => {
+  const { gc, store } = setup({ bff: okBff })
+  store.getState().bffConnected = true
+  await gc.runGraspSearch({})
+  await gc.runInterferenceAnalysis()
+  assert.equal(store.getState().context.graspAnalysis.status, 'failed')
 })

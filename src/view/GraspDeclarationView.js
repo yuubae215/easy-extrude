@@ -88,6 +88,14 @@ export class GraspDeclarationView {
       this._label(com.caption, com.point.map((v, i) => i === 2 ? v + com.radius * 3 : v), labelHeight * 0.8)
     }
 
+    // The lift (ADR-157 D5) — a declared fact, so the declared-fact role.
+    const lift = pic.lift
+    if (lift) {
+      if (lift.from) this._arrow(lift.from, lift.to, COLOR.infoTone, pic.extent * 0.1)
+      const at = lift.to ?? [...pic.triad.origin]
+      this._label(lift.caption, at.map((v, i) => i === 2 ? v + labelHeight : v), labelHeight * 0.8)
+    }
+
     const f = pic.focused
     if (f) {
       this._loop(f.region, this._mat.region)

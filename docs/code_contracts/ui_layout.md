@@ -153,6 +153,13 @@ On mobile, status text is shown in the footer info bar (`_infoEl`) instead of th
 - **Bug history (2026-08-02, ADR-106 D3)**: `AddMenu` gained the Assets group (5 catalog entries moved out of the floor) and, with the pointer in the lower half of the viewport, the new group fell off the bottom. `ContextMenu` and `LinkTypePicker` had clamped for years — **two of three popovers already implemented the rule and nowhere was it written down**, so the one that did not was invisible to anyone reading the ones that did (PHILOSOPHY #31's shape). Caught by the smoke E2E (`element is outside of the viewport`), which is where this is asked: the interaction of z-index, layout and pointer position is not statically visible.
 - **Corollary**: relocating a feature asks about the CAPACITY of its new address, not only its meaning. ADR-106 chose `+ Add` as the Assets group's home on responsibility grounds and that choice stands — the container simply had to grow a rule it never had.
 
+## A Reason Wraps Inside the Viewport — Never `nowrap` on Text of Unbounded Length (ADR-157 D8)
+
+- **Principle**: a reason is only a reason if all of it can be read (PHILOSOPHY #11). Gate reasons, error messages and toasts carry refs, field paths and enumerations — long tokens with few natural break points — so their length is unbounded by construction.
+- **Concrete rule**: a fixed-position text surface spans the viewport minus a 16px gutter (`left:16px; right:16px`) and centres its content INSIDE that span; the text itself uses `white-space: normal` + `overflow-wrap: anywhere`. Never centre a box as wide as its text with `left:50%; translateX(-50%)` while forbidding the wrap. A panel sets `overflow-wrap: anywhere` once at its root (the property inherits) instead of on each reason line.
+- **Bug history (2026-09-30, ADR-157)**: the toast stack was `left:50%` + `translateX(-50%)` and each toast `whiteSpace:'nowrap'`. On a 320–390px phone the lift gate's reason (`The object "…": lift.along must be one of reverseApproach / worldUp`) started at x = −255px and was cut on both sides. The owner reported it as "エラーとかのテキスト表記がスマホだと画面はみ出て見切れる". It had been true for every long toast; the short ones hid it.
+- **Where it is asked**: `e2e/mobile-reach.spec.js` → `reasons fit on a phone` measures the toast's bounding box at the narrowest supported width (inside the 16px gutter, and taller than one line). Reverting the fix fails it (`x = −255`).
+
 ---
 
 ## Edge-Anchored Panels Must Coordinate Occupancy

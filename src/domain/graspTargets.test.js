@@ -20,6 +20,7 @@ import {
   selectTarget,
   surfaceSamplesFor,
   obstaclesExcluding,
+  obstacleLabelsExcluding,
   targetProjection,
   rotateVec3,
 } from './graspTargets.js'
@@ -358,7 +359,7 @@ test('対象 0 個の projection は空リストと none を運ぶ (掴む場所
   // 「上面全体から探します」と読める行が出る (原則 #31 の 0 の顔)。
   assert.deepEqual(p, {
     list: [], selectedRef: null, cardinality: TARGET_CARDINALITY.NONE, feature: null, faceWords: null,
-    massProperties: null,
+    massProperties: null, lift: null,
   })
 })
 
@@ -372,4 +373,18 @@ test('選んだ対象の面の世界向きが projection に乗り、回転に�
   const turned = targetProjection(resolveGraspTargets([box({ x: 0, y: 0, z: Math.SQRT1_2, w: Math.SQRT1_2 })]), null)
   assert.equal(turned.faceWords['+x'], 'left')
   assert.equal(turned.faceWords['+z'], 'top')
+})
+
+test('障害物の名前は障害物と添字でそろう — 殻は 5 つの名前、対象は除かれる (ADR-157 D6)', () => {
+  const targets = resolveBodies([
+    solid('a', 'A', [0, 0, 0], [10, 10, 10]),
+    hollow('tray', [0, 0, 100], [200, 100, 60], [180, 80, 50]),
+    solid('b', 'B', [50, 0, 0], [10, 10, 10]),
+  ])
+  const boxes = obstaclesExcluding(targets, 'a')
+  const names = obstacleLabelsExcluding(targets, 'a')
+  assert.equal(names.length, boxes.length)
+  assert.deepEqual(names, [
+    'tray · shell 1/5', 'tray · shell 2/5', 'tray · shell 3/5', 'tray · shell 4/5', 'tray · shell 5/5', 'B',
+  ])
 })

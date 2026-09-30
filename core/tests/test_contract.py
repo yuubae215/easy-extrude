@@ -30,6 +30,16 @@ def _diagnostics(**overrides) -> SearchDiagnostics:
         occlusion_nearest_miss=None,
         grasp_nearest_miss=None,
         grasp_specs=[],
+        # 契約 v8 (ADR-157): 6 相すべてに行。宣言の無いリクエストでは進入相だけ評価される。
+        interference_phases=[
+            {"phase": "transit", "kind": "unevaluated", "reason": "notYetDecided"},
+            {"phase": "approach", "kind": "evaluated", "rejected": 0},
+            {"phase": "close", "kind": "unevaluated", "reason": "gripperUndeclared"},
+            {"phase": "lift", "kind": "unevaluated", "reason": "liftUndeclared"},
+            {"phase": "transport", "kind": "unevaluated", "reason": "notYetDecided"},
+            {"phase": "place", "kind": "unevaluated", "reason": "notYetDecided"},
+        ],
+        interference_analysis={"kind": "firstCollision"},
     )
     base.update(overrides)
     return SearchDiagnostics(**base)

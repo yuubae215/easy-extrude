@@ -140,6 +140,21 @@ test('the declaration itself stays OPEN — layoutVersion owns its detail', () =
   assert.equal(valid, true)
 })
 
+// Contract v8 (ADR-157): every response names all six motion phases — evaluated
+// ones with the count they were the FIRST collision of, the rest with a reason
+// and no count — and says whether the all-phase analysis was asked for.
+const PHASE_ROWS = Object.freeze({
+  interferencePhases: [
+    { phase: 'transit', kind: 'unevaluated', reason: 'notYetDecided' },
+    { phase: 'approach', kind: 'evaluated', rejected: 0 },
+    { phase: 'close', kind: 'unevaluated', reason: 'gripperUndeclared' },
+    { phase: 'lift', kind: 'unevaluated', reason: 'liftUndeclared' },
+    { phase: 'transport', kind: 'unevaluated', reason: 'notYetDecided' },
+    { phase: 'place', kind: 'unevaluated', reason: 'notYetDecided' },
+  ],
+  interferenceAnalysis: { kind: 'firstCollision' },
+})
+
 test('valid response instance conforms to the response schema (both pose kinds)', () => {
   const res = {
     contractVersion: CONTRACT_VERSION,
@@ -172,6 +187,7 @@ test('valid response instance conforms to the response schema (both pose kinds)'
       graspNearestMiss: null,
       // v7 (ADR-152): per declared grasp spec, every one sent.
       graspSpecs: [{ id: 'top-pinch', candidatesGenerated: 3, feasible: 1 }],
+      ...PHASE_ROWS, // v8 (ADR-157): 6 motion-phase rows + the analysis branch
     },
   }
   assert.deepEqual(validateResponse(res), { valid: true, errors: [] })
@@ -210,6 +226,7 @@ test('zero-candidate response conforms — the funnel explains the emptiness', (
       occlusionNearestMiss: null,
       graspNearestMiss: null,
       graspSpecs: [],
+      ...PHASE_ROWS, // v8 (ADR-157): 6 motion-phase rows + the analysis branch
     },
   }
   assert.deepEqual(validateResponse(res), { valid: true, errors: [] })
@@ -319,6 +336,7 @@ test('valid request is delegated and a conforming upstream response passes throu
         occlusionNearestMiss: null,
         graspNearestMiss: null,
         graspSpecs: [],
+        ...PHASE_ROWS, // v8 (ADR-157): 6 motion-phase rows + the analysis branch
       },
     }))
   })
@@ -342,6 +360,7 @@ test('valid request is delegated and a conforming upstream response passes throu
       occlusionNearestMiss: null,
       graspNearestMiss: null,
       graspSpecs: [],
+      ...PHASE_ROWS, // v8 (ADR-157): 6 motion-phase rows + the analysis branch
     })
   } finally {
     upstream.close()
@@ -380,4 +399,30 @@ test('non-conforming upstream response is rejected with 502', async () => {
     upstream.close()
     delete process.env.GRASP_SEARCH_URL
   }
+})
+
+test('v8: an unevaluated phase row may not carry a count, and every phase needs a row (ADR-157 D2)', () => {
+  const base = {
+    contractVersion: CONTRACT_VERSION,
+    candidates: [],
+    diagnostics: {
+      candidatesGenerated: 0, rejectedByReach: 0, rejectedByVisibility: 0, rejectedByIk: 0,
+      rejectedByInterference: 0, rejectedByGrasp: 0, feasible: 0, returned: 0,
+      reachNearestMiss: null, occlusionNearestMiss: null, graspNearestMiss: null, graspSpecs: [],
+      ...PHASE_ROWS,
+    },
+  }
+  assert.deepEqual(validateResponse(base), { valid: true, errors: [] })
+  const counted = structuredClone(base)
+  counted.diagnostics.interferencePhases[3] = { phase: 'lift', kind: 'unevaluated', reason: 'liftUndeclared', rejected: 0 }
+  assert.equal(validateResponse(counted).valid, false, '0 and not-judged must not look alike (ADR-120)')
+  const short = structuredClone(base)
+  short.diagnostics.interferencePhases.pop()
+  assert.equal(validateResponse(short).valid, false, 'a missing phase row is not a phase that was fine')
+  const analysed = structuredClone(base)
+  analysed.diagnostics.interferenceAnalysis = {
+    kind: 'allPhases', candidatesAnalysed: 3,
+    phases: [{ phase: 'lift', collided: 2, hits: [{ part: 'held', obstacleIndex: 0, candidates: 2 }] }],
+  }
+  assert.deepEqual(validateResponse(analysed), { valid: true, errors: [] })
 })

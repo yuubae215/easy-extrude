@@ -1195,6 +1195,28 @@
               ]
             }
           ]
+        },
+        "lift": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "ADR-157 D5: how this object is LIFTED OUT once grasped -- the lift phase of the pick. `along`: `reverseApproach` (retrace the approach, so each candidate lifts along its own axis) or `worldUp` (+Z, ROS REP-103); `distance` in mm. Absent = the lift phase is NOT judged and the panel says so -- never a default distance (a lift nobody declared is not a lift that was fine). Declaration only: whether the lifted object or hand hits anything is solved in core/.",
+          "properties": {
+            "along": {
+              "enum": [
+                "reverseApproach",
+                "worldUp"
+              ]
+            },
+            "distance": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "description": "mm"
+            }
+          },
+          "required": [
+            "along",
+            "distance"
+          ]
         }
       }
     },

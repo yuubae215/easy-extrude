@@ -1,0 +1,135 @@
+GOALS adr157_interference_is_asked_per_motion_phase
+
+goal EveryPickPhaseIsJudgedOrSaysWhyNot
+uuid 5fdb96e9-d994-47ee-8d3c-c8c9829c0250
+summary "候補の成立がピック動作の相ごとに問われ、判定していない相は「当たらない」ではなく理由つきの「判定していない」と応答が言う。干渉による棄却は最初に当たった相へ帰属し、求めたときだけ全相を最後まで評価した内訳 (相 × 部位 × 障害物) が、答えを変えずに返る"
+state Approved
+labels adr-157, adr-145, adr-152, adr-120, grasp, interference, principle-31, principle-33, implemented, term-q, change-judgement-correctness
+artifacts
+- "docs/adr/ADR-157-interference-is-asked-per-motion-phase.md"
+
+    context Adr157Scope
+    uuid 54b53896-4bf0-4828-9af5-d68173be60c3
+    summary "ADR-157 (Accepted 2026-09-30、同じ PR で実装): 動作相を 6 つの順序つきの列として名指し (D1)、相ごとの判定を evaluated{rejected} / unevaluated{reason} で応答に 6 行ちょうど載せ (D2)、棄却を最初に当たった相へ帰属させ (D3)、爪を閉じる相を掃引体積で厳密に判定し (D4)、引き上げを Solid の lift として宣言させ (D5)、全相分析を求めたときだけ返す (D6)。契約 v7 → v8 (D7)。理由の文はスマホ幅で折り返す (D8)"
+    artifacts
+    - "core/easy_extrude_core/engine/phases.py"
+    - "packages/grasp-contract/schema/grasp-search-response.schema.json"
+
+    context RequirementCameFromTheOwner
+    uuid 5cc2a1ab-28b4-4238-8100-4306a7560f8c
+    summary "要件は当事者の言葉で出た: 「干渉の状態遷移は重要だと思う。あったらあったでどの状態で干渉したかも分析できる」。直前の要求「バックエンドの判定を 30fps で共有したい」は解の形だったので、判定の事実を 1 回で受け取り再生はクライアントが導出する形へ持ち上げた (再生そのものは DEF-059)"
+
+    justification WhyNotOnlyAddTheLiftCheck
+    uuid 6553a235-9bb2-4b4e-9ead-9fea47e51320
+    summary "却下案 B (引き上げの判定だけを既存の干渉チェッカに足す) への反証: 版上げは要らないが棄却が増えた理由が 1 つの数のままで読めず、判定していない相も言えないまま。当事者の「どの状態で干渉したか分析できる」を満たさない"
+
+    justification WhyAnalysisIsOnDemand
+    uuid aa0bcb65-7760-48d6-9c1d-6b0db549a241
+    summary "却下案 C (全相分析を常に行う) への反証: 全相を最後まで評価するので最悪で相の数倍の計算になり、編集中に何度も投げる通常の探索を遅くする理由が無い。求めたときだけにしても、答え (候補・ファネル) は同じであることをテストが焼いている"
+
+    justification WhyNoDefaultLift
+    uuid 900e2b17-8221-4090-b19f-66039df0570b
+    summary "却下案 (引き上げの既定値、例えば真上 50mm を置く) への反証: 既定で埋めると「誰も引き上げを宣言していない」と「判定して問題なかった」が同じ答えになる — ADR-157 が閉じる隙間そのもの (必須入力の欠落に既定値を与えない Yellow Card / 原則 #31)"
+
+    assumption RestingContactIsNotAMotionCollision
+    uuid e14bbb87-8b61-45f3-9d83-56efc262fc06
+    summary "反証されうる仮説: 対象が元々触れている床・隣のワークとの面一の静止接触は、引き上げが起こした干渉ではない。携行物を相対 1e-6 縮めて置き t = 0 を数えないことで表す。反証されうる形は、面一に密着して並ぶワークを持ち上げると摩擦で隣が連れ上がる現場。そのとき接触を当たりに戻すか、接触の許容を宣言にする"
+
+    assumption SixSamplesAreEnoughForTheLift
+    uuid 75c14343-e8a5-4125-bfa3-ded5cc03510b
+    summary "反証されうる仮説: 引き上げの携行物・手を線分上 6 点で置けば、実務のトレーの壁 (鉛直) は見落とさない — 壁に沿って動く向きでは当たりが連続するため。反証されうる形は、刻みより薄い水平な障害物 (蓋・棚板) を斜めに抜ける引き上げ。そのとき刻みを距離から導出するか、掃引体積 (D4 と同じ手) にする"
+
+    context BusinessTreeAttachPoint
+    uuid e750ca8a-9897-455b-beb1-7e44241ae8ee
+    summary "事業木へ接続済み (2026-09-30, ADR-153): profit-growth.gsn の goal VerdictsAreDecidedFactsNotProxies の下に solution Adr157Tree としてこの木を吊った。判定されない部分 (引き上げ・爪を閉じる) を減らし、判定していない部分を応答が言うことで q (判定が現実と一致する率) に寄与する。副次的に、棄却の相が見えることは L_blind (どの仕様を変えるかを探すループ) を縮める"
+
+    strategy ByNamingThePhasesAndCountingWhatIsNotJudged
+    uuid 96b8ed7a-2f47-4388-81d7-cb826840e708
+    summary "動作を相の列として名指し、相ごとに判定するか理由を返すかをリクエストの宣言だけで決め、判定していないセルの個数を宣言した表で数える。部位ごとの幾何は既存の唯一の実装を通し、分析は同じ計算を最後まで回すだけにする"
+
+        goal EveryPhaseHasARowAndAnUnjudgedOneSaysWhy
+        uuid 98de927a-6be9-4371-9a5f-82b95cf94de3
+        summary "応答は 6 相すべてに行を持ち、判定しなかった相は閉じた語彙の理由を持って数を持たない。評価した相の数の和は rejectedByInterference に等しい"
+        labels support-verified
+
+            solution PhaseRowsAreExecuted
+            uuid 4942f4fb-ce08-435f-97c2-5eae3ebbf658
+            summary "core/tests/test_motion_phases.py の test_every_phase_has_a_row_and_undeclared_ones_say_why / test_close_needs_the_hand_shape_and_the_box_to_be_judged と各 fixture の _attribution_holds。スタブ側は mocks/graspStub/conformance.test.js の ADR-157 2 件 (6 行・恒等式・core と同じ宣言の規則)。スキーマ側は server/test/grasp.contract.test.js と packages/grasp-contract/test/contract.test.mjs (未評価の行に数を載せると落ちる / 行が 5 つだと落ちる)"
+            artifacts
+            - "core/tests/test_motion_phases.py"
+            - "mocks/graspStub/conformance.test.js"
+            - "server/test/grasp.contract.test.js"
+            - "packages/grasp-contract/test/contract.test.mjs"
+
+        goal ALiftIntoAnObstacleIsRejectedOnlyWhenDeclared
+        uuid 74c342a9-33b9-4823-b769-21ac170743ba
+        summary "引き上げの先に障害物がある候補は、引き上げを宣言したときだけ引き上げ相で棄却され、未宣言では理由つきで判定されない。同じ場面でも向きが違えば通り、床との静止接触は当たりにならない"
+        labels support-verified
+
+            solution LiftFixturesAreExecuted
+            uuid 91ce0deb-b512-45bb-89c8-87a4c28969e9
+            summary "test_a_lift_into_an_overhang_is_rejected_only_when_the_lift_is_declared (未宣言 18 通過 → worldUp で 18 件すべて lift 相で棄却 → reverseApproach で 18 通過) / test_resting_contact_with_the_floor_is_not_a_lift_collision / test_a_malformed_lift_is_a_declaration_error_not_a_default。フロント: src/domain/targetLift.test.js (未宣言はワイヤに乗らない・壊れた宣言は理由つきで止まる・mm → m)、src/controller/GraspController.test.js (lift がリクエストに乗る / 壊れた lift は送らずに止まる)。実機: cell_robotics に棚と lift を足してスマホ幅で操作し、全相分析が「持ったワーク × 棚 — 9」を返すのを確認 (2026-09-30)"
+            artifacts
+            - "core/tests/test_motion_phases.py"
+            - "src/domain/targetLift.test.js"
+            - "src/controller/GraspController.test.js"
+
+        goal ClosingFingersAreJudgedAlongTheirSweep
+        uuid 5e9df62e-66d8-444f-a9d5-89eb1bb9133a
+        summary "平行ジョーの爪が開いた位置から閉じた位置まで通る体積が障害物を通る候補は、爪を閉じる相で棄却される。仕切りが遠ければ通る"
+        labels support-verified
+
+            solution CloseFixtureIsExecuted
+            uuid 602f15dd-cc4c-4c0c-a56e-1f2f047d0b5f
+            summary "test_closing_fingers_that_sweep_through_a_divider_are_rejected_at_close — 開いた爪は仕切りに触れず (approach 0)、閉じる途中で通る (close = rejectedByInterference > 0)。負の対照で仕切りを遠ざけると通過が出る"
+            artifacts
+            - "core/tests/test_motion_phases.py"
+
+        goal TheAnalysisNamesWhereAndNeverChangesTheAnswer
+        uuid 742365dc-4274-4770-ab22-c223d17b8439
+        summary "全相分析は相 × 部位 × 障害物の当たりを返し、候補・順位・ファネル・相の内訳は求めなかったときと同一。フロントでは探索とは別のスロットで走り、探索をやり直すと結果は捨てられず stale と表示され、スタブ・未接続では理由つきで提示されない"
+        labels support-verified
+
+            solution AnalysisIsExecuted
+            uuid 3db71ce6-8b73-4b04-9865-8434015e1dee
+            summary "core: test_the_analysis_never_changes_the_answer (2 場面 × 2 モードで candidates と diagnostics が一致) / test_the_analysis_names_the_phase_the_part_and_the_obstacle (close で仕切り、同じ候補が lift で棚 — 通常の探索からは見えない 2 つ目の事実) / HTTP 往復がスキーマに準拠。front: GraspController.test.js (別スロット・探索は触られない・走行中に探索をやり直せる・結果は分析した探索に結びついたまま / スタブと未接続は理由つきで拒否 / 分析を返さない応答は失敗)、GraspPhaseMath.test.js (鮮度は同一性から導出・語の表はスキーマの語彙を覆う)"
+            artifacts
+            - "core/tests/test_motion_phases.py"
+            - "src/controller/GraspController.test.js"
+            - "src/view/GraspPhaseMath.test.js"
+
+        goal TheApproachPhaseIsTheSameJudgementAsBefore
+        uuid 859699ff-5342-45ad-abed-e6f75902e1fc
+        summary "進入相の判定は、ADR-145 / ADR-152 D5 の合成チェッカ (TCP の線分 + 腕 + 手の形) と候補ごとに同じ答えを返す — 幾何の源は部位ごとに 1 つのまま"
+        labels support-verified
+
+            solution EquivalenceIsExecuted
+            uuid f928f3ac-e3df-41cd-b06d-7b36b244c51b
+            summary "test_the_approach_phase_answers_like_the_composed_checkers (手の形あり、2 開口) / test_the_approach_phase_answers_like_the_composed_checkers_with_the_arm (single-arm-pedestal-cell テンプレの解析解 IK、当たる候補と当たらない候補の両方で一致)。既存の core テスト 260 件は変更なしで緑 (チェッカは同じ部位ごとの実装へ委譲)"
+            artifacts
+            - "core/tests/test_motion_phases.py"
+            - "core/easy_extrude_core/engine/feasibility.py"
+
+        goal UnjudgedCellsAreCountedNotRemembered
+        uuid 9df55596-1efb-414a-a11b-f731224b2fb0
+        summary "相 × 部位の被覆は宣言された表が唯一の源で、未宣言の相・部位は throw し、判定していないセルの個数は ratchet が超えても下回っても落とす"
+        labels support-verified
+
+            solution CoverageCensusIsExecuted
+            uuid ea578ff4-86c6-46c5-93ee-824ae4fa810d
+            summary "test_the_coverage_table_declares_every_phase_and_part / test_unevaluated_cells_are_counted_exactly (UNEVALUATED_CELLS = 12) / test_the_held_body_moves_only_from_lift_on (携行物の基数 0 → 1 が close → lift)。12 個は DEF-057 (11) と DEF-058 (1) が受ける"
+            artifacts
+            - "core/tests/test_motion_phases.py"
+            - "docs/DEFERRAL_LEDGER.md"
+
+        goal AReasonFitsOnAPhone
+        uuid 26e95b03-ca7b-4981-b3cb-4f475db969d2
+        summary "阻止理由・エラー文はスマホ幅で画面からはみ出さず、全文が折り返して読める"
+        labels support-verified
+
+            solution ToastWrapIsMeasured
+            uuid 06fa719e-aa77-4b8a-8282-0fb28354280d
+            summary "e2e/mobile-reach.spec.js の reasons fit on a phone — 最狭の対応幅で長い阻止理由のトーストを出し、bounding box が左右 16px の余白の内側に収まり、高さが折り返しを示すことを測る。修正前の UIShell.jsx (nowrap + translateX(-50%)) に戻すと左端が -255px になって落ちることを確認した (2026-09-30)。パネル内の理由文は根の overflow-wrap の継承で折り返す (390px 幅の実機スクリーンショットで確認)"
+            artifacts
+            - "e2e/mobile-reach.spec.js"
+            - "src/components/UIShell.jsx"

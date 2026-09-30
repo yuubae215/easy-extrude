@@ -48,7 +48,7 @@ function handDef() {
 // The target's own declarations (ADR-121 / ADR-156) — the Solid fields that are
 // DECLARATIONS rather than geometry. Taken from the schema by name, so a field
 // retired from the schema drops out and fails the stale-row test below.
-const solidDeclarations = ['mass', 'centerOfMass']
+const solidDeclarations = ['mass', 'centerOfMass', 'lift']
   .filter(k => k in (schema.$defs.entity.properties ?? {}))
   .map(k => `target.${k}`)
 
@@ -83,6 +83,7 @@ const [target] = resolveGraspTargets([{
   rotation: { x: 0, y: 0, z: Math.SQRT1_2, w: Math.SQRT1_2 },
   mass: 0.4,
   centerOfMass: { kind: 'measured', point: [10, 0, -5] },
+  lift: { along: 'reverseApproach', distance: 40 },
   graspFeature: {
     kind: 'specs',
     specs: [
@@ -196,4 +197,16 @@ test('重心が未宣言なら印を描かない — 図心に「念のため」
 
 test('出所の提示表は宣言された kind をちょうど覆う', () => {
   assert.deepEqual(Object.keys(CENTER_OF_MASS_PRESENTATION).sort(), [...DECLARED_CENTER_OF_MASS_KINDS].sort())
+})
+
+test('引き上げの宣言は矢印で見える — 宣言した距離の長さで、未宣言なら何も描かない (ADR-157 D5)', () => {
+  const base = { type: 'Solid', ref: 'w', position: { x: 0, y: 0, z: 30 }, dimensions: { x: 100, y: 40, z: 60 } }
+  const [up] = resolveGraspTargets([{ ...base, lift: { along: 'worldUp', distance: 50 } }])
+  const pic = declarationPicture({ target: up })
+  assert.deepEqual(pic.lift.from, [0, 0, 60])
+  assert.deepEqual(pic.lift.to, [0, 0, 110])
+  const [none] = resolveGraspTargets([base])
+  assert.equal(declarationPicture({ target: none }).lift, null)
+  const [back] = resolveGraspTargets([{ ...base, lift: { along: 'reverseApproach', distance: 20 } }])
+  assert.equal(declarationPicture({ target: back }).lift.from, null, 'no spec ⇒ each candidate differs ⇒ caption only')
 })

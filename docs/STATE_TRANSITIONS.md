@@ -1224,6 +1224,52 @@ stateDiagram-v2
 `worldSpan`) は初フレームから動く。可視性の書き手は 2 つの**別の**ノードに分かれる:
 group = Outliner の目 (`setVisible`)、robot ノード = この初見 (`_endFirstLook`)。
 
+### Pick motion phases — 相の列と携行物 (ADR-157 D1)
+
+候補 1 つのピック動作。分岐の無い 6 相の列で、干渉は相ごとに問い、棄却は最初に
+当たった相へ帰属する。**携行物の基数が close → lift で 0 → 1 に遷移する**のが要点。
+
+```mermaid
+stateDiagram-v2
+    [*] --> transit
+    transit --> approach
+    approach --> close
+    close --> lift : 携行物 0 → 1
+    lift --> transport
+    transport --> place
+    place --> [*] : 携行物 1 → 0
+    approach --> rejected : collides (最初の当たり)
+    close --> rejected : collides
+    lift --> rejected : collides
+```
+
+- 判定される相は宣言だけで決まる (`phase_unevaluated_reason`)。今日は transit /
+  transport / place が `notYetDecided` (DEF-057)、close は手の形と対象 box、lift は
+  `lift` の宣言と対象 box が要る。
+- `rejected` は終端。全相分析 (D6) では `rejected` の後も判定を続けて**数える**が、
+  帰属 (どの相の棄却として数えるか) は変わらない。
+
+### Grasp interference analysis — 全相分析の実行 (ADR-157 D6)
+
+`context.graspAnalysis`。探索 (`context.grasp`) とは別のスロットで、書き手は
+`GraspController.runInterferenceAnalysis()` ただ 1 つ。
+
+```mermaid
+stateDiagram-v2
+    [*] --> 不在
+    不在 --> running : 分析を実行 [analysisAvailability が enabled]
+    done --> running : もう一度
+    failed --> running : もう一度
+    running --> done : allPhases の応答
+    running --> failed : 通信失敗 / 分析を返さない応答
+```
+
+- **禁止遷移**: `running → running` (実行中は述語が disabled を返す)、スタブ・未接続・
+  探索結果なしからの `→ running` (同じ述語)。
+- 鮮度 `fresh` / `stale` は状態ではなく**導出** — `analysisFreshness()` が分析した
+  リクエストと今の `grasp.request` の同一性から毎回求める (原則 #23)。探索をやり直すと
+  保存された何も書き換えずに `stale` になる。
+
 ---
 
 ## Related ADRs

@@ -17,6 +17,14 @@ export type ReachSolution = ReachSolutionSolved | ReachSolutionUndeclared;
  * The measured miss of the best grasp-rejected candidate, as a CLOSED KIND-DISCRIMINATED union (ADR-118). `kind` is the discriminator and each branch is closed -- field presence is implied by kind, never optional.
  */
 export type GraspMiss = OpeningMiss | SealPatchMiss;
+/**
+ * One motion phase's interference row (ADR-157 D2). `kind` is the discriminator; each branch is closed.
+ */
+export type InterferencePhase = InterferencePhaseEvaluated | InterferencePhaseUnevaluated;
+/**
+ * The all-phase interference analysis (ADR-157 D6, contract v8), a CLOSED KIND-DISCRIMINATED union. `firstCollision` = not requested (the default; stated as a branch, never by omitting the key). `allPhases` = requested via graspSearch.interferenceAnalysis: every evaluated phase was judged to the end for every candidate that reached the interference stage, and the hits are counted per phase / part / obstacle. The answer itself (candidates, ranks, the funnel) is identical in both modes.
+ */
+export type InterferenceAnalysis = InterferenceAnalysisFirstCollision | InterferenceAnalysisAllPhases;
 
 /**
  * grasp-search service -> BFF output. Top-N ranking with score breakdown. Wire form uses camelCase.
@@ -31,7 +39,7 @@ export interface GraspSearchResponse {
    */
   candidates: PoseCandidate[];
   /**
-   * Solver-decided facts about the search as a whole (the rejection funnel), so a client can explain an empty or thin result. Contract v4 (ADR-081) widens the funnel to the three validation domains -- visible (Vision) / reachable (Path: reach, IK, interference) / graspable (Grasp). Invariant: candidatesGenerated = rejectedByReach + rejectedByVisibility + rejectedByIk + rejectedByInterference + rejectedByGrasp + feasible (stages are exclusive; the filter short-circuits in the engine's measured cheapest-first order: reach -> IK -> grasp -> visibility -> interference, which decides which single stage a multiply-infeasible candidate is attributed to). Requests that declare no camera / no gripper always report 0 for the corresponding rejection stage. Presentation (wording, colors, meters, ladder-risk mapping, suggestions) is derived client-side and never carried here.
+   * Solver-decided facts about the search as a whole (the rejection funnel), so a client can explain an empty or thin result. Contract v4 (ADR-081) widens the funnel to the three validation domains -- visible (Vision) / reachable (Path: reach, IK, interference) / graspable (Grasp). Invariant: candidatesGenerated = rejectedByReach + rejectedByVisibility + rejectedByIk + rejectedByInterference + rejectedByGrasp + feasible (stages are exclusive; the filter short-circuits in the engine's measured cheapest-first order: reach -> IK -> grasp -> visibility -> interference, which decides which single stage a multiply-infeasible candidate is attributed to). Requests that declare no camera / no gripper always report 0 for the corresponding rejection stage. Presentation (wording, colors, meters, ladder-risk mapping, suggestions) is derived client-side and never carried here. Contract v8 (ADR-157) splits rejectedByInterference by motion phase (interferencePhases) and can carry an all-phase analysis (interferenceAnalysis).
    */
   diagnostics: {
     candidatesGenerated: number;
@@ -74,6 +82,21 @@ export interface GraspSearchResponse {
       candidatesGenerated: number;
       feasible: number;
     }[];
+    /**
+     * Interference broken down by MOTION PHASE (ADR-157 D2/D3, contract v8), EXACTLY one row per phase in motion order: transit, approach, close, lift, transport, place. A phase is `evaluated` or `unevaluated` purely from the request's declarations (never per candidate). An evaluated row's `rejected` counts the candidates whose FIRST colliding phase it was (a candidate is attributed to the earliest phase it hits -- closing is only asked of a hand that got in). Invariant: the sum of `rejected` over evaluated rows = rejectedByInterference. An unevaluated row carries a closed `reason` and NO `rejected` -- 0 and not-judged are the same number otherwise (ADR-120). `notYetDecided` marks phases the solver has no method for yet (transit/transport/place); the rest name the missing declaration.
+     *
+     * @minItems 6
+     * @maxItems 6
+     */
+    interferencePhases: [
+      InterferencePhase,
+      InterferencePhase,
+      InterferencePhase,
+      InterferencePhase,
+      InterferencePhase,
+      InterferencePhase
+    ];
+    interferenceAnalysis: InterferenceAnalysis;
   };
 }
 export interface PoseCandidate {
@@ -184,4 +207,51 @@ export interface SealPatchMiss {
    * Cup diameter minus the diameter of the flat-enough patch found at the contact point (same length unit as the request geometry).
    */
   shortfall: number;
+}
+export interface InterferencePhaseEvaluated {
+  phase: "transit" | "approach" | "close" | "lift" | "transport" | "place";
+  kind: "evaluated";
+  /**
+   * Candidates whose first colliding phase this was.
+   */
+  rejected: number;
+}
+export interface InterferencePhaseUnevaluated {
+  phase: "transit" | "approach" | "close" | "lift" | "transport" | "place";
+  kind: "unevaluated";
+  reason: "notYetDecided" | "gripperUndeclared" | "handShapeUndeclared" | "targetBoxUndeclared" | "liftUndeclared";
+}
+export interface InterferenceAnalysisFirstCollision {
+  kind: "firstCollision";
+}
+export interface InterferenceAnalysisAllPhases {
+  kind: "allPhases";
+  /**
+   * Candidates that reached the interference stage (the population every evaluated phase was judged on).
+   */
+  candidatesAnalysed: number;
+  /**
+   * Evaluated phases only, in motion order (unevaluated ones are explained by interferencePhases).
+   */
+  phases: {
+    phase: "transit" | "approach" | "close" | "lift" | "transport" | "place";
+    /**
+     * Candidates that hit something in this phase. NOT exclusive across phases.
+     */
+    collided: number;
+    /**
+     * Per (part, obstacle), how many candidates hit it in this phase; most first.
+     */
+    hits: {
+      /**
+       * tcpPath = the TCP's path (stands in for an undeclared hand shape); held = the grasped object carried from lift on.
+       */
+      part: "tcpPath" | "arm" | "hand" | "held";
+      /**
+       * Index into the request's obstacles[]. Naming it is the sender's job -- names never ride the wire.
+       */
+      obstacleIndex: number;
+      candidates: number;
+    }[];
+  }[];
 }

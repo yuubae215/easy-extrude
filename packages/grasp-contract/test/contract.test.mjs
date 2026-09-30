@@ -209,6 +209,19 @@ test("recommendation evidence rejects unknown fields", () => {
 test("response with a full funnel and numeric reachNearestMiss conforms", () =>
   accepts("grasp-search-response", response));
 
+// Contract v8 (ADR-157): six motion-phase rows + the analysis branch.
+const phaseRows = {
+  interferencePhases: [
+    { phase: "transit", kind: "unevaluated", reason: "notYetDecided" },
+    { phase: "approach", kind: "evaluated", rejected: 0 },
+    { phase: "close", kind: "unevaluated", reason: "gripperUndeclared" },
+    { phase: "lift", kind: "unevaluated", reason: "liftUndeclared" },
+    { phase: "transport", kind: "unevaluated", reason: "notYetDecided" },
+    { phase: "place", kind: "unevaluated", reason: "notYetDecided" },
+  ],
+  interferenceAnalysis: { kind: "firstCollision" },
+};
+
 // empty result, rejected by reach -> reachNearestMiss is the smallest miss.
 const emptyByReach = {
   candidates: [],
@@ -225,6 +238,7 @@ const emptyByReach = {
     occlusionNearestMiss: null,
     graspNearestMiss: null,
     graspSpecs: [],
+    ...phaseRows,
   },
 };
 test("empty result rejected by reach (numeric reachNearestMiss) conforms", () =>
@@ -246,6 +260,7 @@ const emptyByIk = {
     occlusionNearestMiss: null,
     graspNearestMiss: null,
     graspSpecs: [],
+    ...phaseRows,
   },
 };
 test("empty result with no reach rejections (null reachNearestMiss) conforms", () =>
@@ -497,6 +512,38 @@ test("request: the hand's shape is closed, and body/fingers come together", () =
   accepts("grasp-search-request", withGripper({ kind: "suction", cupDiameter: 0.04, body, cupHeight: 0.02 }));
   rejects("grasp-search-request", withGripper({ kind: "suction", cupDiameter: 0.04, cupHeight: 0.02 }));
   rejects("grasp-search-request", withGripper({ kind: "suction", cupDiameter: 0.04, body, cupHeight: 0.02, fingers }));
+});
+
+// --- ADR-157 (contract v8): interference per motion phase -------------------
+test("response: every motion phase has a row; an unevaluated one carries a reason and no count", () => {
+  const rows = diagnostics.interferencePhases;
+  rejects("grasp-search-response", { candidates: [], diagnostics: { ...diagnostics, interferencePhases: rows.slice(1) } });
+  rejects("grasp-search-response", { candidates: [], diagnostics: { ...diagnostics,
+    interferencePhases: rows.map(r => r.phase === "lift" ? { ...r, rejected: 0 } : r) } });
+  rejects("grasp-search-response", { candidates: [], diagnostics: { ...diagnostics,
+    interferencePhases: rows.map(r => r.phase === "lift" ? { ...r, reason: "tooHard" } : r) } });
+  const { interferenceAnalysis, ...noAnalysis } = diagnostics;
+  rejects("grasp-search-response", { candidates: [], diagnostics: noAnalysis });
+});
+
+test("response: the all-phase analysis names phase, part and obstacle index — never a name", () => {
+  const analysis = { kind: "allPhases", candidatesAnalysed: 4, phases: [
+    { phase: "lift", collided: 2, hits: [{ part: "held", obstacleIndex: 1, candidates: 2 }] }] };
+  accepts("grasp-search-response", { candidates: [], diagnostics: { ...diagnostics, interferenceAnalysis: analysis } });
+  const named = structuredClone(analysis);
+  named.phases[0].hits[0].obstacleName = "tray wall";
+  rejects("grasp-search-response", { candidates: [], diagnostics: { ...diagnostics, interferenceAnalysis: named } });
+});
+
+test("request: target.lift is a declared direction + distance, and the analysis mode is closed", () => {
+  const example = examples["grasp-search-request"];
+  const withTarget = (extra) => ({ ...example, graspSearch: { ...example.graspSearch, target: { ...(example.graspSearch.target ?? {}), ...extra } } });
+  accepts("grasp-search-request", withTarget({ lift: { along: "worldUp", distance: 0.05 } }));
+  rejects("grasp-search-request", withTarget({ lift: { along: "worldUp" } }));
+  rejects("grasp-search-request", withTarget({ lift: { along: "sideways", distance: 0.05 } }));
+  rejects("grasp-search-request", withTarget({ lift: { along: "worldUp", distance: 0 } }));
+  accepts("grasp-search-request", { ...example, graspSearch: { ...example.graspSearch, interferenceAnalysis: "allPhases" } });
+  rejects("grasp-search-request", { ...example, graspSearch: { ...example.graspSearch, interferenceAnalysis: "everything" } });
 });
 
 test("recommendation request without requirement.text is rejected", () => {

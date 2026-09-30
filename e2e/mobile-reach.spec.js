@@ -147,3 +147,25 @@ test.describe('mobile reachability', () => {
     expect(gestures.two).toBe('DOLLY_PAN')
   })
 })
+
+test.describe('reasons fit on a phone (ADR-157 D8)', () => {
+  test('a long reason toast wraps inside the narrowest viewport instead of running off both edges', async ({ page }) => {
+    await bootNarrow(page)
+    // The kind of text that ran off the screen: a gate reason naming an object,
+    // a field path and the declared vocabulary — long, with few natural breaks.
+    const reason = 'The object "pick_table_left_front_workpiece_07": lift.along must be one of reverseApproach / worldUp — declare it on the object in the layout document'
+    await page.evaluate(async (msg) => {
+      const { useUIStore } = await import('/easy-extrude/src/store/uiStore.js')
+      useUIStore.getState().actions.pushToast(msg, 'warn')
+    }, reason)
+    const toast = page.getByText(reason)
+    await expect(toast).toBeVisible()
+    const box = await toast.boundingBox()
+    const vw = await page.evaluate(() => window.innerWidth)
+    // Every pixel of the reason is on screen, with the 16px gutter kept.
+    expect(box.x).toBeGreaterThanOrEqual(16 - 0.5)
+    expect(box.x + box.width).toBeLessThanOrEqual(vw - 16 + 0.5)
+    // …and it got there by wrapping, not by being shrunk or clipped.
+    expect(box.height).toBeGreaterThan(30)
+  })
+})

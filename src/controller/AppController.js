@@ -530,6 +530,9 @@ export class AppController {
       createSampleView: () => new GraspSampleView(this._sceneView.scene),
       createDeclarationView: () => new GraspDeclarationView(this._sceneView.scene),
       robotKinematics: ROBOT_KINEMATICS,
+      // The all-phase interference analysis is offered against the real backend
+      // only (ADR-157 D6) — the stub would have to fabricate it.
+      stubLane: GRASP_STUB_ENABLED,
       // The same seat again (ADR-144): the FK chain of the arm on screen, so a
       // candidate `core/` left `undeclared` can still be previewed — as an
       // explicitly unverified approximation, never as a solution.

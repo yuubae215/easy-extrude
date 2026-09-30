@@ -264,6 +264,27 @@
             },
             "centerOfMass": {
               "$ref": "#/$defs/centerOfMass"
+            },
+            "lift": {
+              "type": "object",
+              "additionalProperties": false,
+              "description": "ADR-157 D5: how the grasped object is LIFTED OUT -- the lift phase's declaration. `along`: `reverseApproach` (retrace the approach, per candidate) or `worldUp` (+Z); `distance` in the request's length unit (m on the wire). Absent = the lift phase is NOT judged (interferencePhases says `liftUndeclared`) -- never a default distance.",
+              "properties": {
+                "along": {
+                  "enum": [
+                    "reverseApproach",
+                    "worldUp"
+                  ]
+                },
+                "distance": {
+                  "type": "number",
+                  "exclusiveMinimum": 0
+                }
+              },
+              "required": [
+                "along",
+                "distance"
+              ]
             }
           }
         },
@@ -378,6 +399,13 @@
               "minimum": 0
             }
           }
+        },
+        "interferenceAnalysis": {
+          "enum": [
+            "firstCollision",
+            "allPhases"
+          ],
+          "description": "ADR-157 D6: `allPhases` asks the solver to judge every evaluated motion phase to the end and report per phase / part / obstacle hits in diagnostics.interferenceAnalysis. Optional; absent = `firstCollision`. Never changes the answer (candidates, ranks, funnel)."
         }
       }
     },

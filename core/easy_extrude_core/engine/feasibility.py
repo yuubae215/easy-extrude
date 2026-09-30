@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Optional, Protocol
+from typing import Iterator, Optional, Protocol
 
 from .pose_codec import frame_axes
 from .ur_kinematics import UrDhParameters, forward_kinematics_chain
@@ -233,12 +233,24 @@ class NaivePathCollisionChecker:
         solution: "Optional[IkSolution]" = None,
         robot: "Optional[Robot]" = None,
     ) -> bool:
-        a = candidate.pre_grasp
-        b = candidate.pose.position
-        for obs in obstacles:
-            if obs.surface_distance_to_segment(a, b) <= self.probe_radius + _EPS:
-                return True
-        return False
+        hits = segment_obstacle_hits(
+            candidate.pre_grasp, candidate.pose.position, obstacles, self.probe_radius
+        )
+        return next(hits, None) is not None
+
+
+def segment_obstacle_hits(
+    a: Vec3, b: Vec3, obstacles: "tuple[Obstacle, ...]", probe_radius: float = 0.0
+) -> Iterator[int]:
+    """線分 ab が触れる障害物の**添字**を順に返す (純粋, ADR-157 D2)。
+
+    「線分 vs 障害物」の唯一の実装。bool が要る呼び手は最初の 1 件で止め
+    (`next(..., None)`)、どの障害物かが要る分析は最後まで回す — 同じ判定を
+    2 通りに書かない (§1.1)。
+    """
+    for i, obs in enumerate(obstacles):
+        if obs.surface_distance_to_segment(a, b) <= probe_radius + _EPS:
+            yield i
 
 
 # 腕リンクの線分近似のうち **関節角に依存しない先頭 1 本** (ベース原点 -> 関節 1 原点)。
@@ -332,11 +344,22 @@ class NaiveArmSweepCollisionChecker:
             candidate, obstacles, solution=solution, robot=robot
         ):
             return True
-        for a, b in arm_link_segments(self.dh, solution, robot, self.tool_length):
-            for obs in obstacles:
-                if obs.surface_distance_to_segment(a, b) <= self.probe_radius + _EPS:
-                    return True
-        return False
+        segments = arm_link_segments(self.dh, solution, robot, self.tool_length)
+        return next(segments_obstacle_hits(segments, obstacles, self.probe_radius), None) is not None
+
+
+def segments_obstacle_hits(
+    segments: "tuple[tuple[Vec3, Vec3], ...]",
+    obstacles: "tuple[Obstacle, ...]",
+    probe_radius: float = 0.0,
+) -> Iterator[int]:
+    """線分列のどれかが触れる障害物の添字を、障害物ごとに 1 回ずつ返す (純粋)。"""
+    for i, obs in enumerate(obstacles):
+        if any(
+            obs.surface_distance_to_segment(a, b) <= probe_radius + _EPS
+            for a, b in segments
+        ):
+            yield i
 
 
 def interference_free(
@@ -708,14 +731,45 @@ def hand_collides(
     path_steps: int = HAND_PATH_STEPS,
 ) -> bool:
     """進入線分上の各点 (端点を含む) で手の部品が障害物に触れるか (純粋)。"""
-    a = candidate.pre_grasp
-    b = candidate.pose.position
-    steps = max(2, path_steps)
-    for i in range(steps):
-        t = i / (steps - 1)
-        tcp = a + (b - a).scaled(t)
-        for part in hand_obbs(candidate, shape, tool_length, tcp):
-            for obs in obstacles:
-                if obs.intersects_obb(part):
-                    return True
-    return False
+    placed = hand_boxes_along(
+        candidate, shape, tool_length, candidate.pre_grasp, candidate.pose.position,
+        path_steps,
+    )
+    return next(boxes_obstacle_hits(placed, obstacles), None) is not None
+
+
+def path_points(a: Vec3, b: Vec3, steps: int, *, include_start: bool = True) -> "tuple[Vec3, ...]":
+    """線分 ab 上の等間隔の点 (端点を含む。`include_start=False` なら a を除く)。"""
+    n = max(2, steps)
+    first = 0 if include_start else 1
+    return tuple(a + (b - a).scaled(i / (n - 1)) for i in range(first, n))
+
+
+def hand_boxes_along(
+    candidate: GraspCandidate,
+    shape: HandShape,
+    tool_length: float,
+    a: Vec3,
+    b: Vec3,
+    path_steps: int = HAND_PATH_STEPS,
+    *,
+    include_start: bool = True,
+) -> "tuple[Obb, ...]":
+    """TCP が a → b を動くあいだの手の部品を、各点に置いた OBB の列 (純粋)。"""
+    return tuple(
+        box
+        for tcp in path_points(a, b, path_steps, include_start=include_start)
+        for box in hand_obbs(candidate, shape, tool_length, tcp)
+    )
+
+
+def boxes_obstacle_hits(
+    boxes: "tuple[Obb, ...]", obstacles: "tuple[Obstacle, ...]"
+) -> Iterator[int]:
+    """OBB 列のどれかが触れる障害物の添字を、障害物ごとに 1 回ずつ返す (純粋, ADR-157)。
+
+    「手の形 vs 障害物」の唯一の実装 — 進入・閉じる・引き上げの各相がここを通る。
+    """
+    for i, obs in enumerate(obstacles):
+        if any(obs.intersects_obb(box) for box in boxes):
+            yield i

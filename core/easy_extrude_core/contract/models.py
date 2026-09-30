@@ -166,6 +166,71 @@ class GraspSpecDiagnostics(_ContractModel):
     feasible: int = Field(ge=0)
 
 
+MotionPhaseName = Literal["transit", "approach", "close", "lift", "transport", "place"]
+
+
+class InterferencePhaseEvaluated(_ContractModel):
+    """評価した相 1 行 (契約 v8, ADR-157 D2)。`rejected` = この相で最初に当たった候補数。"""
+
+    phase: MotionPhaseName
+    kind: Literal["evaluated"] = "evaluated"
+    rejected: int = Field(ge=0)
+
+
+class InterferencePhaseUnevaluated(_ContractModel):
+    """評価しなかった相 1 行 (契約 v8, ADR-157 D2)。**`rejected` を持たない** — 0 と
+    評価不能は同じ数に見える (ADR-120)。理由は閉じた語彙。"""
+
+    phase: MotionPhaseName
+    kind: Literal["unevaluated"] = "unevaluated"
+    reason: Literal[
+        "notYetDecided",
+        "gripperUndeclared",
+        "handShapeUndeclared",
+        "targetBoxUndeclared",
+        "liftUndeclared",
+    ]
+
+
+InterferencePhase = InterferencePhaseEvaluated | InterferencePhaseUnevaluated
+
+
+class InterferenceHitWire(_ContractModel):
+    """全相分析の当たり 1 種 (部位 × 障害物) と、それに当たった候補数 (ADR-157 D6)。"""
+
+    part: Literal["tcpPath", "arm", "hand", "held"]
+    # リクエストの obstacles[] の添字。名前への写像はリクエストを組んだ側が持つ。
+    obstacle_index: int = Field(ge=0)
+    candidates: int = Field(ge=1)
+
+
+class InterferencePhaseAnalysisWire(_ContractModel):
+    """全相分析の相 1 つ。`collided` は相ごとに非排他 (1 候補が複数の相で当たりうる)。"""
+
+    phase: MotionPhaseName
+    collided: int = Field(ge=0)
+    hits: list[InterferenceHitWire]
+
+
+class InterferenceAnalysisFirstCollision(_ContractModel):
+    """全相分析を求めなかった (既定)。欄の省略で示さない (ADR-135 と同じ選択)。"""
+
+    kind: Literal["firstCollision"] = "firstCollision"
+
+
+class InterferenceAnalysisAllPhases(_ContractModel):
+    """全相分析の結果 (契約 v8, ADR-157 D6)。答え (候補・ファネル) は変えない。"""
+
+    kind: Literal["allPhases"] = "allPhases"
+    # 干渉の段に達した候補数 (= 全相を最後まで評価した母集団)。
+    candidates_analysed: int = Field(ge=0)
+    # 評価した相だけを動作の順に (評価しなかった相は interferencePhases が理由を言う)。
+    phases: list[InterferencePhaseAnalysisWire]
+
+
+InterferenceAnalysis = InterferenceAnalysisFirstCollision | InterferenceAnalysisAllPhases
+
+
 class SearchDiagnostics(_ContractModel):
     """探索全体の棄却ファネル + ドメイン別 near-miss (契約 v4, ADR-079/081)。
 
@@ -197,6 +262,11 @@ class SearchDiagnostics(_ContractModel):
     # 送られた把持仕様ごとの生成数・通過数を、リクエストの順で**全仕様ぶん** (契約 v7,
     # ADR-152 D4)。仕様を送らなければ空配列。必須 — 既定値を持たせない。
     grasp_specs: list[GraspSpecDiagnostics]
+    # 動作相ごとの干渉の内訳を、相の順に**6 行ちょうど** (契約 v8, ADR-157 D2/D3)。
+    # 評価した相の rejected の和 = rejected_by_interference。必須 — 既定値を持たせない。
+    interference_phases: list[InterferencePhase] = Field(min_length=6, max_length=6)
+    # 全相分析 (ADR-157 D6)。求めなかったときも firstCollision の枝として必ず在る。
+    interference_analysis: InterferenceAnalysis = Field(discriminator="kind")
 
 
 class GraspSearchResponse(_ContractModel):

@@ -886,7 +886,9 @@ placement follows that robot's `base` / `tcp` CoordinateFrame entities — edite
 N-panel, not a header input (ADR-084 §2) — + the **object card** under the grasp-location editor
 (ADR-121 / ADR-156: mass kg, centre of mass `not declared` / `assumed (centroid)` / measured x y z in the
 object frame mm, each a document declaration with a clear chip; under a suction hand it lists what
-suction hold still needs — "suction hold NOT MEASURED — needs …") + reach / clearance / stability /
+suction hold still needs — "suction hold NOT MEASURED — needs …"; below it the **lift line** (ADR-157 D5:
+`lift out: straight up (+Z), 80 mm` / `not declared — the lift phase will not be judged` + the DSL snippet /
+the malformed reason)) + reach / clearance / stability /
 **hold** objective weights (the hold slot is fixed and disabled unless the hand is a cup)), **Grasped** (gripper: preset chips, max opening / finger
 clearance; a cup adds its **hold** bundle — force N + pad friction μ, declared together or not at all).
 A candidate's `suction_hold` bar at exactly 0 carries a **falls** tag (derived — ADR-156 D6). The Seen / Grasped cards have a `declare` toggle; off keeps the card slot and states
@@ -899,7 +901,15 @@ Below the cards: `topN` + the **Run** button (`onRunGraspSearch`, now carrying t
 `camera`/`gripper` declarations), a status line driven by the discriminated-union `status`
 (idle → compiling → solving → results / error, plus the **`no-robot`** gate that carries its own
 reason — ADR-090 Decision 4: with no resolvable robot nothing is sent to the BFF, because an
-omitted `robot` would let `core/` solve for an infinite-reach ghost at the origin), and the ranked candidate list. Each candidate shows the three boolean chips (`withinReach / ikSolvable /
+omitted `robot` would let `core/` solve for an infinite-reach ghost at the origin), the rejection funnel, then
+**clearance by motion phase** (ADR-157 D2 — six rows in motion order; an evaluated phase shows the count it
+was the FIRST collision of, an unjudged one shows its reason and no number) and the **interference analysis
+card** (ADR-157 D6 — "Analyse all phases" re-sends the results' own request with `allPhases` in the
+background; its state is `context.graspAnalysis`, separate from the search, so the panel stays usable; hits
+read `part × obstacle — n`; a result for an earlier search is kept and captioned **stale**; the button keeps
+its slot and is disabled with the reason in the stub lane / without a backend / before a search), and the ranked candidate list.
+All text in the panel inherits `overflow-wrap: anywhere` and toasts wrap inside a 16px gutter (ADR-157 D8 —
+a reason ran off both edges of a phone). Each candidate shows the three boolean chips (`withinReach / ikSolvable /
 interferenceFree`), the `totalScore`, and **labelled `objectiveScores` bars** (the order-
 explaining signal — ADR-057 §F/G2) with **client-side sort** chips (total / per-objective, never
 re-runs the query); clicking a card sets `selectedRank` (`onSelectGraspCandidate`). **Stage-1

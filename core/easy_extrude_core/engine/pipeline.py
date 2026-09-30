@@ -29,6 +29,7 @@
 from __future__ import annotations
 
 import math
+from collections import Counter
 from dataclasses import dataclass
 from typing import Any, Optional
 
@@ -44,6 +45,14 @@ from ..contract import (
 )
 from ..contract import SearchDiagnostics as SearchDiagnosticsWire
 from ..contract import GraspSpecDiagnostics
+from ..contract import (
+    InterferenceAnalysisAllPhases,
+    InterferenceAnalysisFirstCollision,
+    InterferenceHitWire,
+    InterferencePhaseAnalysisWire,
+    InterferencePhaseEvaluated,
+    InterferencePhaseUnevaluated,
+)
 from .candidates import generate_candidates, generate_spec_candidates
 from .feasibility import (
     CollisionChecker,
@@ -65,6 +74,15 @@ from .feasibility import (
     within_reach,
 )
 from .objectives import evaluate_objectives
+from .phases import (
+    PHASE_ORDER,
+    ArmModel,
+    Hit,
+    MotionPhase,
+    UnevaluatedReason,
+    phase_hits,
+    phase_unevaluated_reason,
+)
 from .pose_codec import pose_to_payload
 from .scoring import weighted_sum
 from .ur_solver import (
@@ -85,6 +103,9 @@ from .types import (
     GraspStrategy,
     HandPart,
     HandShape,
+    FINGER_PART_NAME,
+    LiftAlong,
+    LiftSpec,
     Obb,
     StrategyFallback,
     StrategyOrder,
@@ -243,8 +264,8 @@ def _jaw_shape_from_wire(raw: dict[str, Any], max_opening: float) -> Optional[Ha
     return HandShape(
         parts=(
             body,
-            HandPart(name="finger", center=Vec3(-fx, 0.0, fz), half=fh),
-            HandPart(name="finger", center=Vec3(fx, 0.0, fz), half=fh),
+            HandPart(name=FINGER_PART_NAME, center=Vec3(-fx, 0.0, fz), half=fh),
+            HandPart(name=FINGER_PART_NAME, center=Vec3(fx, 0.0, fz), half=fh),
         ),
         palm_z=palm_z,
     )
@@ -338,6 +359,42 @@ def _strategy_from_wire(raw: Any) -> GraspStrategy:
         order=StrategyOrder(raw.get("order", StrategyOrder.PRIORITY.value)),
         fallback=StrategyFallback(raw.get("fallback", StrategyFallback.NONE.value)),
     )
+
+
+def _lift_from_wire(raw: Any) -> Optional[LiftSpec]:
+    """`target.lift` -> ドメイン (ADR-157 D5)。未宣言は None で、**既定の距離で埋めない**。
+
+    壊れた宣言 (未知の向き・正でない距離) は既定へ倒さず DeclarationError — 倒すと
+    「宣言したのに違う引き上げで判定された」が、候補が減っただけの正しい形で通る。
+    """
+    if raw is None:
+        return None
+    along = raw.get("along")
+    try:
+        along_kind = LiftAlong(along)
+    except ValueError as exc:
+        raise DeclarationError(
+            f"未宣言の引き上げの向き {along!r}: target.lift.along は "
+            f"{[a.value for a in LiftAlong]} のいずれか (ADR-157 D5)"
+        ) from exc
+    distance = raw.get("distance")
+    if not isinstance(distance, (int, float)) or not math.isfinite(distance) or distance <= 0.0:
+        raise DeclarationError("target.lift.distance は正の有限値であること (ADR-157 D5)")
+    return LiftSpec(along=along_kind, distance=float(distance))
+
+
+#: 全相分析のモード (ADR-157 D6)。閉じた語彙 — 未知の値は既定へ倒さず throw する。
+_ANALYSIS_MODES = ("firstCollision", "allPhases")
+
+
+def interference_analysis_mode(data: "dict[str, Any]") -> str:
+    """`graspSearch.interferenceAnalysis` を読む。省略は firstCollision (答えは変わらない)。"""
+    mode = data.get("interferenceAnalysis", "firstCollision")
+    if mode not in _ANALYSIS_MODES:
+        raise DeclarationError(
+            f"未宣言の分析モード {mode!r}: interferenceAnalysis は {list(_ANALYSIS_MODES)} (ADR-157 D6)"
+        )
+    return mode
 
 
 def _target_box_from_wire(raw: Any) -> Optional[Obb]:
@@ -498,6 +555,7 @@ def problem_from_declaration(declaration: GraspSearchDeclaration) -> Problem:
         grasp_specs=grasp_specs,
         strategy=_strategy_from_wire(target_raw.get("strategy")),
         tool_length=tool_length,
+        lift=_lift_from_wire(target_raw.get("lift")),
     )
 
 
@@ -549,10 +607,24 @@ class SearchDiagnostics:
     grasp_nearest_miss_kind: Optional[str]
     # 送られた把持仕様ごとの生成数・通過数 (ADR-152 D4)。仕様なしなら空。
     grasp_specs: "tuple[GraspSpecDiagnostics, ...]" = ()
+    # 動作相ごとの干渉の内訳 (ADR-157 D2/D3)。相の順に 6 つ — 評価した相は
+    # 最初に当たった候補数 (int)、評価しなかった相は理由 (UnevaluatedReason)。
+    interference_phases: "tuple[tuple[MotionPhase, int | UnevaluatedReason], ...]" = ()
+    # 全相分析 (ADR-157 D6)。求めなかったら None。
+    interference_analysis: "Optional[InterferenceAnalysisReport]" = None
 
 
 #: 通過候補 1 件 = (総合スコア, 姿勢, objective 内訳, IK 解, 仕様 id | None)。
 _Scored = tuple
+
+
+@dataclass(frozen=True)
+class InterferenceAnalysisReport:
+    """全相分析の集計 (ドメイン型, ADR-157 D6)。答え (候補・ファネル) には効かない。"""
+
+    candidates_analysed: int
+    # 評価した相ごとに (相, 当たった候補数, ((部位, 障害物添字, 候補数), ...))。
+    phases: "tuple[tuple[MotionPhase, int, tuple[tuple[str, int, int], ...]], ...]"
 
 
 @dataclass
@@ -572,6 +644,16 @@ class _Funnel:
     occlusion_nearest_miss: Optional[float] = None
     grasp_nearest_miss: Optional[float] = None
     grasp_nearest_miss_kind: Optional[str] = None
+    # 干渉の相への帰属 (ADR-157 D3) と全相分析の累積 (D6)。
+    rejected_by_phase: "Counter[MotionPhase]" = None  # type: ignore[assignment]
+    analysed: int = 0
+    collided_by_phase: "Counter[MotionPhase]" = None  # type: ignore[assignment]
+    hits_by_phase: "dict[MotionPhase, Counter[tuple[str, int]]]" = None  # type: ignore[assignment]
+
+    def __post_init__(self) -> None:
+        self.rejected_by_phase = Counter()
+        self.collided_by_phase = Counter()
+        self.hits_by_phase = {}
 
 
 @dataclass(frozen=True)
@@ -627,20 +709,16 @@ def search_report(
             request.grasp_search.model_dump(by_alias=True)
         )
         solver = declared if declared is not None else NaiveIkSolver()
-    # 干渉チェッカも 3 段 (優先順): 注入 > 宣言された運動学で腕を見る版 > 素朴既定。
+    # 干渉は動作相ごとに問う (ADR-157)。進入相の部位は 3 つ: TCP の線分 (常に) /
+    # 腕 (宣言された運動学があるとき — ADR-145) / 手の形 (宣言されたとき — ADR-152 D5)。
     # **分岐は型で行う** (原則 #2) — 「DH を持っていそうか」を getattr で嗅ぐと、
     # 別の解析解ソルバが来た日に黙って腕を見なくなる。
-    if collision_checker is not None:
-        checker: CollisionChecker = collision_checker
-    elif isinstance(solver, UniversalRobotsIkSolver):
-        # ADR-145: 腕リンクの FK スイープを既存の進入経路判定に**足す** (置き換えない)。
-        # 運動学を宣言したリクエストでだけ有効になるので、既存テンプレの答えは不変。
-        checker = NaiveArmSweepCollisionChecker(
-            dh=solver.dh, inner=NaivePathCollisionChecker(),
-            tool_length=solver.tool_length,
-        )
-    else:
-        checker = NaivePathCollisionChecker()
+    # 注入されたチェッカ (テストの継ぎ目) は**進入相の判定だけ**を置き換える。
+    arm = (
+        ArmModel(dh=solver.dh, tool_length=solver.tool_length)
+        if isinstance(solver, UniversalRobotsIkSolver)
+        else None
+    )
     vis_checker = (
         visibility_checker
         if visibility_checker is not None
@@ -656,15 +734,47 @@ def search_report(
     weights = declaration.objective_weights
     objective_names = list(weights.keys())
 
-    # ADR-152 D5: 手の形が宣言されていれば、手の OBB 判定を**足す** (置き換えない)。
-    # 注入されたチェッカには足さない (注入 > 宣言 の優先順位を崩さない)。
-    gripper_shape = getattr(problem.gripper, "shape", None)
-    if collision_checker is None and gripper_shape is not None:
-        checker = NaiveHandCollisionChecker(
-            inner=checker, shape=gripper_shape, tool_length=problem.tool_length,
-        )
+    # 評価する相はリクエストの宣言だけで決まる (ADR-157 D2 — 候補に依らない)。
+    evaluated_phases = tuple(
+        p for p in PHASE_ORDER if phase_unevaluated_reason(problem, p) is None
+    )
+    analysing = interference_analysis_mode(declaration.model_dump(by_alias=True)) == "allPhases"
 
     funnel = _Funnel()
+
+    def interference_phase(candidate, ik_solution) -> "Optional[MotionPhase]":
+        """最初に当たった相 (ADR-157 D3)。当たらなければ None。
+
+        全相分析 (D6) では最初の当たりで止めずに全相を評価して累積するが、
+        **帰属は同じ最初の相** — 分析は答えを 1 ビットも変えない。
+        """
+        if analysing:
+            funnel.analysed += 1
+        first: Optional[MotionPhase] = None
+        for phase in evaluated_phases:
+            if phase is MotionPhase.APPROACH and collision_checker is not None:
+                collides = not interference_free(
+                    candidate, problem.obstacles, collision_checker,
+                    solution=ik_solution, robot=problem.robot,
+                )
+                hits: "tuple[Hit, ...]" = ()
+            else:
+                hits = phase_hits(
+                    problem, phase, candidate,
+                    solution=ik_solution, arm=arm, first_only=not analysing,
+                )
+                collides = bool(hits)
+            if not collides:
+                continue
+            if first is None:
+                first = phase
+            if not analysing:
+                break
+            funnel.collided_by_phase[phase] += 1
+            bucket = funnel.hits_by_phase.setdefault(phase, Counter())
+            for h in hits:
+                bucket[(h.part.value, h.obstacle_index)] += 1
+        return first
 
     def evaluate(candidate) -> "Optional[_Scored]":
         """候補 1 件をドメイン段階フィルタにかける (並びの根拠はモジュール docstring)。
@@ -714,16 +824,12 @@ def search_report(
                 ):
                     funnel.occlusion_nearest_miss = occlusion
                 return None
-        # ADR-135 D2 で保持した解をそのまま渡す (解き直さない)。腕を見ないチェッカは
-        # 無視し、見るチェッカだけが `JointSolution` のときに腕を再構成する。
-        if not interference_free(
-            candidate,
-            problem.obstacles,
-            checker,
-            solution=ik_solution,
-            robot=problem.robot,
-        ):
+        # ADR-135 D2 で保持した解をそのまま渡す (解き直さない)。腕は `JointSolution`
+        # のときだけ再構成される。棄却は最初に当たった相へ帰属する (ADR-157 D3)。
+        hit_phase = interference_phase(candidate, ik_solution)
+        if hit_phase is not None:
             funnel.rejected_by_interference += 1
+            funnel.rejected_by_phase[hit_phase] += 1
             return None
         objective_scores = evaluate_objectives(candidate, problem, objective_names)
         total = weighted_sum(objective_scores, weights)
@@ -806,6 +912,33 @@ def search_report(
         grasp_nearest_miss=funnel.grasp_nearest_miss,
         grasp_nearest_miss_kind=funnel.grasp_nearest_miss_kind,
         grasp_specs=tuple(spec_rows),
+        interference_phases=tuple(
+            (p, funnel.rejected_by_phase[p] if p in evaluated_phases
+             else phase_unevaluated_reason(problem, p))
+            for p in PHASE_ORDER
+        ),
+        interference_analysis=(
+            InterferenceAnalysisReport(
+                candidates_analysed=funnel.analysed,
+                phases=tuple(
+                    (
+                        p,
+                        funnel.collided_by_phase[p],
+                        tuple(
+                            (part, idx, n)
+                            # 決定的な順: 多い順、同数は部位名・添字 (探索順に依らない)。
+                            for (part, idx), n in sorted(
+                                funnel.hits_by_phase.get(p, Counter()).items(),
+                                key=lambda kv: (-kv[1], kv[0][0], kv[0][1]),
+                            )
+                        ),
+                    )
+                    for p in evaluated_phases
+                ),
+            )
+            if analysing
+            else None
+        ),
     )
     diagnostics_wire = SearchDiagnosticsWire(
         candidates_generated=diagnostics.candidates_generated,
@@ -826,10 +959,39 @@ def search_report(
             }
         ),
         grasp_specs=list(diagnostics.grasp_specs),
+        interference_phases=[_phase_row_wire(p, v) for p, v in diagnostics.interference_phases],
+        interference_analysis=_analysis_wire(diagnostics.interference_analysis),
     )
     return SearchReport(
         response=GraspSearchResponse(candidates=candidates, diagnostics=diagnostics_wire),
         diagnostics=diagnostics,
+    )
+
+
+def _phase_row_wire(phase: MotionPhase, value: "int | UnevaluatedReason"):
+    """相 1 行をワイヤの union へ写す唯一の場所 (ADR-157 D2)。分岐は型で行う。"""
+    if isinstance(value, UnevaluatedReason):
+        return InterferencePhaseUnevaluated(phase=phase.value, reason=value.value)
+    return InterferencePhaseEvaluated(phase=phase.value, rejected=value)
+
+
+def _analysis_wire(report: "Optional[InterferenceAnalysisReport]"):
+    """全相分析をワイヤの union へ (ADR-157 D6)。求めなかったら firstCollision の枝。"""
+    if report is None:
+        return InterferenceAnalysisFirstCollision()
+    return InterferenceAnalysisAllPhases(
+        candidates_analysed=report.candidates_analysed,
+        phases=[
+            InterferencePhaseAnalysisWire(
+                phase=p.value,
+                collided=collided,
+                hits=[
+                    InterferenceHitWire(part=part, obstacle_index=idx, candidates=n)
+                    for part, idx, n in hits
+                ],
+            )
+            for p, collided, hits in report.phases
+        ],
     )
 
 

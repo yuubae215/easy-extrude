@@ -41,7 +41,13 @@ contractVersion は public スキーマの `version: "layout/x.y"` とは別系�
 # ワイヤに載せる。閉じた層への必須追加なので版上げ。request 側の
 # `target.graspSpecs/strategy/box` と `gripper.body/fingers/cupHeight` は
 # optional 追加 (ADR-083/084) だが同じ PR で入る。
-CONTRACT_VERSION = 7
+# v8: 干渉を動作相で問う (ADR-157)。diagnostics に **必須**の `interferencePhases`
+# (相の順に 6 行ちょうど、kind 判別 evaluated{rejected} / unevaluated{reason}) と
+# `interferenceAnalysis` (firstCollision / allPhases の kind 判別 union) を追加。
+# 「判定していない相」と「当たらなかった相」は 1 つの数 (rejectedByInterference) では
+# 区別できなかった — 閉じた層への必須追加なので版上げ。request 側の `target.lift` と
+# `interferenceAnalysis` は optional 追加 (ADR-083/084)。
+CONTRACT_VERSION = 8
 
 
 class ContractVersionMismatch(ValueError):

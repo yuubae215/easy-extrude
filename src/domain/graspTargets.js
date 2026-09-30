@@ -42,6 +42,7 @@ import { VALID_ENTITY_TYPES } from '../layout/LayoutDslSchema.js'
 import { hollowBodyGap, shellParts, isContainer } from './hollowBody.js'
 import { rotateVec3 } from './rotateVec3.js'
 import { resolveMassProperties } from './targetMass.js'
+import { resolveLift } from './targetLift.js'
 import { GRIPPER_KIND } from '../context/GraspDeclarationCatalog.js'
 import {
   resolveGraspFeature, faceNormalOrThrow, inPlaneAxesOrThrow, usableSpecs,
@@ -97,6 +98,9 @@ const IDENTITY_Q = Object.freeze({ x: 0, y: 0, z: 0, w: 1 })
  *             centerOfMass: import('./targetMass.js').ResolvedCenterOfMass}} massProperties
  *           what it weighs and where (ADR-121 / ADR-156) — ALWAYS present, each part
  *           carrying its own state (`undeclared` is an answer, never the centroid)
+ * @property {import('./targetLift.js').ResolvedLift} lift
+ *           how it is lifted out once grasped (ADR-157 D5) — ALWAYS present;
+ *           `undeclared` means the lift phase is not judged, never a default lift
  */
 
 /**
@@ -183,6 +187,9 @@ export function resolveBodies(entities) {
       // What it weighs and where (ADR-121 / ADR-156) — resolved at the same one
       // point for the same reason. Undeclared stays undeclared (never the centroid).
       massProperties: resolveMassProperties(e),
+      // How it comes out once grasped (ADR-157 D5) — same one point, same reason.
+      // Undeclared stays undeclared: the lift phase is then not judged.
+      lift: resolveLift(e.lift),
     })
   }
   return targets
@@ -472,6 +479,27 @@ export function obstaclesExcluding(targets, excludeRef) {
 }
 
 /**
+ * The NAME of each obstacle `obstaclesExcluding` produces, index-aligned with it
+ * (ADR-157 D6). The wire's all-phase analysis names an obstacle by its index in
+ * the request's `obstacles[]` — names never ride the wire — so the sender keeps
+ * the names. Derived from the SAME filter and the SAME `boxesForBody` call, so
+ * the two lists cannot fall out of step (§1.1): a hollow body's walls are
+ * `label · shell k/n`, a plain body is its label.
+ *
+ * @param {GraspTarget[]} targets
+ * @param {string} excludeRef
+ * @returns {string[]}
+ */
+export function obstacleLabelsExcluding(targets, excludeRef) {
+  return (targets ?? [])
+    .filter(t => t.ref !== excludeRef)
+    .flatMap(t => {
+      const n = boxesForBody(t).length
+      return n === 1 ? [t.label] : Array.from({ length: n }, (_, k) => `${t.label} · shell ${k + 1}/${n}`)
+    })
+}
+
+/**
  * @typedef {{kind:'box', center:[number,number,number],
  *            halfExtents:[number,number,number],
  *            orientation:[number,number,number,number]}} WireObstacle
@@ -581,7 +609,7 @@ export { isContainer }
  * @param {string|null} selectedRef
  * @returns {{list:{ref:string,label:string,feature:object}[], selectedRef:string|null,
  *            cardinality:string, feature:object|null, faceWords:Record<string,string>|null,
- *            massProperties:object|null}}
+ *            massProperties:object|null, lift:object|null}}
  */
 export function targetProjection(targets, selectedRef) {
   const list     = targets ?? []
@@ -597,6 +625,8 @@ export function targetProjection(targets, selectedRef) {
     // What the SELECTED object weighs and where (ADR-121 / ADR-156), resolved —
     // the panel renders states, it does not re-read the raw fields.
     massProperties: selected?.massProperties ?? null,
+    // How the SELECTED object is lifted out (ADR-157 D5), resolved.
+    lift:           selected?.lift ?? null,
     // "+x — where is that?" for the SELECTED object as it stands now (ADR-152 D2):
     // face → world word ('top', 'left', 'tilted'). Derived from its rotation on
     // every refresh, never stored — turn the object and the words change while

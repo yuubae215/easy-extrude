@@ -1,5 +1,5 @@
 {
-  "contractVersion": 7,
+  "contractVersion": 8,
   "candidates": [
     {
       "rank": 1,
@@ -7,8 +7,17 @@
       "pose": {
         "kind": "endEffector",
         "frame": {
-          "position": [0.42, -0.13, 0.3],
-          "orientation": [0.0, 0.0, 0.0, 1.0]
+          "position": [
+            0.42,
+            -0.13,
+            0.3
+          ],
+          "orientation": [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
         }
       },
       "score": {
@@ -17,11 +26,21 @@
         "ikSolvable": true,
         "interferenceFree": true,
         "graspable": true,
-        "objectiveScores": { "clearance": 0.9, "manipulability": 0.7 },
+        "objectiveScores": {
+          "clearance": 0.9,
+          "manipulability": 0.7
+        },
         "totalScore": 0.82,
         "reachSolution": {
           "kind": "solved",
-          "joints": [0.0, -1.0, 1.2, -1.8, -1.5708, 0.0]
+          "joints": [
+            0.0,
+            -1.0,
+            1.2,
+            -1.8,
+            -1.5708,
+            0.0
+          ]
         }
       }
     },
@@ -31,7 +50,14 @@
       "pose": {
         "kind": "jointSpace",
         "chainRef": "ur5e/arm",
-        "joints": [0.0, -1.57, 1.57, -1.57, -1.57, 0.0]
+        "joints": [
+          0.0,
+          -1.57,
+          1.57,
+          -1.57,
+          -1.57,
+          0.0
+        ]
       },
       "score": {
         "withinReach": true,
@@ -40,7 +66,9 @@
         "interferenceFree": true,
         "graspable": true,
         "totalScore": 0.55,
-        "reachSolution": { "kind": "undeclared" }
+        "reachSolution": {
+          "kind": "undeclared"
+        }
       }
     }
   ],
@@ -55,7 +83,45 @@
     "returned": 2,
     "reachNearestMiss": 0.031,
     "occlusionNearestMiss": 0.008,
-    "graspNearestMiss": { "kind": "opening", "shortfall": 0.012 },
-    "graspSpecs": []
+    "graspNearestMiss": {
+      "kind": "opening",
+      "shortfall": 0.012
+    },
+    "graspSpecs": [],
+    "interferencePhases": [
+      {
+        "phase": "transit",
+        "kind": "unevaluated",
+        "reason": "notYetDecided"
+      },
+      {
+        "phase": "approach",
+        "kind": "evaluated",
+        "rejected": 1
+      },
+      {
+        "phase": "close",
+        "kind": "unevaluated",
+        "reason": "gripperUndeclared"
+      },
+      {
+        "phase": "lift",
+        "kind": "unevaluated",
+        "reason": "liftUndeclared"
+      },
+      {
+        "phase": "transport",
+        "kind": "unevaluated",
+        "reason": "notYetDecided"
+      },
+      {
+        "phase": "place",
+        "kind": "unevaluated",
+        "reason": "notYetDecided"
+      }
+    ],
+    "interferenceAnalysis": {
+      "kind": "firstCollision"
+    }
   }
 }

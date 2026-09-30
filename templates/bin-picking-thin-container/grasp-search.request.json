@@ -1,5 +1,5 @@
 {
-  "contractVersion": 7,
+  "contractVersion": 8,
   "layoutVersion": "layout/1.0",
   "graspSearch": {
     "robot": {

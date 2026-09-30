@@ -1,6 +1,12 @@
 """BFF <-> コアAPI 契約 (ADR-074)。型 + contractVersion ガードのみ。判定の実装は含まない。"""
 
 from .models import (
+    InterferenceAnalysisAllPhases,
+    InterferenceAnalysisFirstCollision,
+    InterferenceHitWire,
+    InterferencePhaseAnalysisWire,
+    InterferencePhaseEvaluated,
+    InterferencePhaseUnevaluated,
     GraspNearestMiss,
     GraspSpecDiagnostics,
     GraspSearchDeclaration,
@@ -42,6 +48,12 @@ from .version import (
 )
 
 __all__ = [
+    "InterferenceAnalysisAllPhases",
+    "InterferenceAnalysisFirstCollision",
+    "InterferenceHitWire",
+    "InterferencePhaseAnalysisWire",
+    "InterferencePhaseEvaluated",
+    "InterferencePhaseUnevaluated",
     "GraspNearestMiss",
     "GraspSpecDiagnostics",
     "CONTRACT_VERSION",

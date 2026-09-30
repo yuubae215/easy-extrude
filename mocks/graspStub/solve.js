@@ -591,6 +591,46 @@ export function stubSolve(request, contractVersion) {
       occlusionNearestMiss,
       graspNearestMiss,
       graspSpecs,
+      // v8 (ADR-157): the stub judges no hand shape and no lift, so every
+      // interference it fabricates is attributed to the approach. WHICH phases are
+      // evaluated follows the same declaration rules core/ uses, so the panel's
+      // phase rows read the same for the same request. The all-phase analysis is
+      // never served here — the panel offers it only with a real backend.
+      ...interferencePhaseRows(gs, counts.rejectedByInterference),
     },
+  }
+}
+
+/**
+ * The six motion-phase rows for a request (contract v8, ADR-157 D2), plus the
+ * `firstCollision` analysis branch. Evaluated vs unevaluated is decided by the
+ * request's declarations only — the same rule as core/'s
+ * `phase_unevaluated_reason` — and every rejection this stub makes lands on
+ * `approach` (it places no fingers and lifts nothing).
+ *
+ * @param {object} gs  the request's graspSearch
+ * @param {number} approachRejected
+ */
+export function interferencePhaseRows(gs, approachRejected) {
+  const gripper = gs?.gripper ?? null
+  const box = gs?.target?.box ?? null
+  const closeReason = !gripper ? 'gripperUndeclared'
+    : gripper.kind !== 'parallelJaw' ? null
+      : !(gripper.body && gripper.fingers) ? 'handShapeUndeclared'
+        : !box ? 'targetBoxUndeclared' : null
+  const liftReason = !gs?.target?.lift ? 'liftUndeclared' : !box ? 'targetBoxUndeclared' : null
+  const row = (phase, reason, rejected = 0) => (reason
+    ? { phase, kind: 'unevaluated', reason }
+    : { phase, kind: 'evaluated', rejected })
+  return {
+    interferencePhases: [
+      row('transit', 'notYetDecided'),
+      row('approach', null, approachRejected),
+      row('close', closeReason),
+      row('lift', liftReason),
+      row('transport', 'notYetDecided'),
+      row('place', 'notYetDecided'),
+    ],
+    interferenceAnalysis: { kind: 'firstCollision' },
   }
 }
