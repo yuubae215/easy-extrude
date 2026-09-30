@@ -1,0 +1,77 @@
+GOALS adr158_a_replay_draws_the_judged_samples
+
+goal AReplayShowsWhereItHitsFromJudgedSamples
+uuid 0a7730f5-4bfe-431d-b9a5-4dffe4b7c49b
+summary "棄却された候補について、どの相のどの時点で・どの部位が・何に当たるかが再生で見え、当たりとして見えるフレームは core が判定した標本そのものである。再生の長さ・速さ・フレームレートは通信量にも core の負荷にも効かない"
+state UnderReview
+labels adr-158, adr-157, adr-146, adr-150, grasp, replay, principle-29, principle-30, proposed, term-l-blind, change-diagnosis
+artifacts
+- "docs/adr/ADR-158-a-replay-draws-the-judged-samples-and-derives-the-frames-between.md"
+
+    context Adr158Scope
+    uuid a34735da-3513-421e-85c5-9e4919f4893e
+    summary "ADR-158 (Proposed 2026-09-30、段 G-9 未着手): 全相分析を求めたとき判定した標本 (相・s・関節・TCP・当たり) を返し (D1)、間のフレームはクライアントが関節空間の線形補間で導出して判定済みと描き分け (D2)、時間軸は相ごとの s で秒ではなく再生速度とフレームレートはクライアントの設定 (D3)、再生は表示の状態で鮮度は分析から導出 (D4)、動きの役割は Fact で既存の進入スライド (Delight) と別物として描く (D5)"
+
+    context RequirementCameFromTheOwner
+    uuid aa40d116-b36d-4a2b-afe0-a7facda403a9
+    summary "要求は解の形で来た: 「バックエンドに処理させてフロントは定期的に共有してもらう。リフレッシュレートは 30fps とか」「フロントと BFF の間に Rust のゼロコピーのアイデアがなかった?」。干渉判定は静止したシーンに対する判定なので、事実を 1 回受け取りフレームは手元で作る形へ持ち上げた。ゼロコピー (ADR-027) はブラウザ内のメッシュ経路で、kB 単位の事実には要らない"
+
+    justification WhyNotStreamAt30fps
+    uuid a4591f0d-dc7c-4b6e-a6b9-cbcaecca71a9
+    summary "却下案 B (30fps で姿勢をストリームする) への反証: 同じ事実を毎秒 30 回運び (1 候補 1.6 kB/s — 一括受け取りの 0.9 kB を 1 秒で超える)、判定した標本と判定していない姿勢が受け手で区別できず、core が再生の速さに縛られる。実機のテレメトリ (デジタルツイン) には正しい形なので、その用途は別 ADR で再評価する"
+
+    justification WhyNotSolveTheReplayInTheFront
+    uuid 2815ee15-7de7-4c77-bf30-4fa9d8c8a442
+    summary "却下案 C (クライアントが TCP 経路と IK を自分で解いて再生する) への反証: 8 解から代表を選ぶ規則 (ADR-127 D5) はアイデアなので src/ に写せず (ADR-146 軸 1)、プリグラスプの距離もワイヤに無い。写せば描いた腕と判定した腕が別の源から来る — ADR-150 が閉じた欠陥の再演"
+
+    assumption LinearJointInterpolationIsHonestEnough
+    uuid 2aa626fe-09ec-489f-8c2b-116ce3729c1b
+    summary "反証されうる仮説: 標本の間を関節空間の線形補間で描いても、利用者は「補間のフレームは判定されていない」と読める (標本のフレームだけ実線、間は薄く)。反証されうる形は、dogfooding で補間の瞬間を「ここで当たらない」と読まれること。そのとき補間のフレームを描かずコマ送りを既定にする"
+
+    assumption SecondsAreNotNeededYet
+    uuid a36b7658-d975-4121-8324-7c553655d7db
+    summary "反証されうる仮説: 使う場面 S1〜S5 は相の中の進み具合 s で足り、秒 (サイクルタイム) は要らない。反証されうる形は、S3 (レビュー・顧客説明) で「何秒で終わるか」を問われること。そのとき ruckig 等の時間付けで t を足す版上げを別 ADR で起こす"
+
+    context BusinessTreeAttachPoint
+    uuid 45813526-7f9d-4358-9870-c33858efec7a
+    summary "事業木へ接続 (2026-09-30, ADR-153): profit-growth.gsn の goal ARejectionPointsAtTheSpecToChange (L_blind) の下に solution Adr158Tree として吊る。主たる場面 S1 (棄却の理由を見る) がどの仕様を変えるかを探すループを縮める。副次的に S3/S5 は p_operate、S4 は L_hidden に寄与する"
+
+    strategy BySendingSamplesOnceAndDerivingFrames
+    uuid 9e9d6d81-c2a7-4230-817b-2c2df5246deb
+    summary "判定した標本だけを 1 回で受け取り、再生のフレーム・速さ・時間の写像はクライアントの導出にする。描き分けで判定済みと補間を区別し、動きの役割を Fact と宣言して既存の演出と並べる"
+
+        goal WhatIsDrawnAsAHitWasJudged
+        uuid 505d9b54-eb76-4b2c-ab97-f8863f1e1277
+        summary "当たりの強調が付くのは core が当たりと判定した標本だけで、補間のフレームには付かない。当たり始めの時刻は標本の分解能でしか言わない"
+        labels support-exploring
+
+            assumption WhatIsDrawnAsAHitWasJudgedWillBeSettled
+            uuid 30226a08-b275-40fe-afe7-f0831fb79e1d
+            summary "証拠予定: 実装 PR の純粋層テストで、当たりの強調が付くフレームの集合が core の返した当たり標本の集合とちょうど一致し、補間のフレームには 0 個であることを数える。満期=PATH:src/view/GraspReplayMath.test.js"
+
+        goal FrameRateNeverReachesTheWire
+        uuid 9d9b0e0b-35a6-479d-9f8e-e33d8df92419
+        summary "契約に fps・秒・再生速度の欄が無く、同じ応答から 30fps・60fps・コマ送りのどれでも描ける。通信量は再生の長さに依らない"
+        labels support-exploring
+
+            assumption FrameRateCensusIsPlanned
+            uuid 04884584-465a-4503-aaff-b2fe33da5a0d
+            summary "証拠予定: 実装 PR で response スキーマの census (fps / seconds / duration / frameRate の語が欄に無い) と、同じ応答を 2 つの再生速度で描いて標本のフレームが一致するテストを置く。満期=ADR-158"
+
+        goal TheReplayServesTheScenesItWasDesignedFor
+        uuid ec2af048-2832-46ab-a54d-7eed67386447
+        summary "S1 (棄却の理由を見る) で、パネルの数字だけより早くどの宣言を変えればよいかに着く。S5 (現場のスマホ) では reduced-motion でもコマ送りで同じ事実が見える"
+        labels support-exploring
+
+            assumption TheReplayServesTheScenesItWasDesignedForWillBeSettled
+            uuid d4a734f4-5d5c-47ee-bfa4-3a282aef5ae0
+            summary "証拠予定: 実装 PR の e2e で、S1 (棄却候補の当たり標本で止まり、部位と障害物の名前が出る) と S5 (reduced-motion の 390px 幅でコマ送りが同じ標本を出す) を実機で通す。満期=PATH:e2e/grasp-replay.spec.js"
+
+        goal TheReplayIsNotMistakenForTheRevealSlide
+        uuid 88920e35-c1da-4d8d-bf1c-cf6db6f76e43
+        summary "既存の進入スライド (Delight) と再生 (Fact) は見た目で区別でき、進入スライドが判定された経路と読まれない"
+        labels support-exploring
+
+            assumption TheReplayIsNotMistakenForTheRevealSlideWillBeSettled
+            uuid c5616205-a117-4976-be7b-fad54e983b93
+            summary "証拠予定: 実装 PR で再生を MotionGovernor に Fact tier として登録し、既存の進入スライド (REVEAL_TIMELINE、Delight) と描画の役割が別のトークンになっていることをテストで問う。満期=PATH:src/view/GraspReplayMath.js"

@@ -523,6 +523,12 @@ labels meta-goal, term-profit
                                     artifacts
                                     - "docs/gsn/adr-120-unevaluated-is-not-zero.gsn"
 
+                                    solution Adr158Tree
+                                    uuid 1af8fdc7-f244-4a7f-8898-a8fd29712236
+                                    summary "ADR-158 の論証木 (top goal AReplayShowsWhereItHitsFromJudgedSamples) を吊る。棄却された候補がどの相のどの時点で何に当たるかを、core が判定した標本から再生して見せる — 数字から想像していた棄却の理由が絵で読める (ADR は Proposed — 吊り先は決まっていても主張はまだ未来形)。この木の goal ごとの証拠と鮮度の正本は木の側 — ここは寄与する項だけを持つ (ADR-153 D2: 1 本の木は事業木にちょうど 1 回吊られ、投資はその項へ帰属する)"
+                                    artifacts
+                                    - "docs/gsn/adr-158-a-replay-draws-the-judged-samples-and-derives-the-frames-between.gsn"
+
                                     solution Adr135Tree
                                     uuid 64778e38-8836-4973-9963-c37fe5cd6f60
                                     summary "ADR-135 の論証木 (top goal ReachabilityIsShownAsThePosedArmNotOnlyABoolean) を吊る。到達可否が腕の姿勢として描かれ、届かないとき何を動かせばよいかが見える。この木の goal ごとの証拠と鮮度の正本は木の側 — ここは寄与する項だけを持つ (ADR-153 D2: 1 本の木は事業木にちょうど 1 回吊られ、投資はその項へ帰属する)"
