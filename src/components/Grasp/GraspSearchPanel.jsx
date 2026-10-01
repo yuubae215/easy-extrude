@@ -21,6 +21,8 @@ import { defaultHandFor, HAND_BODY_KIND, wireGripperFromHand } from '../../domai
 import { mToMM } from '../../domain/worldUnits.js'
 import { CENTER_OF_MASS_KIND, MASS_DECLARATION_STATE, suctionHoldMissing } from '../../domain/targetMass.js'
 import { centerOfMassPresentation } from '../../view/GraspDeclarationMath.js'
+import { phaseRows, analysisSummary, analysisFreshness, analysisAvailability } from '../../view/GraspPhaseMath.js'
+import { LIFT_STATE, LIFT_ALONG } from '../../domain/targetLift.js'
 import { DeltaChip, useReducedMotion } from '../Feedback/FeedbackPrimitives.jsx'
 import { COLOR, DURATION, EASING } from '../../theme/tokens.js'
 
@@ -172,6 +174,8 @@ export function GraspSearchPanel() {
   const grasp     = useUIStore(s => s.context.grasp)
   const robots       = useUIStore(s => s.context.robots)
   const graspTargets = useUIStore(s => s.context.graspTargets)
+  const graspAnalysis = useUIStore(s => s.context.graspAnalysis)
+  const bffConnected  = useUIStore(s => s.bffConnected)
   const callbacks = useUIStore(s => s.callbacks)
 
   const [reach, setReach]         = useState(0.6)
@@ -312,7 +316,7 @@ export function GraspSearchPanel() {
     callbacks.onPreviewGraspSamples?.()
     // The hand (its shape and the mount) changes the declaration picture too —
     // the preview hand and the finger sections are drawn from it (ADR-152 D6).
-  }, [callbacks, handKind, handProj, graspTargets?.selectedRef, graspTargets?.feature, graspTargets?.massProperties])
+  }, [callbacks, handKind, handProj, graspTargets?.selectedRef, graspTargets?.feature, graspTargets?.massProperties, graspTargets?.lift])
 
   const status   = grasp?.status ?? 'idle'
   const busy     = status === 'compiling' || status === 'solving'
@@ -364,7 +368,10 @@ export function GraspSearchPanel() {
   }, [status, grasp, sortKey])
 
   return (
-    <div style={{ fontSize: '12px', color: '#ddd' }}>
+    // `overflow-wrap` is inherited: every reason, ref and path in this panel wraps
+    // instead of running off a phone's edge (ADR-157 D8 — a reason cut in half is
+    // not a reason, 原則 #11).
+    <div style={{ fontSize: '12px', color: '#ddd', overflowWrap: 'anywhere' }}>
       <div style={{ color: '#888', fontSize: '10px', marginBottom: '8px', lineHeight: 1.5 }}>
         UI → DSL → BFF → grasp-search (verify). The request is a query — geometry is unchanged,
         so it is not on the undo stack.
@@ -450,6 +457,9 @@ export function GraspSearchPanel() {
           hand={hand}
           onSet={(ref, key, value) => callbacks.onSetMassDeclaration?.(ref, key, value)}
         />
+        {/* ADR-157 D5 — how that object is lifted out. Declared in the DSL (`lift`
+            on the Solid); undeclared is a state the run reports, never a default. */}
+        <LiftLine lift={graspTargets?.lift ?? null} />
         <div style={{ fontSize: '10px', color: '#889', marginBottom: '5px' }}>
           robot placement follows its <code style={{ color: '#9ad' }}>base</code> /{' '}
           <code style={{ color: '#9ad' }}>tcp</code> frames
@@ -553,6 +563,19 @@ export function GraspSearchPanel() {
       {status === 'results' && (
         <SpecResults rows={specResultRows(grasp.diagnostics, grasp.candidates ?? [])} />
       )}
+      {/* ADR-157 — interference by motion phase, and the background all-phase
+          analysis. The analysis card keeps its slot whatever the status
+          (原則 #15): disabled with the reason when it cannot run. */}
+      {status === 'results' && <InterferencePhaseRows rows={phaseRows(grasp.diagnostics)} />}
+      <InterferenceAnalysisCard
+        grasp={grasp}
+        analysisState={graspAnalysis ?? null}
+        availability={analysisAvailability({
+          stubLane: GRASP_STUB, bffConnected: bffConnected === true,
+          grasp, analysisState: graspAnalysis ?? null,
+        })}
+        onRun={() => callbacks.onRunInterferenceAnalysis?.()}
+      />
 
       {/* Sort controls + candidates */}
       {status === 'results' && (
@@ -1385,6 +1408,118 @@ function StatusLine({ grasp }) {
 // client-side.
 
 const STAGE_LABELS = { reach: 'reach', ik: 'IK', grasp: 'grasp', visibility: 'visible', interference: 'clearance' }
+
+/** The lift words (ADR-157 D5). Keyed by the declared vocabulary — a new direction needs words. */
+const LIFT_WORDS = Object.freeze({
+  [LIFT_ALONG.REVERSE_APPROACH]: 'back out along the approach',
+  [LIFT_ALONG.WORLD_UP]:         'straight up (+Z)',
+})
+
+/**
+ * LiftLine — the selected object's lift declaration as a state (ADR-157 D5).
+ * Declared → direction + distance; undeclared → says the lift phase will not be
+ * judged and how to declare it; malformed → the reason (the run is blocked).
+ */
+function LiftLine({ lift }) {
+  if (!lift) return null
+  const style = { fontSize: '10px', marginBottom: '5px' }
+  if (lift.state === LIFT_STATE.DECLARED) {
+    const words = LIFT_WORDS[lift.along]
+    if (!words) throw new Error(`GraspSearchPanel: 未宣言の引き上げの向き "${lift.along}" — LIFT_WORDS に行を足すこと`)
+    return <div style={{ ...style, color: COLOR.textSecondary }}>lift out: {words}, {lift.distanceMm} mm</div>
+  }
+  if (lift.state === LIFT_STATE.MALFORMED) {
+    return <div style={{ ...style, color: COLOR.cautionTone }}>lift: {lift.errors[0]}</div>
+  }
+  return (
+    <div style={{ ...style, color: COLOR.textSecondary }}>
+      lift: not declared — the lift phase will not be judged. Add{' '}
+      <code style={{ color: COLOR.infoTone }}>"lift": {'{'} "along": "worldUp", "distance": 50 {'}'}</code> to the object.
+    </div>
+  )
+}
+
+/**
+ * InterferencePhaseRows (ADR-157 D2/D3) — where the interference rejections
+ * happened, one row per motion phase. An unevaluated phase shows its REASON
+ * and no number: "0 rejected" and "not judged" must never look alike (ADR-120).
+ */
+function InterferencePhaseRows({ rows }) {
+  if (!rows) return null
+  return (
+    <div style={{ marginTop: '8px', fontSize: '10px', color: COLOR.textSecondary }}>
+      <div style={{ marginBottom: '2px' }}>clearance by motion phase (rejected first here)</div>
+      {rows.map(r => (
+        <div key={r.phase} style={{ display: 'flex', gap: '6px', alignItems: 'baseline', marginBottom: '3px' }}>
+          <span style={{ minWidth: '110px', color: r.evaluated ? COLOR.textPrimary : COLOR.textSecondary }}>{r.label}</span>
+          {r.evaluated
+            ? <span style={{ color: r.rejected > 0 ? COLOR.cautionTone : COLOR.factTone }}>{r.rejected}</span>
+            : <span style={{ color: COLOR.textSecondary, flex: 1 }}>{r.note}</span>}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+/**
+ * InterferenceAnalysisCard (ADR-157 D6) — every phase judged to the end, run in
+ * the background against the real backend. Its state is its own slot, so the
+ * search and the rest of the app keep working while it runs; a result for a
+ * search that has since been re-run is kept and marked stale (derived).
+ */
+function InterferenceAnalysisCard({ grasp, analysisState, availability, onRun }) {
+  const freshness = analysisFreshness(analysisState, grasp)
+  const done = analysisState?.status === 'done'
+  const summary = done ? analysisSummary(analysisState.analysis, analysisState.obstacleLabels) : null
+  return (
+    <div style={{ marginTop: '10px', padding: '8px 10px', borderRadius: '5px', background: COLOR.surfaceSunken, border: `1px solid ${COLOR.border}` }}>
+      <div style={{ fontSize: '10px', color: COLOR.textSecondary, marginBottom: '5px' }}>
+        where does it hit? — every phase judged to the end, in the background
+      </div>
+      <div>
+        <button
+          onClick={onRun}
+          disabled={!availability.enabled}
+          title={availability.reason ?? undefined}
+          style={{
+            padding: '3px 10px', borderRadius: '4px', border: `1px solid ${COLOR.infoTone}`, fontSize: '11px',
+            background: availability.enabled ? COLOR.infoTone : COLOR.surfaceRaised, color: COLOR.textPrimary,
+            cursor: availability.enabled ? 'pointer' : 'default',
+          }}
+        >
+          {analysisState?.status === 'running' ? 'Analysing…' : 'Analyse all phases'}
+        </button>
+      </div>
+      {/* A disabled button always says why (原則 #11 / #15). */}
+      {!availability.enabled && availability.reason && (
+        <div style={{ fontSize: '10px', color: COLOR.textSecondary, marginTop: '4px' }}>{availability.reason}</div>
+      )}
+      {freshness === 'stale' && (
+        <div style={{ fontSize: '10px', color: COLOR.cautionTone, marginTop: '4px' }}>
+          stale — this analysis is of an earlier search. Run it again for the current one.
+        </div>
+      )}
+      {analysisState?.status === 'failed' && (
+        <div style={{ fontSize: '10px', color: COLOR.dangerTone, marginTop: '4px' }}>failed — {analysisState.message}</div>
+      )}
+      {summary && (
+        <div style={{ marginTop: '6px', fontSize: '10px', color: COLOR.textSecondary, opacity: freshness === 'stale' ? 0.6 : 1 }}>
+          <div style={{ marginBottom: '3px' }}>{summary.candidatesAnalysed} candidates reached clearance; hits per phase (a candidate can hit in several):</div>
+          {summary.phases.map(p => (
+            <div key={p.phase} style={{ marginBottom: '3px' }}>
+              <div style={{ color: p.collided > 0 ? COLOR.cautionTone : COLOR.factTone }}>{p.label}: {p.collided}</div>
+              {p.hits.map((h, i) => (
+                <div key={i} style={{ paddingLeft: '10px', color: COLOR.textSecondary }}>
+                  · {h.partLabel} × {h.obstacle} — {h.candidates}
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
 
 /**
  * Per-spec results (ADR-152 D4/D6 — the strategy's confirmation): each spec in

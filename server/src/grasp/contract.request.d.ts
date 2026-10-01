@@ -193,6 +193,13 @@ export interface GraspSearchDeclaration {
      */
     mass?: number;
     centerOfMass?: CenterOfMass;
+    /**
+     * ADR-157 D5: how the grasped object is LIFTED OUT -- the lift phase's declaration. `along`: `reverseApproach` (retrace the approach, per candidate) or `worldUp` (+Z); `distance` in the request's length unit (m on the wire). Absent = the lift phase is NOT judged (interferencePhases says `liftUndeclared`) -- never a default distance.
+     */
+    lift?: {
+      along: "reverseApproach" | "worldUp";
+      distance: number;
+    };
   };
   /**
    * Bodies the approach and the arm must avoid (ADR-119 D1; carried since ADR-117; box form added by ADR-133 D5). A kind-discriminated union: a sphere carries `radius`, a box carries `halfExtents` and an optional `orientation`. Derived on the front from the same Layout DSL as `target`, with the target itself excluded -- an object cannot obstruct its own grasp. Declaration only: interference and occlusion are solved in core/. The bounding-sphere form is retained because it is what pre-ADR-133 senders emit; it is DELIBERATELY not the fallback for an undeclared shape -- a payload that declares neither `radius` nor `halfExtents` is rejected rather than guessed (原則 #31).
@@ -219,6 +226,10 @@ export interface GraspSearchDeclaration {
      */
     clearanceReference?: number;
   };
+  /**
+   * ADR-157 D6: `allPhases` asks the solver to judge every evaluated motion phase to the end and report per phase / part / obstacle hits in diagnostics.interferenceAnalysis. Optional; absent = `firstCollision`. Never changes the answer (candidates, ranks, funnel).
+   */
+  interferenceAnalysis?: "firstCollision" | "allPhases";
   [k: string]: unknown;
 }
 /**

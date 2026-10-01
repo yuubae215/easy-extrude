@@ -28,6 +28,9 @@
 | リーチ判定 | 球殻 `[reach_min, reach_max]` の距離比較 | `core/…/engine/feasibility.py: within_reach` | core のみ |
 | 干渉 (進入経路) | 線分 vs 障害物の表面距離 | `core/…/engine/feasibility.py: NaivePathCollisionChecker` | core のみ |
 | 干渉 (腕リンク + ツール) | FK チェーンの各リンクを線分近似 + フランジ→TCP のツール区間 (ADR-150) | `core/…/engine/feasibility.py: NaiveArmSweepCollisionChecker` | core のみ |
+| 干渉の動作相 | 6 相の列 (transit / approach / close / lift / transport / place)。相ごとに動く部位を宣言表 `PHASE_COVERAGE` が持ち、棄却は最初に当たった相へ帰属 (ADR-157) — §3.2c | `core/…/engine/phases.py` | core のみ |
+| 爪を閉じる掃引 | 開いた位置から閉じた位置までの爪の並進を 1 つの箱で (厳密、離散化なし) | `core/…/engine/phases.py: _finger_sweep` | core のみ |
+| 引き上げ | 閉じた手 + 携行物 (対象 box を相対 1e-6 縮めた OBB) を宣言した方向・距離の線分上 t ∈ (0, 1] の 6 点に置いて分離軸判定 | `core/…/engine/phases.py: phase_hits(LIFT)` | core のみ |
 | 可視性 | カメラ→把持点の線分遮蔽 + 視野円錐 | `core/…/engine/feasibility.py: sightline_occlusion_miss` | core のみ |
 | 把持性 (平行ジョー) | 閉じ軸への射影幅 vs 開口。閉じ軸を宣言した仕様では対象 box の閉じ方向の厚み `2·Σ hᵢ·|aᵢ·x|` (ADR-152) | `core/…/engine/feasibility.py: NaiveParallelJawGraspChecker` | core のみ |
 | 深さのゲート | `depth − (toolLength − palm_z) > 0` なら把持性で棄却 (パームが面の下へ潜る) | `core/…/engine/feasibility.py: palm_depth_miss` | core のみ |
@@ -216,6 +219,37 @@ cup    : center (0, 0, L_b + h/2),           half (d/2, d/2, h/2)
 
 外れていればフロントのゲートが理由を出して止め、`core/` も `DeclarationError` → 400
 `invalid_declaration` で拒否する。
+
+### 3.2c 動作相 (ADR-157 — 式の正本はここ)
+
+干渉の段の中を、ピック動作の相で割る。相は分岐の無い列で、相ごとに**動く物体の集合**が違う:
+
+| 相 | 動くもの | 判定 |
+|---|---|---|
+| transit / transport / place | (経路が決まっていない) | `unevaluated{notYetDecided}` (DEF-057) |
+| approach | TCP の線分 · 腕 (把持姿勢の代表解だけ) · 開いた手 (6 点) | §3.1 / §3.2 / §3.2b そのもの |
+| close | 平行ジョーの爪 (吸引は動く部品なし = 常に clear) | 掃引の箱 (下式) |
+| lift | 閉じた手 (形が無ければ TCP の線分) · **携行物** | 宣言した方向 `d` へ距離 `D` |
+
+候補 c の棄却相と、応答の恒等式:
+
+$$\text{棄却相}(c) = \min\{\,k \mid v_k(c) = \texttt{collides}\,\},\qquad
+\texttt{rejectedByInterference} = \sum_{k \in \text{evaluated}} \texttt{rejected}_k$$
+
+爪の掃引 (閉じ軸 = フランジ x、爪の厚み `t`、閉じた内面間 `w = min(maxOpening, 2 Σ hᵢ |aᵢ·x|)`):
+
+```
+x_open   = maxOpening/2 + t/2        x_closed = w/2 + t/2
+center.x = ±(x_open + x_closed)/2    half.x   = t/2 + (x_open − x_closed)/2
+```
+
+引き上げの方向: `reverseApproach` なら `d = −approach`、`worldUp` なら `d = +Z`。携行物は
+`t ∈ (0, 1]` の各点で対象 box を `t·D·d` だけ動かし、半寸法を `1 − 1e-6` 倍して置く —
+`t = 0` は閉じた直後の状態そのもので、床や隣のワークとの**面一の静止接触**は動作が起こした
+当たりではない。**離散化なので、刻みより薄い水平な障害物は斜めの引き上げですり抜けうる。**
+
+全相分析 (`interferenceAnalysis: allPhases`) は同じ計算を最初の当たりで止めずに最後まで
+回して `(相, 部位, 障害物添字)` ごとに候補を数えるだけで、帰属と答えは変えない。
 
 ### 3.3 near-miss (ADR-079 / ADR-081)
 

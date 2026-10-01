@@ -281,6 +281,17 @@ export const useUIStore = create((set, get) => ({
     //   { status:'results',   layout, request, candidates, compiledObjects, selectedRank }
     //   { status:'error',     stage:'compile'|'solve'|'bff', httpStatus, message, details }
     grasp: null,
+    // ADR-157 D6 — the all-phase interference analysis, a SEPARATE slot from
+    // `grasp` so running it in the background never touches the search, its
+    // candidates, the ghost or the selection. Replaced wholesale by
+    // GraspController (sole writer). `request` is the very object of the search
+    // it re-checks; fresh/stale is DERIVED from its identity with
+    // `grasp.request` (GraspPhaseMath.analysisFreshness — never stored). Shapes:
+    //   null                                            — never run (0 is legitimate)
+    //   { status:'running', request }
+    //   { status:'done',    request, analysis, obstacleLabels }
+    //   { status:'failed',  request, message }
+    graspAnalysis: null,
     // ADR-090 — the scene's robot roster as a DERIVED read-model for the grasp
     // panel's selector. Sole writer GraspController.refreshRobots() (原則 #4);
     // the SCENE stays the authority on which robots exist (§1.1 — nothing writes
@@ -508,7 +519,7 @@ export const useUIStore = create((set, get) => ({
       // by openAssetViewer / closeAssetViewer alone (原則 #9). Blanking it from a
       // floor lifecycle reducer is what forced two extra `_disposeAssetPreview()`
       // calls to exist — the asymmetry was the container's, not the asset's.
-      context: { ...state.context, provenance: null, grasp: null, authorSeed: null, ...payload, active: true },
+      context: { ...state.context, provenance: null, grasp: null, graspAnalysis: null, authorSeed: null, ...payload, active: true },
     })),
     contextSetMatrix: (conflictMatrix, negotiationClusters, resolutionOrder) => set(state => ({
       context: { ...state.context, conflictMatrix, negotiationClusters, resolutionOrder },
@@ -597,6 +608,10 @@ export const useUIStore = create((set, get) => ({
     contextSetGrasp: (grasp) => set(state => ({
       context: { ...state.context, grasp },
     })),
+    // ADR-157 D6 — replace the analysis slot wholesale (sole writer GraspController).
+    contextSetGraspAnalysis: (graspAnalysis) => set(state => ({
+      context: { ...state.context, graspAnalysis },
+    })),
     // ADR-090 — replace the derived robot roster wholesale (sole writer
     // GraspController; the scene is the authority, this is the panel's read-model).
     contextSetRobots: (robots) => set(state => ({
@@ -652,7 +667,7 @@ export const useUIStore = create((set, get) => ({
       // closing the floor emptied the semantic side, which is the exact shape
       // ADR-105 D4 named: a lifecycle reducer writing a derived fact it does not
       // own. The e2e ("場を閉じたまま意味側から変数を選べる") is what caught it.
-      context: { ...state.context, active: false, mode: null, personaFilter: null, form: [], checks: [], requirements: [], provenance: null, whyTree: null, grasp: null, authorSeed: null, agendaRows: [] },
+      context: { ...state.context, active: false, mode: null, personaFilter: null, form: [], checks: [], requirements: [], provenance: null, whyTree: null, grasp: null, graspAnalysis: null, authorSeed: null, agendaRows: [] },
     })),
   },
 }))

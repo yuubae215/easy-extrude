@@ -32,6 +32,7 @@ import { toolParts, flangeOf } from '../domain/robotTool.js'
 import { GRIPPER_KIND } from '../context/GraspDeclarationCatalog.js'
 import { mmToM, mToMM } from '../domain/worldUnits.js'
 import { CENTER_OF_MASS_KIND, centerOfMassWorld } from '../domain/targetMass.js'
+import { LIFT_ALONG, LIFT_STATE } from '../domain/targetLift.js'
 
 const v3 = (o) => [o.x, o.y, o.z]
 const add = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]]
@@ -119,6 +120,7 @@ export function declarationPicture({ target, spec = null, specs = [], hand = nul
   return {
     extent, faceLabels, triad, hover, otherApproaches,
     centerOfMass: centerOfMassPicture(target, extent),
+    lift: liftPicture(target, spec, extent),
     focused: spec ? focusedPicture(target, spec, hand, toolLengthMm, extent) : null,
   }
 }
@@ -151,6 +153,31 @@ function centerOfMassPicture(target, extent) {
   if (!world) return null
   const kind = target.massProperties.centerOfMass.kind
   return { point: v3(world), kind, radius: extent * 0.04, ...centerOfMassPresentation(kind) }
+}
+
+/**
+ * The lift declaration (ADR-157 D5) as an arrow the object would travel along,
+ * drawn at the DECLARED distance (mm — the scene's unit), so "50 mm up" can be
+ * checked against the tray wall before anything is run. `worldUp` starts at the
+ * top of the object; `reverseApproach` needs a spec to know which way it came in,
+ * so without a focused spec it is a caption only (each candidate differs). Null
+ * when undeclared — nothing is drawn "just in case" (no default lift).
+ */
+function liftPicture(target, spec, extent) {
+  const lift = target.lift
+  if (lift?.state !== LIFT_STATE.DECLARED) return null
+  const d = lift.distanceMm
+  if (lift.along === LIFT_ALONG.WORLD_UP) {
+    const from = [target.position.x, target.position.y, target.position.z + target.dimensions.z / 2]
+    return { from, to: add(from, [0, 0, d]), caption: `lift · up ${d} mm` }
+  }
+  if (lift.along === LIFT_ALONG.REVERSE_APPROACH) {
+    if (!spec) return { from: null, to: null, caption: `lift · back along each approach, ${d} mm` }
+    const out = v3(rotateVec3(faceNormalOrThrow(spec.approach.from), target.rotation))
+    const from = centroid(faceRegionCorners(target, spec.approach.from, spec.approach.region))
+    return { from, to: add(from, scale(out, d)), caption: `lift · back out ${d} mm` }
+  }
+  throw new Error(`GraspDeclarationMath: 未宣言の引き上げの向き "${lift.along}" (ADR-157 D5)`)
 }
 
 /** The five facts of one spec (+ the hand on it), as primitives. */
@@ -301,6 +328,7 @@ export const CONFIRMATION_BY_FIELD = Object.freeze({
   'hand.hold':                       { picture: 'panel',       where: 'the hand card (force N, friction) — a capability, not a place' },
   'target.mass':                     { picture: 'panel',       where: 'the object card (kg) — a quantity, not a place' },
   'target.centerOfMass':             { picture: 'centerOfMass', where: 'a marker at the point, solid = measured / hollow = assumed, captioned' },
+  'target.lift':                     { picture: 'lift',        where: 'an arrow from the object at the declared direction and distance, captioned' },
 })
 
 /** Where a field is confirmed. **Throws on an unregistered field** (原則 #31). */

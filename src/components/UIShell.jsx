@@ -137,8 +137,12 @@ function ToastStack({ toasts }) {
       // bottom edge. The owner computes it now (Toast rides above the StoryBar /
       // floor header, hence its own tier).
       bottom: `${bottomEdgeOffset({ isMobile, tier: BOTTOM_TIER.TOAST, floorOpen })}px`,
-      left: '50%',
-      transform: 'translateX(-50%)',
+      // Spans the screen minus a 16px gutter each side and centres its toasts
+      // inside, rather than centring a box as wide as its text (ADR-157 D8): with
+      // `left:50%` + `translateX(-50%)` a long reason ("The object "…": lift.along
+      // must be one of …") ran off both edges of a phone and was cut in half.
+      left: '16px',
+      right: '16px',
       display: 'flex',
       flexDirection: 'column',
       alignItems: 'center',
@@ -160,7 +164,12 @@ function ToastStack({ toasts }) {
             padding: '6px 14px',
             borderRadius: '4px',
             fontSize: '13px',
-            whiteSpace: 'nowrap',
+            // A reason is only a reason if all of it can be read (原則 #11):
+            // wrap, and break a long ref or path rather than overflow the screen.
+            maxWidth: '100%',
+            whiteSpace: 'normal',
+            overflowWrap: 'anywhere',
+            textAlign: 'center',
             pointerEvents: isExiting ? 'none' : 'auto',
             cursor: 'pointer',
             boxShadow: '0 2px 8px rgba(0,0,0,0.5)',

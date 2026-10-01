@@ -523,6 +523,12 @@ labels meta-goal, term-profit
                                     artifacts
                                     - "docs/gsn/adr-120-unevaluated-is-not-zero.gsn"
 
+                                    solution Adr158Tree
+                                    uuid 1af8fdc7-f244-4a7f-8898-a8fd29712236
+                                    summary "ADR-158 の論証木 (top goal AReplayShowsWhereItHitsFromJudgedSamples) を吊る。棄却された候補がどの相のどの時点で何に当たるかを、core が判定した標本から再生して見せる — 数字から想像していた棄却の理由が絵で読める (ADR は Proposed — 吊り先は決まっていても主張はまだ未来形)。この木の goal ごとの証拠と鮮度の正本は木の側 — ここは寄与する項だけを持つ (ADR-153 D2: 1 本の木は事業木にちょうど 1 回吊られ、投資はその項へ帰属する)"
+                                    artifacts
+                                    - "docs/gsn/adr-158-a-replay-draws-the-judged-samples-and-derives-the-frames-between.gsn"
+
                                     solution Adr135Tree
                                     uuid 64778e38-8836-4973-9963-c37fe5cd6f60
                                     summary "ADR-135 の論証木 (top goal ReachabilityIsShownAsThePosedArmNotOnlyABoolean) を吊る。到達可否が腕の姿勢として描かれ、届かないとき何を動かせばよいかが見える。この木の goal ごとの証拠と鮮度の正本は木の側 — ここは寄与する項だけを持つ (ADR-153 D2: 1 本の木は事業木にちょうど 1 回吊られ、投資はその項へ帰属する)"
@@ -683,6 +689,12 @@ labels meta-goal, term-profit
                                     summary "ADR-145 の論証木 (top goal TheChosenJointConfigurationDoesNotIntersectSurroundingStructures) を吊る。選ばれる関節配置が周辺構造物 (自身のペデスタル含む) と干渉しないことを、腕の区間まで含めて判定する。この木の goal ごとの証拠と鮮度の正本は木の側 — ここは寄与する項だけを持つ (ADR-153 D2: 1 本の木は事業木にちょうど 1 回吊られ、投資はその項へ帰属する)"
                                     artifacts
                                     - "docs/gsn/adr-145-the-arm-between-base-and-tcp-is-invisible-to-interference.gsn"
+
+                                    solution Adr157Tree
+                                    uuid 8fd91ecd-816f-4af3-b17c-443788d840cc
+                                    summary "ADR-157 の論証木 (top goal EveryPickPhaseIsJudgedOrSaysWhyNot) を吊る。干渉をピック動作の相ごとに問い、判定していない相を応答が理由つきで言い、棄却を最初に当たった相へ帰属させる — 引き上げで当たる候補が「取れる」として返らなくなる。この木の goal ごとの証拠と鮮度の正本は木の側 — ここは寄与する項だけを持つ (ADR-153 D2: 1 本の木は事業木にちょうど 1 回吊られ、投資はその項へ帰属する)"
+                                    artifacts
+                                    - "docs/gsn/adr-157-interference-is-asked-per-motion-phase.gsn"
 
         goal CostMinimized
         uuid 942a60a6-889d-448c-8682-0212e9c70623

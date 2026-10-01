@@ -55,11 +55,13 @@ import { visionFromViewportCamera, defaultObjectiveWeights } from '../context/Gr
 import { resolveRobots, selectRobot, robotCardinality, robotForFrameId } from '../domain/robotFrames.js'
 import {
   resolveGraspTargets, resolveBodies, selectTarget, targetProjection,
-  surfaceSamplesFor, obstaclesExcluding, facesForGripperKind,
+  surfaceSamplesFor, obstaclesExcluding, obstacleLabelsExcluding, facesForGripperKind,
   graspSpecsFor, sendsDerivedSamples,
 } from '../domain/graspTargets.js'
 import { graspFeatureGaps, GRASP_FEATURE_STATE } from '../domain/graspFeature.js'
 import { massDeclarationGaps } from '../domain/targetMass.js'
+import { liftDeclarationGaps } from '../domain/targetLift.js'
+import { analysisAvailability } from '../view/GraspPhaseMath.js'
 import { wireTargetFor, wireObstacle } from '../domain/graspWire.js'
 import { resolveSearchLayout } from '../domain/searchGeometry.js'
 import { declarationPicture } from '../view/GraspDeclarationMath.js'
@@ -122,6 +124,13 @@ export class GraspController {
     /** @type {{min:number,max:number}[]|null} declared limits, or null = not asked */
     this._robotJointLimits = this._robotKinematics?.jointLimits ?? null
     this._createSampleView = deps.createSampleView ?? null
+    /**
+     * Whether this build answers grasp searches with the stub (ADR-117). The
+     * all-phase analysis is offered only against the real backend (ADR-157 D6),
+     * so the gate needs to know — injected because the build-time flag is read
+     * by AppController, the one place that owns it.
+     */
+    this._stubLane = deps.stubLane === true
     /** @type {object|null} sole-owned grasp-location overlay (ADR-128) */
     this._sampleView = null
     this._createDeclarationView = deps.createDeclarationView ?? null
@@ -158,6 +167,7 @@ export class GraspController {
     const { registerCallback } = store.getState().actions
     registerCallback('onOpenGrasp',          ()       => this.openGrasp())
     registerCallback('onRunGraspSearch',      (params) => this.runGraspSearch(params))
+    registerCallback('onRunInterferenceAnalysis', () => this.runInterferenceAnalysis())
     registerCallback('onSelectGraspCandidate', (rank)  => this.selectCandidate(rank))
     registerCallback('onHoverGraspCandidate',  (rank)  => this.hoverCandidate(rank))
     registerCallback('onCaptureViewportCamera', ()     => this.captureViewportCamera())
@@ -792,6 +802,17 @@ export class GraspController {
       return
     }
 
+    // Guard: how the object is lifted out (ADR-157 D5). Undeclared is a state —
+    // the lift phase is then reported "not judged". Unreadable stops here with the
+    // reason: dropping it would read exactly like undeclared (原則 #11).
+    const liftGaps = liftDeclarationGaps(targetEntity)
+    if (liftGaps.length > 0) {
+      const reason = `The object "${targetEntity.label}": ${liftGaps[0]}`
+      ui.contextSetGrasp({ status: 'no-target', layout, reason, targetCount: targets.length })
+      ctrl._uiView.showToast(reason, { type: 'warn' })
+      return
+    }
+
     // Ensure a JWT'd BffClient (the routes are protected). connectBff fetches a dev
     // token and nulls _bff when the BFF itself is unreachable.
     let bff = ctrl._service.bff
@@ -817,6 +838,11 @@ export class GraspController {
     // request's open payload verbatim (declaration only — visibility / grasp
     // judgment stays in core/); an undeclared card simply omits the key and
     // the corresponding gate passes everything (vacuously-true contract).
+    // The bodies the obstacles come from, resolved once so the wire obstacles and
+    // their names (ADR-157 D6 — the analysis names an obstacle by its index) are
+    // cut from the same list.
+    const bodies = resolveBodies(dsl?.entities)
+    const obstacleLabels = obstacleLabelsExcluding(bodies, targetEntity.ref)
     const request = {
       layoutVersion: dsl.version,
       graspSearch: {
@@ -858,7 +884,7 @@ export class GraspController {
         // (ADR-152 D5) would have had nothing to hit.
         // Obstacles come from every BODY, containers included — the pick list
         // (`targets`) leaves trays out, the walls must still stop the hand (ADR-155 D2).
-        obstacles: obstaclesExcluding(resolveBodies(dsl?.entities), targetEntity.ref).map(wireObstacle),
+        obstacles: obstaclesExcluding(bodies, targetEntity.ref).map(wireObstacle),
         // Reach judgement params ride plan{} (ADR-084 §4). The panel now COLLECTS
         // these (ADR-128): until it did, `reach_margin` had no absolute basis and
         // came back permanently unmeasured — which ADR-120 correctly refuses to
@@ -898,10 +924,65 @@ export class GraspController {
         status: 'results', layout, request, candidates,
         diagnostics, prevDiagnostics,
         compiledObjects, selectedRank: null,
+        obstacleLabels,
       })
       ctrl._uiView.showToast(`grasp-search: ${candidates.length} candidate(s)`, { type: 'info' })
     } catch (err) {
       return this._graspError(err, 'solve')
+    }
+  }
+
+  // ── All-phase interference analysis (ADR-157 D6) ────────────────────────────
+
+  /**
+   * Re-check the search on screen with every motion phase judged to the end, in
+   * the BACKGROUND: the request is the results' own request object plus
+   * `interferenceAnalysis: 'allPhases'`, and the state lives in its own slot
+   * (`context.graspAnalysis`), so the search, its candidates, the ghost and the
+   * selection are untouched while it runs and the user keeps working. A search
+   * re-run meanwhile makes the result stale (derived from request identity —
+   * `analysisFreshness`), never discarded or silently re-applied.
+   *
+   * Backend only: the gate is the same named predicate the panel renders
+   * (`analysisAvailability`), so the button's reason and this refusal agree.
+   */
+  async runInterferenceAnalysis() {
+    const ctrl  = this._ctrl
+    const state = this._store.getState()
+    const ui    = state.actions
+    const grasp = state.context.grasp
+    const gate  = analysisAvailability({
+      stubLane: this._stubLane, bffConnected: state.bffConnected === true,
+      grasp, analysisState: state.context.graspAnalysis,
+    })
+    if (!gate.enabled) {
+      ctrl._uiView.showToast(gate.reason, { type: 'warn' })
+      return
+    }
+    const bff = ctrl._service.bff
+    if (!bff) {
+      ctrl._uiView.showToast('BFF unavailable — start the server on :3001', { type: 'error' })
+      return
+    }
+    const searched = grasp.request
+    const obstacleLabels = grasp.obstacleLabels ?? []
+    ui.contextSetGraspAnalysis({ status: 'running', request: searched })
+    try {
+      const res = await bff.graspSearch({
+        ...searched,
+        graspSearch: { ...searched.graspSearch, interferenceAnalysis: 'allPhases' },
+      })
+      const analysis = res?.diagnostics?.interferenceAnalysis
+      if (analysis?.kind !== 'allPhases') {
+        // Not silently "no hits": a backend that ignored the ask is a failure to say.
+        throw new Error('the backend returned no all-phase analysis')
+      }
+      ui.contextSetGraspAnalysis({ status: 'done', request: searched, analysis, obstacleLabels })
+      ctrl._uiView.showToast('Interference analysis ready', { type: 'info' })
+    } catch (err) {
+      const message = err?.message ?? String(err)
+      ui.contextSetGraspAnalysis({ status: 'failed', request: searched, message })
+      ctrl._uiView.showToast(`Interference analysis failed — ${message}`, { type: 'error' })
     }
   }
 

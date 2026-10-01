@@ -16,6 +16,7 @@ import {
 } from './graspTargets.js'
 import { GRASP_FEATURE_STATE } from './graspFeature.js'
 import { wireMassFor } from './targetMass.js'
+import { wireLiftFor } from './targetLift.js'
 
 /** One sample, mm → m. `normal` is a unit direction and rides unconverted. */
 const wireSample = (s) => ({ point: mmPointToM(s.point), normal: s.normal })
@@ -76,5 +77,7 @@ export function wireTargetFor(target, gripperKind) {
   wire.box = wireBox(targetBoxFor(target))
   // What it weighs and where (ADR-121 / ADR-156): only what was declared rides.
   Object.assign(wire, wireMassFor(target))
+  // How it is lifted out (ADR-157 D5): only a declared lift rides.
+  Object.assign(wire, wireLiftFor(target))
   return wire
 }

@@ -350,7 +350,13 @@ const SUPPORT_LABELS = new Map([
 // すべて support-verified に上がった (証拠: core/tests/test_engine.py の suction_hold 群、
 // test_contract_conformance.py の推定 census、GraspScoreMath / GraspDeclarationConfirmation /
 // targetMass の node --test)。ADR-156 の 4 つは機械可読な満期が G4 で発火して昇格を求めた。
-const DEBT_BASELINE = 46
+// 2026-09-30 (同日): 46 → 50。ADR-158 (Proposed・起票のみ — 当事者の指示「設計思想と
+// 使う場面の分析を残しておいて」) の木が 4 goal を足した (当たりとして描くのは判定した標本
+// だけ / fps は契約に届かない / 使う場面に効く / 進入スライドと取り違えない)。先例どおり
+// 実装して support-verified に上がった日に下げる。4 つとも満期は機械可読 (満期=ADR-158 /
+// PATH:src/view/GraspReplayMath.test.js / PATH:e2e/grasp-replay.spec.js /
+// PATH:src/view/GraspReplayMath.js) なので分子 (G3) は動かない。
+const DEBT_BASELINE = 50
 
 /**
  * G3 — 満期 trigger を持たない exploring goal の個数 (実測値)。

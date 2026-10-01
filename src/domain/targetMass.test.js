@@ -61,7 +61,7 @@ test('壊れた宣言は MALFORMED で理由を持ち、落とさずに Run を�
 })
 
 test('文書の宣言は ref で live シーンへ join される — 宣言キーの列挙に質量と重心が居る', () => {
-  assert.deepEqual([...DECLARATION_KEYS].sort(), ['centerOfMass', 'graspFeature', 'mass'])
+  assert.deepEqual([...DECLARATION_KEYS].sort(), ['centerOfMass', 'graspFeature', 'lift', 'mass'])
   const sceneDsl = { version: 'layout/1.0', entities: [solid()] }
   const docDsl = { version: 'layout/1.0', entities: [solid({ mass: 2, centerOfMass: { kind: 'assumedHomogeneous' } })] }
   const joined = resolveSearchLayout({ sceneDsl, docDsl }).dsl.entities[0]

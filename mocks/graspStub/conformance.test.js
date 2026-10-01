@@ -530,3 +530,36 @@ test('ADR-152: closing-axis width, depth gate and finger interference in the stu
   const intoTable = solve({ closingAxis: [0, 1, 0], depth: 0.07 })  // fingertips below the table top
   assert.equal(intoTable.diagnostics.rejectedByInterference, 3)
 })
+
+// ── ADR-157 (contract v8): interference by motion phase ─────────────────────
+
+test('ADR-157: 相の行は 6 つで、評価した相の rejected の和が rejectedByInterference', () => {
+  const blocked = request({ obstacles: [{ kind: 'sphere', center: [0.4, 0, 0.5], radius: 0.2 }] })
+  for (const body of [stubSolve(request(), CONTRACT_VERSION), stubSolve(blocked, CONTRACT_VERSION),
+    ...DECLARED_SCENARIOS.map(s => responseFor(s, request(), CONTRACT_VERSION)).filter(r => r.status === 200).map(r => r.body)]) {
+    const d = body.diagnostics
+    assert.deepEqual(d.interferencePhases.map(r => r.phase),
+      ['transit', 'approach', 'close', 'lift', 'transport', 'place'])
+    const sum = d.interferencePhases.filter(r => r.kind === 'evaluated').reduce((n, r) => n + r.rejected, 0)
+    assert.equal(sum, d.rejectedByInterference)
+    for (const r of d.interferencePhases) if (r.kind === 'unevaluated') assert.equal('rejected' in r, false)
+    assert.deepEqual(d.interferenceAnalysis, { kind: 'firstCollision' })
+  }
+})
+
+test('ADR-157: どの相を評価するかは core/ と同じ宣言の規則で決まる', () => {
+  const rows = (gs) => Object.fromEntries(
+    stubSolve({ layoutVersion: 'layout/1.0', graspSearch: gs }, CONTRACT_VERSION)
+      .diagnostics.interferencePhases.map(r => [r.phase, r.reason ?? 'evaluated']))
+  const box = { center: [0.4, 0, 0.38], halfExtents: [0.04, 0.02, 0.03] }
+  const target = { surfaceSamples: [{ point: [0.4, 0, 0.41], normal: [0, 0, 1] }], box }
+  const shape = { body: { kind: 'cylinder', radius: 0.03, length: 0.07 }, fingers: { length: 0.05, thickness: 0.01, width: 0.02 } }
+  assert.equal(rows({ target }).close, 'gripperUndeclared')
+  assert.equal(rows({ target, gripper: { kind: 'parallelJaw', maxOpening: 0.1 } }).close, 'handShapeUndeclared')
+  assert.equal(rows({ target, gripper: { kind: 'parallelJaw', maxOpening: 0.1, ...shape } }).close, 'evaluated')
+  assert.equal(rows({ target, gripper: { kind: 'suction', cupDiameter: 0.02 } }).close, 'evaluated')
+  assert.equal(rows({ target }).lift, 'liftUndeclared')
+  assert.equal(rows({ target: { ...target, lift: { along: 'worldUp', distance: 0.05 } } }).lift, 'evaluated')
+  assert.equal(rows({ target: { surfaceSamples: target.surfaceSamples, lift: { along: 'worldUp', distance: 0.05 } } }).lift,
+    'targetBoxUndeclared')
+})

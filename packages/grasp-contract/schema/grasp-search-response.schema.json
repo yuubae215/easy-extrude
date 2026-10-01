@@ -20,7 +20,7 @@
     "diagnostics": {
       "type": "object",
       "additionalProperties": false,
-      "description": "Solver-decided facts about the search as a whole (the rejection funnel), so a client can explain an empty or thin result. Contract v4 (ADR-081) widens the funnel to the three validation domains -- visible (Vision) / reachable (Path: reach, IK, interference) / graspable (Grasp). Invariant: candidatesGenerated = rejectedByReach + rejectedByVisibility + rejectedByIk + rejectedByInterference + rejectedByGrasp + feasible (stages are exclusive; the filter short-circuits in the engine's measured cheapest-first order: reach -> IK -> grasp -> visibility -> interference, which decides which single stage a multiply-infeasible candidate is attributed to). Requests that declare no camera / no gripper always report 0 for the corresponding rejection stage. Presentation (wording, colors, meters, ladder-risk mapping, suggestions) is derived client-side and never carried here.",
+      "description": "Solver-decided facts about the search as a whole (the rejection funnel), so a client can explain an empty or thin result. Contract v4 (ADR-081) widens the funnel to the three validation domains -- visible (Vision) / reachable (Path: reach, IK, interference) / graspable (Grasp). Invariant: candidatesGenerated = rejectedByReach + rejectedByVisibility + rejectedByIk + rejectedByInterference + rejectedByGrasp + feasible (stages are exclusive; the filter short-circuits in the engine's measured cheapest-first order: reach -> IK -> grasp -> visibility -> interference, which decides which single stage a multiply-infeasible candidate is attributed to). Requests that declare no camera / no gripper always report 0 for the corresponding rejection stage. Presentation (wording, colors, meters, ladder-risk mapping, suggestions) is derived client-side and never carried here. Contract v8 (ADR-157) splits rejectedByInterference by motion phase (interferencePhases) and can carry an all-phase analysis (interferenceAnalysis).",
       "properties": {
         "candidatesGenerated": {
           "type": "integer",
@@ -111,6 +111,19 @@
               "feasible"
             ]
           }
+        },
+        "interferencePhases": {
+          "type": "array",
+          "description": "Interference broken down by MOTION PHASE (ADR-157 D2/D3, contract v8), EXACTLY one row per phase in motion order: transit, approach, close, lift, transport, place. A phase is `evaluated` or `unevaluated` purely from the request's declarations (never per candidate). An evaluated row's `rejected` counts the candidates whose FIRST colliding phase it was (a candidate is attributed to the earliest phase it hits -- closing is only asked of a hand that got in). Invariant: the sum of `rejected` over evaluated rows = rejectedByInterference. An unevaluated row carries a closed `reason` and NO `rejected` -- 0 and not-judged are the same number otherwise (ADR-120). `notYetDecided` marks phases the solver has no method for yet (transit/transport/place); the rest name the missing declaration.",
+          "minItems": 6,
+          "maxItems": 6,
+          "items": {
+            "$ref": "#/$defs/interferencePhase"
+          }
+        },
+        "interferenceAnalysis": {
+          "description": "The all-phase interference analysis (ADR-157 D6, contract v8), a CLOSED KIND-DISCRIMINATED union. `firstCollision` = not requested (the default; stated as a branch, never by omitting the key). `allPhases` = requested via graspSearch.interferenceAnalysis: every evaluated phase was judged to the end for every candidate that reached the interference stage, and the hits are counted per phase / part / obstacle. The answer itself (candidates, ranks, the funnel) is identical in both modes.",
+          "$ref": "#/$defs/interferenceAnalysis"
         }
       },
       "required": [
@@ -125,7 +138,9 @@
         "reachNearestMiss",
         "occlusionNearestMiss",
         "graspNearestMiss",
-        "graspSpecs"
+        "graspSpecs",
+        "interferencePhases",
+        "interferenceAnalysis"
       ]
     }
   },
@@ -400,6 +415,183 @@
       "discriminator": {
         "propertyName": "kind"
       }
+    },
+    "interferencePhase": {
+      "description": "One motion phase's interference row (ADR-157 D2). `kind` is the discriminator; each branch is closed.",
+      "type": "object",
+      "discriminator": {
+        "propertyName": "kind"
+      },
+      "oneOf": [
+        {
+          "type": "object",
+          "title": "interferencePhaseEvaluated",
+          "additionalProperties": false,
+          "properties": {
+            "phase": {
+              "enum": [
+                "transit",
+                "approach",
+                "close",
+                "lift",
+                "transport",
+                "place"
+              ]
+            },
+            "kind": {
+              "const": "evaluated"
+            },
+            "rejected": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Candidates whose first colliding phase this was."
+            }
+          },
+          "required": [
+            "phase",
+            "kind",
+            "rejected"
+          ]
+        },
+        {
+          "type": "object",
+          "title": "interferencePhaseUnevaluated",
+          "additionalProperties": false,
+          "properties": {
+            "phase": {
+              "enum": [
+                "transit",
+                "approach",
+                "close",
+                "lift",
+                "transport",
+                "place"
+              ]
+            },
+            "kind": {
+              "const": "unevaluated"
+            },
+            "reason": {
+              "enum": [
+                "notYetDecided",
+                "gripperUndeclared",
+                "handShapeUndeclared",
+                "targetBoxUndeclared",
+                "liftUndeclared"
+              ]
+            }
+          },
+          "required": [
+            "phase",
+            "kind",
+            "reason"
+          ]
+        }
+      ]
+    },
+    "interferenceAnalysis": {
+      "type": "object",
+      "discriminator": {
+        "propertyName": "kind"
+      },
+      "oneOf": [
+        {
+          "type": "object",
+          "title": "interferenceAnalysisFirstCollision",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "firstCollision"
+            }
+          },
+          "required": [
+            "kind"
+          ]
+        },
+        {
+          "type": "object",
+          "title": "interferenceAnalysisAllPhases",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "allPhases"
+            },
+            "candidatesAnalysed": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Candidates that reached the interference stage (the population every evaluated phase was judged on)."
+            },
+            "phases": {
+              "type": "array",
+              "description": "Evaluated phases only, in motion order (unevaluated ones are explained by interferencePhases).",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "phase": {
+                    "enum": [
+                      "transit",
+                      "approach",
+                      "close",
+                      "lift",
+                      "transport",
+                      "place"
+                    ]
+                  },
+                  "collided": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "Candidates that hit something in this phase. NOT exclusive across phases."
+                  },
+                  "hits": {
+                    "type": "array",
+                    "description": "Per (part, obstacle), how many candidates hit it in this phase; most first.",
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "part": {
+                          "enum": [
+                            "tcpPath",
+                            "arm",
+                            "hand",
+                            "held"
+                          ],
+                          "description": "tcpPath = the TCP's path (stands in for an undeclared hand shape); held = the grasped object carried from lift on."
+                        },
+                        "obstacleIndex": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "description": "Index into the request's obstacles[]. Naming it is the sender's job -- names never ride the wire."
+                        },
+                        "candidates": {
+                          "type": "integer",
+                          "minimum": 1
+                        }
+                      },
+                      "required": [
+                        "part",
+                        "obstacleIndex",
+                        "candidates"
+                      ]
+                    }
+                  }
+                },
+                "required": [
+                  "phase",
+                  "collided",
+                  "hits"
+                ]
+              }
+            }
+          },
+          "required": [
+            "kind",
+            "candidatesAnalysed",
+            "phases"
+          ]
+        }
+      ]
     }
   }
 }
