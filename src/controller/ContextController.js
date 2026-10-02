@@ -57,7 +57,10 @@ import {
   createBlankDoc, addActor, addFact, addVariable, addRequirement,
   updateActor, updateVariable, updateRequirement, removeDocEntry,
   setEntityGraspFeature, setEntityPose, setEntityHand, setEntityMassDeclaration,
+  adoptSceneEntity, docDeclaresEntity,
 } from '../context/DocBuilder.js'
+import { planSceneAdoption, adoptionRefusalMessage } from '../domain/sceneAdoption.js'
+import { createAdoptFromSceneCommand } from '../command/AdoptFromSceneCommand.js'
 import { declaredPoseOf, POSE_ENTITY_KIND } from '../domain/declaredPose.js'
 import { Solid }            from '../domain/Solid.js'
 import { CoordinateFrame }  from '../domain/CoordinateFrame.js'
@@ -533,11 +536,10 @@ export class ContextController {
    *        "nobody said" (which is NOT the same as declaring `anywhere`)
    */
   setGraspFeature(ref, feature) {
-    if (!ref || !this._ctxService.loaded) return
-    const beforeDoc = this._ctxService.getDoc()
-    const afterDoc  = setEntityGraspFeature(beforeDoc, ref, feature)
+    if (!ref) return
     const label = feature == null ? 'Clear grasp location' : 'Declare grasp location'
-    return this._runDocEdit(beforeDoc, afterDoc, label, 'Could not save the grasp location')
+    return this._declareAbout(ref, feature == null,
+      doc => setEntityGraspFeature(doc, ref, feature), label, 'Could not save the grasp location')
   }
 
   /**
@@ -550,12 +552,66 @@ export class ContextController {
    * @param {number|object|null} value  null clears it back to undeclared
    */
   setMassDeclaration(ref, key, value) {
-    if (!ref || !this._ctxService.loaded) return
-    const beforeDoc = this._ctxService.getDoc()
-    const afterDoc  = setEntityMassDeclaration(beforeDoc, ref, key, value)
+    if (!ref) return
     const what = key === 'mass' ? 'mass' : 'centre of mass'
     const label = value == null ? `Clear ${what}` : `Declare ${what}`
-    return this._runDocEdit(beforeDoc, afterDoc, label, `Could not save the ${what}`)
+    return this._declareAbout(ref, value == null,
+      doc => setEntityMassDeclaration(doc, ref, key, value), label, `Could not save the ${what}`)
+  }
+
+  /**
+   * The one path a declaration about a Solid takes (ADR-159 D1).
+   *
+   * - The document already has the object → an ordinary doc edit.
+   * - It does not (no document at all, or a box added on the screen) → the same
+   *   press brings the object into the document — starting one if needed — and
+   *   writes the declaration, as ONE undoable step. Before ADR-159 the first case
+   *   was refused with "adopt a document first" (DEF-049) and the second was a
+   *   silent no-op (`setEntityGraspFeature` on an unknown ref returns the doc
+   *   unchanged — 原則 #11).
+   * - Clearing on an object the document does not have clears nothing — there is
+   *   no declaration to remove, so nothing is adopted.
+   *
+   * @param {string} ref
+   * @param {boolean} clearing  the write removes a declaration
+   * @param {(doc: object) => object} write  pure doc transform (DocBuilder)
+   * @param {string} label  undo label
+   * @param {string} failMsg
+   */
+  _declareAbout(ref, clearing, write, label, failMsg) {
+    const beforeDoc = this._ctxService.getDoc()
+    if (docDeclaresEntity(beforeDoc, ref)) {
+      return this._runDocEdit(beforeDoc, write(beforeDoc), label, failMsg)
+    }
+    if (clearing) return
+    const service = this._ctrl._service
+    if (typeof service?.snapshotJson !== 'function') return
+    const ui = this._ctrl._uiView
+    const sceneJson = service.snapshotJson()
+    const plan = planSceneAdoption(sceneJson, ref)
+    if (!plan.ok) {
+      ui.showToast(adoptionRefusalMessage(plan), { type: 'warn' })
+      return
+    }
+    const afterDoc = write(adoptSceneEntity(beforeDoc, plan.entity))
+    const cmd = createAdoptFromSceneCommand(this._ctxService, {
+      beforeDoc, afterDoc, adoptedIds: plan.sceneIds,
+      sceneJson, projectedIds: this._ctxService.getProjectedIds(),
+    }, label, this._viewContext())
+    const ctrl = this._ctrl
+    return Promise.resolve(cmd.execute())
+      .then(() => {
+        ctrl._commandStack.push(cmd)   // post-hoc record (CODE_CONTRACTS push vs execute)
+        ctrl._refreshUndoRedoState()
+        ui.showToast(beforeDoc
+          ? `"${plan.name}" was added to the document from the screen.`
+          : `Started a document from the screen — "${plan.name}" is now declared in it.`,
+        { type: 'info' })
+      })
+      .catch(err => {
+        ui.showToast(`${failMsg}: ${err.message}`, { type: 'error' })
+        console.error('[ContextController]', err)
+      })
   }
 
   /**
@@ -1660,6 +1716,10 @@ export class ContextController {
   // ── Re-projection (event-driven — covers approve / region edit / undo / redo) ──
 
   _reproject() {
+    // Undoing a screen adoption can return to NO document (ADR-159 D3) — there is
+    // then no matrix, agenda or form to project, and the read models are refreshed
+    // by their own listener.
+    if (!this._ctxService.loaded) return
     if (this._mode === 'negotiate' || this._mode === 'ghost') {
       const result = this._ctxService.getValidatorResult()
       const ui = useUIStore.getState().actions

@@ -75,10 +75,6 @@ import {
   CLIENT_ANALYTIC, dhFromDeclaration, inverseKinematics, representativeSolution,
 } from '../robotics/urKinematics.js'
 
-/** Why a grasp-spec edit does nothing without a document (ADR-119 / ADR-152). */
-export const GRASP_DECLARATION_NEEDS_DOCUMENT =
-  'Grasp specs are saved in a context document — adopt one first (Context ▾) to declare how to grasp.'
-
 export class GraspController {
   /**
    * @param {import('./AppController.js').AppController} ctrl
@@ -405,14 +401,9 @@ export class GraspController {
   setGraspFeature(ref, feature) {
     const ctxCtrl = this._ctrl._ctxCtrl
     if (typeof ctxCtrl?.setGraspFeature !== 'function') return
-    // The declaration belongs to a DOCUMENT (ADR-119). With none adopted there is
-    // nowhere to write it, and the edit used to vanish without a word — a press
-    // that is consumed and changes nothing (原則 #11). Say why instead. Declaring
-    // on a scene with no document is 未実装 (DEF-049).
-    if (this._ctrl._ctxService && !this._ctrl._ctxService.loaded) {
-      this._ctrl._uiView.showToast(GRASP_DECLARATION_NEEDS_DOCUMENT, { type: 'warn' })
-      return
-    }
+    // The declaration belongs to a DOCUMENT (ADR-119). An object only on the
+    // screen — with or without a document loaded — is brought into it by this
+    // same press (ADR-159); the path that decides is `ContextController`'s.
     return Promise.resolve(ctxCtrl.setGraspFeature(ref, feature))
       .then(() => this.refreshGraspTargets())
   }
@@ -429,10 +420,6 @@ export class GraspController {
   setMassDeclaration(ref, key, value) {
     const ctxCtrl = this._ctrl._ctxCtrl
     if (typeof ctxCtrl?.setMassDeclaration !== 'function') return
-    if (this._ctrl._ctxService && !this._ctrl._ctxService.loaded) {
-      this._ctrl._uiView.showToast(GRASP_DECLARATION_NEEDS_DOCUMENT, { type: 'warn' })
-      return
-    }
     return Promise.resolve(ctxCtrl.setMassDeclaration(ref, key, value))
       .then(() => this.refreshGraspTargets())
   }

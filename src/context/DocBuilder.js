@@ -9,6 +9,7 @@
  *   fn(doc, entry) → newDoc   (returns new doc, never mutates)
  */
 import { CONTEXT_DSL_VERSION } from './ContextDslSchema.js'
+import { LAYOUT_DSL_VERSION } from '../layout/LayoutDslSchema.js'
 
 /**
  * Create a minimal valid blank context document.
@@ -290,6 +291,63 @@ const KIND_ARRAY = {
   variable:    'variables',
   requirement: 'requirements',
   fact:        'given',
+}
+
+/**
+ * The given fact every screen-adopted entity derives from (ADR-159 D2). ADR-046
+ * invariant 1 forbids a specification nobody requested; this says who did — the
+ * user, by declaring something about an object they placed on the screen.
+ */
+export const ON_SCREEN_FACT_REF = 'f_on_screen'
+
+/**
+ * True when the document carries a layout entity with this ref — i.e. a
+ * declaration about it has somewhere to be written. The one reading of "is this
+ * object in the document" for the declaring path (ADR-159).
+ * @param {object|null} doc
+ * @param {string} ref
+ * @returns {boolean}
+ */
+export function docDeclaresEntity(doc, ref) {
+  const entities = doc?.specification?.layout?.entities
+  return Array.isArray(entities) && entities.some(e => e?.ref === ref)
+}
+
+/**
+ * Bring an object that is on the screen into the document (ADR-159 D1/D2),
+ * input-immutable. `doc === null` starts a blank document first — the press that
+ * declares is the request, so there is no separate "create a document" step.
+ *
+ * Unlike `setEntityGraspFeature`'s refusal to append, this DOES append — but it
+ * fabricates nothing: `entity` is the decompiler's reading of geometry the scene
+ * already has (`planSceneAdoption`), traced to `ON_SCREEN_FACT_REF` so the
+ * validator can still say who asked for it.
+ *
+ * An entity already in the document is a no-op clone (adopting twice is not two
+ * entities).
+ *
+ * @param {object|null} doc
+ * @param {object} entity  Layout DSL entity (from `planSceneAdoption`)
+ * @param {string} [name]  name of a newly started document
+ * @returns {object} new doc
+ */
+export function adoptSceneEntity(doc, entity, name = 'Scene on screen') {
+  const clone = doc ? _clone(doc) : createBlankDoc(name)
+  if (docDeclaresEntity(clone, entity.ref)) return clone
+  clone.given = clone.given ?? []
+  if (!clone.given.some(f => f?.ref === ON_SCREEN_FACT_REF)) {
+    clone.given.push({
+      ref:     ON_SCREEN_FACT_REF,
+      subject: 'objects placed on the screen',
+      status:  'asserted',
+      note:    'Brought into this document from the screen when something was declared about them (ADR-159).',
+    })
+  }
+  const spec = clone.specification = clone.specification ?? {}
+  spec.layout = spec.layout ?? { version: LAYOUT_DSL_VERSION, strategy: 'manual', entities: [] }
+  spec.layout.entities = [...(spec.layout.entities ?? []), _clone(entity)]
+  spec.trace = [...(spec.trace ?? []), { from: ON_SCREEN_FACT_REF, to: entity.ref, kind: 'derives' }]
+  return clone
 }
 
 /**

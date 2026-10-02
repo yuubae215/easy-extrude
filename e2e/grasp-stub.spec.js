@@ -380,7 +380,7 @@ test('S12 — TCP の印は腕と一緒にプレビュー姿勢へ行き、候�
   expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
 })
 
-test('S10 — 掴む場所は「言っていない」が画面に出て、文書が無ければ宣言できない理由が出る (ADR-128 / ADR-119 D2 / 原則 #11)', async ({ page }) => {
+test('S10 — 掴む場所は「言っていない」が画面に出て、文書が無くてもその場で宣言できる (ADR-128 / ADR-119 D2 / ADR-159)', async ({ page }) => {
   // 沈黙には欄が無い (原則 #31)。導出に落ちたことが画面に出ていなければ、ユーザーは
   // 自分が「どこを掴むか」を一度も言っていないことに気づけない。宣言と沈黙が *同じ*
   // サンプルを出す以上、区別を運ぶのはこの文だけなので、文そのものを焼く。
@@ -390,12 +390,19 @@ test('S10 — 掴む場所は「言っていない」が画面に出て、文書
   // 既定 = 何も宣言していない。「導出に落ちた」と書いてあること。
   await expect(page.getByText(/not declared — sampling/)).toBeVisible()
 
-  // 把持仕様の宣言は**文書**に書かれる (ADR-119)。このシナリオは文書を採用していない
-  // ので書く場所が無い — 以前はこの押下が何も起こさず消えていた (原則 #11)。いまは
-  // 理由が出て、宣言していない状態が保たれる。文書無しで宣言できる経路は DEF-049。
+  // 把持仕様の宣言は**文書**に書かれる (ADR-119)。このシナリオは文書を採用していない。
+  // かつては「先に文書を採れ」で止まった (DEF-049)。いまは同じ押下が画面の物を文書へ
+  // 取り込み、宣言を書く (ADR-159) — 起きたことはトーストで言う (原則 #11)。
   await page.getByRole('button', { name: '+ grasp spec', exact: true }).click()
-  await expect(page.getByText(/Grasp specs are saved in a context document/)).toBeVisible()
+  await expect(page.getByText(/Started a document from the screen/)).toBeVisible()
+  await expect(page.getByText(/not declared — sampling/)).toHaveCount(0)
+  const robots = await page.evaluate(() => window.__easyExtrude.graspSource().robots)
+
+  // undo 1 回で、文書の無い元の画面へ戻る (ADR-159 D3 — シーン全体のスナップショット)。
+  // ロボットも同じ台数で戻る — 再読み込みが腕を落とさないこと。
+  await page.keyboard.press('Control+z')
   await expect(page.getByText(/not declared — sampling/)).toBeVisible()
+  await expect.poll(() => page.evaluate(() => window.__easyExtrude.graspSource().robots)).toBe(robots)
 
   expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
 })

@@ -510,6 +510,11 @@ export class AppController {
     // Phase 1 wires the load pipeline; UI entry points arrive in later phases.
     this._ctxService = new ContextService(this._service)
     this._ctxService.on('contextLoaded', ({ compiled }) => this._onContextLoaded(compiled))
+    // The grasp roster is a projection of the document's declarations (ADR-129),
+    // so it re-derives on the document edge — not only after the panel's own
+    // setter resolves. Without this, Ctrl+Z of a declaration left the panel
+    // showing what the document no longer says (原則 #5 / ADR-159).
+    this._ctxService.on('contextChanged', () => this._graspCtrl?.refreshGraspTargets())
 
     // ── Production Context-first overlay (ADR-050 Phase 2) ─────────────────
     // Persistent overlay coordinator (not a setMode FSM state) consuming the
