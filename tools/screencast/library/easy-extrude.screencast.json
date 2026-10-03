@@ -1,0 +1,50 @@
+{
+  "$schema": "../schema/screencast-1.0.schema.json",
+  "version": "screencast-library/1.0",
+  "meta": {
+    "id": "easy-extrude",
+    "title": "easy-extrude gestures",
+    "description": "Reusable gestures of the easy-extrude editor. Scenarios compose these instead of re-deriving menu paths, so a UI change is fixed here once."
+  },
+  "macros": {
+    "ee/new-blank-project": {
+      "description": "Start ▾ dialog → 空のプロジェクト (the boot dialog opens on its own at first launch).",
+      "params": {},
+      "steps": [
+        { "do": "click", "target": { "text": "空のプロジェクト" }, "duration": 900 }
+      ]
+    },
+    "ee/add": {
+      "description": "Shift+A over the viewport, then pick an Add-menu entry.",
+      "params": { "item": null },
+      "steps": [
+        { "do": "key", "keys": "Shift+A" },
+        { "do": "click", "target": { "text": "${item}", "exact": true }, "duration": 650 }
+      ]
+    },
+    "ee/sketch-rect": {
+      "description": "Draw a sketch rectangle on the ground plane between two world points (mm).",
+      "params": { "from": null, "to": null, "duration": 1500 },
+      "steps": [
+        { "do": "move", "to": { "world": "${from}" }, "duration": 600 },
+        { "do": "drag", "to": { "world": "${to}" }, "duration": "${duration}", "label": "Drag", "ease": "inOutCubic" }
+      ]
+    },
+    "ee/extrude": {
+      "description": "Enter extrude phase, raise the height by dragging upward `rise` px, confirm.",
+      "params": { "rise": -150, "duration": 1400 },
+      "steps": [
+        { "do": "key", "keys": "Enter" },
+        { "do": "move", "to": { "relative": [0, "${rise}"] }, "duration": "${duration}", "ease": "inOutCubic", "arc": 0 },
+        { "do": "key", "keys": "Enter" }
+      ]
+    },
+    "ee/orbit": {
+      "description": "Right-drag orbit from empty ground (lower right) (cursor hidden — it is a camera move, not a gesture).",
+      "params": { "dx": 220, "dy": 0, "duration": 2200 },
+      "steps": [
+        { "do": "drag", "from": { "canvas": [0.78, 0.74] }, "to": { "relative": ["${dx}", "${dy}"] }, "button": "right", "hideCursor": true, "duration": "${duration}", "ease": "inOutSine" }
+      ]
+    }
+  }
+}

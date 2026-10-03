@@ -157,6 +157,12 @@ jobs:
       - name: Grasp stub is absent from the normal build
         run: pnpm test:stub
 
+      # Screencast DSL (ADR-160): schema ⇄ registry/easing drift, macro
+      # expansion, the pure planner, and every shipped scenario still loading.
+      # No browser — recording itself is a local, on-demand act.
+      - name: Screencast DSL + planner
+        run: pnpm test:screencast
+
   # Backend judgement engine (core/ — ADR-075/076). A separate job from the
   # JS gate: different toolchain (Python via uv). Its contract-conformance
   # tests (pydantic ⇄ neutral JSON Schema binding) read the in-repo schema

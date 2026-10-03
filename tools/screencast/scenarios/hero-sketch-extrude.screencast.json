@@ -1,0 +1,58 @@
+{
+  "$schema": "../schema/screencast-1.0.schema.json",
+  "version": "screencast/1.0",
+  "meta": {
+    "id": "hero-sketch-extrude",
+    "title": "README hero — new scene, sketch, extrude",
+    "description": "The core loop in ~15s: open a blank project, sketch a rectangle on the ground, pull it up into a solid, orbit to show it off. Starts and ends on the same title card so the GIF loops seamlessly.",
+    "tags": ["readme", "hero"]
+  },
+  "imports": ["../library/easy-extrude.screencast.json"],
+  "app": {
+    "url": "http://localhost:5173/easy-extrude/",
+    "server": { "command": "pnpm dev --port 5173 --strictPort" },
+    "viewport": { "width": 1280, "height": 720 },
+    "deviceScaleFactor": 1,
+    "storage": { "ee_tour": "dismissed" },
+    "ready": { "text": "空のプロジェクト" },
+    "settleMs": 800,
+    "probes": { "worldToScreen": "window.__easyExtrude.worldToScreen" }
+  },
+  "capture": { "fps": 30, "clock": "virtual", "format": "png" },
+  "style": {
+    "accent": "#4fc3f7",
+    "cursor": { "visible": true, "size": 22, "trail": true },
+    "keys": { "visible": true, "holdMs": 1200, "anchor": "bottom-center", "inset": [90, 58] },
+    "captions": { "anchor": "bottom-left", "inset": [212, 58] }
+  },
+  "outputs": [
+    { "format": "gif", "path": "../../../docs/media/hero-sketch-extrude.gif", "width": 880, "fps": 15, "quality": "standard" },
+    { "format": "mp4", "path": "../../../docs/media/hero-sketch-extrude.mp4", "width": 1280, "fps": 30, "quality": "high" }
+  ],
+  "steps": [
+    { "do": "title", "text": "easy-extrude", "sub": "sketch  →  extrude  ·  in your browser", "duration": 2100, "enter": false },
+
+    { "do": "caption", "index": 1, "text": "New scene" },
+    { "do": "use", "macro": "ee/new-blank-project" },
+    { "do": "wait", "duration": 350 },
+
+    { "do": "caption", "index": 2, "text": "Sketch a profile" },
+    { "do": "move", "to": { "world": [-40, 260, 0] }, "duration": 550, "note": "park over the empty ground so Shift+A opens beside the work" },
+    { "do": "use", "macro": "ee/add", "with": { "item": "Sketch" } },
+    { "do": "focus", "target": { "viewport": [0.4, 0.56] }, "zoom": 1.25, "duration": 1300, "note": "x clamps to 0 — keeps the outliner and the HUD whole instead of slicing them" },
+    { "do": "use", "macro": "ee/sketch-rect", "with": { "from": [-60, 150, 0], "to": [130, 390, 0], "duration": 1500 } },
+    { "do": "wait", "duration": 250 },
+
+    { "do": "caption", "index": 3, "text": "Extrude to a solid" },
+    { "do": "use", "macro": "ee/extrude", "with": { "rise": -110, "duration": 1400 } },
+    { "do": "move", "to": { "relative": [170, 120] }, "duration": 700, "note": "step off the new solid so its hover highlight clears" },
+
+    { "do": "caption", "index": 4, "text": "Orbit to inspect" },
+    { "do": "use", "macro": "ee/orbit", "with": { "dx": 300, "dy": 24, "duration": 2400 } },
+    { "do": "focus", "zoom": 1, "duration": 1400 },
+    { "do": "wait", "duration": 500 },
+
+    { "do": "caption", "text": null },
+    { "do": "title", "text": "easy-extrude", "sub": "sketch  →  extrude  ·  in your browser", "duration": 2400, "exit": false }
+  ]
+}
