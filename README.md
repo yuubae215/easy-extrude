@@ -11,6 +11,12 @@
 
 [**Try the Live Demo →**](https://yuubae215.github.io/easy-extrude/)
 
+<br>
+
+<img src="docs/media/hero-sketch-extrude.gif" alt="New scene → sketch a rectangle on the ground → extrude it into a solid → orbit" width="880">
+
+<sub>Recorded from the real app with <a href="tools/screencast/README.md"><code>pnpm screencast</code></a> — the scenario is a JSON file, so re-shooting is one command.</sub>
+
 </div>
 
 ---
