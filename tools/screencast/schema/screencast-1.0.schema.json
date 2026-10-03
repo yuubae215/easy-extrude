@@ -1,0 +1,954 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yuubae215.github.io/easy-extrude/schema/screencast-1.0.schema.json",
+  "title": "Screencast DSL 1.0",
+  "description": "Declarative screencast scenario (version 'screencast/1.0') and macro library (version 'screencast-library/1.0'). Three layers that never borrow each other's fields: WHAT happens (steps), HOW it looks (style), WHERE it goes (outputs). The step union is closed and discriminated by `do`; the single extension point is the `x-<namespace>/<name>` kind, whose payload is validated by the plugin that declares it (ADR-160).",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/scenario"
+    },
+    {
+      "$ref": "#/$defs/library"
+    }
+  ],
+  "$defs": {
+    "scenario": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "meta",
+        "app",
+        "steps"
+      ],
+      "properties": {
+        "$schema": {
+          "type": "string"
+        },
+        "version": {
+          "const": "screencast/1.0"
+        },
+        "meta": {
+          "$ref": "#/$defs/meta"
+        },
+        "imports": {
+          "description": "Macro libraries (paths relative to this file). Later imports and local macros shadow earlier names.",
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "plugins": {
+          "description": "ES modules (paths relative to this file) that export `actions: ActionDef[]` for `x-*` kinds.",
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "app": {
+          "$ref": "#/$defs/app"
+        },
+        "capture": {
+          "$ref": "#/$defs/capture"
+        },
+        "style": {
+          "$ref": "#/$defs/style"
+        },
+        "outputs": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/output"
+          }
+        },
+        "macros": {
+          "$ref": "#/$defs/macros"
+        },
+        "steps": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/stepOrRaw"
+          }
+        }
+      }
+    },
+    "library": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "meta",
+        "macros"
+      ],
+      "properties": {
+        "$schema": {
+          "type": "string"
+        },
+        "version": {
+          "const": "screencast-library/1.0"
+        },
+        "meta": {
+          "$ref": "#/$defs/meta"
+        },
+        "macros": {
+          "$ref": "#/$defs/macros"
+        }
+      }
+    },
+    "meta": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]*$"
+        },
+        "title": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "app": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "url"
+      ],
+      "properties": {
+        "url": {
+          "type": "string",
+          "description": "Absolute URL of the page to record."
+        },
+        "server": {
+          "description": "Started only when `url` is not already reachable; stopped after recording.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "command"
+          ],
+          "properties": {
+            "command": {
+              "type": "string"
+            },
+            "cwd": {
+              "type": "string",
+              "description": "Relative to this file. Default: the repository root (nearest package.json above)."
+            },
+            "timeoutMs": {
+              "type": "integer",
+              "minimum": 1000
+            }
+          }
+        },
+        "viewport": {
+          "$ref": "#/$defs/size"
+        },
+        "deviceScaleFactor": {
+          "type": "number",
+          "minimum": 1,
+          "maximum": 3
+        },
+        "storage": {
+          "description": "localStorage entries seeded before any page script runs (e.g. dismissed onboarding).",
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "css": {
+          "type": "string",
+          "description": "Extra CSS injected into the page (hide noise, never restyle the product)."
+        },
+        "ready": {
+          "$ref": "#/$defs/target",
+          "description": "Recording starts once this target resolves."
+        },
+        "settleMs": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Virtual time run after `ready` before frame 0."
+        },
+        "probes": {
+          "description": "Page-side expressions the recorder may call. `worldToScreen(x,y,z) → {x,y}` enables `{world:[x,y,z]}` targets.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "worldToScreen": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "capture": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "fps": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 60,
+          "description": "Frames sampled per second of virtual time."
+        },
+        "clock": {
+          "enum": [
+            "virtual"
+          ],
+          "description": "Virtual time: every frame advances the page clock by exactly 1/fps, so render speed never shows in the output."
+        },
+        "pace": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "description": "Multiplier on every step duration (1 = as written)."
+        },
+        "format": {
+          "enum": [
+            "png",
+            "jpeg"
+          ]
+        }
+      }
+    },
+    "style": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "accent": {
+          "$ref": "#/$defs/color"
+        },
+        "ink": {
+          "$ref": "#/$defs/color"
+        },
+        "surface": {
+          "$ref": "#/$defs/color"
+        },
+        "font": {
+          "type": "string"
+        },
+        "cursor": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "visible": {
+              "type": "boolean"
+            },
+            "size": {
+              "type": "number",
+              "minimum": 8,
+              "maximum": 96
+            },
+            "trail": {
+              "type": "boolean"
+            }
+          }
+        },
+        "keys": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "visible": {
+              "type": "boolean"
+            },
+            "holdMs": {
+              "type": "integer",
+              "minimum": 200
+            },
+            "anchor": {
+              "enum": [
+                "bottom-center",
+                "bottom-right",
+                "top-center"
+              ]
+            },
+            "inset": {
+              "type": "array",
+              "items": {
+                "type": "number"
+              },
+              "minItems": 2,
+              "maxItems": 2,
+              "description": "[x, y] px from the anchored edges."
+            }
+          }
+        },
+        "captions": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "anchor": {
+              "enum": [
+                "bottom-left",
+                "top-left",
+                "top-center"
+              ]
+            },
+            "inset": {
+              "type": "array",
+              "items": {
+                "type": "number"
+              },
+              "minItems": 2,
+              "maxItems": 2,
+              "description": "[x, y] px from the anchored edges."
+            }
+          }
+        }
+      }
+    },
+    "output": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "format",
+        "path"
+      ],
+      "properties": {
+        "format": {
+          "enum": [
+            "gif",
+            "mp4",
+            "webm"
+          ]
+        },
+        "path": {
+          "type": "string",
+          "description": "Relative to this file."
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 64
+        },
+        "fps": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 60
+        },
+        "quality": {
+          "enum": [
+            "draft",
+            "standard",
+            "high"
+          ]
+        }
+      }
+    },
+    "macros": {
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[a-z0-9][a-z0-9-]*(/[a-z0-9][a-z0-9-]*)?$"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "steps"
+        ],
+        "properties": {
+          "description": {
+            "type": "string"
+          },
+          "params": {
+            "type": "object",
+            "description": "Parameter name → default value (null = required). Referenced as \"${name}\" (whole value, keeps type) or inside strings.",
+            "additionalProperties": true
+          },
+          "steps": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "$ref": "#/$defs/stepOrRaw"
+            }
+          }
+        }
+      }
+    },
+    "stepOrRaw": {
+      "description": "Steps are validated against #/$defs/step AFTER macro expansion; before it they may still hold ${param} placeholders.",
+      "type": "object",
+      "required": [
+        "do"
+      ],
+      "properties": {
+        "do": {
+          "type": "string"
+        }
+      }
+    },
+    "step": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/step.title"
+        },
+        {
+          "$ref": "#/$defs/step.caption"
+        },
+        {
+          "$ref": "#/$defs/step.move"
+        },
+        {
+          "$ref": "#/$defs/step.click"
+        },
+        {
+          "$ref": "#/$defs/step.drag"
+        },
+        {
+          "$ref": "#/$defs/step.key"
+        },
+        {
+          "$ref": "#/$defs/step.type"
+        },
+        {
+          "$ref": "#/$defs/step.wait"
+        },
+        {
+          "$ref": "#/$defs/step.focus"
+        },
+        {
+          "$ref": "#/$defs/step.use"
+        },
+        {
+          "$ref": "#/$defs/step.extension"
+        }
+      ]
+    },
+    "common": {
+      "type": "object",
+      "properties": {
+        "note": {
+          "type": "string",
+          "description": "Author's comment. Never rendered."
+        },
+        "async": {
+          "type": "boolean",
+          "description": "true = the next step starts at this step's start instead of its end."
+        },
+        "label": {
+          "type": "string",
+          "description": "Shown in the key HUD as a gesture chip (e.g. \"Drag\")."
+        }
+      }
+    },
+    "step.title": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/common"
+        }
+      ],
+      "properties": {
+        "do": {
+          "const": "title"
+        },
+        "text": {
+          "type": "string"
+        },
+        "sub": {
+          "type": "string"
+        },
+        "duration": {
+          "$ref": "#/$defs/ms"
+        },
+        "backdrop": {
+          "enum": [
+            "blur",
+            "solid",
+            "none"
+          ]
+        },
+        "enter": {
+          "type": "boolean",
+          "description": "false = first frame already shows the finished card (GIF poster / loop seam)."
+        },
+        "exit": {
+          "type": "boolean",
+          "description": "false = the card stays formed to the end (loop seam)."
+        }
+      },
+      "required": [
+        "do",
+        "text"
+      ],
+      "unevaluatedProperties": false
+    },
+    "step.caption": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/common"
+        }
+      ],
+      "properties": {
+        "do": {
+          "const": "caption"
+        },
+        "text": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "null clears the current caption."
+        },
+        "index": {
+          "type": [
+            "string",
+            "integer"
+          ]
+        },
+        "duration": {
+          "$ref": "#/$defs/ms"
+        }
+      },
+      "required": [
+        "do",
+        "text"
+      ],
+      "unevaluatedProperties": false
+    },
+    "step.move": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/common"
+        }
+      ],
+      "properties": {
+        "do": {
+          "const": "move"
+        },
+        "to": {
+          "$ref": "#/$defs/target"
+        },
+        "duration": {
+          "$ref": "#/$defs/ms"
+        },
+        "ease": {
+          "$ref": "#/$defs/ease"
+        },
+        "arc": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "do",
+        "to"
+      ],
+      "unevaluatedProperties": false
+    },
+    "step.click": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/common"
+        }
+      ],
+      "properties": {
+        "do": {
+          "const": "click"
+        },
+        "target": {
+          "$ref": "#/$defs/target"
+        },
+        "button": {
+          "$ref": "#/$defs/button"
+        },
+        "duration": {
+          "$ref": "#/$defs/ms"
+        },
+        "ease": {
+          "$ref": "#/$defs/ease"
+        },
+        "arc": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "do",
+        "target"
+      ],
+      "unevaluatedProperties": false
+    },
+    "step.drag": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/common"
+        }
+      ],
+      "properties": {
+        "do": {
+          "const": "drag"
+        },
+        "from": {
+          "$ref": "#/$defs/target"
+        },
+        "to": {
+          "$ref": "#/$defs/target"
+        },
+        "button": {
+          "$ref": "#/$defs/button"
+        },
+        "duration": {
+          "$ref": "#/$defs/ms"
+        },
+        "ease": {
+          "$ref": "#/$defs/ease"
+        },
+        "arc": {
+          "type": "number"
+        },
+        "hideCursor": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "do",
+        "to"
+      ],
+      "unevaluatedProperties": false
+    },
+    "step.key": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/common"
+        }
+      ],
+      "properties": {
+        "do": {
+          "const": "key"
+        },
+        "keys": {
+          "type": "string",
+          "description": "Playwright key chord, e.g. \"Shift+A\", \"Enter\"."
+        },
+        "show": {
+          "type": "boolean",
+          "description": "Render the chord in the key HUD (default style.keys.visible)."
+        },
+        "duration": {
+          "$ref": "#/$defs/ms"
+        }
+      },
+      "required": [
+        "do",
+        "keys"
+      ],
+      "unevaluatedProperties": false
+    },
+    "step.type": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/common"
+        }
+      ],
+      "properties": {
+        "do": {
+          "const": "type"
+        },
+        "text": {
+          "type": "string"
+        },
+        "perCharMs": {
+          "$ref": "#/$defs/ms"
+        },
+        "show": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "do",
+        "text"
+      ],
+      "unevaluatedProperties": false
+    },
+    "step.wait": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/common"
+        }
+      ],
+      "properties": {
+        "do": {
+          "const": "wait"
+        },
+        "duration": {
+          "$ref": "#/$defs/ms"
+        }
+      },
+      "required": [
+        "do",
+        "duration"
+      ],
+      "unevaluatedProperties": false
+    },
+    "step.focus": {
+      "description": "Virtual camera (post): crop the frame around a target. zoom 1 = full frame.",
+      "allOf": [
+        {
+          "$ref": "#/$defs/common"
+        }
+      ],
+      "properties": {
+        "do": {
+          "const": "focus"
+        },
+        "target": {
+          "$ref": "#/$defs/target"
+        },
+        "zoom": {
+          "type": "number",
+          "minimum": 1,
+          "maximum": 4
+        },
+        "duration": {
+          "$ref": "#/$defs/ms"
+        },
+        "ease": {
+          "$ref": "#/$defs/ease"
+        }
+      },
+      "required": [
+        "do",
+        "zoom"
+      ],
+      "unevaluatedProperties": false
+    },
+    "step.use": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/common"
+        }
+      ],
+      "properties": {
+        "do": {
+          "const": "use"
+        },
+        "macro": {
+          "type": "string"
+        },
+        "with": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "do",
+        "macro"
+      ],
+      "unevaluatedProperties": false
+    },
+    "step.extension": {
+      "description": "Plugin-declared kind. Its payload is validated by the plugin's own `schema`, never by this file.",
+      "type": "object",
+      "properties": {
+        "do": {
+          "type": "string",
+          "pattern": "^x-[a-z0-9-]+/[a-z0-9-]+$"
+        }
+      },
+      "required": [
+        "do"
+      ]
+    },
+    "target": {
+      "description": "Where the pointer goes. Exactly one locator, plus an optional pixel offset.",
+      "type": "object",
+      "properties": {
+        "offset": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          },
+          "minItems": 2,
+          "maxItems": 2
+        }
+      },
+      "oneOf": [
+        {
+          "required": [
+            "text"
+          ],
+          "properties": {
+            "text": {
+              "type": "string"
+            },
+            "exact": {
+              "type": "boolean"
+            },
+            "nth": {
+              "type": "integer"
+            },
+            "within": {
+              "type": "string"
+            },
+            "offset": true
+          },
+          "additionalProperties": false
+        },
+        {
+          "required": [
+            "role"
+          ],
+          "properties": {
+            "role": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "nth": {
+              "type": "integer"
+            },
+            "offset": true
+          },
+          "additionalProperties": false
+        },
+        {
+          "required": [
+            "selector"
+          ],
+          "properties": {
+            "selector": {
+              "type": "string"
+            },
+            "nth": {
+              "type": "integer"
+            },
+            "offset": true
+          },
+          "additionalProperties": false
+        },
+        {
+          "required": [
+            "viewport"
+          ],
+          "properties": {
+            "viewport": {
+              "$ref": "#/$defs/frac2"
+            },
+            "offset": true
+          },
+          "additionalProperties": false
+        },
+        {
+          "required": [
+            "canvas"
+          ],
+          "properties": {
+            "canvas": {
+              "$ref": "#/$defs/frac2"
+            },
+            "selector": {
+              "type": "string"
+            },
+            "offset": true
+          },
+          "additionalProperties": false
+        },
+        {
+          "required": [
+            "world"
+          ],
+          "properties": {
+            "world": {
+              "type": "array",
+              "items": {
+                "type": "number"
+              },
+              "minItems": 3,
+              "maxItems": 3
+            },
+            "offset": true
+          },
+          "additionalProperties": false
+        },
+        {
+          "required": [
+            "relative"
+          ],
+          "properties": {
+            "relative": {
+              "type": "array",
+              "items": {
+                "type": "number"
+              },
+              "minItems": 2,
+              "maxItems": 2
+            },
+            "offset": true
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "frac2": {
+      "type": "array",
+      "items": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 1
+      },
+      "minItems": 2,
+      "maxItems": 2
+    },
+    "size": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "width",
+        "height"
+      ],
+      "properties": {
+        "width": {
+          "type": "integer",
+          "minimum": 64
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 64
+        }
+      }
+    },
+    "ms": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "button": {
+      "enum": [
+        "left",
+        "right",
+        "middle"
+      ]
+    },
+    "color": {
+      "type": "string",
+      "pattern": "^#[0-9a-fA-F]{6}$"
+    },
+    "ease": {
+      "enum": [
+        "linear",
+        "outQuad",
+        "outCubic",
+        "outQuint",
+        "outExpo",
+        "inCubic",
+        "inExpo",
+        "inOutCubic",
+        "inOutQuint",
+        "inOutSine",
+        "inOutExpo",
+        "outBack",
+        "outElastic",
+        "spring"
+      ]
+    }
+  }
+}
