@@ -286,6 +286,73 @@ export class ContextService extends EventEmitter {
     return validatorResult
   }
 
+  // ── Screen adoption (ADR-159) ───────────────────────────────────────────────
+
+  /** A copy of the projection footprint — for a snapshot that can restore it. */
+  getProjectedIds() { return new Set(this._projectedIds) }
+
+  /**
+   * Adopt a document that now ALSO declares objects which were only on the screen
+   * (ADR-159 D1). `afterDoc` came from `adoptSceneEntity`; `adoptedIds` are the
+   * scene ids of those objects (`planSceneAdoption`).
+   *
+   * Those ids are moved into the footprint BEFORE regenerating, so the projection
+   * replaces them instead of preserving them beside a second copy (ADR-131: what
+   * is not in the footprint survives). That is the only difference from an
+   * ordinary doc edit, which is why this goes through `applyContextDoc` — the one
+   * regeneration path — and works when no document was loaded yet: a first
+   * adoption is a `contextChanged`, not a `contextLoaded`, because nothing was
+   * swapped (the undo stack, selection and camera are the user's, not a load's).
+   *
+   * On failure the footprint is restored, so nothing is half-adopted.
+   *
+   * @param {object} afterDoc
+   * @param {Iterable<string>} adoptedIds
+   * @param {object} viewContext
+   * @returns {Promise<object>} the new validator result
+   */
+  async adoptFromScene(afterDoc, adoptedIds, viewContext) {
+    const before = new Set(this._projectedIds)
+    for (const id of adoptedIds) this._projectedIds.add(id)
+    try {
+      return await this.applyContextDoc(afterDoc, viewContext, { regenerate: true })
+    } catch (err) {
+      this._projectedIds = before
+      throw err
+    }
+  }
+
+  /**
+   * Put back exactly the state an adoption replaced (ADR-159 D3 — the undo).
+   *
+   * The adopted objects were re-created under compiled ids, so regenerating the
+   * previous document cannot bring the originals back (it never projected them).
+   * The snapshot holds the whole serialized scene, so the restore is the scene the
+   * user had, with its original ids — and `doc: null` is a legal target (the
+   * adoption started the document).
+   *
+   * @param {{doc: object|null, sceneJson: object, projectedIds: Set<string>}} snapshot
+   * @param {object} viewContext
+   * @returns {Promise<void>}
+   */
+  async restoreSnapshot({ doc, sceneJson, projectedIds }, viewContext) {
+    const compiled = doc && doc.specification !== undefined ? compileContext(doc) : null
+    await this._projectScene(sceneJson, viewContext, { preserveUndeclared: false })
+    this._projectedIds    = new Set(projectedIds)
+    this._doc             = doc
+    this._validatorResult = doc ? validateContext(doc) : null
+    this._compiled        = compiled
+    if (compiled) {
+      this._rebuildDerivation(compiled)
+    } else {
+      this._refToId            = new Map()
+      this._traceByFrom        = new Map()
+      this._constraintToLinkId = new Map()
+      this._linkIds            = []
+    }
+    this.emit('contextChanged', { doc, validatorResult: this._validatorResult, regenerated: true })
+  }
+
   // ── Blank-doc adoption (ADR-051 Phase 1) ────────────────────────────────────
 
   /**

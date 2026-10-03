@@ -76,6 +76,17 @@ function quat(q) {
 // ── public API ───────────────────────────────────────────────────────────────
 
 /**
+ * The Layout DSL ref a scene Solid's id decompiles to — the one id → ref rule
+ * (Pass B below). Exported so a caller asking "which scene object is this ref?"
+ * reads the same rule rather than re-spelling the prefix strip (§1.1 — ADR-159).
+ * @param {string} id  scene id of a Solid
+ * @returns {string}
+ */
+export function solidRefOfSceneId(id) {
+  return stripPrefix(id, PREFIX_FOR_TYPE.Solid)
+}
+
+/**
  * Recover a Layout DSL from a SceneSerializer v1.3 scene JSON.
  *
  * @param {{objects?: object[], links?: object[]}} sceneJson
@@ -99,7 +110,7 @@ export function decompileLayout(sceneJson) {
   const solidRefById = new Map()
   for (const o of objects) {
     if (o.type !== 'Solid') continue
-    const ref = stripPrefix(o.id, PREFIX_FOR_TYPE.Solid)
+    const ref = solidRefOfSceneId(o.id)
     idToRef.set(o.id, ref)
     solidRefById.set(o.id, ref)
   }

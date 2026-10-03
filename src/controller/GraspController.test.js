@@ -1350,13 +1350,19 @@ test('setRobotHand は唯一の書き手へ委譲し、1 つの undo 記録に�
   assert.deepEqual(writes[1], { id: 'f_tcp', hand: JAW_HAND }, 'undo restores the hand that was there')
 })
 
-test('文書が無いとき把持仕様の編集は黙って消えず、理由が出る (原則 #11 / DEF-049)', async () => {
+test('文書が無くても宣言は文書の唯一の書き手へ渡る — 取り込みはそちらが決める (ADR-159)', async () => {
+  // DEF-049 の壁 (「先に文書を採れ」で止まる) は退役した。GraspController は
+  // 文書の有無を問わず 1 経路へ委譲し、画面の物を文書へ取り込むかは
+  // ContextController._declareAbout ただ 1 箇所が決める。
   const { gc, ctrl } = setup({ loaded: false })
-  let wrote = 0
-  ctrl._ctxCtrl.setGraspFeature = () => { wrote += 1 }
+  const wrote = []
+  ctrl._ctxCtrl.setGraspFeature = (ref, f) => { wrote.push([ref, f]) }
+  ctrl._ctxCtrl.setMassDeclaration = (ref, k, v) => { wrote.push([ref, k, v]) }
   await gc.setGraspFeature('widget', { kind: 'anywhere' })
-  assert.equal(wrote, 0)
-  assert.ok(ctrl._uiView.toasts.some(t => /context document/.test(t.msg)))
+  await gc.setMassDeclaration('widget', 'mass', 1)
+  assert.deepEqual(wrote, [['widget', { kind: 'anywhere' }], ['widget', 'mass', 1]])
+  assert.ok(!ctrl._uiView.toasts.some(t => /context document/.test(t.msg)),
+    '「先に文書を採れ」は退役した (ADR-159)')
 })
 
 // ── ADR-157: the lift declaration and the background all-phase analysis ─────

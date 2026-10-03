@@ -1,0 +1,100 @@
+GOALS adr159_declaring_on_the_screen_brings_the_object_into_the_document
+
+goal ADeclarationAboutAnObjectOnTheScreenLandsInTheDocumentInOnePress
+uuid 5fb0a372-a19e-4c84-8a34-7a728d2fbb71
+summary "画面に置いた物へ把持仕様・質量・重心を宣言する押下は、文書を作る・読む手順を挟まずに通り、宣言は文書の事実として undo・エクスポート・再生成を ADR-129 と同じ経路で通る。通せないときは理由が出て、何も変わらない"
+state Approved
+labels adr-159, adr-129, adr-131, adr-132, adr-152, grasp, declaration, principle-11, principle-31, principle-1, implemented, term-p-reach, change-entrance
+artifacts
+- "docs/adr/ADR-159-declaring-on-the-screen-brings-the-object-into-the-document.md"
+
+    context Adr159Scope
+    uuid 5240ff1c-68c3-49fe-b234-07ff6014bc4f
+    summary "ADR-159 (Accepted 2026-10-02): 宣言の入口を ContextController._declareAbout 1 つにし (D1)、文書に無い物は decompileLayout の読みで取り込み、given fact f_on_screen からの trace で誰が頼んだかを言い (D2)、compiled id で作り直すので undo はシーン全体のスナップショットで戻し (D3)、作り直すと宙に浮く子・リンクを持つ物は理由つきで拒否する (D4 — DEF-060)。DEF-049 を決着"
+
+    context RequirementCameFromTheOwner
+    uuid bd4f3c86-93f0-449c-897f-04640c0b2125
+    summary "当事者の言葉: 「Grasp Search するのに Context をまずは作れとか読み込め、って…気軽に Grasp Search できないやん」。スクリーンショットでは宣言のたびに『adopt one first』が出ていた。押下で暗黙に取り込む案 (B) を当事者が選んだ (2026-10-02)"
+
+    context BusinessTreeAttachPoint
+    uuid 69e16fb8-dca4-4bb3-9649-34a480c08262
+    summary "事業木へ接続済み (2026-10-02, ADR-153): profit-growth.gsn の goal EveryEntranceLeadsWhereItSays の下に solution Adr159Tree として吊った。宣言する押下が名指しした先 (宣言された状態) へ着かずに止まっていたのが、判定に着く手前の行き止まりだった"
+
+    justification WhyNotOnTheSceneInstance
+    uuid 989db226-5e01-4177-b59f-c5841f5e1fab
+    summary "却下案 A (宣言をシーンのインスタンスに持たせる) への反証: ADR-129 D0 (宣言の同一性は文書の ref) に反し、文書とシーンの二源が制度化される。宣言はエクスポートで運ばれず、後から文書を採ると衝突する。tcp の手 (ADR-152 D3) の例外は広げない"
+
+    justification WhyNotAConfirmingTap
+    uuid ecbb7c19-304f-4171-939b-f05a29badecd
+    summary "却下案 C (トーストのボタンで 1 タップ挟む) への反証: 押下はすでに『この物について言いたい』の表明で、確認は同じ問いを 2 度聞く。文書は画面からの導出で失うものが無く、undo 1 回で戻るので、確認で守るものが無い"
+
+    justification WhyThisIsNotTheRetiredQuickStart
+    uuid 1f24fe7d-129b-4b6f-aa4f-33bdbed470cb
+    summary "却下案 D (quick-start の文書を読み込む) との差: ADR-132 D4 が消したのは『選ばれていない別の文書で画面を入れ替える』動詞。ここで足したのは『画面から文書を起こす』で、シーンは捨てず、取り込むのは宣言した 1 つだけ。同じ『暗黙の文書』でも向きが逆"
+
+    assumption IdChangeIsInvisibleToTheUser
+    uuid ecac9ccd-0e73-4358-934d-11c0aaf2eae2
+    summary "反証されうる仮説: 取り込みで物のシーン id が obj_… から solid_<ref> に変わっても、利用者に見えるもの (パネル・探索・選択の対象) は ref で引くので変わらない。反証されうる形は、id を握っている外部 (BFF に保存したシーン記録、URL に載った id) が取り込み後に物を見失うこと"
+
+    strategy ByOneEntranceThatAdoptsWhatTheDocumentLacks
+    uuid 8e968da4-0f41-47c8-afaa-3e4b879c79a9
+    summary "宣言の入口を 1 つにし、文書に無い物はその押下で取り込む。取り込みは 1 つの undo で、作り直すと何かが宙に浮く物は拒否する"
+
+        goal ZeroDocumentsIsNotAWall
+        uuid 00bc6996-1cce-4739-8f46-63b9ed4b972f
+        summary "文書が 0 個のシーンで宣言すると、文書が 1 個になり、宣言が書かれ、物は compiled id で 1 個だけ在り、宣言していない物はそのまま残る。旧トースト『adopt one first』は出ない"
+        labels support-verified
+
+            solution ZeroToOneIsExecuted
+            uuid d76e9500-0bd8-40cb-9334-a1736323f92a
+            summary "src/ScreenAdoption.test.js『文書 0 個で質量を宣言 → 文書が起き…』: loaded false → true / mass が文書に在る / f_on_screen からの trace / solid_obj_a_1 が在り obj_a_1 が無い / obj_b_1 が残り文書に入っていない / undo 記録 1 つ / 起きたことのトースト。GraspController.test.js が文書 0 個でも唯一の書き手へ委譲し旧トーストを出さないことを問う"
+            artifacts
+            - "src/ScreenAdoption.test.js"
+            - "src/controller/GraspController.test.js"
+
+        goal OneUndoPutsTheScreenBack
+        uuid 2e68de5c-38bb-4544-a94e-177cfb86a9f3
+        summary "取り込みと宣言は undo 1 回で消え、文書 0 個 (または前の文書)・元の id のシーンへ戻る。redo で同じ状態へ戻る"
+        labels support-verified
+
+            solution UndoRedoIsExecuted
+            uuid b5516d17-a58e-4a4c-8e72-c4b1f29415fb
+            summary "src/ScreenAdoption.test.js『undo 1 回で文書 0 個・元の id のシーンへ戻り、redo で同じ状態へ』: undo 後 loaded false かつ id 集合が押下前と一致 / redo 後 graspFeature が戻り solid_obj_a_1 のみ在る"
+            artifacts
+            - "src/ScreenAdoption.test.js"
+            - "src/command/AdoptFromSceneCommand.js"
+
+        goal ADocumentWithoutTheObjectNoLongerSwallowsThePress
+        uuid effb7e36-72bc-4258-b225-a6a48f655b3b
+        summary "文書が在っても画面で足した物への宣言は、無言の no-op (変化の無い doc edit が undo に積まれる) ではなく、その物を既存の文書へ取り込んで書く。文書に在る物への 2 度目の宣言は普通の doc edit で、実体は増えない"
+        labels support-verified
+
+            solution OneToOneMoreIsExecuted
+            uuid 37445f7b-7cd0-4752-af48-97d62a6768c9
+            summary "src/ScreenAdoption.test.js『文書が在っても物が無ければ取り込む』: 2 つ目の物の mass が書かれ、先の宣言が保たれ、作り直しが起き、『added to the document from the screen』が出る。同じ物への 2 度目の宣言で実体数が 1 のまま"
+            artifacts
+            - "src/ScreenAdoption.test.js"
+
+        goal WhatCannotBeAdoptedSaysWhyAndChangesNothing
+        uuid c855fcb7-65b9-4c2f-a252-2c49f500de40
+        summary "作り直すと古い id を指したまま残るもの (自分の一部でない子・SpatialLink) を持つ物は、理由つきで拒否され、文書もシーンも変わらない。拒否の理由は閉じた語彙で、未宣言の理由は throw する"
+        labels support-verified
+
+            solution RefusalIsExecuted
+            uuid 02e98cc5-25b4-4fee-a09f-d0ab7960c0e1
+            summary "src/domain/sceneAdoption.test.js: has-children / linked / not-on-screen の 3 理由と未宣言理由の throw。src/ScreenAdoption.test.js『取り込めない物は理由つきで拒否』: リンクを持つ物で loaded false・undo 0・id 集合不変・warn トースト"
+            artifacts
+            - "src/domain/sceneAdoption.test.js"
+            - "src/ScreenAdoption.test.js"
+
+        goal TheRealSceneUndoRestoresTheScreen
+        uuid a51f53ee-e7a0-486b-bde3-c2f94900e8e1
+        summary "本物の SceneService とパネルで、取り込みを undo すると文書の無い元の画面へ戻る: パネルは『宣言していない』へ戻り、ロボットは同じ台数で残る。パネルの roster は文書の事象 (contextChanged) で導出し直されるので、undo の後に古い宣言を見せない"
+        labels support-verified
+
+            solution RealUndoIsExecuted
+            uuid ed708311-7e8e-4623-b426-ddc895fdd8f4
+            summary "e2e/grasp-stub.spec.js S10 (VITE_GRASP_STUB=1, 2026-10-02 実行で pass): 文書 0 個で『+ grasp spec』→『Started a document from the screen』と宣言済み表示 → Ctrl+Z →『not declared — sampling』が戻り、graspSource().robots が押下前と同じ。初回実行で undo 後もパネルが『declared: 1 grasp spec』のままだった (roster が setter の promise でしか導出し直されていなかった — 既存の doc edit の undo でも同じ) ので、AppController が contextChanged で refreshGraspTargets を呼ぶようにした"
+            artifacts
+            - "e2e/grasp-stub.spec.js"
+            - "src/controller/AppController.js"

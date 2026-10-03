@@ -3767,7 +3767,17 @@ export class SceneService extends EventEmitter {
    * @returns {{dsl: object, warnings: {id:string,type:string,reason:string}[]}}
    */
   decompileToLayoutDsl() {
-    return decompileLayout(serializeScene(this._model))
+    return decompileLayout(this.snapshotJson())
+  }
+
+  /**
+   * The live scene serialized (SceneSerializer v1.3) — what `importFromJson`
+   * reads back with the same ids. ADR-159's adoption plans from it and its undo
+   * restores it.
+   * @returns {object}
+   */
+  snapshotJson() {
+    return serializeScene(this._model)
   }
 
   /**
