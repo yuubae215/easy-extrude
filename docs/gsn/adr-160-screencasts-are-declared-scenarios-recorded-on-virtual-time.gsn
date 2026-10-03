@@ -1,0 +1,75 @@
+GOALS adr160_screencasts_are_declared_scenarios_recorded_on_virtual_time
+
+goal ADemoOfTheProductIsRedeclaredNotReshot
+uuid e34d5098-7551-47a7-8c62-810cb3255961
+summary "製品の操作を、手で撮り直さずに何度でも同じ品質で動画にできる。撮る内容を変えるときに書き換えるのはシナリオ (何をするか) の宣言だけで、録画の機構には触らない"
+state Approved
+labels adr-160, principle-3, principle-29, principle-30, implemented, term-p-reach, change-first-view
+artifacts
+- "docs/adr/ADR-160-screencasts-are-declared-scenarios-recorded-on-virtual-time.md"
+
+    context Adr160Scope
+    uuid f2c0ff63-5aea-4bbc-951e-10c8148e5555
+    summary "ADR-160 (Accepted 2026-10-03): tools/screencast — screencast/1.0 の JSON Schema (scenario + library)、純粋な normalize / plan / frameState、page.clock の仮想時間で 1 フレームずつ撮る runner、ffmpeg の出力レーン。README hero (new scene → sketch → extrude → orbit) を同 PR で生成"
+
+    context RequirementCameFromTheOwner
+    uuid 033fc87d-c8d0-49ce-b9d5-fb286cfcf0ce
+    summary "当事者の言葉: 「README 用の hero gif を作成してください … 次回もシナリオ変わって使い回せるように、録画環境は残してスキル化もしてください。シナリオ記述は DSL 化 … DSL のデータ構造はエコシステム化を目指してください」"
+
+    context BusinessTreeAttachPoint
+    uuid 8e868380-3e3b-4839-ba06-03023d157e06
+    summary "事業木へ接続済み (2026-10-03, ADR-153): profit-growth.gsn の goal FirstLookShowsAUsableScene の下に solution Adr160Tree として吊った。README の hero は、アプリを開く前の第一印象 — 何ができるかが見えない入口は到達の手前の離脱点"
+
+    justification WhyNotRealtimeCapture
+    uuid fc867ea8-799c-49cd-85f2-df475b6024e5
+    summary "却下案 A (recordVideo / CDP screencast の実時間録画): GPU の無い環境では WebGL が ≈1 s/frame で、出力は 1〜2 fps の紙芝居になり、どのフレームが落ちるかが実行ごとに変わる (再現不能)。補間は UI の文字を溶かす"
+
+    justification WhyNotARecordModeInTheProduct
+    uuid 9dc15849-bfe4-4fae-9839-5c148122ccc6
+    summary "却下案 C (製品に固定 dt の録画モードを作る): B と同じ効果だが製品にツールの都合が入り依存の向きが逆になる (核 §1.1)。製品側に足したのは読み取り専用の worldToScreen probe 1 つだけ"
+
+    assumption EveryVisibleMotionRunsOnTheFakedClock
+    uuid 6512796d-7561-434f-b373-d2084f5ea6e7
+    summary "反証されうる仮説: 製品の見える動き (three.js の描画ループ・OrbitControls・トースト) は Date / timer / requestAnimationFrame に乗っており、page.clock が握れば出力は決定的になる。反証されうる形は、CSS transition や MessageChannel 駆動の演出が実時間で進み、撮るたびに違う絵になること (現状のメニューのフェードはこの側で、撮影が遅いので常に完了した姿で写る)"
+
+    strategy BySplittingWhatFromHowFromWhere
+    uuid e5b623bc-b564-480c-ab68-692033de0032
+    summary "WHAT (steps / macros / imports)・HOW IT LOOKS (style)・WHERE (outputs) を互いの欄を借りない三層に分け、時間割とフレームの絵を純関数にし、ワイヤは閉じた union と 1 つの拡張の入口で版管理する"
+
+        goal TheScheduleAndThePictureArePure
+        uuid 6c121a58-ccc4-4124-8803-47ec48db69f4
+        summary "時間割は宣言された長さだけから決まり (ブラウザ不要)、フレームの絵は frameState(t, plan, resolved) の純関数。同じ入力は同じ状態を返し、カーソルは押下区間の外で漂いながらも跳ばない"
+        labels support-verified
+
+            solution PlannerTestsAreExecuted
+            uuid 06871ff3-cce1-481c-81d1-af3c50716374
+            summary "tools/screencast/test/plan.test.mjs: blocking/async の時間割と untilMs、pace、click の押下区間と着地点、drag の保持区間、idle drift の連続性と振幅、camera の fold と端の clamp、新しいキーが古いキーを即座に引退させること、frameState の純粋性、ffmpeg 引数"
+            artifacts
+            - "tools/screencast/test/plan.test.mjs"
+            - "tools/screencast/src/plan.mjs"
+
+        goal TheScenarioIsAClosedVersionedWire
+        uuid 29767108-e7be-4948-997b-3e55bf7fcd36
+        summary "シナリオは版付きの閉じた契約で、未知の欄・未宣言の x-* 種・macro の引数の誤りは load 時に呼び出し箇所つきで落ちる。schema の語彙 (step の種・ease) とコードの語彙は 1 つ"
+        labels support-verified
+
+            solution DslTestsAreExecuted
+            uuid 6f3d8931-9a7b-4eb0-a37c-625653cea564
+            summary "tools/screencast/test/dsl.test.mjs: schema の ease enum ⇄ Ease、step union ⇄ CORE_ACTIONS の一致、同梱の全シナリオ・library の読み込み、未知の top-level 欄の拒否、macro の型保持置換・必須引数・未知引数・再帰の失敗、展開後の検証、x-* はプラグインが payload を検証すること。CI の test:screencast が回す"
+            artifacts
+            - "tools/screencast/test/dsl.test.mjs"
+            - "tools/screencast/schema/screencast-1.0.schema.json"
+            - ".github/workflows/ci.yml"
+
+        goal TheHeroIsRegeneratedFromTheScenario
+        uuid bde6a756-e177-4ce2-b852-e8c45bade64f
+        summary "README の hero は 1 本のシナリオと 1 つのコマンドから生成され、製品の操作経路は library の macro に一度だけ書かれている"
+        labels support-verified
+
+            solution HeroWasRecordedFromTheScenario
+            uuid 3b15cff1-ef3b-4db4-839b-0ac5eb3645c7
+            summary "pnpm screencast record tools/screencast/scenarios/hero-sketch-extrude.screencast.json で 475 フレーム (30fps・仮想時間) を撮り、GIF (880px/15fps, 1.49 MB) と MP4 (1280px/30fps, 0.87 MB) を docs/media に出力した。操作経路は library/easy-extrude.screencast.json の ee/* macro"
+            artifacts
+            - "tools/screencast/scenarios/hero-sketch-extrude.screencast.json"
+            - "tools/screencast/library/easy-extrude.screencast.json"
+            - "docs/media/hero-sketch-extrude.gif"

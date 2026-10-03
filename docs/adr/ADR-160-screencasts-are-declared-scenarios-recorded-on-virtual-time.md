@@ -131,6 +131,9 @@ inCubic 退場、新しいキーは古いキーを即座に引退させる (列�
 
 ## Evidence
 
+goal ごとの支えの正本は論証木 `docs/gsn/adr-160-screencasts-are-declared-scenarios-recorded-on-virtual-time.gsn`
+(事業木 `profit-growth.gsn` の `FirstLookShowsAUsableScene` に吊った)。入口だけ挙げる:
+
 - `tools/screencast/test/*.test.mjs` (19 件): 語彙の二表現の一致、macro 展開の失敗形、
   時間割、click/drag の押下区間、idle drift の連続性、camera の fold と端の clamp、
   frameState の純粋性、ffmpeg 引数。

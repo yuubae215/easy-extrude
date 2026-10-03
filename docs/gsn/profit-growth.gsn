@@ -193,6 +193,12 @@ labels meta-goal, term-profit
                                     artifacts
                                     - "docs/gsn/adr-149-the-first-look-is-realistic-lightweight-is-a-standing-choice.gsn"
 
+                                    solution Adr160Tree
+                                    uuid cf2bdf51-9297-41e2-93a2-a5575692d758
+                                    summary "ADR-160 の論証木 (top goal ADemoOfTheProductIsRedeclaredNotReshot) を吊る。README の hero は開く前の第一印象で、宣言されたシナリオから撮り直せる。この木の goal ごとの証拠と鮮度の正本は木の側 — ここは寄与する項だけを持つ (ADR-153 D2: 1 本の木は事業木にちょうど 1 回吊られ、投資はその項へ帰属する)"
+                                    artifacts
+                                    - "docs/gsn/adr-160-screencasts-are-declared-scenarios-recorded-on-virtual-time.gsn"
+
                                 goal EveryEntranceLeadsWhereItSays
                                 uuid b977d432-293e-4bb2-bcde-aad2e6a4fc6a
                                 summary "入口を押したら名指しした先へ着き、入口の数は対象の種類で増えず、タッチでも全部に届く。押しても何も起きない入口・画面外に消えた入口は、到達の手前で利用者を落とす"

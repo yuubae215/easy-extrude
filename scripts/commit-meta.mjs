@@ -68,7 +68,9 @@ const LAYER_RULES = [
   // `.githooks/` は git 側の hook 置き場だが、住んでいるのは統治のコード
   // (観測トレーラの主経路 — ADR-116)。`.claude/` と同じレイヤに落とす。
   [/^(\.claude\/|\.githooks\/|CLAUDE\.md$)/, 'governance'],
-  [/^(scripts|\.github|\.vscode|wasm-engine|robotics-wasm)\//, 'build'],
+  // `tools/` は製品にも契約にも載らない開発道具 (screencast — ADR-160)。
+  // `scripts/` と同じ住人なので build に落とす。
+  [/^(scripts|tools|\.github|\.vscode|wasm-engine|robotics-wasm)\//, 'build'],
   [/^[^/]+\.(md|txt)$|^LICENSE$/, 'docs'],
   [/^[^/]+\.(json|yaml|yml|js|html|toml)$|^\.[^/]+$/, 'build'],
 ];
