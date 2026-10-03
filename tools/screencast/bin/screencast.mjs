@@ -62,7 +62,7 @@ try {
         .map(out => ({ ...out, path: resolve(baseDir, out.path) }))
       const ext = program.capture.format === 'jpeg' ? 'jpg' : 'png'
       const { encode } = await import('../src/encode.mjs')
-      encode(outputs, { framesDir, ext, fps: res.fps, srcWidth: res.size.width }, log)
+      encode(outputs, { framesDir, ext, fps: res.fps, srcWidth: res.size.width, srcHeight: res.size.height, count: res.frames.length }, log)
       if (!o['keep-frames'] && !o['frames-dir']) rmSync(framesDir, { recursive: true, force: true })
     }
   }

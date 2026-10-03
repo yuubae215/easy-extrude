@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { plan, frameState, pointerAt, cameraAt } from '../src/plan.mjs'
 import { CORE_ACTIONS, arcPoint, keyCaps } from '../src/actions.mjs'
 import { DEFAULTS } from '../src/dsl.mjs'
-import { ffmpegArgs } from '../src/encode.mjs'
+import { expectedSeconds, ffmpegPasses, outputHeight } from '../src/encode.mjs'
 
 const style = DEFAULTS.style
 const vp = { width: 1000, height: 500 }
@@ -95,10 +95,24 @@ test('frameState is a pure function of its inputs', () => {
   }
 })
 
-test('gif lane builds its own palette; mp4 lane is yuv420p h264', () => {
-  const info = { framesDir: '/f', ext: 'png', fps: 30, srcWidth: 1280 }
-  const gif = ffmpegArgs({ format: 'gif', path: 'o.gif', width: 640, fps: 15 }, info).join(' ')
-  assert.match(gif, /fps=15,scale=640:-2.*palettegen.*paletteuse/)
-  const mp4 = ffmpegArgs({ format: 'mp4', path: 'o.mp4' }, info).join(' ')
-  assert.match(mp4, /libx264/); assert.match(mp4, /yuv420p/)
+test('gif lane: normalise to a fixed size first, then palette passes that never see a size change', () => {
+  const info = { framesDir: '/f', ext: 'png', fps: 30, srcWidth: 1280, srcHeight: 720 }
+  const gif = ffmpegPasses({ format: 'gif', path: 'o.gif', width: 880, fps: 15 }, info).map(a => a.join(' '))
+  // captured frames drift to 1279×719 under the zoom camera; a size change rebuilds the graph and
+  // paletteuse on ffmpeg 6.1 then truncates silently (23 of 238 frames) — so only pass 0 reads the PNGs
+  assert.equal(gif.length, 3)
+  assert.match(gif[0], /%05d\.png.*fps=15,scale=880:496:/)
+  for (const pass of gif.slice(1)) { assert.doesNotMatch(pass, /%05d|scale=|split/); assert.match(pass, /o\.gif\.norm\.mkv/) }
+  assert.match(gif[1], /palettegen/); assert.match(gif[2], /paletteuse/)
+  const [mp4] = ffmpegPasses({ format: 'mp4', path: 'o.mp4' }, info).map(a => a.join(' '))
+  assert.match(mp4, /libx264/); assert.match(mp4, /scale=1280:720:.*yuv420p/)
+})
+
+test('output height is explicit and even — never `-2`, which drifts with the captured size', () => {
+  assert.equal(outputHeight(880, 1280, 720), 496)
+  assert.equal(outputHeight(1280, 1280, 720), 720)
+})
+
+test('an output must last as long as the capture (GIF folds duplicate frames, so count is not the measure)', () => {
+  assert.equal(expectedSeconds(475, 30), 475 / 30)
 })
