@@ -126,6 +126,15 @@ inCubic 退場、新しいキーは古いキーを即座に引退させる (列�
   構図の確認は数分で回る。
 - `docs/media/` に生成物 (GIF ≈ 数 MB) が入る。再生成のたびに git 履歴が太るので、
   hero の撮り直しは意図して行う。
+- **出力は撮影枚数に対して検証される (2026-10-03 追補)。** 初版の hero GIF は 238 枚中
+  23 枚 (1.5 s = タイトルカードのみ) で終わっており、README では静止画に見えた。原因は
+  2 段: (1) zoom camera が CDP に端数の clip を渡し、Chromium が約 1/9 の frame を
+  1279×719 等に丸める (clip の算術では回避できないことを実測)、(2) frame 寸法の変化で
+  ffmpeg 6.1 が filter graph を再構築し、paletteuse が再構築に耐えず **exit 0 のまま**
+  早期終了する。`encode.mjs` は全レーンで出力寸法を明示の W×H にし (`-2` は frame ごとに
+  揺れる)、GIF は等寸の可逆中間 (FFV1) に正規化してから palette を作る/使う。さらに
+  全出力を ffprobe し、**尺**と寸法が撮影と合わなければ失敗させる (枚数では測らない —
+  GIF muxer は同一の連続 frame を 1 枚の長い delay に畳む)。
 - 状態台帳: 製品の実体の状態には触れない (step の begun/ended はツール内部の一過性の
   集合で、台帳の対象外ではなく**製品の実体ではない**)。
 
@@ -134,7 +143,7 @@ inCubic 退場、新しいキーは古いキーを即座に引退させる (列�
 goal ごとの支えの正本は論証木 `docs/gsn/adr-160-screencasts-are-declared-scenarios-recorded-on-virtual-time.gsn`
 (事業木 `profit-growth.gsn` の `FirstLookShowsAUsableScene` に吊った)。入口だけ挙げる:
 
-- `tools/screencast/test/*.test.mjs` (19 件): 語彙の二表現の一致、macro 展開の失敗形、
+- `tools/screencast/test/*.test.mjs` (21 件): 語彙の二表現の一致、macro 展開の失敗形、
   時間割、click/drag の押下区間、idle drift の連続性、camera の fold と端の clamp、
-  frameState の純粋性、ffmpeg 引数。
+  frameState の純粋性、ffmpeg 引数 (GIF は正規化 pass の後でしか palette を触らない / 出力高は明示)。
 - 実録: hero シナリオを本 PR で撮り、`docs/media/` に置いた。
