@@ -1,6 +1,6 @@
 # 163. 画面からの取り込みは、シーン全体を逆変換してから連結成分を切り出す — DEF-060 を決着する
 
-- Status: Proposed
+- Status: Accepted (実装済み 2026-10-04 — D1〜D5)
 - Date: 2026-10-04
 - Deciders: yuubae215, Claude
 - 段: なし (DEF-060 の決着案。ADR-159 D4 が残した判断、ADR-162 の続き)
@@ -111,7 +111,7 @@ $C(r)$ に Layout DSL で表せない種 (`ImportedMesh` / `MeasureLine` / `Prof
 - 取り込んだ物はすべて compiled id (`solid_<ref>`) で作り直される (ADR-159 と同じ。数が増えるだけ)。
 - シーン全体の逆変換を毎回走らせる。物が多いシーンでは押下が重くなりうる。
 
-### 検証 (証拠) — 予定
+### 検証 (証拠)
 
 論証木: `docs/gsn/adr-163-adopting-from-the-screen-reads-the-whole-scene-and-cuts-a-component.gsn`
 (goal ごとの支えの正本。いまは全 goal が support-exploring で、満期は機械可読)。
@@ -135,6 +135,23 @@ $C(r)$ に Layout DSL で表せない種 (`ImportedMesh` / `MeasureLine` / `Prof
 
 **触らない:** 契約 (`packages/grasp-contract`)、`core/`、逆変換 `decompileLayout` そのもの、
 文書の物の権威 (ADR-129 / 131)。
+
+## 実装で本文から動いた点 (2026-10-04)
+
+- **(a) 逆変換の出力を 1 つ足した。** 「触らない」に挙げた `decompileLayout` は、`{dsl, warnings}` に
+  加えて `refOf` (scene id → ref — Pass B〜D が既に作っていた `idToRef`) を返す。DSL は 1 バイトも
+  変わらない。成分は scene id で切るので、id → ref の規則を `sceneAdoption.js` に書き直すと
+  prefix の剥ぎ方が 2 箇所になる (§1.1)。
+- **(b) 文書の物の ref は文書の map から取る。** D3 は「逆変換の ref と文書の ref はそのまま一致する」と
+  書いたが、コンパイラは id を `slug` するので `bin-1` は逆変換で `bin_1` に戻り、一致しない。
+  文書の物を指す端は `ContextService.refForSceneId` (= コンパイラ自身の `buildRefMap`) で読む。
+  文書の map に ref が無い投影物 (自動で生えたロボットフレーム等) につながっていれば
+  `unconvertible` で拒否する — 黙ってリンクを落とさない (原則 #11)。
+- **(c) 文書の物の Origin の下の画面の frame。** 逆変換はこれを文書の物の `frames` に畳むので、
+  成分に入れると文書の物を書き換えることになる (読み戻し)。これも `unconvertible` で拒否し、
+  理由に「already in the document」と出す。拒否の語彙は 2 語のまま。
+- 取り込み後の文書 (`adoptSceneEntities`) は、既に在る ref を受け取ったら throw する —
+  計画は footprint の外しか切らないので、それは入力の矛盾であって状態ではない。
 
 ## 残し
 

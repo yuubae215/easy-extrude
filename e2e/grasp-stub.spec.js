@@ -547,3 +547,45 @@ test('S15 — サンプルのワーク 1 (ビンの床に留まる) にその場
 
   expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
 })
+
+test('S16 — 画面で留めた箱 2 個の片方へ質量を宣言すると、2 個とリンクが文書へ入る (ADR-163)', async ({ page }) => {
+  // ADR-159 は物を 1 個切ってから逆変換していたので、リンクを持つ画面の物は毎回
+  // DEF-060 で拒否された。ADR-163 はシーン全体を逆変換してから、文書に無い物の
+  // 連結成分を切り出す — 留めた相手ごと文書へ入り、それをトーストが言う (原則 #11)。
+  const errors = await boot(page, 'solve')
+  await page.locator('#canvas-container canvas').click()
+  await page.getByRole('button', { name: /\+ Add/ }).click()   // Cube.001
+
+  // 本物の Fasten: Cube の Origin を選び、L、Cube.001 の Origin の行、Fixed · Fastened。
+  const origins = page.locator('[draggable]').filter({ hasText: 'Origin' })
+  await origins.nth(0).click()
+  await page.keyboard.press('l')
+  await origins.nth(1).click()
+  await page.getByText('Fixed · Fastened', { exact: true }).click()
+  await expect(page.getByText(/Fastened to/)).toBeVisible()
+
+  await page.locator('#canvas-container canvas').click()
+  await page.keyboard.press('Shift+A')
+  await page.getByText('Robot', { exact: true }).click()
+  await selectRow(page, 'robot_base')
+  await page.keyboard.press('n')
+  await page.getByRole('button', { name: /Grasp candidates/ }).click()
+  await expect(page.getByRole('button', { name: /Run grasp search/ })).toBeVisible({ timeout: 30_000 })
+  await pickAnObjectIfAsked(page)
+
+  const editor = page.getByTestId('mass-editor')
+  await expect(editor.getByText(/not declared/).first()).toBeVisible()
+  await editor.locator('input[type="number"]').first().fill('1.5')
+  await editor.getByRole('button', { name: 'declare mass' }).click()
+
+  await expect(page.getByText(/Started a document from the screen.*together with 1 attached object and 1 link/)).toBeVisible()
+  await expect(page.getByText(/DEF-060/)).toHaveCount(0)
+  await expect(page.getByText(/Cannot declare/)).toHaveCount(0)
+  await expect(editor.getByRole('button', { name: 'clear mass' })).toBeVisible()
+
+  // undo 1 回で、文書の無い元の画面へ — 留めた 2 個とリンクごと (ADR-159 D3 / ADR-163 D5)。
+  await page.keyboard.press('Control+z')
+  await expect(editor.getByRole('button', { name: 'declare mass' })).toBeVisible()
+
+  expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
+})

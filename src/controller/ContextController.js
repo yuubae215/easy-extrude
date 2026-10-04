@@ -57,9 +57,9 @@ import {
   createBlankDoc, addActor, addFact, addVariable, addRequirement,
   updateActor, updateVariable, updateRequirement, removeDocEntry,
   setEntityGraspFeature, setEntityPose, setEntityHand, setEntityMassDeclaration,
-  adoptSceneEntity, docDeclaresEntity,
+  adoptSceneEntities, docDeclaresEntity,
 } from '../context/DocBuilder.js'
-import { planSceneAdoption, adoptionRefusalMessage } from '../domain/sceneAdoption.js'
+import { planSceneAdoption, adoptionRefusalMessage, adoptionToast } from '../domain/sceneAdoption.js'
 import { createAdoptFromSceneCommand } from '../command/AdoptFromSceneCommand.js'
 import { declaredPoseOf, POSE_ENTITY_KIND } from '../domain/declaredPose.js'
 import { Solid }            from '../domain/Solid.js'
@@ -588,12 +588,15 @@ export class ContextController {
     if (typeof service?.snapshotJson !== 'function') return
     const ui = this._ctrl._uiView
     const sceneJson = service.snapshotJson()
-    const plan = planSceneAdoption(sceneJson, ref)
+    const plan = planSceneAdoption(sceneJson, ref, {
+      held:     this._ctxService.getProjectedIds(),
+      docRefOf: id => this._ctxService.refForSceneId(id),
+    })
     if (!plan.ok) {
       ui.showToast(adoptionRefusalMessage(plan), { type: 'warn' })
       return
     }
-    const afterDoc = write(adoptSceneEntity(beforeDoc, plan.entity))
+    const afterDoc = write(adoptSceneEntities(beforeDoc, plan))
     const cmd = createAdoptFromSceneCommand(this._ctxService, {
       beforeDoc, afterDoc, adoptedIds: plan.sceneIds,
       sceneJson, projectedIds: this._ctxService.getProjectedIds(),
@@ -603,10 +606,7 @@ export class ContextController {
       .then(() => {
         ctrl._commandStack.push(cmd)   // post-hoc record (CODE_CONTRACTS push vs execute)
         ctrl._refreshUndoRedoState()
-        ui.showToast(beforeDoc
-          ? `"${plan.name}" was added to the document from the screen.`
-          : `Started a document from the screen — "${plan.name}" is now declared in it.`,
-        { type: 'info' })
+        ui.showToast(adoptionToast(plan, beforeDoc != null), { type: 'info' })
       })
       .catch(err => {
         ui.showToast(`${failMsg}: ${err.message}`, { type: 'error' })

@@ -3,14 +3,14 @@ GOALS adr163_adopting_from_the_screen_reads_the_whole_scene_and_cuts_a_component
 goal AnythingOnTheScreenEntersTheCanonicalModelWithItsRelations
 uuid f99548d6-ad88-4901-9324-8955223db1d5
 summary "画面にある物はどれでも、親子・リンクを保ったまま文書の Layout (カノニカルなモデル) に入れられる。入れられないのは Layout の語で言えない物だけで、そのときは理由を言う"
-state ToBeDeveloped
-labels adr-163, adr-159, adr-162, adr-055, adr-129, adr-131, declaration, mutual, principle-28, principle-31, principle-11, term-p-reach, change-entrance
+state Approved
+labels adr-163, adr-159, adr-162, adr-055, adr-129, adr-131, declaration, mutual, principle-28, principle-31, principle-11, implemented, term-p-reach, change-entrance
 artifacts
 - "docs/adr/ADR-163-adopting-from-the-screen-reads-the-whole-scene-and-cuts-a-component.md"
 
     context Adr163Scope
     uuid 9a2e45fc-ddb0-42e3-a735-79500baa5c62
-    summary "ADR-163 (Proposed 2026-10-04): 取り込みはシーン全体を逆変換 (decompileLayout = ADR-055 の φ⁻¹) してから (D1)、頼まれた物から文書に無い物だけを親子・リンクで辿った連結成分を切り出し (D2)、文書の物へのリンクは ref の制約として入れ (D3)、拒否は Layout の語で言えない種だけにする (D4)。undo は ADR-159 D3 のまま (D5)。DEF-060 を決着する案"
+    summary "ADR-163 (Accepted・実装済み 2026-10-04): 取り込みはシーン全体を逆変換 (decompileLayout = ADR-055 の φ⁻¹) してから (D1)、頼まれた物から文書に無い物だけを親子・リンクで辿った連結成分を切り出し (D2)、文書の物へのリンクは ref の制約として入れ (D3)、拒否は Layout の語で言えない種だけにする (D4)。undo は ADR-159 D3 のまま (D5)。DEF-060 を決着する案"
 
     context RequirementCameFromTheOwner
     uuid 8b3bebdf-e5a0-4dbb-8c21-8e697f05f654
@@ -39,35 +39,45 @@ artifacts
         goal TheComponentIsAdoptedWithItsLinks
         uuid 621638b8-aa82-4965-8b53-6e730e40e4a4
         summary "頼まれた物と、文書に無い物の中で親子・リンクでつながる物 (N≥2) が、制約ごと文書に入る。無関係な物は入らない。文書の物へのリンクは ref の制約として入り、文書の物は読み戻されない"
-        labels support-exploring
+        labels support-verified
 
-            assumption ComponentTestIsPlanned
-            uuid 2852d6be-1882-41f9-8a29-e8a839753724
-            summary "証拠予定: src/domain/sceneAdoption.test.js に連結成分の切り出し (子・リンク・推移・無関係・文書の物を読み戻さない) を N≥2 で置く。満期=GREP:src/domain/sceneAdoption.js::adoptionComponent (この関数が成分の切り出しを持つ — ADR-163 D2)"
+            solution ComponentIsExecuted
+            uuid 9715b6ab-cfa1-48e5-bae7-8ca1785c10dc
+            summary "src/domain/sceneAdoption.test.js (2026-10-04, 15 pass): リンクでつながった画面の物 2 個がリンクごと入り compileLayout が同じリンクへ戻す / 子の先のリンクの先まで推移 / つながっていない物は入らない / 文書の物で歩みが止まり読み戻さない / 文書の物への端は文書の map の ref (slug 済みの ref ではない) / 文書の物にぶら下がる frame は parentRef が文書の ref。切り出しは adoptionComponent 1 箇所"
+            artifacts
+            - "src/domain/sceneAdoption.test.js"
+            - "src/domain/sceneAdoption.js"
 
         goal OnlyTheUnsayableIsRefused
         uuid a931cd56-a453-4613-a3d1-5c8423507a7b
         summary "拒否の理由は Layout の語で言えない種 (unconvertible) と、画面に無い物 (not-on-screen) だけになる。has-children と linked は語彙から消える"
-        labels support-exploring
+        labels support-verified
 
-            assumption RefusalVocabularyIsPlanned
-            uuid 46942315-6b5c-4ad2-a17b-054313840edc
-            summary "証拠予定: ADOPTION_REFUSAL に UNCONVERTIBLE を足し、HAS_CHILDREN / LINKED が語彙に無いことを sceneAdoption.test.js で問う。満期=ADR-163"
+            solution RefusalVocabularyIsExecuted
+            uuid caa752d1-0985-4197-8a81-d352751baf5b
+            summary "src/domain/sceneAdoption.test.js: ADOPTION_REFUSAL の値が {not-on-screen, unconvertible} ちょうど / has-children を渡すと throw (未宣言) / 成分の ImportedMesh は unconvertible / つながっていない ImportedMesh は止めない / 文書の物の Origin の下の frame は unconvertible。src/ScreenAdoption.test.js: 拒否で文書もシーンも undo 記録も変わらない"
+            artifacts
+            - "src/domain/sceneAdoption.test.js"
+            - "src/ScreenAdoption.test.js"
 
         goal OneUndoPutsTheWholeComponentBack
         uuid 8d1e5f2c-9071-4306-8245-4c9b3ad43f79
         summary "N 個を取り込んだ押下も undo 1 回で、元の id のシーン・前の文書へ戻る。文書の物の $decision は押下の前後で変わらない"
-        labels support-exploring
+        labels support-verified
 
-            assumption UndoIntegrationIsPlanned
-            uuid 8792520f-c80a-437a-9579-d5e30aa1b479
-            summary "証拠予定: src/ScreenAdoption.test.js に Shift+A の箱 2 個を Fasten してから片方へ質量を宣言 → 2 個とリンクが文書へ → undo 1 回で戻る、を置く。満期=ADR-163"
+            solution UndoIsExecuted
+            uuid ee83c480-f70f-4685-b992-894dac0aff17
+            summary "src/ScreenAdoption.test.js (本物の ContextController + ContextService、2026-10-04 7 pass): 留めた箱 2 個 → 2 実体 + 1 制約 + 3 trace、compiled id のリンク 1 本、undo 記録 1 つ、undo で元の id と元のリンク l1、redo で同じ状態。factory_context の workbench へ留めた箱 → 制約 target が workbench_origin、workbench の実体 ($fact 寸法) は前後で deepEqual、undo で文書が byte 同一"
+            artifacts
+            - "src/ScreenAdoption.test.js"
 
         goal TheScreenNoLongerSaysDef060
         uuid 06d61922-458e-4024-977f-8a878116fe71
         summary "本物のアプリで、画面で留めた物への宣言が DEF-060 を出さずに通り、取り込んだ数をトーストが言う"
-        labels support-exploring
+        labels support-verified
 
-            assumption E2eIsPlanned
-            uuid 8f91796a-3270-47d7-bc25-6a7c3f0dbeb4
-            summary "証拠予定: e2e で Shift+A の箱 2 個を Fasten してから宣言し、DEF-060 が出ないことと取り込み数のトーストを問う。満期=GONE:src/domain/sceneAdoption.js::DEF-060 (拒否の文言から DEF-060 が消えたとき)"
+            solution E2eIsExecuted
+            uuid ecd18df7-7dd1-4703-9e09-6416081622ed
+            summary "e2e/grasp-stub.spec.js S16 (VITE_GRASP_STUB=1, 2026-10-04 pass): 本物の Fasten (Origin → L → Origin → Fixed · Fastened) の後に質量を宣言 → 『together with 1 attached object and 1 link』のトースト、DEF-060 / Cannot declare 0 件、undo 1 回で戻る。ADR-163 前のコードでは同じ S16 がトースト不在で落ちることを確認"
+            artifacts
+            - "e2e/grasp-stub.spec.js"

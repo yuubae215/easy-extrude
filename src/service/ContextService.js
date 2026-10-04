@@ -293,8 +293,11 @@ export class ContextService extends EventEmitter {
 
   /**
    * Adopt a document that now ALSO declares objects which were only on the screen
-   * (ADR-159 D1). `afterDoc` came from `adoptSceneEntity`; `adoptedIds` are the
-   * scene ids of those objects (`planSceneAdoption`).
+   * (ADR-159 D1). `afterDoc` came from `adoptSceneEntities`; `adoptedIds` are the
+   * scene ids of those objects — since ADR-163 the whole connected component, not
+   * one object (`planSceneAdoption`). Their old SpatialLinks need no handling here:
+   * `_clearScene` drops any link with an end it does not preserve, and the
+   * document's constraints project them again under compiled ids.
    *
    * Those ids are moved into the footprint BEFORE regenerating, so the projection
    * replaces them instead of preserving them beside a second copy (ADR-131: what

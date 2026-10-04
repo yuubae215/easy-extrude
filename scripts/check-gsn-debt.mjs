@@ -360,7 +360,9 @@ const SUPPORT_LABELS = new Map([
 // 木が 4 goal を足した (連結成分をリンクごと入れる / 拒否は言えない種だけ / undo 1 回 / 画面が
 // DEF-060 を言わない)。先例どおり実装して support-verified に上がった日に下げる。4 つとも満期は
 // 機械可読 (満期=ADR-163 / GREP:src/domain/sceneAdoption.js / GONE:…::DEF-060) なので分子 (G3) は動かない。
-const DEBT_BASELINE = 54
+// 2026-10-04 (同日): 54 → 50。ADR-163 を実装し (Accepted)、4 goal すべてが support-verified に
+// 上がった (証拠: sceneAdoption.test.js / ScreenAdoption.test.js の node --test、e2e/grasp-stub.spec.js S16)。
+const DEBT_BASELINE = 50
 
 /**
  * G3 — 満期 trigger を持たない exploring goal の個数 (実測値)。

@@ -242,7 +242,7 @@ labels meta-goal, term-profit
 
                                     solution Adr163Tree
                                     uuid 9964f493-d83d-43b1-be08-9115e479d34c
-                                    summary "ADR-163 の論証木 (top goal AnythingOnTheScreenEntersTheCanonicalModelWithItsRelations) を吊る。画面で留めた物へ宣言する押下が DEF-060 で止まらず、シーン全体の逆変換から連結成分を切り出して文書へ入れる (Proposed)。goal ごとの証拠と鮮度の正本は木の側 (ADR-153 D2)"
+                                    summary "ADR-163 の論証木 (top goal AnythingOnTheScreenEntersTheCanonicalModelWithItsRelations) を吊る。画面で留めた物へ宣言する押下が DEF-060 で止まらず、シーン全体の逆変換から連結成分を切り出して文書へ入れる (Accepted・実装済み 2026-10-04)。goal ごとの証拠と鮮度の正本は木の側 (ADR-153 D2)"
                                     artifacts
                                     - "docs/gsn/adr-163-adopting-from-the-screen-reads-the-whole-scene-and-cuts-a-component.gsn"
 
