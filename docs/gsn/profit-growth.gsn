@@ -234,6 +234,12 @@ labels meta-goal, term-profit
                                     artifacts
                                     - "docs/gsn/adr-159-declaring-on-the-screen-brings-the-object-into-the-document.gsn"
 
+                                    solution Adr162Tree
+                                    uuid 1730324b-0b49-41c3-930d-c05011bd15d8
+                                    summary "ADR-162 の論証木 (top goal AnObjectBornFromADocumentIsDeclarableWithoutReDerivingIt) を吊る。Home テンプレの物へ宣言する押下が DEF-060 で止まらず、テンプレを文書として開くことで普通の doc edit になる。この木の goal ごとの証拠と鮮度の正本は木の側 — ここは寄与する項だけを持つ (ADR-153 D2)"
+                                    artifacts
+                                    - "docs/gsn/adr-162-a-template-opens-as-a-document.gsn"
+
                                 goal WhatIsTypedIsSeenWhileTyping
                                 uuid 52ade257-1a95-4815-a88e-9120cab8f47b
                                 summary "文書を入力しているあいだ、入力している対象とその入力がどう効いたかが同時に見えている。書いた結果が見えない入力は最後まで書き切られず、判定に着かない"

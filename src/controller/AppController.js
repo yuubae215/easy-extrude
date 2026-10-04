@@ -85,9 +85,9 @@ import { commandMilestone, celebrationDescriptor } from '../view/CelebrationMath
 import { startTour, nextTourState }   from '../view/TourMath.js'
 // Launch / Home screen (ADR-089): the Layout DSL entry. The catalog is pure
 // metadata; the controller owns the file → DSL import map (a static JSON import
-// side effect, PHILOSOPHY #3), and the scene load rides the same
-// compileLayout → importFromJson path as the context demo (§1.1).
-import { compileLayout }              from '../layout/LayoutCompiler.js'
+// side effect, PHILOSOPHY #3), and the load opens the DSL as a Context
+// document — the same loadContext path as any document (ADR-162, §1.1).
+import { docFromLayout }              from '../context/DocBuilder.js'
 import { getLayoutTemplateMeta }      from '../layout/LayoutTemplateCatalog.js'
 import layoutPickPlace                from '../../examples/layout_pick_place_cell.json'
 import layoutConveyor                 from '../../examples/layout_conveyor_line.json'
@@ -4418,55 +4418,46 @@ export class AppController {
       this._uiView.showToast(`Layout template not found: ${meta.source.file}`, { type: 'error' })
       return
     }
-    this._loadLayoutTemplateDsl(dsl).then(ok => { if (ok) this._closeHome() })
+    this._loadLayoutTemplateDsl(dsl, meta.name).then(ok => { if (ok) this._closeHome() })
   }
 
   /**
-   * Load a Layout DSL into the scene through the single authoritative path
-   * (compileLayout → SceneService.importFromJson(clear) — §1.1), the same
-   * sequence the Context demo uses. A template load is a project-open boundary,
-   * not a user edit: it clears undo history, drops stale selection, and frames
-   * the new scene (PHILOSOPHY #27).
+   * Load a Layout DSL as a project: the DSL becomes the specification of a Context
+   * document (`docFromLayout`) and goes through the one document-load path
+   * (`ContextService.loadContext` → `compileLayout` → `importFromJson(clear)`).
+   *
+   * ADR-162: this used to compile the DSL and drop it, so the scene was the only
+   * holder of what the template said and a declaration about one of its objects
+   * (mass, grasp spec) had to be re-derived from the screen (ADR-159) — which
+   * refused every workpiece fastened to its bin (DEF-060), and left any document
+   * opened earlier in place beside a scene it no longer described. Now the source
+   * stays: a declaration is an ordinary doc edit.
+   *
+   * A template load is a project-open boundary, not a user edit — clearing undo,
+   * selection and framing the scene is `_onContextLoaded`'s, the same as any
+   * document load.
    * @param {object} dsl — a layout/1.0 DSL object
+   * @param {string} [name] — the project name (the template card's title)
    * @returns {Promise<boolean>} true on success
    */
-  async _loadLayoutTemplateDsl(dsl) {
-    let scene
-    try {
-      scene = compileLayout(dsl)
-    } catch (err) {
-      this._uiView.showToast(`Layout compile failed: ${err.message}`, { type: 'error' })
-      console.error('[AppController] layout template compile', err)
-      return false
-    }
-    // The Home load frames its own scene — the boot fly-in / focus flight yield.
-    this._finishBootReveal()
-    this._finishCameraFlight()
+  async _loadLayoutTemplateDsl(dsl, name) {
     const viewContext = {
       camera:    this._camera,
       renderer:  this._sceneView.renderer,
       container: document.body,
     }
     try {
-      await this._service.importFromJson(scene, viewContext, { clear: true })
+      await this._ctxService.loadContext(docFromLayout(dsl, name), viewContext)
     } catch (err) {
       this._uiView.showToast(`Layout load failed: ${err.message}`, { type: 'error' })
       console.error('[AppController] layout template load', err)
       return false
     }
-    // Not a user edit — keep it out of undo history (same contract as the demo /
-    // the constructor's boot solid).
-    this._commandStack.clear()
-    this._refreshUndoRedoState()
-    this._selMgr.clearSelection()
     // A template's robot arrives through the scene, not through the user's Add
     // menu, so it carries the seeded (`ROBOT_BASE_SEEDED`) default rather than
     // the added one — but both declare `true` as of ADR-142: picking a
     // template BECAUSE it has a robot and then not seeing that robot is the
-    // same silent no-op ADR-096 exists to remove (原則 #11). The explicit
-    // `_hideRobotByDefault()` sweep this replaces stays gone: the default is
-    // declared, not swept.
-    this._frameLayoutDsl(dsl)
+    // same silent no-op ADR-096 exists to remove (原則 #11).
     return true
   }
 

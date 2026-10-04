@@ -515,3 +515,35 @@ test('S14 — 供給ビンは 1 つの殻で、ワークはその子 (ADR-155 D2
   }
   expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
 })
+
+test('S15 — サンプルのワーク 1 (ビンの床に留まる) にその場で質量を宣言できる (ADR-162)', async ({ page }) => {
+  // 以前、Home のテンプレは DSL をコンパイルして捨てていた。文書が無いので宣言は画面からの
+  // 取り込み (ADR-159) へ回り、ビンの床へ fastened のワークは毎回 DEF-060 で拒否された。
+  // いまテンプレは文書として開くので、宣言は普通の doc edit — 警告が出ないことを焼く。
+  const errors = []
+  page.on('pageerror', (e) => errors.push(e.message))
+  await page.goto('/easy-extrude/?graspStub=solve')
+  await page.getByText('Single-arm pick & place cell', { exact: true }).click({ timeout: 20_000 })
+  await expect.poll(async () => (await page.evaluate(() => window.__easyExtrude.robotState())).length).toBe(1)
+
+  await selectRow(page, 'robot_base')
+  await page.keyboard.press('n')
+  await page.getByRole('button', { name: /Grasp candidates/ }).click()
+  await expect(page.getByRole('button', { name: /Run grasp search/ })).toBeVisible({ timeout: 30_000 })
+  await page.locator('select').filter({ hasText: /pick one of/ }).first().selectOption('work_1')
+
+  const editor = page.getByTestId('mass-editor')
+  await expect(editor.getByText(/not declared/).first()).toBeVisible()
+  await editor.locator('input[type="number"]').first().fill('0.12')
+  await editor.getByRole('button', { name: 'declare mass' }).click()
+
+  await expect(editor.getByRole('button', { name: 'clear mass' })).toBeVisible()
+  await expect(page.getByText(/DEF-060/)).toHaveCount(0)
+  await expect(page.getByText(/from the screen/)).toHaveCount(0)   // 取り込みに迷い込んでいない
+
+  // undo 1 回で宣言前へ — 普通の doc edit の undo。
+  await page.keyboard.press('Control+z')
+  await expect(editor.getByRole('button', { name: 'declare mass' })).toBeVisible()
+
+  expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
+})
