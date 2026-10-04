@@ -118,7 +118,7 @@ export const openApiSpec = {
         properties: {
           ref:         { type: 'string', example: 'workbench', description: 'Unique identifier within this DSL. Used in constraints as source/target.' },
           type:        { type: 'string', enum: ['Solid', 'CoordinateFrame', 'AnnotatedLine', 'AnnotatedRegion', 'AnnotatedPoint'] },
-          name:        { type: 'string', example: '作業台' },
+          name:        { type: 'string', example: 'Workbench' },
           description: { type: 'string' },
           ifcClass:    { type: 'string', example: 'IfcFurniture', description: 'IFC4 semantic class' },
           dimensions:  { $ref: '#/components/schemas/LayoutDimensions', description: 'Required for Solid' },
@@ -182,7 +182,7 @@ export const openApiSpec = {
           meta: {
             type: 'object',
             properties: {
-              name:        { type: 'string', example: '工場セル自動化レイアウト' },
+              name:        { type: 'string', example: 'Factory cell automation layout' },
               description: { type: 'string' },
             },
           },
@@ -223,7 +223,7 @@ export const openApiSpec = {
         type: 'object',
         required: ['name', 'dsl'],
         properties: {
-          name: { type: 'string', example: '工場セル自動化' },
+          name: { type: 'string', example: 'Factory cell automation' },
           dsl:  { $ref: '#/components/schemas/LayoutDSL' },
         },
       },

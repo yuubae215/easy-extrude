@@ -31,29 +31,29 @@
 export const LAYOUT_TEMPLATE_CATALOG = [
   {
     id:          'pick_place',
-    name:        '単腕ピック&プレイスセル',
-    description: '作業台上のペデスタルに単腕ロボット。供給ビンから排出トレイへワークを載せ替える最小構成。',
+    name:        'Single-arm pick & place cell',
+    description: 'A single-arm robot on a pedestal on a workbench. The minimal setup that moves workpieces from a supply bin to an output tray.',
     category:    'Process Layout',
     source:      { kind: 'example', file: 'layout_pick_place_cell.json' },
   },
   {
     id:          'conveyor',
-    name:        '直線コンベアライン',
-    description: '投入・加工×2・払い出しの4ステーションを搬送方向に等間隔で並べた直線ライン。',
+    name:        'Straight conveyor line',
+    description: 'A straight line of 4 stations — infeed, 2× processing, outfeed — evenly spaced along the transport direction.',
     category:    'Process Layout',
     source:      { kind: 'example', file: 'layout_conveyor_line.json' },
   },
   {
     id:          'palletizing',
-    name:        'パレタイジングセル',
-    description: '床置きロボットが隣接パレット上へ箱を2×2で積み付けるパレタイジング構成。',
+    name:        'Palletizing cell',
+    description: 'A floor-mounted robot stacks boxes 2×2 onto an adjacent pallet.',
     category:    'Process Layout',
     source:      { kind: 'example', file: 'layout_palletizing.json' },
   },
   {
     id:          'factory_cell',
-    name:        '工場セル自動化',
-    description: 'セル型工程を自動化に置き換える標準レイアウト（電源・作業台・ロボット・ワークコンテナ）。',
+    name:        'Factory cell automation',
+    description: 'The standard layout for automating a cell-type process (power, workbench, robot, workpiece containers).',
     category:    'Process Layout',
     source:      { kind: 'example', file: 'factory_layout.json' },
   },
@@ -61,8 +61,8 @@ export const LAYOUT_TEMPLATE_CATALOG = [
   // last so the guided, populated options are the front door (ADR-089).
   {
     id:          'empty',
-    name:        '空のプロジェクト',
-    description: '既定のシーンからそのままモデリングを始める（テンプレを読み込まない）。',
+    name:        'Empty project',
+    description: 'Start modeling straight from the default scene (no template is loaded).',
     category:    'Blank',
     source:      { kind: 'empty' },
   },

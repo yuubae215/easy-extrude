@@ -467,25 +467,25 @@ test('launch Home screen loads a process-layout template (ADR-089)', async ({ pa
   page.on('pageerror', (e) => errors.push(e.message))
   await page.goto('/easy-extrude/')
   // The launch overlay is up (its subtitle is unique to HomeScreen).
-  await expect(page.getByText('工程レイアウトを選んで始める')).toBeVisible()
+  await expect(page.getByText('Start from a process layout')).toBeVisible()
 
   // Selecting a layout card replaces the scene through compileLayout →
   // importFromJson and closes Home; the conveyor's stations land in the Outliner.
-  await page.getByText('直線コンベアライン', { exact: true }).click()
-  await expect(page.getByText('工程レイアウトを選んで始める')).not.toBeVisible()
-  await expect(page.getByText('投入ステーション', { exact: true }).first()).toBeVisible()
+  await page.getByText('Straight conveyor line', { exact: true }).click()
+  await expect(page.getByText('Start from a process layout')).not.toBeVisible()
+  await expect(page.getByText('Infeed station', { exact: true }).first()).toBeVisible()
 
   // The header reopens Home after it has closed — now as an argument of the
   // single `Start ▾` verb rather than its own `Layouts` button (ADR-108 D1).
   await page.getByRole('button', { name: /Start/ }).click()
   await page.getByText('From a layout template', { exact: true }).click()
-  await expect(page.getByText('工程レイアウトを選んで始める')).toBeVisible()
+  await expect(page.getByText('Start from a process layout')).toBeVisible()
 
   // Checking "起動時に表示しない" persists the skip flag → Home stays down on reload.
-  await page.getByText('起動時に表示しない').click()
+  await page.getByText("Don't show on startup").click()
   await page.reload()
   await expect(page.getByText('Scene Collection', { exact: true })).toBeVisible()
-  await expect(page.getByText('工程レイアウトを選んで始める')).not.toBeVisible()
+  await expect(page.getByText('Start from a process layout')).not.toBeVisible()
 
   expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
 })
@@ -705,9 +705,9 @@ test('選んだシーンのロボットは目を触らずに描かれ、行と�
   const errors = []
   page.on('pageerror', (e) => errors.push(e.message))
   await page.goto('/easy-extrude/')
-  await expect(page.getByText('工程レイアウトを選んで始める')).toBeVisible()
-  await page.getByText('単腕ピック&プレイスセル', { exact: true }).click()
-  await expect(page.getByText('工程レイアウトを選んで始める')).not.toBeVisible()
+  await expect(page.getByText('Start from a process layout')).toBeVisible()
+  await page.getByText('Single-arm pick & place cell', { exact: true }).click()
+  await expect(page.getByText('Start from a process layout')).not.toBeVisible()
 
   // ADR-142 の Goal — ロボットが主役のシーンを選んだのだから、Outliner の目を
   // 一度も触らずに腕が描かれること。骨格は robot_base の `explicit` 軸に従う
@@ -1629,12 +1629,12 @@ test('画面を占める面は同時に 1 枚 — 起動ホームと New Project
   page.on('pageerror', (e) => errors.push(e.message))
   await page.goto('/easy-extrude/')
 
-  const homeHeading = page.getByText('工程レイアウトを選んで始める')
+  const homeHeading = page.getByText('Start from a process layout')
   await expect(homeHeading).toBeVisible()
 
   // 起動ホームを閉じてから Unexamined → New Project (報告 1 行目の経路)。
   // title で引く: ✕ ボタンのアクセシブル名は本文の「✕」なので name では引けない。
-  await page.locator('button[title="閉じる（既定のシーンで始める）"]').click()
+  await page.locator('button[title="Close (start with the default scene)"]').click()
   await expect(homeHeading).toHaveCount(0)
 
   await page.getByRole('button', { name: /^Unexamined/ }).click()

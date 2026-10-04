@@ -35,7 +35,7 @@ test('離れた 2 タップは double-tap ではない — 別々の選択のつ
   const apart = { ...base, secondTap: { x: 100 + DOUBLE_TAP_SLOP_PX + 1, y: 100 } }
   const v = acceptDoubleTap(apart)
   assert.equal(v.accept, false)
-  assert.match(v.reason, /離れている/)
+  assert.match(v.reason, /apart/)
   // 斜めも同じ (距離であって軸ごとの差ではない)。
   const diagonal = { ...base, secondTap: { x: 120, y: 120 } }
   assert.equal(acceptDoubleTap(diagonal).accept, false)
@@ -45,7 +45,7 @@ test('あいだにカメラが動いた 2 タップは受理しない — オー
   const orbited = { ...base, cameraMovedBetween: true }
   const v = acceptDoubleTap(orbited)
   assert.equal(v.accept, false)
-  assert.match(v.reason, /カメラが動いた/)
+  assert.match(v.reason, /camera moved/)
 })
 
 test('カメラの判定は距離より先に効く (回してから同じ場所を叩いても受理しない)', () => {
@@ -53,13 +53,13 @@ test('カメラの判定は距離より先に効く (回してから同じ場所
   // 距離だけを見ていると通ってしまうので、順序に意味がある。
   const v = acceptDoubleTap({ ...base, cameraMovedBetween: true, secondTap: { x: 100, y: 100 } })
   assert.equal(v.accept, false)
-  assert.match(v.reason, /カメラが動いた/)
+  assert.match(v.reason, /camera moved/)
 })
 
 test('当たりも選択も無い空振りは受理しない — フィット先がシーン全体になる', () => {
   const v = acceptDoubleTap({ ...base, hitSomething: false, hasSelection: false })
   assert.equal(v.accept, false)
-  assert.match(v.reason, /シーン全体/)
+  assert.match(v.reason, /whole scene/)
 })
 
 test('選択があるなら空を叩いてそこへ戻すのは意図として読める', () => {

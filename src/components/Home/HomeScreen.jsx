@@ -87,12 +87,12 @@ export function HomeScreen() {
               easy-extrude
             </div>
             <div style={{ marginTop: '4px', fontSize: '12px', color: '#9a9a9a' }}>
-              工程レイアウトを選んで始める — まず近い構成を選び、あとから調整
+              Start from a process layout — pick the closest setup, then adjust
             </div>
           </div>
           <button
             onClick={close}
-            title="閉じる（既定のシーンで始める）"
+            title="Close (start with the default scene)"
             style={{
               marginLeft: 'auto', background: 'transparent', border: 'none',
               color: '#999', cursor: 'pointer', fontSize: '20px', lineHeight: 1,
@@ -168,10 +168,10 @@ export function HomeScreen() {
               onChange={e => toggleSkip(e.target.checked)}
               style={{ cursor: 'pointer' }}
             />
-            起動時に表示しない
+            Don't show on startup
           </label>
           <span style={{ marginLeft: 'auto', color: '#666' }}>
-            テンプレを選ぶと現在のシーンを置き換えます
+            Choosing a template replaces the current scene
           </span>
         </div>
       </div>

@@ -32,7 +32,7 @@ import { localizeOperator } from './SynonymQuotient.js'
  * @returns {string} one or more sentences; '' when there is nothing to say
  */
 export function narrateProvenance(prov, opts = {}) {
-  const lang = opts.lang === 'en' ? 'en' : 'ja'
+  const lang = opts.lang === 'ja' ? 'ja' : 'en'
   if (!prov || !prov.found) {
     return lang === 'en'
       ? 'This entity is not derived from the context document, so it has no recoverable Why.'
@@ -71,7 +71,7 @@ export function narrateProvenance(prov, opts = {}) {
  * @returns {string}
  */
 export function narrateWhyTree(tree, opts = {}) {
-  const lang = opts.lang === 'en' ? 'en' : 'ja'
+  const lang = opts.lang === 'ja' ? 'ja' : 'en'
   if (!tree || !Array.isArray(tree.nodes) || tree.nodes.length === 0) {
     return lang === 'en' ? 'The document is empty.' : 'ドキュメントは空です。'
   }

@@ -1,8 +1,8 @@
 {
   "version": "layout/1.0",
   "meta": {
-    "name": "直線コンベアライン",
-    "description": "投入・加工×2・払い出しの4ステーションを搬送方向 (+X) に等間隔で並べた直線ライン。ステーションは linear ストラテジで自動整列する。"
+    "name": "Straight conveyor line",
+    "description": "A straight line of 4 stations — infeed, 2× processing, outfeed — evenly spaced along the transport direction (+X). Stations are auto-aligned by the linear strategy."
   },
   "strategy": "linear",
   "strategyOptions": {
@@ -13,8 +13,8 @@
     {
       "ref": "conveyor_lane",
       "type": "AnnotatedRegion",
-      "name": "搬送レーン専有面積",
-      "description": "コンベアラインが占有する床面積",
+      "name": "Transport lane footprint",
+      "description": "Floor area occupied by the conveyor line",
       "placeType": "Zone",
       "vertices": [
         { "x": -900, "y": -500 },
@@ -26,32 +26,32 @@
     {
       "ref": "infeed_station",
       "type": "Solid",
-      "name": "投入ステーション",
-      "description": "ワークをラインへ投入する始点。",
+      "name": "Infeed station",
+      "description": "Start point where workpieces enter the line.",
       "ifcClass": "IfcTransportElement",
       "dimensions": { "x": 600, "y": 600, "z": 900 }
     },
     {
       "ref": "process_station_1",
       "type": "Solid",
-      "name": "加工ステーション 1",
-      "description": "第一加工工程。",
+      "name": "Processing station 1",
+      "description": "First processing step.",
       "ifcClass": "IfcTransportElement",
       "dimensions": { "x": 600, "y": 600, "z": 900 }
     },
     {
       "ref": "process_station_2",
       "type": "Solid",
-      "name": "加工ステーション 2",
-      "description": "第二加工工程。",
+      "name": "Processing station 2",
+      "description": "Second processing step.",
       "ifcClass": "IfcTransportElement",
       "dimensions": { "x": 600, "y": 600, "z": 900 }
     },
     {
       "ref": "outfeed_station",
       "type": "Solid",
-      "name": "払い出しステーション",
-      "description": "完成ワークをラインから払い出す終点。",
+      "name": "Outfeed station",
+      "description": "End point where finished workpieces leave the line.",
       "ifcClass": "IfcTransportElement",
       "dimensions": { "x": 600, "y": 600, "z": 900 }
     }
@@ -62,21 +62,21 @@
       "target": "infeed_station",
       "jointType": null,
       "semanticType": "adjacent",
-      "properties": { "note": "搬送方向に隣接" }
+      "properties": { "note": "Adjacent along the transport direction" }
     },
     {
       "source": "process_station_2",
       "target": "process_station_1",
       "jointType": null,
       "semanticType": "adjacent",
-      "properties": { "note": "搬送方向に隣接" }
+      "properties": { "note": "Adjacent along the transport direction" }
     },
     {
       "source": "outfeed_station",
       "target": "process_station_2",
       "jointType": null,
       "semanticType": "adjacent",
-      "properties": { "note": "搬送方向に隣接" }
+      "properties": { "note": "Adjacent along the transport direction" }
     }
   ]
 }
