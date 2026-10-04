@@ -1,7 +1,7 @@
 {
   "version": "context/0.3",
   "meta": {
-    "name": "ロボットセル — 領域 Variable・衝突・受入述語シナリオ (ADR-049 Phase 3)",
+    "name": "Robot cell — region Variable, conflict and acceptance-predicate scenario (ADR-049 Phase 3)",
     "baseline": null
   },
 
@@ -19,7 +19,7 @@
   "given": [
     {
       "ref": "f_robot",
-      "subject": "6軸ロボット (可搬10kg)",
+      "subject": "6-axis robot (10kg payload)",
       "attrs": {
         "reach":     { "value": 850, "unit": "mm" }
       },
@@ -28,9 +28,9 @@
     },
     {
       "ref": "f_bolt",
-      "subject": "ベースプレート固定ボルト",
+      "subject": "Base plate fixing bolts",
       "attrs": {
-        "spec": "M8 想定"
+        "spec": "M8 assumed"
       },
       "status": "assumed",
       "evidence": ["src_kickoff"]
@@ -46,13 +46,13 @@
         "axes": ["x", "y"],
         "domain": { "x": [0, 3000], "y": [-1000, 1000] }
       },
-      "description": "ロボット基台の設置可能フットプリント (2D AABB 領域 Variable)"
+      "description": "Installable footprint of the robot base (2D AABB region Variable)"
     },
     {
       "ref": "v_camera_standoff",
       "unit": "mm",
       "domain": [0, 2000],
-      "description": "ハンドアイカメラのワーキングディスタンス (スカラー Variable)"
+      "description": "Hand-eye camera working distance (scalar Variable)"
     }
   ],
 
@@ -102,7 +102,7 @@
       "nominal": { "x": 1250, "y": 0 },
       "decidedBy": ["mech_engineer", "vision_engineer"],
       "status": "proposed",
-      "rationale": "X 方向の no-man's-land [1200,1300] をまたぐ妥協点。視野は縁ぎりぎりだが据付クリアランスを優先"
+      "rationale": "A compromise spanning the X no-man's-land [1200,1300]. The field of view is at its edge, but mounting clearance takes priority"
     },
     {
       "ref": "d_standoff",
@@ -110,7 +110,7 @@
       "nominal": 400,
       "decidedBy": ["vision_engineer", "robot_engineer"],
       "status": "proposed",
-      "rationale": "WD400: 特異点マージン確保。レンズ変更で分解能を担保"
+      "rationale": "WD400: keeps the singularity margin. A lens change secures the resolution"
     }
   ],
 
@@ -118,15 +118,15 @@
     "layout": {
       "version": "layout/1.0",
       "meta": {
-        "name": "ロボットセル領域シナリオ — 最小レイアウト",
-        "description": "メカ・ビジョン双方の設置許容ゾーンを含む最小仕様。"
+        "name": "Robot cell region scenario — minimal layout",
+        "description": "Minimal spec containing both the mechanical and the vision admissible mounting zones."
       },
       "strategy": "manual",
       "entities": [
         {
           "ref": "vision_zone",
           "type": "AnnotatedRegion",
-          "name": "視野要求 設置許容ゾーン (ビジョン要求)",
+          "name": "Field-of-view admissible mounting zone (vision requirement)",
           "placeType": "Zone",
           "vertices": [
             { "x": 600,  "y": -300 },
@@ -138,7 +138,7 @@
         {
           "ref": "mech_zone",
           "type": "AnnotatedRegion",
-          "name": "据付要求 設置許容ゾーン (メカ要求)",
+          "name": "Mounting admissible zone (mechanical requirement)",
           "placeType": "Zone",
           "vertices": [
             { "x": 1300, "y": -100 },

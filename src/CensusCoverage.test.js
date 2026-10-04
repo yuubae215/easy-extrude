@@ -224,6 +224,12 @@ const CENSUS_REGISTRY = [
        + '面として宣言されたもの (CLAIM_DECLARATION の component) と、対象外と理由つきで宣言したものに '
        + '分割する。数えるべきは在る面ではなく**枚数に入っていない面**で、全画面を描いた日から母集団に入る' },
 
+  // ── UI の言語 (ADR-161) ──
+  { file: 'src/UiLanguageCensus.test.js',    table: 'NOT_UI_TEXT',                 kind: KIND.DERIVED_PARTITION,
+    why: '母集団 = src/** で開発者向けの散文 (コメント・throw の引数・why:) を構文で落としても '
+       + '日本語が残るファイル。入力の語彙として理由つきで宣言したものだけが残ってよく、'
+       + '画面の文言が足された日から母集団に入る' },
+
   // ── 登録簿そのもの (自己適用) ──
   // ── 宣言された姿勢 (ADR-129 D1 / D5) ──
   { file: 'src/DeclaredPoseOwnership.test.js', table: 'DECLARED_POSE_WRITERS',    kind: KIND.DECLARED_EXCEPTION,

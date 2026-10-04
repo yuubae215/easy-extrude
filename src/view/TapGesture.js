@@ -54,20 +54,20 @@ export function acceptDoubleTap({
   firstTap, secondTap, cameraMovedBetween, hitSomething, hasSelection,
 }) {
   if (cameraMovedBetween) {
-    return { accept: false, reason: 'カメラが動いた 2 タップは double-tap ではない' }
+    return { accept: false, reason: 'the camera moved between the taps — not a double-tap' }
   }
   if (firstTap) {
     const dx = secondTap.x - firstTap.x
     const dy = secondTap.y - firstTap.y
     if (Math.hypot(dx, dy) > DOUBLE_TAP_SLOP_PX) {
-      return { accept: false, reason: `2 タップが ${DOUBLE_TAP_SLOP_PX}px 以上離れている` }
+      return { accept: false, reason: `the taps are ${DOUBLE_TAP_SLOP_PX}px or more apart` }
     }
   }
   // 当たりも選択も無いなら、フィット先はシーン全体になる。それは「何も指して
   // いない指」に対する最大の応答で、誤爆したときの被害が最も大きい形。
   // **明示的に選択されている**なら、空を叩いてそこへ戻すのは意図として読める。
   if (!hitSomething && !hasSelection) {
-    return { accept: false, reason: '当たりも選択も無い — フィット先が「シーン全体」になる' }
+    return { accept: false, reason: 'no hit and no selection — the fit target would be the whole scene' }
   }
   return { accept: true, reason: null }
 }

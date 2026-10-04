@@ -423,10 +423,10 @@ export const HEADER_ENTRANCES = Object.freeze({
  */
 export const MULTI_ENTRANCE_VERBS = Object.freeze({
   [HEADER_VERB.TOGGLE_SURFACE]:
-    'トグルは**その面の状態の表示そのもの**であって、対象を選んでから実行する流れではない。 '
-  + 'メニューへ畳むと (a) 1 タップで可逆だった操作が 2 手になり、(b) 開いているか閉じているかが '
-  + '画面から消える (原則 #15 固定スロット / 原則 #4 表示状態の所有者)。'
-  + 'したがって面ごとに 1 スイッチが正しく、直積ではない — 「対象」は選ばれない。',
+    'A toggle IS the display of its surface\'s state, not a pick-a-target-then-run flow. '
+  + 'Folded into a menu, (a) a one-tap reversible action becomes two steps and (b) whether the '
+  + 'surface is open disappears from the screen (#15 Fixed Slots / #4 One Owner per Visual Flag). '
+  + 'So one switch per surface is right, not the product — no "target" is ever chosen.',
 })
 
 // ── 動詞 → メニュー (引数の並びは上の正準表から**導出**する) ───────────────

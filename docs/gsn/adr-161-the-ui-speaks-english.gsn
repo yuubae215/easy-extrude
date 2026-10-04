@@ -1,0 +1,54 @@
+GOALS adr161_the_ui_speaks_english
+
+goal TheScreenSpeaksOneLanguage
+uuid 4aa6708e-c4fb-4546-8417-0edf9f6561dc
+summary "画面に出る文言の言語が 1 つ (英語) に決まっていて、決まっていることを機械が問う。入力は日英どちらも受ける"
+state Approved
+labels adr-161, principle-31, implemented, term-p-operate, change-presentation
+artifacts
+- "docs/adr/ADR-161-the-ui-speaks-english.md"
+
+    context Adr161Scope
+    uuid 1c062660-5a0c-4b44-b267-59979643e2c0
+    summary "ADR-161 (Accepted 2026-10-04): JSX 直書きの文言・テンプレのカード・examples/*.json の 148 文字列を英訳し、語り手の既定を en にし、src/UiLanguageCensus.test.js + src/census/uiText.js で残りを数える"
+
+    context RequirementCameFromTheOwner
+    uuid db36d164-7386-43b3-8d8b-96c5588aa4b9
+    summary "当事者の言葉: 「UIに日本語が混ざっているのはなんで？」→「UIは英語に統一して、テストも入れて」"
+
+    justification WhyNotI18n
+    uuid 56e2206d-ae5e-423f-a6b2-9566dd5824ff
+    summary "却下案 (i18n の仕組みを入れて日英を切り替える): 画面の言語はまだ 1 つしか要求されておらず、切り替える相手が無い仕組みは第二の文言の源 (翻訳表) を空のまま運ぶだけになる。2 つ目の言語が要る日に入れる"
+
+    assumption ProseOnlyLivesInCommentsThrowsAndWhy
+    uuid aaac78f3-1f80-4650-a119-ec59793c7fe2
+    summary "反証されうる仮説: 画面に出ない日本語は コメント・throw / …Error( の引数・why: の値 の 3 か所にだけ住む。反証されうる形は、why の値を画面に描く経路が生まれること (そのとき why の日本語は検査の外で画面に出る)"
+
+    strategy ByCountingWhatSurvivesTheProseFilter
+    uuid 0c4cd1de-a5e8-4b17-a9d7-f5d80aaadff1
+    summary "開発者向けの散文を構文で落とした後に残る日本語を src/** 全体で数え、正当な非ゼロ (入力語彙) は理由つきで宣言させる。同梱データと既定の言語は別に問う"
+
+        goal NoJapaneseReachesTheScreenFromSrc
+        uuid 05aeaeb1-f5c9-468f-bb26-ef577c595be8
+        summary "src/** で散文を落としても日本語が残るファイルは、入力語彙として宣言した 3 本 (SynonymQuotient / NlIntake / ProvenanceNarrative の明示 ja) だけで、宣言は空回りしていない"
+        labels support-verified
+
+            solution UiLanguageCensusIsExecuted
+            uuid cfe8cb34-287a-4a8c-ad0f-28c98c9687f3
+            summary "node --test src/UiLanguageCensus.test.js: 道具の fixture (散文は落ち UI 文言は残る) / src/** の母集団分割 (assertCoversPopulation) / examples/*.json / LAYOUT_TEMPLATE_CATALOG / 語り手の既定。HomeScreen に日本語を 1 行戻すと file:line つきで落ちることを確認した"
+            artifacts
+            - "src/UiLanguageCensus.test.js"
+            - "src/census/uiText.js"
+
+        goal TheBundledScenesAreEnglish
+        uuid 6677d985-4379-4426-a2ac-11de4fc97d7f
+        summary "テンプレを選んだときシーンに入る実体名・説明 (examples/*.json の全文字列) とテンプレのカードに日本語が無く、e2e は英語の名前でテンプレを開ける"
+        labels support-verified
+
+            solution ExamplesAndE2eAreExecuted
+            uuid 008a243c-f4b2-4b8d-8e95-9a9aaa105324
+            summary "UiLanguageCensus の examples / catalog の 2 test と、テンプレを英語の名前で開く e2e (smoke.spec.js / grasp-stub.spec.js)。スキーマ検査 (src/schema/*.test.js) と core の pytest は翻訳後のサンプルで通る"
+            artifacts
+            - "src/UiLanguageCensus.test.js"
+            - "e2e/smoke.spec.js"
+            - "e2e/grasp-stub.spec.js"

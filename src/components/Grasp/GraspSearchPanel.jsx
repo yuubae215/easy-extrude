@@ -1310,7 +1310,7 @@ function FaceRegionEditor({ face, region, onChange }) {
           type="button"
           onClick={() => onChange(null)}
           disabled={!narrowed}
-          title="この面ぜんぶに戻す (領域の鍵を消す)"
+          title="Reset to the whole face (clear the region key)"
           style={{
             fontSize: '9px', padding: '2px 5px', borderRadius: '3px',
             background: 'transparent',

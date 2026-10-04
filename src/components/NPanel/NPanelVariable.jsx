@@ -21,9 +21,9 @@ import { COLOR } from '../../theme/tokens.js'
  */
 
 const SHAPE_NOTE = {
-  band:     { color: COLOR.factTone, text: '3D: 未確定帯を表示中' },
-  entities: { color: COLOR.cautionTone, text: '3D: 領域を持たない量 — 束縛している実体を淡色表示中' },
-  none:     { color: COLOR.textSecondary, text: '3D: この変数はまだ空間に姿を持ちません (領域も、束縛する実体もありません)' },
+  band:     { color: COLOR.factTone, text: '3D: showing the undecided band' },
+  entities: { color: COLOR.cautionTone, text: '3D: a quantity with no region — dimming the entities it constrains' },
+  none:     { color: COLOR.textSecondary, text: '3D: this variable has no presence in space yet (no region, no constrained entities)' },
 }
 
 const fmtSet = (set) => Array.isArray(set)
@@ -56,7 +56,7 @@ export function NPanelVariable({ data }) {
 
           <Section title={`Claims (${v.claims.length})`}>
             {v.claims.length === 0
-              ? <div style={{ color: '#888', fontSize: '11px' }}>誰もこの変数に主張を置いていません。</div>
+              ? <div style={{ color: '#888', fontSize: '11px' }}>No one has placed a claim on this variable yet.</div>
               : v.claims.map(c => (
                 <div key={c.requirement} style={{ fontSize: '11px', padding: '2px 0', lineHeight: 1.5 }}>
                   <span style={{ color: '#aaa' }}>{c.actor ?? '—'}</span>
@@ -73,7 +73,7 @@ export function NPanelVariable({ data }) {
           {v.summary?.inConflict && (
             <Section title="Conflict">
               <div style={{ color: COLOR.dangerTone, fontSize: '11px', lineHeight: 1.5 }}>
-                共通部分なし — gap {fmtGap(v.summary.gap)}
+                No overlap — gap {fmtGap(v.summary.gap)}
               </div>
               <div style={{ color: '#888', fontSize: '10px', marginTop: '3px' }}>
                 between: {(v.summary.between ?? []).join(', ') || '—'}
@@ -88,7 +88,7 @@ export function NPanelVariable({ data }) {
 
           <Section title={`Constrains (${v.entities.length})`} noBorder>
             {v.entities.length === 0
-              ? <div style={{ color: '#888', fontSize: '11px' }}>この変数はまだどの実体も束縛していません。</div>
+              ? <div style={{ color: '#888', fontSize: '11px' }}>This variable does not constrain any entity yet.</div>
               : v.entities.map(e => (
                 // Back to the entity in one click: the selection kind switches,
                 // it does not mix (ADR-107 D1) — and it goes through the same

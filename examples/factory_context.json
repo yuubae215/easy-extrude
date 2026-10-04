@@ -1,7 +1,7 @@
 {
   "version": "context/0.1",
   "meta": {
-    "name": "セル型工程の自動化置換 — 要件文脈",
+    "name": "Automating a cell-type process — requirement context",
     "baseline": null
   },
 
@@ -20,17 +20,17 @@
   "given": [
     {
       "ref": "f_cell_area",
-      "subject": "セル型工程の専有面積",
+      "subject": "Footprint of the cell-type process",
       "attrs": { "footprint": "unknown" },
       "status": "asserted",
       "evidence": ["src_brief"]
     },
     {
       "ref": "f_outlet",
-      "subject": "床敷設構内コンセント",
+      "subject": "Floor-mounted plant outlet",
       "attrs": {
         "voltage":        { "value": 100, "unit": "V" },
-        "socket":         "3芯ソケット",
+        "socket":         "3-prong socket",
         "ratedCurrent":   "unknown",
         "circuitSharing": "unknown"
       },
@@ -39,14 +39,14 @@
     },
     {
       "ref": "f_outlet_to_bench",
-      "subject": "コンセントから作業台設置位置までの距離 (「3m弱」)",
+      "subject": "Distance from the outlet to the workbench position (\"just under 3m\")",
       "quantity": { "interval": [2700, 3000], "unit": "mm" },
       "status": "asserted",
       "evidence": ["src_brief"]
     },
     {
       "ref": "f_bench",
-      "subject": "既存作業台",
+      "subject": "Existing workbench",
       "attrs": {
         "height":       { "value": 800, "unit": "mm" },
         "top":          { "x": 500, "y": 300, "unit": "mm" },
@@ -57,17 +57,17 @@
     },
     {
       "ref": "f_plate",
-      "subject": "ベースプレート板厚要求",
+      "subject": "Base plate thickness requirement",
       "attrs": { "thickness": { "value": 30, "unit": "mm" } },
       "status": "asserted",
       "evidence": ["src_brief"]
     },
     {
       "ref": "f_bolt",
-      "subject": "ロボット締結ボルト仕様",
-      "attrs": { "spec": "M12×4本" },
+      "subject": "Robot fastening bolt spec",
+      "attrs": { "spec": "M12 ×4" },
       "status": "assumed",
-      "note": "SIer想定値。顧客・ロボットメーカー仕様で未確定",
+      "note": "Integrator's assumed value. Not yet confirmed by the customer / robot maker spec",
       "evidence": []
     }
   ],
@@ -76,14 +76,14 @@
     {
       "ref": "g_automate",
       "verb": "replace",
-      "summary": "セル1工程を自動化工程に置換する"
+      "summary": "Replace one cell process with an automated process"
     },
     {
       "ref": "g_depal",
       "verb": "depalletize_and_place",
-      "inputs":  { "from": "container_a", "state": "バラ積み" },
-      "outputs": { "to": "container_b", "state": "格子へマトリックス整列" },
-      "successCriteria": "全ワークが格子セルへ正姿勢で配置される",
+      "inputs":  { "from": "container_a", "state": "Bulk (random) pile" },
+      "outputs": { "to": "container_b", "state": "Aligned in a matrix grid" },
+      "successCriteria": "Every workpiece is placed in a grid cell in the correct orientation",
       "parent": "g_automate"
     }
   ],
@@ -91,28 +91,28 @@
   "obligations": [
     {
       "ref": "o_baseplate_design",
-      "deliverable": "ベースプレート設計 (板厚30mm・作業台天面取付・ロボット締結穴)",
+      "deliverable": "Base plate design (30mm thick, mounted on the workbench top, robot fastening holes)",
       "responsible": "sier",
       "dependsOn": ["f_bench", "f_plate"],
-      "defectScope": "プレート強度・穴位置精度・天面への固定方法"
+      "defectScope": "Plate strength, hole position accuracy, fixing method to the top"
     },
     {
       "ref": "o_robot_select",
-      "deliverable": "ロボット機種選定 (100V給電・天面500×300内で2コンテナへリーチ)",
+      "deliverable": "Robot model selection (100V supply, reaches both containers within the 500×300 top)",
       "responsible": "sier",
       "dependsOn": ["f_outlet", "f_bench"],
-      "defectScope": "リーチ成立性・可搬質量・電源適合"
+      "defectScope": "Reachability, payload, power compatibility"
     },
     {
       "ref": "o_robot_mount",
-      "deliverable": "ロボットのベースプレート上ボルト締結",
+      "deliverable": "Bolting the robot onto the base plate",
       "responsible": "sier",
       "dependsOn": ["o_baseplate_design", "f_bolt"],
-      "defectScope": "締結トルク・緩み止め"
+      "defectScope": "Fastening torque, loosening prevention"
     },
     {
       "ref": "o_power",
-      "deliverable": "構内コンセントからの給電 (3m弱区間の配線)",
+      "deliverable": "Power from the plant outlet (wiring the just-under-3m run)",
       "responsible": "unassigned",
       "dependsOn": ["f_outlet", "f_outlet_to_bench"],
       "defectScope": "unassigned"
@@ -126,7 +126,7 @@
       "nominal": 2800,
       "decidedBy": "sier",
       "status": "proposed",
-      "rationale": "「3m弱」区間 [2700, 3000) 内で配線余裕を確保しつつセル奥行を最小化する公称値"
+      "rationale": "Nominal value that minimises cell depth while keeping wiring slack within the \"just under 3m\" run [2700, 3000)"
     },
     {
       "ref": "d_cell_bounds",
@@ -139,7 +139,7 @@
       ],
       "decidedBy": "sier",
       "status": "proposed",
-      "rationale": "専有面積実測値が未入手のため、機器配置から逆算した必要境界の提案値"
+      "rationale": "The measured footprint is not yet available, so this is a proposed boundary back-calculated from the equipment layout"
     }
   ],
 
@@ -147,32 +147,32 @@
     "layout": {
       "version": "layout/1.0",
       "meta": {
-        "name": "工場セル自動化レイアウト",
-        "description": "セル型工程を自動化工程に置き換えるレイアウト。床置き100V/3芯コンセントから2.8m先の作業台上にロボットとベースプレートを設置し、作業台の余剰面積にワークコンテナを2台配置。"
+        "name": "Factory cell automation layout",
+        "description": "A layout that replaces a cell-type process with an automated one. A robot and base plate sit on a workbench 2.8m from a floor-mounted 100V/3-prong outlet, with two workpiece containers in the bench's spare area."
       },
       "strategy": "manual",
       "entities": [
         {
           "ref": "cell_area",
           "type": "AnnotatedRegion",
-          "name": "自動化セル専有面積",
-          "description": "セル型工程が置かれる床面積",
+          "name": "Automated cell footprint",
+          "description": "Floor area occupied by the cell-type process",
           "placeType": "Zone",
           "vertices": { "$decision": "d_cell_bounds" }
         },
         {
           "ref": "floor_outlet",
           "type": "AnnotatedPoint",
-          "name": "床置きコンセント (100V / 3芯ソケット)",
-          "description": "構内電源。100V 3芯ソケット形状。",
+          "name": "Floor outlet (100V / 3-prong socket)",
+          "description": "Plant power. 100V, 3-prong socket.",
           "placeType": "Anchor",
           "position": { "x": 0, "y": 0, "z": 0 }
         },
         {
           "ref": "workbench",
           "type": "Solid",
-          "name": "作業台",
-          "description": "高さ800mm、天面作業スペース500×300mm",
+          "name": "Workbench",
+          "description": "800mm high, 500×300mm working area on top",
           "ifcClass": "IfcFurniture",
           "dimensions": {
             "x": { "$fact": "f_bench.attrs.top.x" },
@@ -187,7 +187,7 @@
           "frames": [
             {
               "ref": "workbench_top",
-              "name": "作業台天面中心",
+              "name": "Workbench top center",
               "translation": { "x": 0, "y": 0, "z": { "$expr": "f_bench.attrs.height.value / 2" } }
             }
           ]
@@ -195,8 +195,8 @@
         {
           "ref": "base_plate",
           "type": "Solid",
-          "name": "ロボット取付ベースプレート (t30mm)",
-          "description": "作業台天面に固定するロボット取付用ベースプレート。厚さ30mm。",
+          "name": "Robot mounting base plate (t30mm)",
+          "description": "Robot mounting base plate fixed to the workbench top. 30mm thick.",
           "ifcClass": "IfcElementComponent",
           "dimensions": {
             "x": 300,
@@ -211,7 +211,7 @@
           "frames": [
             {
               "ref": "robot_mount",
-              "name": "ロボット取付面 (ベースプレート天面)",
+              "name": "Robot mounting surface (base plate top)",
               "translation": { "x": 0, "y": 0, "z": { "$expr": "f_plate.attrs.thickness.value / 2" } }
             }
           ]
@@ -220,7 +220,7 @@
           "ref": "robot_base",
           "type": "CoordinateFrame",
           "name": "robot_base",
-          "description": "産業用ロボットの TF ベース。ベースプレート天面 (z=830, robot_mount) にボルト締結。",
+          "description": "TF base of the industrial robot. Bolted to the base plate top (z=830, robot_mount).",
           "robotRole": "base",
           "position": {
             "x": 2650,
@@ -232,7 +232,7 @@
           "ref": "robot_tcp",
           "type": "CoordinateFrame",
           "name": "tcp",
-          "description": "産業用ロボットの TCP — ロボットとグリッパが共有するインタフェース。position はツールの取付け (tool0 → tcp、フランジ座標系) で、既定のグリッパはフランジ +Z に 150 mm (Shift+A で追加するロボットと同じ既定値)。世界での位置は腕の姿勢から導出される (ADR-151)。",
+          "description": "TCP of the industrial robot — the interface shared by the robot and the gripper. position is the tool mounting (tool0 → tcp, flange frame); the default gripper is 150 mm along flange +Z (the same default as a robot added with Shift+A). Its world position is derived from the arm pose (ADR-151).",
           "robotRole": "tcp",
           "parentRef": "robot_base",
           "mountedOn": "flange",
@@ -241,8 +241,8 @@
         {
           "ref": "container_a",
           "type": "Solid",
-          "name": "ワークコンテナA (バラ積みワーク)",
-          "description": "作業台天面のロボット非占有エリアに設置。バラバラに積み上がったワーク入り。",
+          "name": "Workpiece container A (bulk pile)",
+          "description": "Placed in the area of the workbench top not occupied by the robot. Holds randomly piled workpieces.",
           "ifcClass": "IfcTransportElement",
           "dimensions": { "x": 180, "y": 120, "z": 150 },
           "position": {
@@ -254,8 +254,8 @@
         {
           "ref": "container_b",
           "type": "Solid",
-          "name": "ワークコンテナB (マトリックス格子)",
-          "description": "作業台天面のロボット非占有エリアに設置。ワークをマトリックス上に整列させる格子入り。",
+          "name": "Workpiece container B (matrix grid)",
+          "description": "Placed in the area of the workbench top not occupied by the robot. Holds a grid that aligns workpieces in a matrix.",
           "ifcClass": "IfcTransportElement",
           "dimensions": { "x": 180, "y": 120, "z": 150 },
           "position": {
@@ -271,28 +271,28 @@
           "target": "workbench",
           "jointType": null,
           "semanticType": "above",
-          "properties": { "note": "ベースプレートを作業台天面上にボルト固定" }
+          "properties": { "note": "Base plate bolted onto the workbench top" }
         },
         {
           "source": "robot_base",
           "target": "robot_mount",
           "jointType": "fixed",
           "semanticType": "fastened",
-          "properties": { "note": "ロボットをベースプレートにボルト締結 (M12×4本)" }
+          "properties": { "note": "Robot bolted to the base plate (M12 ×4)" }
         },
         {
           "source": "container_a",
           "target": "workbench",
           "jointType": null,
           "semanticType": "above",
-          "properties": { "note": "コンテナAは作業台天面のロボット側面エリアに設置" }
+          "properties": { "note": "Container A sits beside the robot on the workbench top" }
         },
         {
           "source": "container_b",
           "target": "workbench",
           "jointType": null,
           "semanticType": "above",
-          "properties": { "note": "コンテナBはコンテナAの隣に設置" }
+          "properties": { "note": "Container B sits next to container A" }
         },
         {
           "source": "floor_outlet",
@@ -303,7 +303,7 @@
             "distance_mm": { "$decision": "d_bench_distance" },
             "voltage_V":   { "$fact": "f_outlet.attrs.voltage.value" },
             "connector":   { "$fact": "f_outlet.attrs.socket" },
-            "note":        "床置きコンセントから作業台まで電源ケーブル配線"
+            "note":        "Power cable run from the floor outlet to the workbench"
           }
         }
       ]
@@ -351,19 +351,19 @@
     {
       "ref": "a_power",
       "mode": "witnessed",
-      "predicate": "実負荷運転時電流 <= コンセント定格電流",
+      "predicate": "Current under real load <= outlet rated current",
       "requires": ["f_outlet.attrs.ratedCurrent"]
     },
     {
       "ref": "a_torque",
       "mode": "witnessed",
-      "predicate": "全締結ボルトのトルク値が規定±許容内、合いマーク施工済み",
+      "predicate": "Every fastening bolt is torqued within spec ± tolerance, with match marks applied",
       "requires": ["f_bolt"]
     },
     {
       "ref": "a_depal_cycle",
       "mode": "witnessed",
-      "predicate": "g_depal.successCriteria を連続 N サイクル達成",
+      "predicate": "g_depal.successCriteria met for N consecutive cycles",
       "requires": []
     }
   ]

@@ -236,9 +236,9 @@ test('S11 — core/ が居なくても腕は動き、かつ「解いた腕」を
   const errors = []
   page.on('pageerror', (e) => errors.push(e.message))
   await page.goto('/easy-extrude/?graspStub=solve')
-  await expect(page.getByText('工程レイアウトを選んで始める')).toBeVisible()
-  await page.getByText('単腕ピック&プレイスセル', { exact: true }).click()
-  await expect(page.getByText('工程レイアウトを選んで始める')).not.toBeVisible()
+  await expect(page.getByText('Start from a process layout')).toBeVisible()
+  await page.getByText('Single-arm pick & place cell', { exact: true }).click()
+  await expect(page.getByText('Start from a process layout')).not.toBeVisible()
   await expect
     .poll(async () => (await page.evaluate(() => window.__easyExtrude.robotState())).length)
     .toBe(1)
@@ -312,9 +312,9 @@ test('S12 — TCP の印は腕と一緒にプレビュー姿勢へ行き、候�
   const errors = []
   page.on('pageerror', (e) => errors.push(e.message))
   await page.goto('/easy-extrude/?graspStub=solve')
-  await expect(page.getByText('工程レイアウトを選んで始める')).toBeVisible()
-  await page.getByText('単腕ピック&プレイスセル', { exact: true }).click()
-  await expect(page.getByText('工程レイアウトを選んで始める')).not.toBeVisible()
+  await expect(page.getByText('Start from a process layout')).toBeVisible()
+  await page.getByText('Single-arm pick & place cell', { exact: true }).click()
+  await expect(page.getByText('Start from a process layout')).not.toBeVisible()
   await expect
     .poll(async () => (await page.evaluate(() => window.__easyExtrude.robotState())).length)
     .toBe(1)
@@ -473,13 +473,13 @@ test('S14 — 供給ビンは 1 つの殻で、ワークはその子 (ADR-155 D2
   const errors = []
   page.on('pageerror', (e) => errors.push(e.message))
   await page.goto('/easy-extrude/?graspStub=solve')
-  await page.getByText('単腕ピック&プレイスセル', { exact: true }).click({ timeout: 20_000 })
+  await page.getByText('Single-arm pick & place cell', { exact: true }).click({ timeout: 20_000 })
   await expect.poll(async () => (await page.evaluate(() => window.__easyExtrude.robotState())).length).toBe(1)
 
   const bodies = async () => Object.fromEntries((await page.evaluate(() => window.__easyExtrude.placementState()))
-    .filter(o => /^(ワーク \d|供給ビン \(|排出トレイ)/.test(o.name))
+    .filter(o => /^(Workpiece \d|Supply bin \(|Output tray)/.test(o.name))
     .map(o => [o.name, { bottomZ: o.bottomZ, support: o.support?.id ?? null, fp: o.footprint }]))
-  const works = ['ワーク 1', 'ワーク 2', 'ワーク 3']
+  const works = ['Workpiece 1', 'Workpiece 2', 'Workpiece 3']
   await expect.poll(async () => Object.keys(await bodies()).length).toBe(5)
   const before = await bodies()
   for (const w of works) {
@@ -498,17 +498,17 @@ test('S14 — 供給ビンは 1 つの殻で、ワークはその子 (ADR-155 D2
   expect(options).not.toContain('output_tray')
 
   await page.keyboard.press('Escape')
-  await selectRow(page, '供給ビン')
+  await selectRow(page, 'Supply bin')
   const box = await page.locator('canvas').first().boundingBox()
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
   await page.keyboard.press('g')
   await page.mouse.move(box.x + box.width / 2 + 120, box.y + box.height / 2, { steps: 8 })
   await page.mouse.down(); await page.mouse.up()
-  await expect.poll(async () => (await bodies())['供給ビン (バラ積みワーク)'].fp.x, { message: 'ビンが動いていない — この検査は何も問えていない' })
-    .not.toBe(before['供給ビン (バラ積みワーク)'].fp.x)
+  await expect.poll(async () => (await bodies())['Supply bin (bulk workpieces)'].fp.x, { message: 'ビンが動いていない — この検査は何も問えていない' })
+    .not.toBe(before['Supply bin (bulk workpieces)'].fp.x)
   const after = await bodies()
   const bin = k => [after[k].fp.x - before[k].fp.x, after[k].fp.y - before[k].fp.y]
-  const [dx, dy] = bin('供給ビン (バラ積みワーク)')
+  const [dx, dy] = bin('Supply bin (bulk workpieces)')
   for (const w of works) {
     const [wx, wy] = bin(w)
     expect(Math.hypot(wx - dx, wy - dy), `${w} がビンと一緒に動いていない`).toBeLessThan(0.5)

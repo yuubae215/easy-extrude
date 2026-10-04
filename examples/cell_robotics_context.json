@@ -1,7 +1,7 @@
 {
   "version": "context/0.4",
   "meta": {
-    "name": "ロボットセル — 測定器 KPI・受入チェック (ADR-053/062)",
+    "name": "Robot cell — instrument KPIs and acceptance checks (ADR-053/062)",
     "baseline": null
   },
   "actors": [
@@ -25,7 +25,7 @@
   "given": [
     {
       "ref": "f_robot",
-      "subject": "6軸ロボット (可搬10kg)",
+      "subject": "6-axis robot (10kg payload)",
       "attrs": {
         "reach": {
           "value": 850,
@@ -39,7 +39,7 @@
     },
     {
       "ref": "f_gripper",
-      "subject": "平行グリッパ",
+      "subject": "Parallel gripper",
       "attrs": {
         "stroke": "unknown"
       },
@@ -47,7 +47,7 @@
       "evidence": [
         "src_teach_session"
       ],
-      "note": "ストローク未確認 — 確定するまで環境干渉チェック a_gripper_env は blocked"
+      "note": "Stroke not yet confirmed — the environment interference check a_gripper_env stays blocked until it is"
     }
   ],
   "variables": [
@@ -58,7 +58,7 @@
         0,
         400
       ],
-      "description": "ピック点上方の接近スタンドオフ"
+      "description": "Approach standoff above the pick point"
     }
   ],
   "requirements": [
@@ -85,22 +85,22 @@
         ],
         "source": "stated"
       },
-      "note": "工具半径45mm を差し引いた接近クリアランス。閉形単調 — derived へ昇格"
+      "note": "Approach clearance after subtracting the 45mm tool radius. Closed-form and monotone — promoted to derived"
     }
   ],
   "specification": {
     "layout": {
       "version": "layout/1.0",
       "meta": {
-        "name": "測定器デモ 最小レイアウト",
-        "description": "ロボット台座・ピックテーブル・プレースコンベアと TCP 教示点。"
+        "name": "Instrument demo minimal layout",
+        "description": "Robot pedestal, pick table, place conveyor and TCP teach points."
       },
       "strategy": "manual",
       "entities": [
         {
           "ref": "robot_pedestal",
           "type": "Solid",
-          "name": "ロボット台座",
+          "name": "Robot pedestal",
           "dimensions": {
             "x": 220,
             "y": 220,
@@ -139,7 +139,7 @@
         {
           "ref": "pick_table",
           "type": "Solid",
-          "name": "ピックテーブル",
+          "name": "Pick table",
           "dimensions": {
             "x": 300,
             "y": 300,
@@ -154,7 +154,7 @@
         {
           "ref": "workpiece",
           "type": "Solid",
-          "name": "ワーク",
+          "name": "Workpiece",
           "dimensions": {
             "x": 80,
             "y": 40,
@@ -169,7 +169,7 @@
         {
           "ref": "place_conveyor",
           "type": "Solid",
-          "name": "プレースコンベア",
+          "name": "Place conveyor",
           "dimensions": {
             "x": 400,
             "y": 250,
@@ -184,7 +184,7 @@
         {
           "ref": "tcp_pick",
           "type": "AnnotatedPoint",
-          "name": "TCP 教示点 pick",
+          "name": "TCP teach point pick",
           "placeType": "Anchor",
           "position": {
             "x": 600,
@@ -195,7 +195,7 @@
         {
           "ref": "tcp_place",
           "type": "AnnotatedPoint",
-          "name": "TCP 教示点 place",
+          "name": "TCP teach point place",
           "placeType": "Anchor",
           "position": {
             "x": 0,

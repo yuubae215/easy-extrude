@@ -71,11 +71,11 @@ export function phaseRows(diagnostics) {
   const rows = diagnostics?.interferencePhases
   if (!Array.isArray(rows)) return null
   return rows.map(r => {
-    const label = lookup(PHASE_LABEL, r.phase, '動作相')
+    const label = lookup(PHASE_LABEL, r.phase, 'phase')
     if (r.kind === 'evaluated') return { phase: r.phase, label, evaluated: true, rejected: r.rejected, note: null }
     if (r.kind === 'unevaluated') {
       return { phase: r.phase, label, evaluated: false, rejected: null,
-        note: lookup(UNEVALUATED_REASON_TEXT, r.reason, '未評価の理由') }
+        note: lookup(UNEVALUATED_REASON_TEXT, r.reason, 'unevaluated reason') }
     }
     throw new Error(`GraspPhaseMath: 未宣言の相の kind "${r.kind}"`)
   })
@@ -97,11 +97,11 @@ export function analysisSummary(analysis, obstacleLabels) {
     candidatesAnalysed: analysis.candidatesAnalysed,
     phases: analysis.phases.map(p => ({
       phase: p.phase,
-      label: lookup(PHASE_LABEL, p.phase, '動作相'),
+      label: lookup(PHASE_LABEL, p.phase, 'phase'),
       collided: p.collided,
       hits: p.hits.map(h => ({
         part: h.part,
-        partLabel: lookup(PART_LABEL, h.part, '部位'),
+        partLabel: lookup(PART_LABEL, h.part, 'part'),
         // An index the labels do not cover is shown as a number, never dropped —
         // a hit with no name is still a hit.
         obstacle: obstacleLabels?.[h.obstacleIndex] ?? `obstacle #${h.obstacleIndex}`,

@@ -298,6 +298,12 @@ labels meta-goal, term-profit
                                     artifacts
                                     - "docs/gsn/adr-096-visibility-two-axes.gsn"
 
+                                    solution Adr161Tree
+                                    uuid ddd18068-df0c-400a-b0d0-16493b2a4cea
+                                    summary "ADR-161 の論証木 (top goal TheScreenSpeaksOneLanguage) を吊る。画面の文言が 1 つの言語で語られ、書き手の言語が混ざらない — 混ざった画面は読めても信じられない。この木の goal ごとの証拠と鮮度の正本は木の側 — ここは寄与する項だけを持つ (ADR-153 D2)"
+                                    artifacts
+                                    - "docs/gsn/adr-161-the-ui-speaks-english.gsn"
+
                                     solution Adr100Tree
                                     uuid dc12c971-eaa1-4387-a487-c6b6e7b2085c
                                     summary "ADR-100 の論証木 (top goal SaturationIsSpentOnStateNotOnDefaults) を吊る。彩度は状態にだけ配られ、色が付いているものには意味がある。この木の goal ごとの証拠と鮮度の正本は木の側 — ここは寄与する項だけを持つ (ADR-153 D2: 1 本の木は事業木にちょうど 1 回吊られ、投資はその項へ帰属する)"
