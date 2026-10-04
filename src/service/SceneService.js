@@ -78,6 +78,7 @@ import { SpatialLink, migrateLinkType } from '../domain/SpatialLink.js'
 import { SpatialLinkView } from '../view/SpatialLinkView.js'
 import { RoleService } from './RoleService.js'
 import { constraintSolver } from './ConstraintSolver.js'
+import { fixedJointFollowers, drivesSourcePose } from '../domain/fixedJointFollowers.js'
 import { getIFCClassEntry } from '../domain/IFCClassRegistry.js'
 import { hollowBodyGap, sizeOfCorners } from '../domain/hollowBody.js'
 import {
@@ -2613,7 +2614,7 @@ export class SceneService extends EventEmitter {
    */
   _reactivateLiveLinks() {
     for (const link of this._model.links.values()) {
-      if (link.jointType === 'fixed' && link.semanticType !== 'mounts') {
+      if (drivesSourcePose(link)) {
         const sourcePose = this._worldPoseCache.get(link.sourceId)
         const targetPose = this._worldPoseCache.get(link.targetId)
         if (!sourcePose || !targetPose) continue
@@ -2818,6 +2819,24 @@ export class SceneService extends EventEmitter {
       if (sourceId === cfId) return true
     }
     return false
+  }
+
+  /**
+   * The objects a move of `ids` carries along through fixed joints, with their
+   * poses SETTLED (ADR-162 D3). Followers are driven in the world-pose pass, which
+   * otherwise runs on the next animation frame — reading them right after a
+   * confirm would read the pose one frame old, so this accessor runs the pass
+   * itself (原則 #23 — the accessor owns freshness, the caller is not asked to).
+   *
+   * @param {Iterable<string>} ids  the moved objects
+   * @returns {Set<string>} carried object ids (excluding `ids`)
+   */
+  fixedJointFollowersOf(ids) {
+    this._updateWorldPoses()
+    const objects = [...this._model.objects.values()].map(o => ({
+      id: o.id, parentId: o.parentId ?? null, isFrame: o instanceof CoordinateFrame,
+    }))
+    return fixedJointFollowers(objects, [...this._model.links.values()], ids)
   }
 
   /** Returns true when any fastened-source CF has the given solid as its root ancestor. */

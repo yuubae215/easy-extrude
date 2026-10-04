@@ -1,0 +1,93 @@
+GOALS adr162_a_template_opens_as_a_document
+
+goal AnObjectBornFromADocumentIsDeclarableWithoutReDerivingIt
+uuid c94433f8-04b1-40e1-ab5a-f8699bbdd137
+summary "Home テンプレから生まれた物へ質量・重心・把持仕様を宣言する押下は、画面からの取り込み (ADR-159) を経ずに普通の doc edit として通り、物の id もリンクも変わらず、undo 1 回で戻る"
+state Approved
+labels adr-162, adr-159, adr-129, adr-089, adr-046, declaration, ssot, principle-23, principle-31, implemented, term-p-reach, change-entrance
+artifacts
+- "docs/adr/ADR-162-a-template-opens-as-a-document.md"
+
+    context Adr162Scope
+    uuid ad507776-8fc4-4609-a182-72aaddd15be0
+    summary "ADR-162 (Accepted 2026-10-04): テンプレは Layout DSL を specification.layout に持つ文書として開き (D1 — docFromLayout)、文書の唯一の入口 loadContext を通り (D2)、確定移動は固定ジョイントで運ばれた物の姿勢も文書へ書く (D3 — fixedJointFollowers)"
+
+    context RequirementCameFromTheOwner
+    uuid d89fc1f1-94a5-4ea4-89a8-5028f8a27450
+    summary "当事者の言葉: 「シングルアームサンプルのワーク1のmassを設定しようとするとワーニング … データモデルの設計失敗？」→ 俯瞰の後「あー、SSOTの問題ですね」(2026-10-04)。語彙 (mass) は両スキーマに在り、欠けていたのはテンプレ読み込みが源を捨てない線だった"
+
+    context BusinessTreeAttachPoint
+    uuid 19256114-759e-4b13-aa4b-729e7e1c7a73
+    summary "事業木へ接続済み (2026-10-04, ADR-153): profit-growth.gsn の goal EveryEntranceLeadsWhereItSays の下に solution Adr162Tree として吊った。サンプルの物に宣言する押下が名指しした先 (宣言された状態) へ着かずに DEF-060 で止まっていた"
+
+    justification WhyNotSolveDef060First
+    uuid b376ce2b-229a-4a49-b953-b6dd74cebfbb
+    summary "却下案 B (子・リンクごと取り込む) への反証: 源を捨てたまま 1 物ずつの逆算で関係を復元する機構になり、文書とシーンの二源 (§1.1) を温存する。テンプレの物には源 (DSL) が最初から在る"
+
+    assumption ADocumentAfterATemplateIsNotNoise
+    uuid c0f598f5-5feb-4f6c-a612-e56f0ec203b3
+    summary "反証されうる仮説: テンプレの後に文書が 1 個在っても、Context パネルとバリデータの語りは利用者の邪魔にならない。反証されうる形は、テンプレを開いただけで OpenQuestion や警告が並ぶこと"
+
+    strategy ByKeepingTheSourceTheSceneWasCompiledFrom
+    uuid 307f3ab6-5fe4-4b13-be59-b3ed5a0b5f31
+    summary "テンプレの DSL を文書の specification として保持し、文書の唯一の入口で読む。文書が持つ物を動かすときは、それに運ばれた物も同じ doc edit で書く"
+
+        goal EveryTemplateOpensAsAValidDocumentWithTheSameScene
+        uuid 5ea94a0e-c648-4697-a723-b33114b0b807
+        summary "全テンプレ (母集団は LAYOUT_TEMPLATE_CATALOG) で docFromLayout の文書が妥当で、DSL そのものと同じシーンへコンパイルされる。母集団が空なら落ちる"
+        labels support-verified
+
+            solution SameSceneIsExecuted
+            uuid 54c26aab-3504-49a4-9bee-6313cf8d7bc9
+            summary "src/TemplateDocument.test.js: 4 テンプレそれぞれで validateContext が valid / compileLayout(compileContext(doc).layoutDsl) が compileLayout(dsl) と deepEqual / 入力 DSL を共有しない。母集団 ≥ 1 を別に問う"
+            artifacts
+            - "src/TemplateDocument.test.js"
+
+        goal DeclaringOnATemplateWorkpieceIsAnOrdinaryDocEdit
+        uuid ffc62ba0-747d-4357-b003-40a1a3cc37f3
+        summary "シングルアームのワーク 1 (ビンの床へ fastened) への質量宣言は警告なしで文書に書かれ、シーン id とリンクが変わらない。画面では DEF-060 も『from the screen』も出ず、Ctrl+Z で未宣言へ戻る"
+        labels support-verified
+
+            solution DeclarationIsExecuted
+            uuid d9048f4d-faf5-462d-ae9c-d0d78b3a0a9d
+            summary "src/TemplateDocument.test.js『シングルアームのワーク 1 に質量を宣言』: mass 0.12 が文書に在る / warn・error トースト 0 / id 集合とリンク不変 / f_layout_template からの trace。e2e/grasp-stub.spec.js S15 (VITE_GRASP_STUB=1, 2026-10-04 pass) — 旧 _loadLayoutTemplateDsl に戻すと『clear mass』が現れず落ちることを確認"
+            artifacts
+            - "src/TemplateDocument.test.js"
+            - "e2e/grasp-stub.spec.js"
+
+        goal NoStaleDocumentSurvivesATemplateLoad
+        uuid e32b81c8-5318-4443-994f-7a437df5d6a8
+        summary "先に別の文書が開いていても、テンプレ読み込み後の文書はテンプレのもので、古い文書の実体は残らない"
+        labels support-verified
+
+            solution StaleDocIsExecuted
+            uuid 91160825-9558-432d-b1d8-7038661d32cc
+            summary "src/TemplateDocument.test.js『先に別の文書が開いていても…』: meta.name がテンプレのもの / 古い実体 ref が文書に無い"
+            artifacts
+            - "src/TemplateDocument.test.js"
+
+        goal ACarriedObjectIsWrittenWithTheMoveThatCarriedIt
+        uuid 837b345d-ae6e-4d01-b0a2-8c8b55f9676a
+        summary "文書が持つ物を Grab / Aim で確定すると、固定ジョイントで運ばれた物の姿勢も同じ doc edit で書かれ、再生成で元の位置へ戻らない。運ばれた物の姿勢は確定直後でも 1 フレーム古くない"
+        labels support-verified
+
+            solution FollowersAreExecuted
+            uuid ba10ece3-54d0-4442-9308-86e8ab0bee94
+            summary "src/domain/fixedJointFollowers.test.js: N=2 で両方運ぶ / 逆向きは運ばない / 推移 / mounts と非 fixed は運ばない / 両方選択なら数えない。e2e/grasp-stub.spec.js S14 (2026-10-04 pass): D3 なしでは『Workpiece 1 がビンと一緒に動いていない』(463mm) で落ち、D3 で通る"
+            artifacts
+            - "src/domain/fixedJointFollowers.test.js"
+            - "e2e/grasp-stub.spec.js"
+            - "src/service/SceneService.js"
+
+        goal TheSharedWriterWritesWhatWasCarried
+        uuid 23ce5d97-1add-46b7-a660-dd8f32d68dee
+        summary "Grab と Aim が共有する確定の書き手 recordConfirmedPoses は、動かした物について運ばれた物を問い、運ばれた物 (N 個) の姿勢を同じ doc edit で書き、運ばれていない物は書かない"
+        labels support-verified
+
+            solution SharedWriterIsExecuted
+            uuid 40efdf03-e96f-4cd6-86d8-c1f858877c03
+            summary "src/TemplateDocument.test.js『確定移動の書き手は、運ばれた物 (N=2) の姿勢も…』: fixedJointFollowersOf が動かした物で問われる / part_bin・work_1・work_2 の position が live 姿勢 / work_3 は不変。D3 の hunk を戻すと落ちることを確認 (2026-10-04)。Aim が同じ書き手を呼ぶことは src/DeclaredPoseOwnership.test.js が構文で問う"
+            artifacts
+            - "src/TemplateDocument.test.js"
+            - "src/DeclaredPoseOwnership.test.js"
+            - "src/controller/ContextController.js"

@@ -1,0 +1,73 @@
+GOALS adr163_adopting_from_the_screen_reads_the_whole_scene_and_cuts_a_component
+
+goal AnythingOnTheScreenEntersTheCanonicalModelWithItsRelations
+uuid f99548d6-ad88-4901-9324-8955223db1d5
+summary "画面にある物はどれでも、親子・リンクを保ったまま文書の Layout (カノニカルなモデル) に入れられる。入れられないのは Layout の語で言えない物だけで、そのときは理由を言う"
+state ToBeDeveloped
+labels adr-163, adr-159, adr-162, adr-055, adr-129, adr-131, declaration, mutual, principle-28, principle-31, principle-11, term-p-reach, change-entrance
+artifacts
+- "docs/adr/ADR-163-adopting-from-the-screen-reads-the-whole-scene-and-cuts-a-component.md"
+
+    context Adr163Scope
+    uuid 9a2e45fc-ddb0-42e3-a735-79500baa5c62
+    summary "ADR-163 (Proposed 2026-10-04): 取り込みはシーン全体を逆変換 (decompileLayout = ADR-055 の φ⁻¹) してから (D1)、頼まれた物から文書に無い物だけを親子・リンクで辿った連結成分を切り出し (D2)、文書の物へのリンクは ref の制約として入れ (D3)、拒否は Layout の語で言えない種だけにする (D4)。undo は ADR-159 D3 のまま (D5)。DEF-060 を決着する案"
+
+    context RequirementCameFromTheOwner
+    uuid 8b3bebdf-e5a0-4dbb-8c21-8e697f05f654
+    summary "当事者の言葉: 「カノニカルなデータモデルに写像して、Mutualにデータ交換できるようにしとけばいいのでないの？」「ADRは起こしておいて」(2026-10-04)。ADR-162 (テンプレは文書として開く) の直後の提案"
+
+    context BusinessTreeAttachPoint
+    uuid 70d83f66-12e5-4e15-8cf6-c4348a1aa3c3
+    summary "事業木へ接続済み (2026-10-04, ADR-153): profit-growth.gsn の goal EveryEntranceLeadsWhereItSays の下に solution Adr163Tree として吊った。画面で留めた物へ宣言する押下が DEF-060 で止まる行き止まりを消す"
+
+    justification WhyNotRePointing
+    uuid 21d66ce7-7778-48c3-9546-d2dee331733d
+    summary "却下案 B (指し先を張り替える) への反証: 子とリンクの相手は文書の外に残ったまま文書の物を指すので、次の再生成でどちらが権威かが曖昧になる。張り替えの規則が逆変換と別にもう 1 つ増える (§1.1)"
+
+    justification WhyNotEverythingUndeclared
+    uuid bd72d865-d721-469a-950d-b20a19909430
+    summary "却下案 C (文書に無い物を全部入れる) への反証: 頼んでいない無関係な物まで文書へ入る。ADR-159 が守った『頼まれた物だけ』を破る"
+
+    justification WhyNotWriteBackDocumentObjects
+    uuid 78d56ffa-3c2d-4f37-841c-88f2891f1d37
+    summary "文書の物を読み戻さない理由: 逆変換は Why を運ばないので (ADR-055 §3)、文書の物を書き戻すと $fact / $decision 参照が数値に潰れる。権威を実体の種で分ける ADR-129 / 131 を保つ"
+
+    strategy ByInvertingTheWholeSceneThenCuttingTheComponent
+    uuid de178f96-fd49-49be-a1cf-0545a2ec607b
+    summary "逆変換はシーン全体に 1 回かけ (grasp 探索と同じ読み)、切り出しはその後で、文書に無い物の連結成分に限る"
+
+        goal TheComponentIsAdoptedWithItsLinks
+        uuid 621638b8-aa82-4965-8b53-6e730e40e4a4
+        summary "頼まれた物と、文書に無い物の中で親子・リンクでつながる物 (N≥2) が、制約ごと文書に入る。無関係な物は入らない。文書の物へのリンクは ref の制約として入り、文書の物は読み戻されない"
+        labels support-exploring
+
+            assumption ComponentTestIsPlanned
+            uuid 2852d6be-1882-41f9-8a29-e8a839753724
+            summary "証拠予定: src/domain/sceneAdoption.test.js に連結成分の切り出し (子・リンク・推移・無関係・文書の物を読み戻さない) を N≥2 で置く。満期=GREP:src/domain/sceneAdoption.js::adoptionComponent (この関数が成分の切り出しを持つ — ADR-163 D2)"
+
+        goal OnlyTheUnsayableIsRefused
+        uuid a931cd56-a453-4613-a3d1-5c8423507a7b
+        summary "拒否の理由は Layout の語で言えない種 (unconvertible) と、画面に無い物 (not-on-screen) だけになる。has-children と linked は語彙から消える"
+        labels support-exploring
+
+            assumption RefusalVocabularyIsPlanned
+            uuid 46942315-6b5c-4ad2-a17b-054313840edc
+            summary "証拠予定: ADOPTION_REFUSAL に UNCONVERTIBLE を足し、HAS_CHILDREN / LINKED が語彙に無いことを sceneAdoption.test.js で問う。満期=ADR-163"
+
+        goal OneUndoPutsTheWholeComponentBack
+        uuid 8d1e5f2c-9071-4306-8245-4c9b3ad43f79
+        summary "N 個を取り込んだ押下も undo 1 回で、元の id のシーン・前の文書へ戻る。文書の物の $decision は押下の前後で変わらない"
+        labels support-exploring
+
+            assumption UndoIntegrationIsPlanned
+            uuid 8792520f-c80a-437a-9579-d5e30aa1b479
+            summary "証拠予定: src/ScreenAdoption.test.js に Shift+A の箱 2 個を Fasten してから片方へ質量を宣言 → 2 個とリンクが文書へ → undo 1 回で戻る、を置く。満期=ADR-163"
+
+        goal TheScreenNoLongerSaysDef060
+        uuid 06d61922-458e-4024-977f-8a878116fe71
+        summary "本物のアプリで、画面で留めた物への宣言が DEF-060 を出さずに通り、取り込んだ数をトーストが言う"
+        labels support-exploring
+
+            assumption E2eIsPlanned
+            uuid 8f91796a-3270-47d7-bc25-6a7c3f0dbeb4
+            summary "証拠予定: e2e で Shift+A の箱 2 個を Fasten してから宣言し、DEF-060 が出ないことと取り込み数のトーストを問う。満期=GONE:src/domain/sceneAdoption.js::DEF-060 (拒否の文言から DEF-060 が消えたとき)"

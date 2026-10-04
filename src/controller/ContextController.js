@@ -693,8 +693,14 @@ export class ContextController {
    * @returns {Promise|null}
    */
   recordConfirmedPoses(ids, label) {
-    const list = [...(ids ?? [])]
-    if (list.length === 0 || !this._ctxService.loaded) return null
+    const moved = [...(ids ?? [])]
+    if (moved.length === 0 || !this._ctxService.loaded) return null
+    // What the move CARRIED through fixed joints is declared too (ADR-162 D3):
+    // the regeneration this write triggers re-places every object from the
+    // document, so a carried object left at its old written pose snaps back
+    // there — the bin moves and its workpieces stay behind.
+    const carried = this._ctrl._service?.fixedJointFollowersOf?.(moved) ?? []
+    const list = [...moved, ...this.declarablePoseIds(carried)]
     const beforeDoc = this._ctxService.getDoc()
     let afterDoc = beforeDoc
     let written = 0

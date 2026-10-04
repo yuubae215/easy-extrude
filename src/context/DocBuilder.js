@@ -10,6 +10,7 @@
  */
 import { CONTEXT_DSL_VERSION } from './ContextDslSchema.js'
 import { LAYOUT_DSL_VERSION } from '../layout/LayoutDslSchema.js'
+import { constraintRef } from './ContextValidator.js'
 
 /**
  * Create a minimal valid blank context document.
@@ -348,6 +349,48 @@ export function adoptSceneEntity(doc, entity, name = 'Scene on screen') {
   spec.layout.entities = [...(spec.layout.entities ?? []), _clone(entity)]
   spec.trace = [...(spec.trace ?? []), { from: ON_SCREEN_FACT_REF, to: entity.ref, kind: 'derives' }]
   return clone
+}
+
+/**
+ * The given fact every entity of a Home template derives from (ADR-162 D1). The
+ * template is what asked for the layout — ADR-046 invariant 1 needs that said.
+ */
+export const TEMPLATE_FACT_REF = 'f_layout_template'
+
+/**
+ * A Context document that HOLDS a Layout DSL as its specification (ADR-162 D1) —
+ * so a scene compiled from a template keeps its source. Before ADR-162 the Home
+ * load compiled the DSL and dropped it: the scene became the only holder, and a
+ * declaration (mass, grasp spec) had to be re-derived from the screen one object
+ * at a time (ADR-159), which cannot carry relations — every template workpiece
+ * fastened to a bin was refused (DEF-060).
+ *
+ * The layout is cloned verbatim, so `compileContext(doc).layoutDsl` compiles to
+ * the same scene as the DSL itself. Every entity and constraint is traced to
+ * `TEMPLATE_FACT_REF` (ADR-046 invariant 1 — nothing unrequested).
+ *
+ * @param {object} layoutDsl  layout/1.0 DSL
+ * @param {string} [name]  document name (falls back to the DSL's `meta.name`)
+ * @returns {object} new Context DSL doc
+ */
+export function docFromLayout(layoutDsl, name) {
+  const layout = _clone(layoutDsl)
+  const doc = createBlankDoc(name ?? layout.meta?.name ?? 'Layout template')
+  doc.given.push({
+    ref:     TEMPLATE_FACT_REF,
+    subject: 'the layout template this project was started from',
+    status:  'asserted',
+    note:    'Every object and constraint of the template derives from it (ADR-162).',
+  })
+  const targets = [
+    ...(layout.entities ?? []).map(e => e.ref),
+    ...(layout.constraints ?? []).map(constraintRef),
+  ]
+  doc.specification = {
+    layout,
+    trace: targets.map(to => ({ from: TEMPLATE_FACT_REF, to, kind: 'derives' })),
+  }
+  return doc
 }
 
 /**

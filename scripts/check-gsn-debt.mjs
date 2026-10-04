@@ -356,7 +356,11 @@ const SUPPORT_LABELS = new Map([
 // 実装して support-verified に上がった日に下げる。4 つとも満期は機械可読 (満期=ADR-158 /
 // PATH:src/view/GraspReplayMath.test.js / PATH:e2e/grasp-replay.spec.js /
 // PATH:src/view/GraspReplayMath.js) なので分子 (G3) は動かない。
-const DEBT_BASELINE = 50
+// 2026-10-04: 50 → 54。ADR-163 (Proposed・起票のみ — 当事者の指示「ADRは起こしておいて」) の
+// 木が 4 goal を足した (連結成分をリンクごと入れる / 拒否は言えない種だけ / undo 1 回 / 画面が
+// DEF-060 を言わない)。先例どおり実装して support-verified に上がった日に下げる。4 つとも満期は
+// 機械可読 (満期=ADR-163 / GREP:src/domain/sceneAdoption.js / GONE:…::DEF-060) なので分子 (G3) は動かない。
+const DEBT_BASELINE = 54
 
 /**
  * G3 — 満期 trigger を持たない exploring goal の個数 (実測値)。

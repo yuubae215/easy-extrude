@@ -9,10 +9,11 @@
  * owned by `AppController` (the controller maps `source.file` → bundled module).
  *
  * This is the **Layout DSL** entry — distinct from the Context DSL
- * `TEMPLATE_CATALOG` (ADR-051). Selecting a card feeds the single authoritative
- * scene-load path `compileLayout → SceneService.importFromJson(clear)`
- * (PHILOSOPHY #1); a template is just a way to seed the scene, never a new
- * artifact.
+ * `TEMPLATE_CATALOG` (ADR-051). Selecting a card opens the DSL as a Context
+ * document (`docFromLayout` → `ContextService.loadContext` — the single
+ * document-load path, PHILOSOPHY #1). ADR-162: a template seeds the DOCUMENT,
+ * not just the scene — compiling it and dropping the source left every object
+ * undeclarable except by re-deriving it from the screen (DEF-060).
  */
 
 /**
