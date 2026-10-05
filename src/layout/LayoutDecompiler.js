@@ -89,8 +89,14 @@ export function solidRefOfSceneId(id) {
 /**
  * Recover a Layout DSL from a SceneSerializer v1.3 scene JSON.
  *
+ * Also returns `refOf` — the scene id → ref reading this pass used (Passes B–D),
+ * so a caller that cuts part of the result by scene id reads the same rule rather
+ * than re-spelling the prefix strip (§1.1 — ADR-163). Output-only: the DSL is
+ * unchanged by it.
+ *
  * @param {{objects?: object[], links?: object[]}} sceneJson
- * @returns {{ dsl: object, warnings: {id:string, type:string, reason:string}[] }}
+ * @returns {{ dsl: object, warnings: {id:string, type:string, reason:string}[],
+ *            refOf: ReadonlyMap<string, string> }}
  */
 export function decompileLayout(sceneJson) {
   if (!sceneJson || typeof sceneJson !== 'object') {
@@ -275,5 +281,5 @@ export function decompileLayout(sceneJson) {
     constraints,
   }
 
-  return { dsl, warnings }
+  return { dsl, warnings, refOf: idToRef }
 }
