@@ -348,7 +348,7 @@ RoboDK が Tool (TCP)・Object・Target を別々のツリー項目にして、�
 | ハンド | ロボットの tcp | #53 種別・形, #64 保持力 | tcp 実体の `hand` / `hand.hold` |
 | 把持 (関係) | ワーク × ハンドの関係 | #61 把持仕様 | **ワーク実体の欄** (`graspFeature.specs`) — ドメインと住所がずれている |
 | ビジョン | カメラ | #56 見えるか | **住所なし** — パネルの React state (DEF-033) |
-| アーム | ロボット | #66 リーチ包絡 | **住所なし** — パネルの React state |
+| アーム | ロボット | #66 リーチ包絡 | **住所なし** — 宣言の有無はパネルの React state (値はシーンの腕の URDF から導出, ADR-141) |
 | ユーザ (判定基準) | 探索を頼む人 | #58 重み・topN | **住所なし** — パネルの React state (DEF-033) |
 
 ビジョン / アーム (robot) は、Context DSL の discipline (`RoleKpiCatalog` の `vision` / `robot`) と
