@@ -5,7 +5,7 @@
 
 正本の所在:
 
-- **配置とその根拠** → `easy-extrude-wireframe-v9.html` の注釈①〜⑧ (最新版。v8 は把持まわりを受ける前の版)
+- **配置とその根拠** → `easy-extrude-wireframe-v10.html` の注釈①〜⑧ (最新版。v8 は把持まわりを受ける前の版)
 - **住所の物差しと却下した物差し** → `02-grouping-criteria.md`
 - **設計判断** → **ADR-103** (Map の再分類 — Phase 1、実装済み) /
   **ADR-104** (所有権・提案・証憑 — Phase 4、実装済み) /
