@@ -50,10 +50,13 @@
  * @typedef {{ns: 'variable', ref: string}} VariableRef
  *   A document variable, wrapped in its namespace so it is never comparable to
  *   an entity id as a bare string.
- * @typedef {string|VariableRef} SelectionMember
+ * @typedef {{ns: 'relation', ref: string}} RelationRef
+ *   A grasp relation, filed under its object's layout ref (ADR-164 D2).
+ * @typedef {string|VariableRef|RelationRef} SelectionMember
  * @typedef {{kind: 'empty'}
  *          |{kind: 'entities',  ids:  Set<string>}
- *          |{kind: 'variables', refs: Set<string>}} Selection
+ *          |{kind: 'variables', refs: Set<string>}
+ *          |{kind: 'relations', refs: Set<string>}} Selection
  */
 
 /** The four branches of the selection union. */
@@ -130,7 +133,7 @@ export function isVariableRef(x) {
  * member just because they share a ref.
  *
  * @param {string} objectRef — the layout ref of the Solid the grasp is declared on
- * @returns {{ns:'relation', ref:string}} frozen token
+ * @returns {RelationRef} frozen token
  */
 export function relationRef(objectRef) {
   if (typeof objectRef !== 'string' || objectRef.length === 0) {
@@ -139,7 +142,7 @@ export function relationRef(objectRef) {
   return Object.freeze({ ns: RELATION_NS, ref: objectRef })
 }
 
-/** @param {unknown} x @returns {boolean} true for a `relationRef()` token. */
+/** @param {unknown} x @returns {x is RelationRef} true for a `relationRef()` token. */
 export function isRelationRef(x) {
   if (typeof x !== 'object' || x === null) return false
   const t = /** @type {{ns?: unknown, ref?: unknown}} */ (x)
