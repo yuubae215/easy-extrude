@@ -13,6 +13,8 @@
  * loads under bare `node --test` (PHILOSOPHY #3 / #6).
  */
 
+import { isEndUser, jobFunctionOf } from './ActorStance.js'
+
 /** Entity kinds the seed exposes, mapped to their doc array. */
 const KIND_ARRAYS = {
   actor:       'actors',
@@ -105,8 +107,9 @@ export function describeSeedRequirement(req) {
 }
 
 /**
- * One-line human description of a seed actor (chip label / tooltip): role and
- * discipline, formatted from the entry's own fields (ADR-058 Phase 2).
+ * One-line human description of a seed actor (chip label / tooltip): job
+ * function, end-user stance (ADR-165 D1 — the legacy role value reads as the
+ * stance, not as a job) and discipline, formatted from the entry's own fields (ADR-058 Phase 2).
  *
  * @param {object} actor — a seed actor entry
  * @returns {string}
@@ -114,7 +117,9 @@ export function describeSeedRequirement(req) {
 export function describeSeedActor(actor) {
   if (!actor || typeof actor !== 'object') return ''
   const parts = []
-  if (actor.role) parts.push(String(actor.role))
+  const job = jobFunctionOf(actor)
+  if (job) parts.push(job)
+  if (isEndUser(actor)) parts.push('end user')
   if (actor.discipline) parts.push(String(actor.discipline))
   return parts.join(' · ')
 }

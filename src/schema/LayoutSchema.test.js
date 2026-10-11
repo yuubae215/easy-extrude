@@ -212,10 +212,10 @@ test('schema graspFeature face enum matches DECLARABLE_FACES', () => {
 })
 
 test('layout と context の両スキーマが同じ語彙を持つ — 片方だけ遅れる非対称を繰り返さない', () => {
-  // ADR-117 already paid for letting context-0.5 lag behind its layout twin, so
+  // ADR-117 already paid for letting the context schema lag behind its layout twin, so
   // the two vocabularies are bound to each other here rather than trusted to be
   // updated together.
-  const ctx = readJson('schema/context-0.5.schema.json')
+  const ctx = readJson('schema/context-0.6.schema.json')
   const ctxFeature = ctx.$defs.hydratedEntity.properties.graspFeature
   assert.deepEqual(ctxFeature.properties.kind.enum, schema.$defs.graspFeature.properties.kind.enum)
   const ctxSpec = ctxFeature.properties.specs.items

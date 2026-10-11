@@ -44,11 +44,17 @@ artifacts
         goal UnaskedCriteriaAreCountedUntilZero
         uuid 5cd5dd9d-23d8-4303-aee9-f2dc62678da0
         summary "エンドユーザ × (QCDS の比重 + 各要素の期待値と重み) の空欄の個数が数えられ、0 で全員が合意するまで設計へ進めない。進めない理由は名指しで出る"
-        labels support-exploring
+        labels support-verified
 
-            assumption BlankCensusWillSettleIt
-            uuid 3b909d59-1cec-4d93-b449-445030595ea5
-            summary "証拠予定: 実装 PR で、空欄の個数を数える純粋関数のテスト (安全を答えなかった人がいると 0 にならない、N=2 で片方だけ答えても 0 にならない) を置く。満期=PATH:src/context/CriteriaElicitation.test.js で決着する"
+            solution BlankCensusIsExecuted
+            uuid 8a71473b-b34d-42e2-acfa-1360ba0c67bc
+            summary "src/context/CriteriaElicitation.test.js (2026-10-11, PR1, 16 pass): 母集団は CRITERIA_ELEMENTS (7 要素) × {期待値, 重み} + 比重 4 = 1 人 18 欄。安全だけ未回答なら安全の 2 要素 × 2 = 4 が残る / N=2 で片方だけ答えても他方の 18 が残る / 0 人は started:false で『聞き取りが始まっていない』と名指し (空の 0 にしない) / 答えは owner のもので by ではない / 宣言された 0 は答え・全部 0 の比重は error / 同じ要素に 2 行は空欄扱い + error。validateContext の R12 (oq_criteria_no_end_user・oq_criteria_<人>) と R13 (職能の未宣言) が名指しで出る。ContextPhase2.test.js: フォームの適用だけで R12/R13 が消え、全問に答えるとフォームが空になる。合意 (設計へ進む gate の後半) は PR2 の CriteriaLine で決着する"
+            artifacts
+            - "src/context/CriteriaElicitation.js"
+            - "src/context/CriteriaElicitation.test.js"
+            - "src/context/CriteriaCatalog.js"
+            - "src/context/ContextValidator.js"
+            - "src/context/ContextPhase2.test.js"
 
         goal TheAgreedLineMovesOnlyByApprovedProposal
         uuid 0af88cd6-c44c-4aa4-b408-09b1235cdae3
@@ -66,4 +72,4 @@ artifacts
 
             assumption IndicatorContractWillSettleIt
             uuid 1ac45a56-bbd3-4a9a-82c1-b201c13cc910
-            summary "証拠予定: 実装 PR で response スキーマに関心と差し出すものを足して contractVersion を上げ、src/ に関心を計算する関数が 0 個であることを census で数える。満期=ADR-165"
+            summary "証拠予定: 実装 PR で response スキーマに関心と差し出すものを足して contractVersion を上げ、src/ に関心を計算する関数が 0 個であることを census で数える。満期=PATH:src/CriteriaIndicatorCensus.test.js で決着する (2026-10-11 PR1 で ADR-165 が段階実装の Accepted になったので、ADR の Status を満期にしたままだと D6 を実装する前に発火する — 満期を D6 の census の住所へ張り替えた)"

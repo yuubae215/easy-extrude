@@ -1,6 +1,12 @@
 import { useState } from 'react'
 import { useUIStore } from '../../store/uiStore.js'
 import { ANSWER_KIND } from '../../context/FormProjection.js'
+import { OWNER_NONE_DECLARED } from '../../context/Ownership.js'
+import { VALID_ROLES } from '../../context/ContextDslSchema.js'
+import { CRITERIA_CATEGORIES, CRITERIA_CATEGORY_LABELS, CRITERIA_ELEMENTS } from '../../context/CriteriaCatalog.js'
+import { CRITERION_OPS } from '../../context/IntakeVocabulary.js'
+import { jobFunctionOf } from '../../context/ActorStance.js'
+import { COLOR } from '../../theme/tokens.js'
 import { DeltaChip, LandingFlash, usePrevOnChange } from '../Feedback/FeedbackPrimitives.jsx'
 import { listDelta, settledRefs } from '../../view/FeedbackMath.js'
 
@@ -14,6 +20,14 @@ import { listDelta, settledRefs } from '../../view/FeedbackMath.js'
  *   - actorRef:     dropdown of doc actors      (R4 unassigned obligation)
  *   - kpiCriterion: KPI expression + criterion  (R9 stated-without-kpi)
  *   - requirement:  new requirement fields       (R8 role-kpi-catalog)
+ *   - owner:        actor or "none"              (R10 undeclared owner)
+ *   - endUserStance:dropdown of doc actors      (R12 no end user — ADR-165 D1)
+ *   - criteria:     QCD + S mix + expectation/weight per element (R12 unheard — ADR-165 D2)
+ *   - jobFunction:  dropdown of job functions    (R13 — ADR-165 D1)
+ *
+ * Every ANSWER_KIND has exactly one widget here (FormAnswerKinds.test.js) —
+ * a question shown with no input is consumed attention with nothing to do
+ * (PHILOSOPHY #11; R10 shipped that way until ADR-165 PR1 counted it).
  *
  * Each "Answer" button calls `onAnswerQuestion(qRef, answer)` which the
  * ContextController handles: snapshot beforeDoc, applyQuestionAnswer(beforeDoc, q, a),
@@ -116,6 +130,18 @@ function QuestionItem({ question, actors, onAnswer }) {
       {question.answerKind === ANSWER_KIND.REQUIREMENT && (
         <RequirementWidget question={question} onAnswer={onAnswer} />
       )}
+      {question.answerKind === ANSWER_KIND.OWNER && (
+        <OwnerWidget actors={actors} onAnswer={onAnswer} />
+      )}
+      {question.answerKind === ANSWER_KIND.END_USER && (
+        <ActorRefWidget actors={actors} onAnswer={onAnswer} />
+      )}
+      {question.answerKind === ANSWER_KIND.CRITERIA && (
+        <CriteriaWidget onAnswer={onAnswer} />
+      )}
+      {question.answerKind === ANSWER_KIND.JOB_FUNCTION && (
+        <JobFunctionWidget onAnswer={onAnswer} />
+      )}
     </div>
   )
 }
@@ -160,7 +186,7 @@ function ActorRefWidget({ actors = [], onAnswer }) {
       >
         {actors.length === 0 && <option value="">— no actor —</option>}
         {actors.map(a => (
-          <option key={a.ref} value={a.ref}>{a.ref} ({a.role ?? '?'})</option>
+          <option key={a.ref} value={a.ref}>{a.ref} ({jobFunctionOf(a) ?? '?'})</option>
         ))}
       </select>
       <AnswerButton disabled={!selected} onClick={() => onAnswer({ actorRef: selected })} />
@@ -266,6 +292,87 @@ function RequirementWidget({ question, onAnswer }) {
           requirement: { ref: ref.trim(), by: by.trim() || undefined, note: desc.trim() || undefined },
         })}
       />
+    </div>
+  )
+}
+
+function OwnerWidget({ actors = [], onAnswer }) {
+  const [owner, setOwner] = useState(actors[0]?.ref ?? OWNER_NONE_DECLARED)
+  return (
+    <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+      <select value={owner} onChange={e => setOwner(e.target.value)} style={{ ...inputStyle, cursor: 'pointer' }}>
+        {actors.map(a => <option key={a.ref} value={a.ref}>{a.ref}</option>)}
+        <option value={OWNER_NONE_DECLARED}>none — it belongs to no one</option>
+      </select>
+      <AnswerButton disabled={!owner} onClick={() => onAnswer({ owner })} />
+    </div>
+  )
+}
+
+function JobFunctionWidget({ onAnswer }) {
+  const [role, setRole] = useState('')
+  return (
+    <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+      <select value={role} onChange={e => setRole(e.target.value)} style={{ ...inputStyle, cursor: 'pointer' }}>
+        <option value="">— job function —</option>
+        {VALID_ROLES.map(r => <option key={r} value={r}>{r}</option>)}
+      </select>
+      <AnswerButton disabled={!role} onClick={() => onAnswer({ role })} />
+    </div>
+  )
+}
+
+/**
+ * ADR-165 D2 — the end user's value tree in one place: the QCD + S ratio and,
+ * per element, the expectation (criterion) and the weight. Only the fields
+ * actually filled are sent; a blank stays blank and stays counted. This is the
+ * plain form; the character-creation flow (D3) is a later stage.
+ */
+function CriteriaWidget({ onAnswer }) {
+  const [mix, setMix] = useState({})
+  const [rows, setRows] = useState(() =>
+    Object.fromEntries(CRITERIA_ELEMENTS.map(e => [e.key, { op: e.op, value: '', weight: '' }])))
+  const num = (v) => v !== '' && !isNaN(Number(v)) && Number(v) >= 0
+
+  const answer = {
+    mix: Object.fromEntries(CRITERIA_CATEGORIES.filter(c => num(mix[c] ?? '')).map(c => [c, Number(mix[c])])),
+    elements: Object.fromEntries(CRITERIA_ELEMENTS.flatMap(e => {
+      const r = rows[e.key]
+      const out = {}
+      if (r.value !== '' && !isNaN(Number(r.value))) out.criterion = { op: r.op, value: Number(r.value) }
+      if (num(r.weight)) out.weight = Number(r.weight)
+      return Object.keys(out).length ? [[e.key, out]] : []
+    })),
+  }
+  const anything = Object.keys(answer.mix).length + Object.keys(answer.elements).length > 0
+  const setRow = (key, patch) => setRows(prev => ({ ...prev, [key]: { ...prev[key], ...patch } }))
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }} data-testid="criteria-widget">
+      <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+        <span style={{ fontSize: '10px', color: COLOR.textSecondary, width: '42px', flexShrink: 0 }}>ratio</span>
+        {CRITERIA_CATEGORIES.map(c => (
+          <input key={c} type="number" min="0" value={mix[c] ?? ''} title={CRITERIA_CATEGORY_LABELS[c]}
+            onChange={e => setMix(prev => ({ ...prev, [c]: e.target.value }))}
+            placeholder={c} style={{ ...inputStyle, width: '40px' }} />
+        ))}
+      </div>
+      {CRITERIA_ELEMENTS.map(e => (
+        <div key={e.key} style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+          <span style={{ fontSize: '10px', color: COLOR.textSecondary, flex: 2, minWidth: 0 }} title={CRITERIA_CATEGORY_LABELS[e.category]}>
+            {e.category} · {e.label}
+          </span>
+          <select value={rows[e.key].op} onChange={ev => setRow(e.key, { op: ev.target.value })}
+            style={{ ...inputStyle, flex: 'none', width: '56px', cursor: 'pointer' }}>
+            {CRITERION_OPS.map(o => <option key={o} value={o}>{o}</option>)}
+          </select>
+          <input type="number" value={rows[e.key].value} placeholder={`expect ${e.unit}`}
+            onChange={ev => setRow(e.key, { value: ev.target.value })} style={{ ...inputStyle, width: '60px' }} />
+          <input type="number" min="0" value={rows[e.key].weight} placeholder="weight"
+            onChange={ev => setRow(e.key, { weight: ev.target.value })} style={{ ...inputStyle, width: '50px' }} />
+        </div>
+      ))}
+      <div><AnswerButton disabled={!anything} onClick={() => onAnswer(answer)} /></div>
     </div>
   )
 }

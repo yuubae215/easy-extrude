@@ -34,10 +34,18 @@
  *   R8 role-kpi-catalog    — an actor of a discipline whose catalog-mandatory
  *                            KPI is contributed by no requirement → OpenQuestion
  *
+ * ADR-165 PR1 rules (context/0.6):
+ *   R12 unheard-criteria   — no end user at all, or an end user with blank
+ *                            fields in the value tree (CriteriaElicitation)
+ *                                                                   → OpenQuestion
+ *   R13 undeclared-function— an end user whose job function is not declared
+ *                            (incl. the legacy role "endUser")      → OpenQuestion
+ *
  * @module context/ContextValidator
  */
 
 import {
+  CONTEXT_DSL_VERSION,
   SUPPORTED_VERSIONS,
   VALID_FACT_STATUS,
   BLOCKING_FACT_STATUS,
@@ -61,6 +69,9 @@ import { detectConflicts, detectNegotiationClusters } from './RequirementGraph.j
 import { promoteAdmissible } from './AdmissiblePromotion.js'
 import { requiredKpis } from './RoleKpiCatalog.js'
 import { evaluatePredicate, MalformedPredicate } from './PredicateEngine.js'
+import { CRITERIA_CATEGORIES, CRITERIA_ELEMENTS, criteriaElementOf } from './CriteriaCatalog.js'
+import { countUnheard, BLANK_FIELD } from './CriteriaElicitation.js'
+import { isEndUser, jobFunctionOf, writesLegacyStanceRole } from './ActorStance.js'
 
 /**
  * @param {object} ctx — Context DSL object
@@ -151,7 +162,12 @@ export function validateContext(ctx) {
         errors.push(`requirement "${req.ref}": constrains "${variable}" does not reference any variable in variables[]`)
       }
     }
-    if ((req.constrains ?? []).length === 0) {
+    // A criteria expectation (ADR-165 D2 — kpi.name is a catalog element) is
+    // what an end user expects of the outcome (takt, margin …), not a claim on
+    // a design variable: which variables a takt expectation bears on is the
+    // solver's mapping (core/ — §AI 向けガード 軸 1), so it may constrain none.
+    // Everything it does list is still checked above.
+    if ((req.constrains ?? []).length === 0 && criteriaElementOf(req) === null) {
       errors.push(`requirement "${req.ref}": constrains must list at least one shared variable`)
     }
     if (req.negotiability !== undefined && !VALID_NEGOTIABILITY.includes(req.negotiability)) {
@@ -391,6 +407,61 @@ export function validateContext(ctx) {
     }
     if (item.state === AGENDA_STATE.SETTLED && !item.decidedBy?.length) {
       errors.push(`agenda item "${item.ref}": settled without decidedBy — settling a conflict needs every involved party's key (ADR-104 D5)`)
+    }
+  }
+
+  // ── ADR-165 D1: stance and job function are two fields ──────────────────────
+  for (const actor of ctx.actors ?? []) {
+    if (ctx.version === CONTEXT_DSL_VERSION && writesLegacyStanceRole(actor)) {
+      errors.push(`actor "${actor.ref}": role "${actor.role}" is a stance, not a job function — in ${CONTEXT_DSL_VERSION} write endUser: true and declare the job in role (ADR-165 D1)`)
+    }
+    if (actor.mix !== undefined) {
+      if (!isEndUser(actor)) {
+        errors.push(`actor "${actor.ref}": mix (the QCD + S ratio) is asked of end users only — declare endUser: true or remove it (ADR-165 D2)`)
+      } else if (CRITERIA_CATEGORIES.every(c => actor.mix[c] === 0)) {
+        errors.push(`actor "${actor.ref}": every mix value is 0 — a ratio of all zeros states no preference at all; leave the unanswered ones blank instead (ADR-165 D2)`)
+      }
+    }
+  }
+
+  // ── R12: unheard criteria → OpenQuestion (ADR-165 力学 1) ───────────────────
+  // Counted against the catalog, not against the rows present: safety is the
+  // element nobody says aloud, so it has to be a blank before it can be asked.
+  const census = countUnheard(ctx)
+  if (!census.started) {
+    openQuestions.push({
+      ref:      'oq_criteria_no_end_user',
+      raisedBy: 'R12:no-end-user',
+      about:    'actors',
+      summary:  'No one stands as an end user yet — hearing the criteria cannot start until at least one actor is declared endUser: true',
+    })
+  }
+  for (const ref of census.endUsers) {
+    const mine = census.blanks.filter(b => b.actor === ref)
+    if (mine.length === 0) continue
+    const words = mine.map(b => b.field === BLANK_FIELD.MIX
+      ? `mix.${b.category}`
+      : `${b.element}.${b.field}`)
+    openQuestions.push({
+      ref:      `oq_criteria_${ref}`,
+      raisedBy: 'R12:unheard-criteria',
+      about:    ref,
+      summary:  `${mine.length} of ${CRITERIA_CATEGORIES.length + 2 * CRITERIA_ELEMENTS.length} criteria answers are still unheard from end user "${ref}": ${words.join(', ')}`,
+    })
+  }
+  for (const d of census.duplicates) {
+    errors.push(`end user "${d.actor}": ${d.refs.length} requirements (${d.refs.join(', ')}) answer the criteria element "${d.element}" — one expectation per person per element, otherwise which one counts is a guess (ADR-165 D2)`)
+  }
+
+  // ── R13: an end user with no declared job function → OpenQuestion ──────────
+  for (const actor of ctx.actors ?? []) {
+    if (isEndUser(actor) && jobFunctionOf(actor) === null) {
+      openQuestions.push({
+        ref:      `oq_function_${actor.ref}`,
+        raisedBy: 'R13:undeclared-function',
+        about:    actor.ref,
+        summary:  `End user "${actor.ref}" has no declared job function — who they are (maintainer, approver, production engineering, …) is a separate fact from standing as an end user (ADR-165 D1)`,
+      })
     }
   }
 

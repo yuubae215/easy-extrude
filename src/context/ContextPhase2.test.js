@@ -24,6 +24,8 @@ import { compileContext } from './ContextCompiler.js'
 import { validateContext } from './ContextValidator.js'
 import { promoteAdmissible } from './AdmissiblePromotion.js'
 import { projectForm, ANSWER_KIND } from './FormProjection.js'
+import { applyQuestionAnswer } from './FormApplication.js'
+import { CRITERIA_ELEMENTS } from './CriteriaCatalog.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const loadScenario = () =>
@@ -190,8 +192,31 @@ test('form projection: answering every question empties the form (machine-checka
   // completion property now includes having decided who may change what.
   for (const req of ctx.requirements) req.owner = req.by
 
-  const form = projectForm(validateContext(ctx))
-  assert.deepStrictEqual(form, [], '全問に答えるとフォームが空になること')
+  // answer R12 / R13 (ADR-165) through the form's own application — the
+  // criteria questions must be clearable by the answers the form asks for,
+  // otherwise "the form empties" would be a property of the fixture only.
+  let doc = ctx
+  const answerOne = (ruleKind, answerFor) => {
+    const q = projectForm(validateContext(doc)).find(x => x.answerKind === ruleKind)
+    assert.ok(q, `a ${ruleKind} question is asked`)
+    doc = applyQuestionAnswer(doc, q, answerFor(q))
+  }
+  answerOne(ANSWER_KIND.END_USER, () => ({ actorRef: ctx.actors[0].ref }))
+  if (projectForm(validateContext(doc)).some(q => q.answerKind === ANSWER_KIND.JOB_FUNCTION)) {
+    answerOne(ANSWER_KIND.JOB_FUNCTION, () => ({ role: 'maintainer' }))
+  }
+  answerOne(ANSWER_KIND.CRITERIA, () => ({
+    mix: { D: 3, Q: 2, C: 1, S: 4 },
+    elements: Object.fromEntries(CRITERIA_ELEMENTS.map(e => [e.key, { criterion: { op: e.op, value: 1 }, weight: 1 }])),
+  }))
+
+  const result = validateContext(doc)
+  assert.deepStrictEqual(projectForm(result), [], '全問に答えるとフォームが空になること')
+  // The form emptying is not enough: ContextService refuses a doc with errors,
+  // so an answer that empties the form but adds an error is rejected on screen
+  // (ADR-165 PR1 — the criteria answers first failed R0' `constrains` here,
+  // and only a browser run caught it, because this test looked at questions only).
+  assert.deepStrictEqual(result.errors, [], '答えた文書が error を持たないこと')
 })
 
 // ── determinism ───────────────────────────────────────────────────────────────

@@ -79,18 +79,64 @@
  *                           written (ADR-104 U4). Not a gate — a count, so
  *                           "decided while only one party was in the room"
  *                           stays visible after more people join.
+ *
+ * context/0.6 (ADR-165 PR1 — D1 + D2). NOT a strict superset on one field:
+ *   actor.role              is the actor's **job function** only (職能). The
+ *                           former value `endUser` was a *stance*, not a job,
+ *                           so one word carried two facts (PHILOSOPHY #33 (1)).
+ *                           It is split out below. Docs of 0.1–0.5 still load:
+ *                           `role: "endUser"` is READ as `endUser: true` with
+ *                           the job function undeclared (never defaulted — R13
+ *                           counts it). A 0.6 doc that writes it is an error.
+ *                           The reading lives in ActorStance.js alone.
+ *   actor.endUser           true when this actor stands as an end user of the
+ *                           project (立場). End users are 1..N — zero means the
+ *                           hearing of the criteria cannot start (R12 says so).
+ *   actor.mix               the end user's QCD + S ratio { D, Q, C, S } — the
+ *                           upper tier of the value tree. Relative numbers;
+ *                           a declared 0 is legal, all-zero is not (no ratio).
+ *   requirement.weight      how much exceeding the expectation is worth to its
+ *                           owner. The expectation itself is the requirement's
+ *                           existing `criterion` — no new layer (ADR-165 D2).
+ *                           Which criteria element a requirement answers is its
+ *                           `kpi.name` against CriteriaCatalog.js.
  */
 
 import { PROPOSAL_STATE, PROPOSAL_REF_PREFIX } from './Proposal.js'
 import { AGENDA_STATE, AGENDA_REF_PREFIX } from './Agenda.js'
 
-export const CONTEXT_DSL_VERSION = 'context/0.5'
+export const CONTEXT_DSL_VERSION = 'context/0.6'
 
-/** Accepted input versions — each is a strict additive superset of the prior. */
-export const SUPPORTED_VERSIONS = ['context/0.1', 'context/0.2', 'context/0.3', 'context/0.4', 'context/0.5']
+/**
+ * Accepted input versions — each is an additive superset of the prior, except
+ * that 0.6 stops *writing* the legacy role below (it is still read).
+ */
+export const SUPPORTED_VERSIONS = ['context/0.1', 'context/0.2', 'context/0.3', 'context/0.4', 'context/0.5', 'context/0.6']
 
-/** Actor roles — the four user personas plus the customer. */
-export const VALID_ROLES = ['developer', 'maintainer', 'endUser', 'agent', 'customer']
+/**
+ * Actor job functions (職能 — "who is this person"). Whether the actor stands
+ * as an end user of this project is a separate fact (`actor.endUser`,
+ * ADR-165 D1): the stance is not a job, and one person may be both a
+ * maintainer and an end user.
+ */
+export const VALID_ROLES = [
+  'developer', 'maintainer', 'agent', 'customer',
+  'approver',          // 決裁者
+  'productionEng',     // 生産技術
+  'manufacturingEng',  // 製造技術
+  'ehs',               // 環境安全
+  'integrator',        // SIer
+]
+
+/**
+ * The value 0.1–0.5 docs wrote into `role` for what is really a stance.
+ * Accepted on input only, read by ActorStance.js as `endUser: true` with the
+ * job function undeclared. A `context/0.6` doc that writes it is an error.
+ */
+export const LEGACY_END_USER_ROLE = 'endUser'
+
+/** Every value the `role` field may carry on input (the schema's enum). */
+export const ACCEPTED_ROLE_VALUES = Object.freeze([...VALID_ROLES, LEGACY_END_USER_ROLE])
 
 /** Epistemic status of a Fact. */
 export const VALID_FACT_STATUS = ['measured', 'asserted', 'assumed', 'unknown']

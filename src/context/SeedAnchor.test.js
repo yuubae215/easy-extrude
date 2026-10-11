@@ -125,6 +125,11 @@ describe('describeSeedActor', () => {
     assert.equal(describeSeedActor({ role: 'agent' }), 'agent')
     assert.equal(describeSeedActor({}), '')
   })
+
+  it('reads the legacy role "endUser" as a stance, not a job (ADR-165 D1)', () => {
+    assert.equal(describeSeedActor({ role: 'endUser' }), 'end user')
+    assert.equal(describeSeedActor({ role: 'maintainer', endUser: true }), 'maintainer · end user')
+  })
 })
 
 describe('describeSeedVariable', () => {

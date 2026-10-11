@@ -27,6 +27,9 @@ export const ANSWER_KIND = {
   KPI_CRITERION: 'kpiCriterion',  // a (kpi, criterion) backing a stated region (R9)
   REQUIREMENT:   'requirement',   // a new requirement contributing a mandatory KPI (R8)
   OWNER:         'owner',         // who may write a claim, or "none" (R10 — ADR-104 D2)
+  END_USER:      'endUserStance', // which actor stands as an end user (R12 no end user — ADR-165 D1)
+  CRITERIA:      'criteria',      // an end user's mix and element answers (R12 unheard — ADR-165 D2)
+  JOB_FUNCTION:  'jobFunction',   // an end user's job function (R13 — ADR-165 D1)
 }
 
 /**
@@ -47,6 +50,9 @@ const KIND_BY_RULE = {
   'R8:role-kpi-catalog': ANSWER_KIND.REQUIREMENT,
   'R9:stated-without-kpi': ANSWER_KIND.KPI_CRITERION,
   'R10:undeclared-owner': ANSWER_KIND.OWNER,
+  'R12:no-end-user':      ANSWER_KIND.END_USER,
+  'R12:unheard-criteria': ANSWER_KIND.CRITERIA,
+  'R13:undeclared-function': ANSWER_KIND.JOB_FUNCTION,
 }
 
 /**
