@@ -226,6 +226,39 @@ export function setEntityGraspFeature(doc, ref, feature) {
   return clone
 }
 
+/**
+ * Name (or un-name) WHICH robot tcp a Solid's grasp declaration is for — the
+ * right-hand side of the grasp RELATION (ADR-164 D2), input-immutable.
+ *
+ * The only writer of `graspFeature.tcp`. Separate from `setEntityGraspFeature`
+ * because the two are different facts said from different places: the specs say
+ * HOW to grasp (the relation's panel), this says WITH WHAT (the relation's row,
+ * including a broken one being re-pointed). The relation is derived from the
+ * declaration, so naming the hand on an object with NO grasp declaration is a
+ * no-op clone — there is no relation to name a hand for, and inventing an empty
+ * declaration would fabricate a statement the user never made (原則 #11).
+ *
+ * `tcpRef === null` deletes the key — back to "the hand is not declared", never
+ * a default (ADR-164 §俯瞰: not even when the scene has one tcp).
+ *
+ * @param {object} doc
+ * @param {string} ref     Layout DSL entity ref of the Solid
+ * @param {string|null} tcpRef  Layout DSL ref of a robot tcp, or null
+ * @returns {object} new doc
+ */
+export function setEntityGraspTcp(doc, ref, tcpRef) {
+  const clone    = _clone(doc)
+  const entities = clone.specification?.layout?.entities
+  if (!Array.isArray(entities)) return clone
+  const i = entities.findIndex(e => e?.ref === ref)
+  if (i === -1) return clone
+  const feature = entities[i].graspFeature
+  if (feature == null || typeof feature !== 'object') return clone
+  if (tcpRef == null) delete feature.tcp
+  else feature.tcp = tcpRef
+  return clone
+}
+
 /** The mass declarations of a Solid (ADR-121 / ADR-156) — the keys this writer owns. */
 export const MASS_DECLARATION_KEYS = Object.freeze(['mass', 'centerOfMass'])
 

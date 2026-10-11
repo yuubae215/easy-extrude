@@ -1306,6 +1306,43 @@ stateDiagram-v2
 
 ---
 
+## 把持の関係 — ok / hand-undeclared / broken-object / broken-tcp (ADR-164 D2)
+
+台帳 (`STATE_LEDGER` 「把持の関係」) で状態が 4 に累積したので節を起こす。ただし**遷移は無い**:
+状態は保存されず、文書の把持宣言 (`graspFeature` と、それが名指す `graspFeature.tcp`) と
+いまのシーンから**毎回導出する**。したがって描くのは状態機械ではなく**導出の全域表**であり、
+不正遷移は「存在しない」(遷移が無い) — 不正**状態**は導出の全域性 (すべての入力の組合せに
+ちょうど 1 つの状態) で表現不能にする。導出の唯一の点は `graspRelationsOf` (`src/domain/graspRelation.js`)。
+
+母集団は**文書の宣言**であってシーンの実体ではない — シーンを辿ると消えたワークの宣言は
+原理的に出てこない (原則 #31 / DEF-035)。
+
+| ワークがシーンに在る | `tcp` を名指している | 名指した ref がシーンのロボット tcp | 状態 | 壊れているか |
+|---|---|---|---|---|
+| no | (問わない) | (問わない) | `broken-object` | yes — 関係はワークに住むので、ワーク側の欠落が勝つ |
+| yes | no | — | `hand-undeclared` | no — 探索は主語のロボットの手で解く (旧文書すべて)。**既定で埋めない** |
+| yes | yes | no | `broken-tcp` | yes — 消えた / 改名された / tcp でない実体を指す |
+| yes | yes | yes | `ok` | no |
+
+```mermaid
+flowchart LR
+  D[文書の graspFeature 1 個] --> O{ワークはシーンに在るか}
+  O -- no --> BO[broken-object ⚠]
+  O -- yes --> T{tcp を名指しているか}
+  T -- no --> HU[hand-undeclared]
+  T -- yes --> R{名指した ref はシーンのロボット tcp か}
+  R -- no --> BT[broken-tcp ⚠]
+  R -- yes --> OK[ok]
+```
+
+**入力を動かす事象 (= 再導出の発火点 — 原則 #32):** 文書の編集 (`contextChanged` — 宣言・
+手の名指し・付け替え・宣言の削除・undo/redo)、シーンの実体の増減 (`objectAdded` /
+`objectRemoved` — マイクロタスクで 1 回に畳む)。探索の主語の変更 (`selectRobot`) は状態を
+動かさないが、Run の gap (`relationHandGap` — 宣言した手 ≠ 主語の手) を動かすので同じ投影を
+再発行する。
+
+**基数:** 全体 `0..N`、ワークごとに `0..1` (宣言した上限 — `graspFeature` が Solid に 0..1)。
+
 ## Related ADRs
 
 - **ADR-002**: Two-step Sketch → Extrude workflow

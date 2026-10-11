@@ -534,6 +534,14 @@ These are design-level constraints (not bugs) of the current `fastened` implemen
 - **Anti-pattern**: re-selecting inside each doc-edit caller (`_runDocEdit`, the adoption command, undo callbacks) — N−1 of them forget (原則 #32: the obligation belongs to the event that fires it).
 - **Where it is asked**: `src/domain/selectionAcrossProjection.test.js` (the identity rule) and `e2e/grasp-stub.spec.js` S15/S16 (declare on the object's own panel, then undo — both through a re-projection).
 
+## A Relation Is Counted From Its Declaration, Not From the Scene (ADR-164 D2)
+
+- **Context**: a grasp is a RELATION (object × tcp). Before ADR-164 D2 the grasp declaration was only ever read by joining it onto the live scene (`resolveSearchLayout`), so a declaration whose object had been deleted simply stopped appearing — every count that walked the scene stayed correct while the declaration fell silently (DEF-035).
+- **Concrete Rule**: a relation between two authorities is **derived on every read and never stored** (`graspRelationsOf({docDsl, sceneDsl})`). Its population is the **declaring** side (the document's `graspFeature`), and every combination of inputs maps to exactly one named state (`ok` / `hand-undeclared` / `broken-object` / `broken-tcp`) — a missing side is a state the row SAYS, not a row that disappears. The right-hand side field (`graspFeature.tcp`) has one reader (`resolveGraspFeature`) and one writer (`setEntityGraspTcp`).
+- **Selection**: a selected relation borrows its 3-D body from two entities that are not in the selection, so the painter that lit them releases them itself (`SelectionManager._relationLit`), and after a re-projection or an entity add/remove the relation selection is repainted from its identity (the object ref — `AppController._reassertRelationSelection`).
+- **Anti-pattern**: deriving the rows from the scene's entities (`scene.filter(e => e.graspFeature)`) — the orphan has no node to visit; storing the relation as a row of its own — a second source for the declaration.
+- **Where it is asked**: `src/domain/graspRelation.test.js` (the total derivation table), `src/IdentityContainment.test.js` (the field's one reader/writer), `e2e/grasp-stub.spec.js` S17 (delete the object → ⚠ row → undo).
+
 ## _promptAddFrame Must Select Frame After Creation
 
 - **Principle**: `CoordinateFrameView._group.visible` defaults to `false`. A frame only becomes visible when `_showFrameChain()` or `_setChildFramesVisible()` calls `showFull()` / `showDimmed()`. These are only called from `_switchActiveObject()`.

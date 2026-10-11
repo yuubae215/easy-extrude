@@ -326,8 +326,16 @@ export function resolveGraspFeature(entity) {
   if (typeof raw !== 'object' || Array.isArray(raw)) {
     return malformed(['graspFeature must be an object'])
   }
-  if (raw.kind === GRASP_FEATURE_KIND.ANYWHERE) return resolved(GRASP_FEATURE_STATE.DECLARED_ANYWHERE)
-  if (raw.kind === LEGACY_FACE_LIST_KIND) return migrateFaceList(raw)
+  // WHICH hand this grasp is for (ADR-164 D2) — carried through every state so a
+  // rewrite of the specs (`featureToDsl`) cannot drop it. Absent stays null:
+  // "the hand is not declared" is a state the relation row says, never a default.
+  if (raw.tcp !== undefined && (typeof raw.tcp !== 'string' || raw.tcp.length === 0)) {
+    return malformed(['graspFeature.tcp must be the ref of a robot tcp (a non-empty string)'])
+  }
+  const tcp = raw.tcp ?? null
+  const withTcp = (r) => ({ ...r, tcp })
+  if (raw.kind === GRASP_FEATURE_KIND.ANYWHERE) return withTcp(resolved(GRASP_FEATURE_STATE.DECLARED_ANYWHERE))
+  if (raw.kind === LEGACY_FACE_LIST_KIND) return withTcp(migrateFaceList(raw))
   if (raw.kind !== GRASP_FEATURE_KIND.SPECS) {
     return malformed([
       `graspFeature.kind "${raw.kind}" is not declared — use one of: ${DECLARED_FEATURE_KINDS.join(' / ')}`,
@@ -356,7 +364,7 @@ export function resolveGraspFeature(entity) {
   const { strategy, declared, errors: strategyErrors } = readStrategy(raw.strategy)
   errors.push(...strategyErrors)
   if (errors.length) return malformed(errors)
-  return resolved(GRASP_FEATURE_STATE.DECLARED_SPECS, { specs, strategy, strategyDeclared: declared })
+  return withTcp(resolved(GRASP_FEATURE_STATE.DECLARED_SPECS, { specs, strategy, strategyDeclared: declared }))
 }
 
 /**
@@ -378,6 +386,8 @@ export function resolveGraspFeature(entity) {
  * @property {boolean} strategyDeclared
  * @property {number} migratedFaces  how many legacy faces were migrated into specs (0 = none)
  * @property {string[]} errors
+ * @property {string|null} tcp  the ref of the robot tcp this grasp is for (ADR-164 D2);
+ *   null = not declared (and always null for `derived` / `malformed`)
  */
 
 function resolved(state, extra = {}) {
@@ -388,6 +398,7 @@ function resolved(state, extra = {}) {
     strategyDeclared: false,
     migratedFaces: 0,
     errors: [],
+    tcp: null,
     ...extra,
   }
 }
@@ -653,12 +664,15 @@ export function specToDsl(spec, handKind) {
  * @param {{order:string, fallback:string}} strategy
  * @param {boolean} strategyDeclared
  * @param {string|null} handKind
+ * @param {string|null} [tcp]  the tcp the grasp is for (ADR-164 D2) — passed through
+ *   so rewriting the specs never drops which hand the relation names
  * @returns {object|null}  null when there is no spec left (= clear, never `specs: []`)
  */
-export function featureToDsl(specs, strategy, strategyDeclared, handKind) {
+export function featureToDsl(specs, strategy, strategyDeclared, handKind, tcp = null) {
   if (!specs.length) return null
   const out = { kind: GRASP_FEATURE_KIND.SPECS, specs: specs.map(s => specToDsl(s, handKind)) }
   if (strategyDeclared) out.strategy = { order: strategy.order, fallback: strategy.fallback }
+  if (tcp) out.tcp = tcp
   return out
 }
 

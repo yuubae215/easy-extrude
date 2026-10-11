@@ -107,3 +107,28 @@ export function FaceChip({ label, active, onClick, disabled, grow }) {
     </button>
   )
 }
+
+/**
+ * The shared shape of both premise pickers (ADR-117).
+ *
+ * The robot picker and the object picker ask the same question about the two
+ * halves of the same premise — "which one, of 0 / 1 / N?" — and the answer is
+ * rendered identically down to the placeholder wording. Writing the second one
+ * as a copy would have duplicated six colour literals along with the markup,
+ * which is what the ADR-100 ratchet objected to; sharing the row removes the
+ * duplication instead of declaring a budget for it.
+ *
+ * Shared from here (ADR-164 D2) because the grasp-spec editor moved to the grasp
+ * relation's own panel and still draws its inputs in the same vessel.
+ */
+export const PICKER = Object.freeze({
+  row:    { display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' },
+  label:  { fontSize: '10px', color: '#889', minWidth: '38px' },
+  muted:  { fontSize: '10px', color: '#caa' },
+  chosen: { fontSize: '11px', color: '#cde' },
+  hint:   { color: '#9ad' },
+  select: {
+    background: '#1f2530', color: '#dceaff', border: '1px solid #3a4a60',
+    borderRadius: '4px', fontSize: '11px', padding: '2px 4px', flex: 1,
+  },
+})

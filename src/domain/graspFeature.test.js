@@ -389,3 +389,26 @@ test('新しい仕様は閉じ軸も深さも未宣言で始まり、名前は�
   const s2 = newSpec([s1], null)
   assert.notEqual(s2.name, s1.name)
 })
+
+// ── どの手との関係か (ADR-164 D2) ──────────────────────────────────────────────
+
+test('tcp は全状態を通って運ばれ、仕様を書き直しても落ちない', () => {
+  const dsl = { ...specs([spec()]), tcp: 'tcp_b' }
+  const r = resolveGraspFeature(solid(dsl))
+  assert.equal(r.tcp, 'tcp_b')
+  const written = featureToDsl(r.specs, r.strategy, r.strategyDeclared, GRIPPER_KIND.PARALLEL_JAW, r.tcp)
+  assert.equal(written.tcp, 'tcp_b')
+  assert.deepEqual(resolveGraspFeature(solid(written)), r, '不動点')
+  assert.equal(resolveGraspFeature(solid({ kind: GRASP_FEATURE_KIND.ANYWHERE, tcp: 't' })).tcp, 't')
+})
+
+test('tcp の欄が無ければ null — 既定値で埋めない', () => {
+  assert.equal(resolveGraspFeature(solid(specs([spec()]))).tcp, null)
+  assert.equal(resolveGraspFeature(solid(undefined)).tcp, null)
+})
+
+test('読めない tcp は宣言ごと MALFORMED (黙って未宣言に落とさない)', () => {
+  const r = resolveGraspFeature(solid({ ...specs([spec()]), tcp: '' }))
+  assert.equal(r.state, GRASP_FEATURE_STATE.MALFORMED)
+  assert.match(r.errors[0], /graspFeature\.tcp/)
+})

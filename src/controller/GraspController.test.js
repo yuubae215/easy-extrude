@@ -66,6 +66,8 @@ function fakeStore() {
       contextSetGraspTargets(t) { state.context.graspTargets = t },
       // ADR-157 D6 — the all-phase analysis, its own slot (same sole writer).
       contextSetGraspAnalysis(a) { state.context.graspAnalysis = a },
+      // ADR-164 D2 — the derived grasp relations (same sole writer).
+      contextSetGraspRelations(r) { state.context.graspRelations = r },
     },
   }
   return { getState: () => state, _state: state }
@@ -1508,3 +1510,64 @@ test('the target roster rows carry their scene id so the grasp panel can link to
   assert.deepEqual(t.list.map(r => [r.ref, r.sceneId]), [['widget', 'solid_widget']])
   assert.equal(t.selectedSceneId, 'solid_widget')
 })
+
+// ── ADR-164 D2: the grasp names its hand — a run with another hand stops ────────
+
+/** Live scene: the widget + the subject's tcp (`tcp_a`) + another robot's tcp (`tcp_b`). */
+function relationScene(tcp) {
+  const widget = { ...LAYOUT.entities[0] }
+  const sceneDsl = { version: 'layout/1.0', entities: [
+    widget,
+    { ref: 'ra', type: 'CoordinateFrame', name: 'robot_base', robotRole: 'base', position: { x: 0, y: 0, z: 0 } },
+    { ref: 'tcp_a', type: 'CoordinateFrame', name: 'tcp', robotRole: 'tcp', parent: 'ra', position: { x: 0, y: 0, z: 0 } },
+    { ref: 'tcp_b', type: 'CoordinateFrame', name: 'other tcp', robotRole: 'tcp', position: { x: 0, y: 0, z: 0 } },
+  ] }
+  return {
+    sceneDsl,
+    sceneRefOf: new Map([['s_widget', 'widget'], ['f_base', 'ra'], ['f_tcp', 'tcp_a']]),
+    layoutDsl: layoutWithFeature({ kind: 'anywhere', ...(tcp ? { tcp } : {}) }),
+  }
+}
+
+test('ADR-164 D2: a grasp declared for another robot\'s hand stops the run with the reason (no silent swap)', async () => {
+  const rec = recordingBff()
+  const { gc, store, grasp, ctrl } = setup({ bff: rec.bff, ...relationScene('tcp_b') })
+  await gc.runGraspSearch({})
+  assert.equal(rec.sent, null, 'nothing was sent')
+  assert.equal(grasp().status, 'no-target')
+  assert.match(grasp().reason, /declared for other tcp/)
+  assert.match(ctrl._uiView.toasts.at(-1).msg, /declared for other tcp/)
+  assert.match(store.getState().context.graspRelations.targetHandGap, /declared for other tcp/,
+    'the panel reads the same gap the gate used')
+})
+
+test('ADR-164 D2: declared for the subject\'s own hand, or not declared at all — the run proceeds', async () => {
+  for (const tcp of ['tcp_a', null]) {
+    const rec = recordingBff()
+    const { gc, store } = setup({ bff: rec.bff, ...relationScene(tcp) })
+    await gc.runGraspSearch({})
+    assert.ok(rec.sent, `sent with tcp=${tcp}`)
+    assert.equal(store.getState().context.graspRelations.targetHandGap, null)
+  }
+})
+
+test('ADR-164 D2: the relation projection lists it with both scene ids, and its pair is what gets lit', () => {
+  const { gc, store } = setup(relationScene('tcp_a'))
+  gc.refreshGraspTargets()
+  const rel = store.getState().context.graspRelations
+  assert.deepEqual(rel.list.map(r => [r.objectRef, r.tcpRef, r.state, r.objectSceneId, r.tcpSceneId]),
+    [['widget', 'tcp_a', 'ok', 's_widget', 'f_tcp']])
+  assert.deepEqual([rel.total, rel.broken], [1, 0])
+  assert.deepEqual(rel.tcps.map(t => t.ref), ['tcp_a', 'tcp_b'])
+  assert.deepEqual(gc.relationSceneIds('widget'), ['s_widget', 'f_tcp'])
+})
+
+test('ADR-164 D2: a relation whose hand left the scene is counted broken and lights only its object', () => {
+  const { gc, store } = setup(relationScene('tcp_gone'))
+  gc.refreshGraspTargets()
+  const rel = store.getState().context.graspRelations
+  assert.equal(rel.list[0].state, 'broken-tcp')
+  assert.equal(rel.broken, 1)
+  assert.deepEqual(gc.relationSceneIds('widget'), ['s_widget'])
+})
+

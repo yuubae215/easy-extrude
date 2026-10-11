@@ -238,7 +238,9 @@ export function resolveSearchLayout({ sceneDsl = null, docDsl = null, warnings =
  * population is the DOCUMENT's declarations, not the scene's entities. Walking
  * what came out can never reveal what failed to come out.
  *
- * **画面へ出す経路は未実装 (DEF-035)。** この関数には今日呼び手が居ない — ADR-132 は
+ * **把持の宣言の孤児は ADR-164 D2 で画面に出た** — 関係の行 (`domain/graspRelation.js`) が
+ * 文書の把持宣言を母集団に取り、ワークの無い宣言を壊れた行として残す。**それ以外の宣言
+ * (質量・重心) の孤児を画面へ出す経路は未実装 (DEF-035)。** この関数には今日呼び手が居ない — ADR-132 は
  * ADR-115 が名指しした形 (宣言は在るが読む機械が無い) を自分で 1 つ作っている。
  * 未決なのは技術ではなく**出す場所と語**である: パネルのどこに置くか、何と言うか
  * (「宣言した物が見つからない」は削除なのか改名なのか区別できない)、それはエラーなのか

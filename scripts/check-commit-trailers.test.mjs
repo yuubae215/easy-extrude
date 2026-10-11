@@ -39,9 +39,14 @@ test('人間のコミットは missing ではなく foreign', () => {
     'foreign')
 })
 
-test('片翼だけのトレーラは stamped ではなく degraded', () => {
+test('Model-Effort だけ (Task-Class 無し) は degraded', () => {
   assert.equal(classifyCommit(claude({ taskClass: '' })), 'degraded')
-  assert.equal(classifyCommit(claude({ modelEffort: '' })), 'degraded')
+})
+
+test('Task-Class だけが現行の刻印 — モデル ID を書かない書式 (ADR-116 §改訂)', () => {
+  // 実行環境の上位規則 (push するコミットにモデル ID を入れない) と 4 回衝突したので、
+  // 書き手は Task-Class だけを刻む。これを欠測や片翼に数えると、規則に従うたびに落ちる。
+  assert.equal(classifyCommit(claude({ modelEffort: '' })), 'stamped')
 })
 
 test('unknown/unknown は刻印済みに見えるが degraded', () => {

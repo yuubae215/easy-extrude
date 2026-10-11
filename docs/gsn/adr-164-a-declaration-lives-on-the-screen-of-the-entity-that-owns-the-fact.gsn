@@ -48,12 +48,18 @@ artifacts
 
         goal AGraspIsARelationRowAndABrokenOneIsVisible
         uuid 09e42d66-8ab1-4cf6-8b58-e15a2454f11f
-        summary "把持はワークと tcp の関係の行として Outliner 意味側に立ち、把持仕様と引き上げはその行が持つ。文書が宣言したのにシーンに片方が無い把持は、黙って落ちず壊れた行として見える"
-        labels support-exploring
+        summary "把持はワークと tcp の関係の行として Outliner 意味側に立ち、把持仕様と引き上げはその行のパネルで宣言される (引き上げのデータの住所を関係へ移すのは D4)。文書が宣言したのにシーンに片方が無い把持は、黙って落ちず壊れた行として見える"
+        labels support-verified
 
-            assumption GraspRelationTestWillSettleIt
+            solution GraspRelationDerivationAndRowsAreExecuted
             uuid c2307013-3b68-495a-878f-aa322dc8e4e7
-            summary "証拠予定: 実装 PR で、関係の行の導出 (文書の把持宣言 × シーンの実体) の純粋層テストを置く — N≥2 の把持、片方が消えた把持が壊れた行になる、引き上げが把持仕様から読まれる。満期=PATH:src/domain/graspRelation.test.js で決着する"
+            summary "2026-10-11 (ADR-164 PR2): src/domain/graspRelation.test.js (9 pass) — 母集団は文書の把持宣言。N≥2 で宣言 1 つにつき 1 行・文書順、欄の無い旧文書は tcp が 1 本でも hand-undeclared (既定で埋めない)、ワークが消えた宣言は broken-object、名指した ref が無い / tcp でない実体は broken-tcp、両側欠落はワークが勝つ、Run の gap は宣言した手 ≠ 主語の手のときだけ。src/controller/GraspController.test.js (+4) — 別の手に宣言された把持は Run を理由つきで止め、パネルの gap と同じ値、関係の対の scene id。src/domain/selection.test.js — 関係は第 3 の選択の種で同じ ref のワークとも変数とも比較不能。e2e/grasp-stub.spec.js S17 (VITE_GRASP_STUB=1) — 宣言 → Document 側に 1 行 (hand not declared)、行を選ぶと relations 選択でワークと tcp が文脈に出る、name <tcp> で ok、ワークを Delete すると ⚠ broken-object の行が残り、undo で ok に戻る。DeclarationOwnership.test.js — grasp 行は関係のパネル (GraspDeclarations.jsx) へ移り、movesWith の ratchet は 3 → 2"
+            artifacts
+            - "src/domain/graspRelation.test.js"
+            - "src/domain/graspRelation.js"
+            - "src/controller/GraspController.test.js"
+            - "e2e/grasp-stub.spec.js"
+            - "src/components/NPanel/declarations/GraspDeclarations.jsx"
 
         goal RealisticAppearanceFallsBackWithoutAToggle
         uuid 0e804743-ddc7-4a20-9060-89fbbc07ed65

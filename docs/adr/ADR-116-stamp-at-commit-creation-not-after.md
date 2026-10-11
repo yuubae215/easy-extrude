@@ -1,6 +1,6 @@
 # 116. 観測トレーラはコミット生成時に刻む — amend の後追いをやめる
 
-- Status: Accepted (実装済み 2026-08-08 — `.githooks/prepare-commit-msg` が主経路。`git commit && git push` の連鎖でも刻めることを再現ラボで確認。**実装で 1 点変わった**: 予備経路を消さず残した)
+- Status: Accepted (実装済み 2026-08-08 — `.githooks/prepare-commit-msg` が主経路。`git commit && git push` の連鎖でも刻めることを再現ラボで確認。**実装で 1 点変わった**: 予備経路を消さず残した。**2026-10-11 改訂**: 刻むのは `Task-Class` だけ — `Model-Effort` を書き手から外した、§改訂)
 - Date: 2026-08-08
 - Deciders: yuubae215, Claude
 - Supersedes / Superseded by: 採択されれば **ADR-092 §3 の書き込み機構**を置き換える
@@ -114,6 +114,25 @@ ADR-109 D3 / ADR-115 力学 1 と**同じ形**である (宣言は在る、読�
   `parseCommitContext`) と `derive --message-file` 経路。`commit-trailers.sh` の
   PreToolUse を書き換え。**`src/` は 1 行も触っていない。** `MISSING_BASELINE` は
   14 のまま (過去の欠測は遡及して直らない)。
+
+## 改訂 (2026-10-11) — `Model-Effort` を刻まない
+
+- **何が起きたか**: `Model-Effort` の値はモデル ID (`claude-opus-5-5/medium`) である。実行環境の上位規則は
+  「push するコミット・PR・コードにモデル ID を入れない」と定めており、両者は 4 回衝突した (PR #418、
+  #426、#427 の 2 本、ADR-164 PR2)。そのたびに人がトレーラを手で外し、`check-commit-trailers` の
+  `MISSING_BASELINE` を 1 つ上げていた。4 回目は予備経路 (PostToolUse の amend) が外したトレーラを
+  刻み直し、外す手段そのものが無くなった。
+- **当事者の判断**: 「モデル ID の付与は上位により禁止されているので、リポジトリのフック自体を変更する。
+  削除しても問題は起こらない」。
+- **変えたこと**: 書き手 (`buildTrailers`・`.githooks/prepare-commit-msg`・`.claude/hooks/commit-trailers.sh`)
+  は `Task-Class` だけを刻む。`Task-Class` は変更集合からの決定的な導出で、モデル ID を含まず、hook が
+  走った時点で必ず書けるので「Claude が作ったコミット」の印 (人間のコミットとの区別 — ADR-092 §2) は
+  これで保たれる。検査 (`check-commit-trailers`) は `Task-Class` 単独を刻印済みとし、`Model-Effort` は
+  **在れば**旧書式として検査し続ける (履歴は書き換えない)。Q4 DRIFT (申告と根拠のズレ) は新しいコミットでは
+  根拠を持たないので空振りし、過去のコミットにだけ効く。`MISSING_BASELINE` は 18 のまま据え置いた。
+- **失うもの**: 「どのモデル・どの effort で書いたか」の根拠ある記録 (ADR-092 の主目的の半分)。
+  上位規則が禁じる以上、push される場所には置けない。どこか push されない場所 (ローカルのログ等) に
+  残すかは、必要が出たときに別に決める。
 
 ## Lens notes
 

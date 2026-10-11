@@ -88,8 +88,9 @@ test('主経路: マーカーがあればコミット生成時に刻まれる', 
     git('add', '-A')
     putMarker(dir)
     git('commit', '-q', '-m', 'feat(x): first')
-    assert.equal(trailer(git, 'Model-Effort'), 'claude-opus-5/high')
     assert.equal(trailer(git, 'Task-Class'), 'feat/front')
+    // モデル ID は刻まない — 実行環境の上位規則 (ADR-116 §改訂)。
+    assert.equal(trailer(git, 'Model-Effort'), '')
   } finally { rmSync(dir, { recursive: true, force: true }) }
 })
 
@@ -108,7 +109,7 @@ test('主経路: commit と push を連鎖しても刻まれる (ADR-115 が数�
     putMarker(dir)
     // 1 コマンドに連鎖させる — commit の直後に push が走る。
     execFileSync('sh', ['-c', 'git commit -qam "feat(x): chained" && git push -q origin HEAD'], { cwd: dir })
-    assert.equal(trailer(git, 'Model-Effort'), 'claude-opus-5/high',
+    assert.equal(trailer(git, 'Task-Class'), 'feat/front',
       '連鎖しても刻めていない — 主経路が死んでいる (予備経路はこの形を救えない)')
   } finally {
     rmSync(dir, { recursive: true, force: true })
@@ -122,7 +123,7 @@ test('人間のコミット (マーカー無し) には刻まない — 帰属',
     writeFileSync(join(dir, 'src', 'a.js'), 'x')
     git('add', '-A')
     git('commit', '-q', '-m', 'fix(x): by a human')
-    assert.equal(trailer(git, 'Model-Effort'), '')
+    assert.equal(trailer(git, 'Task-Class'), '')
   } finally { rmSync(dir, { recursive: true, force: true }) }
 })
 
@@ -133,7 +134,7 @@ test('古いマーカーは使わない (鮮度が帰属の判別)', () => {
     git('add', '-A')
     putMarker(dir, { ageSec: 600 })
     git('commit', '-q', '-m', 'fix(x): stale marker')
-    assert.equal(trailer(git, 'Model-Effort'), '')
+    assert.equal(trailer(git, 'Task-Class'), '')
   } finally { rmSync(dir, { recursive: true, force: true }) }
 })
 
@@ -148,7 +149,7 @@ test('マーカーは使い切り — 刻んだら消える', () => {
 
     writeFileSync(join(dir, 'src', 'a.js'), 'y')
     git('commit', '-qam', 'feat(x): second')
-    assert.equal(trailer(git, 'Model-Effort'), '',
+    assert.equal(trailer(git, 'Task-Class'), '',
       '2 本目は主経路では刻まれない (予備経路が拾う — ADR-116 の宣言された残り穴)')
   } finally { rmSync(dir, { recursive: true, force: true }) }
 })
@@ -194,6 +195,6 @@ test('マージコミットには刻まない (変更集合を持たない)', ()
     git('add', '-A'); putMarker(dir); git('commit', '-q', '-m', 'feat(x): main')
     putMarker(dir)
     git('merge', '-q', '--no-ff', '-m', 'merge: side', 'side')
-    assert.equal(trailer(git, 'Model-Effort'), '')
+    assert.equal(trailer(git, 'Task-Class'), '')
   } finally { rmSync(dir, { recursive: true, force: true }) }
 })

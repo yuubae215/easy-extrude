@@ -329,6 +329,7 @@ export const CONFIRMATION_BY_FIELD = Object.freeze({
   'target.mass':                     { picture: 'panel',       where: 'the object card (kg) — a quantity, not a place' },
   'target.centerOfMass':             { picture: 'centerOfMass', where: 'a marker at the point, solid = measured / hollow = assumed, captioned' },
   'target.lift':                     { picture: 'lift',        where: 'an arrow from the object at the declared direction and distance, captioned' },
+  'graspFeature.tcp':                { picture: 'selection', paint: 'relationPair', where: 'selecting the grasp relation row lights the object and the named tcp together (ADR-164 D2)' },
 })
 
 /** Where a field is confirmed. **Throws on an unregistered field** (原則 #31). */

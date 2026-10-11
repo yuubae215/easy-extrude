@@ -92,6 +92,11 @@ import { execFileSync } from 'node:child_process'
  * 含まない書式を認める検査の改訂) はもう満期と読むべきで、PR 本文でそう名指しした。
  *
  * 2026-10-11 (同日): 17 → 18。同じブランチの 2 本目 (ADR-164 D2 の案 B の記録) も同じ衝突。
+ *
+ * 2026-10-11 (同日): ここで止まる。4 回目の衝突 (ccr-c9735e66-ammgfy — ADR-164 PR2) で当事者が
+ * 「上位がモデル ID を禁じているのでフックのほうを変える」と決め、書き手は `Task-Class` だけを
+ * 刻むようになった (ADR-116 §改訂)。上で予告した「次の手」がこれで、以後この衝突による欠測は
+ * 生まれない — ベースラインは 18 のまま据え置く (過去の 18 件は書き換えない)。
  */
 export const MISSING_BASELINE = 18
 
@@ -123,8 +128,11 @@ export function classifyCommit({ authorEmail, modelEffort, taskClass }) {
   const tc = String(taskClass ?? '').trim()
   if (!me && !tc) return 'missing'
 
-  // 片翼だけ / 中身が空。被覆率の上では「刻印済」に見えるので、別に数える。
-  if (!me || !tc) return 'degraded'
+  // 2026-10-11 から書き手は Task-Class だけを刻む (Model-Effort の値はモデル ID で、実行環境の
+  // 上位規則と衝突した — ADR-116 §改訂)。だから `Task-Class` 単独が正規の刻印になった。
+  // Model-Effort は**在れば**旧書式として検査する (過去のコミットは書き換えない)。
+  if (!tc) return 'degraded'          // Model-Effort だけ — 片翼
+  if (!me) return 'stamped'           // 現行の書式
   if (/^unknown\/unknown$/.test(me)) return 'degraded'
   if (!/^[^/\s]+\/[^/\s]+$/.test(me)) return 'degraded'
 

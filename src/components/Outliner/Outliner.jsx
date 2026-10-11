@@ -17,7 +17,9 @@ import { SELECTION_KIND } from '../../domain/selection.js'
 import {
   NAVIGATOR_SIDE, DECLARED_NAVIGATOR_SIDES, navigatorSideDeclaration,
   semanticSideSummary, semanticSideDeclaration, SEMANTIC_SIDE_KIND,
+  relationSectionSummary, RELATION_SECTION_KIND,
 } from '../../view/NavigatorSides.js'
+import { relationWordsFor } from '../../domain/graspRelation.js'
 
 // ── Robot placement frames (ADR-084 §2, TF tree ADR-085) ─────────────────────
 // A robot's placement lives in a PAIR of CoordinateFrames (the single source
@@ -431,6 +433,51 @@ function SemanticSide({ summary, selectedRefs, callbacks }) {
   )
 }
 
+// ── The semantic side's second section: grasp relations (ADR-164 D2) ─────────
+//
+// A grasp is a RELATION (object × tcp) derived from the document's declaration,
+// not a body — so it lives on the semantic side, and a relation one of whose
+// sides is gone stays as a ⚠ row instead of falling silently (DEF-035). Rows are
+// windows: clicking one goes through `onSelectGraspRelation` → `selectOnly`.
+function RelationSection({ summary, selectedRelations, callbacks }) {
+  if (summary.kind === RELATION_SECTION_KIND.HIDDEN) return null
+  return (
+    <div data-testid="outliner-relations" style={{ borderTop: '1px solid #111', marginTop: 6 }}>
+      <div style={{ padding: '6px 10px 2px', color: COLOR.textSecondary, fontSize: 10 }}>{summary.headline}</div>
+      {summary.kind === RELATION_SECTION_KIND.NO_RELATIONS && (
+        <div style={{ padding: '0 10px 6px', color: COLOR.textSecondary, fontSize: 10, lineHeight: 1.5 }}>{summary.detail}</div>
+      )}
+      {(summary.rows ?? []).map(row => {
+        const words  = relationWordsFor(row.state)
+        const active = selectedRelations.has(row.ref)
+        return (
+          <div
+            key={row.ref}
+            data-testid="outliner-relation-row"
+            data-relation-state={row.state}
+            onClick={() => callbacks.onSelectGraspRelation?.(row.ref)}
+            title={words.detail ?? row.text}
+            style={{
+              display: 'flex', alignItems: 'baseline', gap: 6,
+              padding: '3px 10px',
+              // One accent for selection whatever the kind (ADR-100); a broken
+              // row says so with the caution hue on its glyph and text.
+              background: active ? rgba(COLOR.accent, 0.18) : 'transparent',
+              color: active ? COLOR.accent : (words.broken ? COLOR.cautionTone : COLOR.textPrimary),
+              cursor: 'pointer',
+            }}
+          >
+            <span style={{ color: words.broken ? COLOR.cautionTone : COLOR.infoTone, fontSize: 11 }} aria-hidden>
+              {words.broken ? '⚠' : '✋'}
+            </span>
+            <span style={{ fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.text}</span>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 export function Outliner() {
   const items      = useUIStore(s => s.outlinerItems)
   const activeId   = useUIStore(s => s.outlinerActiveId)
@@ -461,6 +508,11 @@ export function Outliner() {
     ? new Set(selection.members)
     : new Set()
   const semantic = semanticSideSummary({ docPresent, variables: docPresent ? variables : null })
+  const graspRelations = useUIStore(s => s.context.graspRelations)
+  const relationSection = relationSectionSummary({ docPresent, relations: graspRelations })
+  const selectedRelations = selection.kind === SELECTION_KIND.RELATIONS
+    ? new Set(selection.members)
+    : new Set()
   const pulseAdd = tourVisible(tour, { contextActive, demoActive, galleryOpen })
     && tourAnchor(tour) === 'outliner-add'
 
@@ -550,7 +602,12 @@ export function Outliner() {
               setDraggingId={setDraggingId}
             />
           ))
-          : <SemanticSide summary={semantic} selectedRefs={selectedRefs} callbacks={callbacks} />}
+          : (
+            <>
+              <SemanticSide summary={semantic} selectedRefs={selectedRefs} callbacks={callbacks} />
+              <RelationSection summary={relationSection} selectedRelations={selectedRelations} callbacks={callbacks} />
+            </>
+          )}
       </div>
 
       {/* Footer — Add button */}

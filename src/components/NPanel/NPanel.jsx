@@ -3,6 +3,7 @@ import { NPanelGeneric } from './NPanelGeneric.jsx'
 import { NPanelFrame }   from './NPanelFrame.jsx'
 import { NPanelLink }    from './NPanelLink.jsx'
 import { NPanelVariable } from './NPanelVariable.jsx'
+import { RelationDeclarations } from './declarations/GraspDeclarations.jsx'
 import { EntityChecks }  from './EntityChecks.jsx'
 import { GraspSearchPanel } from '../Grasp/GraspSearchPanel.jsx'
 import { ParametricAssetPanel } from '../Context/ParametricAssetPanel.jsx'
@@ -111,6 +112,9 @@ export function NPanel() {
             body. Which body belongs to which kind is declared in
             `view/SelectionKinds.js`, not inferred here. */}
         {nPanelData?.type === 'variable' && <NPanelVariable data={nPanelData} />}
+        {/* A grasp relation is the third selectable kind (ADR-164 D2) — its body
+            is its own declarations (how to grasp, how to lift, which hand). */}
+        {nPanelData?.type === 'relation' && <RelationDeclarations objectRef={nPanelData.objectRef} />}
 
         {/* Entity-scope validation, beside the thing it is about (ADR-105 D5).
             Availability follows the SELECTION — not `ctx.active`, not whether a

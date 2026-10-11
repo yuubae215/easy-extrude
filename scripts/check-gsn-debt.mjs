@@ -372,7 +372,9 @@ const SUPPORT_LABELS = new Map([
 // (DeclarationOwnership.test.js の census) と RealisticAppearanceFallsBackWithoutAToggle
 // (robot-appearance e2e のフォールバック) が support-verified に上がった。残る 1 つ
 // (把持の関係の行 — D2) は PR2 で上がる。
-const DEBT_BASELINE = 56
+// 2026-10-11 (同日): 56 → 55。ADR-164 PR2 (D2) で AGraspIsARelationRowAndABrokenOneIsVisible が
+// support-verified に上がった (graspRelation.test.js の node --test と grasp-stub e2e S17)。
+const DEBT_BASELINE = 55
 
 /**
  * G3 — 満期 trigger を持たない exploring goal の個数 (実測値)。

@@ -122,6 +122,19 @@ const IDENTITY_RULES = [
     why: '帰属の判定が呼び出し側ごとに書かれると、fixed で描かれるパネルを勘定に入れ忘れた実装が必ず 1 つ生まれ、そこだけがパネル内の click を「外側」と読む (ADR-113 §力学 1)',
   },
   {
+    // ADR-164 D2。把持の宣言が「どの tcp との関係か」を名指す欄は、読むのは
+    // `resolveGraspFeature` だけ・書くのは `setEntityGraspTcp` だけ。関係の行
+    // (`graspRelationsOf`) も解決済みの `.tcp` を読む。生の欄を呼び出し側で読み直すと、
+    // 不正な値 (空文字・非文字列) を片方は MALFORMED、片方は「未宣言」と読み、
+    // 行と Run の gate が別のことを言う。
+    name: '把持の関係の右辺 (graspFeature.tcp の解釈)',
+    owners: ['src/domain/graspFeature.js', 'src/context/DocBuilder.js'],
+    use: "resolveGraspFeature(entity).tcp / graspRelationsOf({docDsl, sceneDsl}) — 書くのは setEntityGraspTcp",
+    // 文字列の中の欄名 ('graspFeature.tcp' — 表のキー) は解釈ではないので当てない。
+    all: [/\b(raw|feature|graspFeature)\??\.tcp\b(?!['"`])/],
+    why: '同じ欄の解釈が 2 箇所にあると、壊れた値を一方は不正・他方は未宣言と読み、関係の行と Run の gate が食い違う (ADR-164 D2)',
+  },
+  {
     // ADR-104 U2。「この提案は古びているか」は *保存しない* と決めた導出値なので、
     // 導出規則そのものが唯一の住所になる。散ると「4 つ目の状態」が事実上復活する。
     name: '提案の陳腐化判定 (from === 現在値)',
