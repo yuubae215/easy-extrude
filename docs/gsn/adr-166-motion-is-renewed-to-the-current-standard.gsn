@@ -1,0 +1,67 @@
+GOALS adr166_motion_is_renewed_to_the_current_standard
+
+goal MotionMeetsTodaysStandardAndAnnotationsReadInAnyView
+uuid 0077f1c2-1fbe-4b1a-8c69-def6fa8c9b2d
+summary "アプリの演出が、今の Claude が作れる水準で揃っている。マップ注釈は、どの投影・どの角度から見ても読め、実写のロボットと同じ空間にいるように見える"
+state UnderReview
+labels adr-166, adr-093, adr-103, adr-149, adr-155, adr-160, motion, principle-30, principle-31, principle-27, proposed, term-p-operate, change-presentation
+artifacts
+- "docs/adr/ADR-166-motion-is-renewed-to-the-current-standard-and-map-annotations-become-light-on-the-floor.md"
+
+    context Adr166Scope
+    uuid 021a7d2a-1b76-4514-a3e1-8252a285079f
+    summary "ADR-166 (Proposed 2026-10-11): 物差しは今の Claude の能力。M1 棚卸し (モーション基盤を使う 53 ファイルを採点 — 2026-10-11 実施、docs/motion/inventory.md) → M2 モーション・アイデンティティ 5 軸を CLAUDE.md に固定し背景を選び直す → M3 マップ注釈を床に当たった光にし名札を EntityLabel に揃える → M4 採点の低い順に残りを作り直す"
+
+    context RequirementCameFromTheOwner
+    uuid cd375091-d69f-4768-a16e-57c46e163d35
+    summary "当事者の言葉 (2026-10-10): 「古くなったマップアニメーションの刷新も計画してください」「大胆案で」「あなたの別のセッションでのモーションアニメーションのスキルを見ると、今のリポジトリのアニメーションなどの演出が古く感じた」「スキルというのは、ユーザ作成のスキルではなく、あなた Claude 自体の能力のこと」"
+
+    context BusinessTreeAttachPoint
+    uuid 5699b9a4-5a94-4d8d-9e6a-540aa49b2b7a
+    summary "事業木へ接続 (2026-10-11, ADR-153): profit-growth.gsn の goal OtherAdoptionBranchesCovered (p_operate) の下に solution Adr166Tree として吊る。古く見える画面は、読めても使い続けたくならない採用障壁"
+
+    justification WhyNotKeepBlueprint
+    uuid 1e2a1223-e62b-4708-ac7f-6cc3c57a2614
+    summary "却下案 A (Blueprint を残し角度で薄める) への反証: 製図台の語彙は真上から見る Map モードの前提で選ばれ (ADR-093 D3)、その前提は ADR-103 で消えた。実写の空間に製図の記号を置く違和感は、薄めても残る"
+
+    justification WhyNotAnnotationsOnly
+    uuid dbc9ffbf-391e-4518-9d8b-5129ec778a8a
+    summary "却下案 C (注釈だけ直す) への反証: 古く見える原因は、モーションの方向性が CLAUDE.md に一度も決められず演出ごとに選ばれてきたこと。注釈だけ直しても、次の刷新でまた置いていかれる"
+
+    assumption TheYardstickMoves
+    uuid 5f8e6cce-2110-4816-852a-a4de12a0b1c5
+    summary "反証されうる前提: 『今の Claude の能力』は時間とともに動く物差しなので、M1 の採点は日付つきでしか言えない。採点が古くなったら M1 をやり直す (表に撮影日を残す)"
+
+    strategy ByInventoryThenIdentityThenFloorLight
+    uuid 800bb0c7-fa19-4771-980f-a8ccf03b05bc
+    summary "棚卸しで差を数え、方向性を 1 か所に固定し、その光源を共有して注釈を作り直す。床の光は背景の光源に従うので、方向性 (M2) の後に作る"
+
+        goal EveryMotionSurfaceIsScored
+        uuid 1e9f455c-c2d6-4655-a59d-adf43f7dd825
+        summary "モーション基盤を使う演出がすべて、品質ゲート・Tier・今の水準との差で採点された表にあり、表のファイルが構文から導出した母集団とちょうど一致する"
+        labels support-verified
+
+            solution MotionInventoryIsExecuted
+            uuid ce1d618a-de6e-4a53-b32a-5c6fcf0fa309
+            summary "M1 実施 (2026-10-11): docs/motion/inventory.md — 母集団 53 ファイルを 21 行に分け、C 4 行 (背景 / リンクの波紋 / マップ注釈 / 起動ホーム)・B 11 行・A 4 行・対象外 2 行。src/MotionInventoryCoverage.test.js (node --test 4 pass) が、表に無い母集団 0・母集団に無い行 0・二重採点 0 を問う。採点はコード読みと 2026-10-10 の実機撮影に基づく — 各演出の撮影は作り直す PR の直前に撮る"
+            artifacts
+            - "docs/motion/inventory.md"
+            - "src/MotionInventoryCoverage.test.js"
+
+        goal MotionIdentityIsFixedInOnePlace
+        uuid 523a1058-7838-40c1-bd8b-b68423d686db
+        summary "モーション・アイデンティティ 5 軸 (イージング族・時間尺度・振付・アトモスフィア・3 色) が CLAUDE.md の 1 節に固定され、背景のアトモスフィアが Void Grid 型から選び直されている"
+        labels support-exploring
+
+            assumption IdentitySectionWillSettleIt
+            uuid 0bb70a49-0fc5-47c7-aebc-928e3f3e551d
+            summary "証拠予定: M2 の PR で CLAUDE.md に節を起こす。満期=GREP:CLAUDE.md::モーション・アイデンティティ で決着する"
+
+        goal AnnotationsAreLightOnTheFloorAndReadFromAnyAngle
+        uuid b5a0a592-0956-4f77-82c4-e93fd8b4aee2
+        summary "マップ注釈は床に当たった光として描かれ、透視でも正射でも、斜めの角度でも同じ意味で読める。名札は EntityLabel の 1 つの仕組みで、N 個の注釈は同位相で動かない (ADR-093 D1 を継承)"
+        labels support-exploring
+
+            assumption FloorLightWillSettleIt
+            uuid 1b551fec-664b-41dc-b1e7-9ef2a11600f6
+            summary "証拠予定: M3 の PR で Blueprint 装置を消し、見る角度を入力にした純粋層テスト (角度に依らず分類が読める・lockstep 不能・reduced motion でフレーム一致) と刷新前後の動画を置く。満期=GONE:src/view/AnnotatedRegionView.js::The\sBlueprint\sdevice で決着する"

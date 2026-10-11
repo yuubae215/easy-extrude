@@ -786,6 +786,12 @@ const DRAFT_WITH_IMPLEMENTATION = [
        + '`FunctionMatcher.js` / `SpatialCommandParser` は 1 つも存在しない。'
        + 'ADR-052 が φ を 5W1H 語彙全体へ一般化した結果、引用だけが増えた。'
        + 'この行が消えるのは ADR-044 の判断が閉じたとき (DEF-017)' },
+  { adr: 'ADR-166',
+    why: '**段の 1 つ目だけが実施済みで、判断はまだ閉じていない。** `MotionInventoryCoverage.test.js` は '
+       + 'M1 (演出の棚卸しと採点 — docs/motion/inventory.md) の census で、作り直しの実装ではない。'
+       + 'ADR-166 の判断の中身 — モーション・アイデンティティ (M2) と床に当たった光 (M3) — は当事者と '
+       + '決める前なので Proposed が正しい (2026-10-11 — 当事者の指示「実装はこのセッションでは行いません」)。'
+       + 'この行が消えるのは ADR-166 が Accepted になったとき' },
 ]
 
 if (ledger !== null) {
