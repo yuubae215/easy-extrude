@@ -102,6 +102,9 @@ export class UIStateManager {
           // The tcp's own declaration — what this robot grasps with (ADR-164 D1:
           // the HAND domain lives on the tcp's panel). null on any other frame.
           hand: ctrl._graspCtrl?.handDeclarationsOf(obj.id) ?? null,
+          // The camera's own declaration (ADR-164 D3 — the VISION domain lives
+          // on the camera's panel). null when the frame is not a camera.
+          camera: ctrl._graspCtrl?.cameraDeclarationsOf(obj.id) ?? null,
         },
       )
       return
@@ -385,6 +388,7 @@ export class UIStateManager {
                 onImportStep: () => ctrl._triggerStepImport(),
                 onFrame:      canAddFrame ? () => ctrl._addObject('frame') : undefined,
                 onRobot:      () => ctrl._addObject('robot'),
+                onCamera:     () => ctrl._addObject('camera'),
                 onPlace:      (type) => ctrl._placeToolCtrl.setTool(type),
                 // Parametric assets (ADR-106 D3): shaping a jig / conveyor / cell floor
                 // is modelling, so its entrance is the same one every other object uses.

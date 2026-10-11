@@ -714,3 +714,68 @@ test('S18 — 引き上げは関係のパネルで宣言し、where を言わな
 
   expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
 })
+
+test('S19 — カメラはシーンの実体: 足すと見えるかを問い、視点を写した姿勢がワイヤに載り、消すと問わない (ADR-164 D3)', async ({ page }) => {
+  // カメラは探索の設定ではなく、シーンに居て選べる物。0 台は「見えるかを問わない」状態で、
+  // 1 台は暗黙、ワイヤの camera はその実体の世界姿勢から導出される (パネルの値ではない)。
+  const errors = await reachGraspPanel(page, 'solve')
+  await pickAnObjectIfAsked(page)
+  const cams = () => page.evaluate(async () => {
+    const { useUIStore } = await import('/easy-extrude/src/store/uiStore.js')
+    return useUIStore.getState().context.cameras
+  })
+  const runAndRequest = () => page.evaluate(async () => {
+    const { useUIStore } = await import('/easy-extrude/src/store/uiStore.js')
+    await useUIStore.getState().callbacks.onRunGraspSearch({})
+    const g = useUIStore.getState().context.grasp
+    return { status: g?.status, camera: g?.request?.graspSearch?.camera ?? null, reason: g?.reason ?? null }
+  })
+
+  // 0 台: 状態であって gap ではない。理由つきで「問わない」と言い、Run は通り、camera は載らない。
+  await expect(page.getByText(/visibility is not asked/)).toBeVisible()
+  expect((await cams()).cardinality).toBe('none')
+  const r0 = await runAndRequest()
+  expect(r0.status).toBe('results')
+  expect(r0.camera).toBeNull()
+
+  // 足す: Add メニューから。行に CAMERA の札、カメラのパネルに宣言の欄。
+  await page.locator('#canvas-container canvas').hover()
+  await page.keyboard.press('Shift+A')
+  await page.getByText('Camera', { exact: true }).click()
+  await expect.poll(async () => (await cams()).cardinality).toBe('single')
+  await expect(page.getByText('CAMERA', { exact: true })).toBeVisible()
+  await page.locator('#canvas-container canvas').hover()
+  if (!(await page.getByText('Declarations (vision camera)').isVisible())) await page.keyboard.press('n')
+  await expect(page.getByText('Declarations (vision camera)')).toBeVisible()
+
+  // 既定の姿勢 (真上から真下) がそのままワイヤに載る — optical +Z = 世界 −Z。
+  const r1 = await runAndRequest()
+  expect(r1.status).toBe('results')
+  expect(r1.camera.viewAxis).toEqual([0, 0, -1])
+  expect(r1.camera.fovHalfAngle).toBe(0.6)
+
+  // 「今の視点を写す」: カメラが視点の位置に立ち、視線の向きを見る (1 回の undo)。
+  const view = await page.evaluate(() => window.__easyExtrude.cameraState())
+  await page.getByTestId('camera-copy-view').click()
+  await expect.poll(async () => (await cams()).selected?.wire?.position?.[2]).not.toBe(1.2)
+  const r2 = await runAndRequest()
+  const d = [view.target.x - view.position.x, view.target.y - view.position.y, view.target.z - view.position.z]
+  const n = Math.hypot(...d)
+  r2.camera.viewAxis.forEach((v, i) => expect(Math.abs(v - d[i] / n)).toBeLessThan(1e-3))
+  r2.camera.position.forEach((v, i) => expect(Math.abs(v - [view.position.x, view.position.y, view.position.z][i] / 1000)).toBeLessThan(1e-3))
+  // 同じ要求をもう 1 回通しても同じ答え (1 フレーム古い姿勢を読んでいない)。
+  const r2b = await runAndRequest()
+  expect(r2b.camera).toEqual(r2.camera)
+
+  // undo ×2 (写した視点 → 追加) で 0 台へ戻り、camera は再び載らない。
+  await page.locator('#canvas-container canvas').hover()
+  await page.keyboard.press('Control+z')
+  await expect.poll(async () => (await cams()).selected?.wire?.position?.[2]).toBe(1.2)
+  await page.keyboard.press('Control+z')
+  await expect.poll(async () => (await cams()).cardinality).toBe('none')
+  const r3 = await runAndRequest()
+  expect(r3.status).toBe('results')
+  expect(r3.camera).toBeNull()
+
+  expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
+})

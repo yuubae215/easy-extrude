@@ -32,6 +32,9 @@
 | 爪を閉じる掃引 | 開いた位置から閉じた位置までの爪の並進を 1 つの箱で (厳密、離散化なし) | `core/…/engine/phases.py: _finger_sweep` | core のみ |
 | 引き上げ | 閉じた手 + 携行物 (対象 box を相対 1e-6 縮めた OBB) を宣言した方向・距離の線分上 t ∈ (0, 1] の 6 点に置いて分離軸判定 | `core/…/engine/phases.py: phase_hits(LIFT)` | core のみ |
 | 可視性 | カメラ→把持点の線分遮蔽 + 視野円錐 | `core/…/engine/feasibility.py: sightline_occlusion_miss` | core のみ |
+| カメラの視線 (ワイヤ) | カメラ実体の世界回転で optical `+Z` を回す (ROS optical frame: +Z 視線・+Y 画像の下)。保存せず毎回導出 (ADR-164 D3) | `src/domain/visionCamera.js: wireCameraOf` | front (公知の閉形式・宣言の写像) |
+| 視点の写し | THREE のカメラ基底 (−Z 視線・+Y 上) を x まわり半回転して optical 基底へ、基底 → 四元数は Shepperd 法 (ADR-164 D3) | `src/domain/visionCamera.js: cameraPoseFromViewport` / `quaternionFromBasis` | front (公知の閉形式) |
+| 視錐台 (描画) | 側面が ±半角の正方形錐 — 内接円錐がソルバの円錐と一致 (矩形の判定は DEF-061) | `src/domain/visionCamera.js: frustumCorners` | front (表示) |
 | 把持性 (平行ジョー) | 閉じ軸への射影幅 vs 開口。閉じ軸を宣言した仕様では対象 box の閉じ方向の厚み `2·Σ hᵢ·|aᵢ·x|` (ADR-152) | `core/…/engine/feasibility.py: NaiveParallelJawGraspChecker` | core のみ |
 | 深さのゲート | `depth − (toolLength − palm_z) > 0` なら把持性で棄却 (パームが面の下へ潜る) | `core/…/engine/feasibility.py: palm_depth_miss` | core のみ |
 | 把持性 (吸引) | カップ footprint 内の法線の揃い | `core/…/engine/feasibility.py: NaiveSuctionGraspChecker` | core のみ |

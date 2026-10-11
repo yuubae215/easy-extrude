@@ -52,6 +52,7 @@ import { getPlaceTypeEntry } from '../domain/PlaceTypeRegistry.js'
 import { SpatialLink } from '../domain/SpatialLink.js'
 import { createSpatialLinkCommand }           from '../command/CreateSpatialLinkCommand.js'
 import { createDeleteSpatialLinkCommand }     from '../command/DeleteSpatialLinkCommand.js'
+import { isCameraFrame } from '../domain/visionCamera.js'
 import { createCreateCoordinateFrameCommand } from '../command/CreateCoordinateFrameCommand.js'
 import { createAddRobotCommand }              from '../command/AddRobotCommand.js'
 import { createMountAnnotationCommand }       from '../command/MountAnnotationCommand.js'
@@ -293,6 +294,8 @@ export class AppController {
         // Robot rows wear their DECLARED role, not their name (ADR-090), and a
         // new base/tcp changes the roster the grasp panel selects from.
         if (obj.robotRole) outlinerView?.setRobotRole(obj.id, obj.robotRole)
+        // A loaded camera arrives with its declaration (ADR-164 D3).
+        if (isCameraFrame(obj)) outlinerView?.setIsCamera(obj.id, true)
         this._invalidateRobotRoster()
       }
       if (obj.ifcClass) outlinerView?.setObjectIfcClass(obj.id, obj.ifcClass)
@@ -352,6 +355,14 @@ export class AppController {
     // re-reads too (the event, not the editor, owns the refresh — 原則 #32).
     this._service.on('tcpHandChanged', () => {
       this._graspCtrl?.refreshRobots()
+      this._updateNPanel()
+    })
+    // ADR-164 D3: a camera was declared / moved by "copy view" / removed — the
+    // grasp panel's camera roster and the camera's own N panel re-read (the
+    // event owns the refresh — 原則 #32). The frustum is redrawn by the writer.
+    this._service.on('frameCameraChanged', (id) => {
+      outlinerView?.setIsCamera(id, isCameraFrame(this._scene.getObject(id)))
+      this._graspCtrl?.refreshCameras()
       this._updateNPanel()
     })
     this._service.on('objectRenamed', (id, nm)  => {
@@ -1249,6 +1260,7 @@ export class AppController {
       // focused spec's pictures are drawn. The e2e guard for "+x — where is that?".
       graspDeclaration: () => this._graspCtrl?.declarationSnapshot() ?? null,
       addRobot:  () => this._addRobot(),
+      addCamera: () => this._addCamera(),
       // Load a Layout DSL through the same path a Home template takes — so an
       // e2e can hand the app a file written BEFORE a format change (ADR-151's
       // base-relative tcp) and watch the scene-entry upgrade meet it.
@@ -1400,6 +1412,8 @@ export class AppController {
   _invalidateRobotRoster() {
     this._robotRoster = null
     this._graspCtrl?.refreshRobots()
+    // A frame add / remove / rename can change which CAMERAS exist too (ADR-164 D3).
+    this._graspCtrl?.refreshCameras()
   }
 
   /**
@@ -1830,6 +1844,7 @@ export class AppController {
     if (type === 'measure') { this._measureHandler.start(); return }
     if (type === 'frame')   { this._addCoordinateFrame();  return }
     if (type === 'robot')   { this._addRobot();            return }
+    if (type === 'camera')  { this._addCamera();           return }
 
     // Exit Edit Mode cleanly before adding, so the previous object's visual state is cleared
     if (this._scene.selectionMode === 'edit') this.setMode('object')
@@ -1930,6 +1945,23 @@ export class AppController {
     // path, which also frames what it just brought in from outside the view.
     this._frameScene()
     this._uiView.showToast(`Robot "${robot.label}" added — place it with G / R`, { type: 'info' })
+  }
+
+  /**
+   * Adds a vision camera (ADR-164 D3) — the way OUT of the 0-camera state, so,
+   * like Robot, it is offered whatever is selected. A camera is one frame, so
+   * the frame's own add command records it.
+   */
+  _addCamera() {
+    if (this._scene.selectionMode === 'edit') this.setMode('object')
+    const frame = this._service.addCamera()
+    this._commandStack.push(createCreateCoordinateFrameCommand(
+      frame, this._service,
+      () => { if (this._scene.activeId === frame.id) this._selMgr.clearSelection() },
+      (id) => this._selMgr.selectOnly(id),
+    ))
+    this._selMgr.selectOnly(frame.id)
+    this._uiView.showToast(`Camera "${frame.name}" added — place it with G / R, or copy the current view from its panel`, { type: 'info' })
   }
 
   /**
@@ -4182,6 +4214,8 @@ export class AppController {
           // Robot (ADR-090): always available — this is the way OUT of the 0-robot
           // state, so it must not depend on what is currently selected.
           onRobot:      () => this._addObject('robot'),
+          // Camera (ADR-164 D3): the way out of the 0-camera state — never gated.
+          onCamera:     () => this._addObject('camera'),
           // The five place types (ADR-103) — annotations are ordinary objects,
           // so they are added the same way everything else is.
           onPlace:      (type) => this._placeToolCtrl.setTool(type),

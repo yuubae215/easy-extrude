@@ -40,6 +40,9 @@ export function AddMenu() {
     // Robot = base + tcp frame pair (ADR-090). Always offered: it is how a scene
     // with zero robots gets one, so it cannot be gated on the selection.
     cbs.onRobot      && { label: 'Robot',        hint: null,        cb: cbs.onRobot },
+    // Camera (ADR-164 D3) — the vision camera "can it be seen" is asked from.
+    // Always offered for the same reason as Robot: the way out of 0 cameras.
+    cbs.onCamera     && { label: 'Camera',       hint: null,        cb: cbs.onCamera },
     cbs.onImportStep && { label: 'Import STEP',  hint: null,        cb: cbs.onImportStep },
   ].filter(Boolean)
 

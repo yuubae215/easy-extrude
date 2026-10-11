@@ -412,6 +412,32 @@ export function setEntityHand(doc, ref, hand) {
   return clone
 }
 
+/**
+ * Set (or clear) a frame's vision-camera declaration — `camera` on a
+ * CoordinateFrame entity in the document's layout (ADR-164 D3), input-immutable.
+ * The document-side writer for a frame the document KNOWS (a scene-only frame is
+ * written by `SceneService.setFrameCamera` — the ADR-129 split, as for the hand).
+ *
+ * `camera === null` deletes the key (the frame stops being a camera). `pose`,
+ * when given, is written in the same edit ("copy the current view" is one act).
+ *
+ * @param {object} doc
+ * @param {string} ref
+ * @param {object|null} camera  `{ fovHalfAngle? }`
+ * @param {{position?: object, rotation?: object}} [pose]
+ * @returns {object} new doc
+ */
+export function setEntityCamera(doc, ref, camera, pose = null) {
+  const clone    = pose ? setEntityPose(doc, ref, pose) : _clone(doc)
+  const entities = clone.specification?.layout?.entities
+  if (!Array.isArray(entities)) return clone
+  const i = entities.findIndex(e => e?.ref === ref)
+  if (i === -1) return clone
+  if (camera == null) delete entities[i].camera
+  else entities[i].camera = JSON.parse(JSON.stringify(camera))
+  return clone
+}
+
 /** Entity kinds → their doc array key (mirrors SeedAnchor's map). */
 const KIND_ARRAY = {
   actor:       'actors',

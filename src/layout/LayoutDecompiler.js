@@ -219,6 +219,8 @@ export function decompileLayout(sceneJson) {
         if (o.mountedOn) entity.mountedOn = o.mountedOn
         // ADR-152 D3: what the robot grasps with — the tcp's hand.
         if (o.hand) entity.hand = o.hand
+        // ADR-164 D3: the frame is a vision camera.
+        if (o.camera) entity.camera = o.camera
         entities.push(entity)
         break
       }

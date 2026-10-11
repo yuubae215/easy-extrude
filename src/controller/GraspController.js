@@ -51,7 +51,12 @@
  * (ADR-059 §C: the ghost is a derived projection, not a new FSM).
  */
 import { renderableEndEffectorFrame, nearestTargetIndex } from '../view/GraspGhostMath.js'
-import { visionFromViewportCamera, defaultObjectiveWeights } from '../context/GraspDeclarationCatalog.js'
+import { defaultObjectiveWeights } from '../context/GraspDeclarationCatalog.js'
+import {
+  resolveCameras, selectCamera, cameraCardinality, cameraDeclarationOf, wireCameraOf,
+  cameraPoseFromViewport, CAMERA_STATE,
+} from '../domain/visionCamera.js'
+import { createSetCameraCommand } from '../command/SetCameraCommand.js'
 import { resolveRobots, selectRobot, robotCardinality, robotForFrameId } from '../domain/robotFrames.js'
 import {
   resolveGraspTargets, resolveBodies, selectTarget, targetProjection,
@@ -163,6 +168,16 @@ export class GraspController {
     this._targetsSignature = null
     /** last published `context.graspRelations` signature — change detection, not a source */
     this._relationsSignature = null
+    /**
+     * Which CAMERA this search asks "can it be seen" from (ADR-164 D3). The scene
+     * owns the roster (a camera is a frame carrying a `camera` declaration); this
+     * owns the pick, meaningful only with N cameras — 0 asks nothing, 1 is
+     * implicit (`selectCamera`, the robot rule).
+     * @type {string|null}
+     */
+    this._selectedCameraId = null
+    /** last published `context.cameras` signature — change detection, not a source */
+    this._camerasSignature = null
 
     const { registerCallback } = store.getState().actions
     registerCallback('onOpenGrasp',          ()       => this.openGrasp())
@@ -170,7 +185,9 @@ export class GraspController {
     registerCallback('onRunInterferenceAnalysis', () => this.runInterferenceAnalysis())
     registerCallback('onSelectGraspCandidate', (rank)  => this.selectCandidate(rank))
     registerCallback('onHoverGraspCandidate',  (rank)  => this.hoverCandidate(rank))
-    registerCallback('onCaptureViewportCamera', ()     => this.captureViewportCamera())
+    registerCallback('onSelectCamera',         (id)    => this.selectCamera(id))
+    registerCallback('onSetCamera',            (id, camera) => this.setCamera(id, camera))
+    registerCallback('onCopyViewToCamera',     (id)    => this.copyViewToCamera(id))
     registerCallback('onSelectRobot',          (id)    => this.selectRobot(id))
     registerCallback('onSelectGraspTarget',    (ref)   => this.selectGraspTarget(ref))
     registerCallback('onSetGraspFeature',      (ref, feature) => this.setGraspFeature(ref, feature))
@@ -184,6 +201,157 @@ export class GraspController {
     registerCallback('onSetGraspLift',         (ref, lift) => this.setGraspLift(ref, lift))
     registerCallback('onRemoveGraspRelation',  (ref) => this.removeGraspRelation(ref))
     this.refreshRobots()
+    this.refreshCameras()
+  }
+
+  // ── Camera roster + selection (ADR-164 D3) ───────────────────────────────────
+
+  /** The live camera roster, resolved by the domain's one resolution point. */
+  _cameras() {
+    const objects = this._ctrl._scene?.objects
+    return objects ? resolveCameras(objects.values()) : []
+  }
+
+  /** The camera this run asks from, or null (0 cameras, or N with no pick). */
+  _selectedCamera() {
+    return selectCamera(this._cameras(), this._selectedCameraId)
+  }
+
+  /**
+   * Publish the camera roster as a DERIVED projection (`context.cameras` — sole
+   * writer). Refreshed from the entity lifecycle events and `frameCameraChanged`
+   * (AppController); a pick whose camera left the scene is dropped here.
+   */
+  refreshCameras() {
+    const cameras = this._cameras()
+    if (this._selectedCameraId && !cameras.some(c => c.id === this._selectedCameraId)) {
+      this._selectedCameraId = null
+    }
+    const selected = selectCamera(cameras, this._selectedCameraId)
+    const projection = {
+      list:        cameras.map(c => ({ id: c.id, label: c.label, state: cameraDeclarationOf(c.frame).state })),
+      selectedId:  selected?.id ?? null,
+      cardinality: cameraCardinality(cameras),
+      // What the selected camera declares — the grasp panel's ▸ line reads this.
+      selected:    selected ? this.cameraDeclarationsOf(selected.id) : null,
+    }
+    const signature = JSON.stringify(projection)
+    if (signature === this._camerasSignature) return
+    this._camerasSignature = signature
+    this._store.getState().actions.contextSetCameras?.(projection)
+  }
+
+  /**
+   * Pick the camera the search asks from (panel picker / the camera's own panel).
+   * @param {string|null} id
+   */
+  selectCamera(id) {
+    this._selectedCameraId = id ?? null
+    this.refreshCameras()
+  }
+
+  /**
+   * The camera panel's read-model (the VISION domain — ADR-164 D1/D3). `null`
+   * when the frame is not a camera.
+   *
+   * @param {string|null|undefined} frameId
+   */
+  cameraDeclarationsOf(frameId) {
+    const frame = frameId ? this._ctrl._scene?.objects?.get(frameId) : null
+    const declaration = cameraDeclarationOf(frame)
+    if (!declaration) return null
+    const cameras = this._cameras()
+    const pose = this._ctrl._service?.worldPoseOf?.(frameId) ?? null
+    return {
+      id: frameId,
+      label: frame.name ?? 'camera',
+      ...declaration,
+      // "Copy the current view" writes a WORLD pose; a parented camera's pose is
+      // local to its parent, so the button says why it is off instead (原則 #11).
+      parented: frame.parentId != null,
+      // Whether the search asks from THIS camera, and how many there are to pick from.
+      inSearch: selectCamera(cameras, this._selectedCameraId)?.id === frameId,
+      cardinality: cameraCardinality(cameras),
+      // What the wire would carry — shown, so the derived viewAxis is checkable.
+      wire: wireCameraOf(pose ? { position: pose.position, quaternion: pose.quaternion } : null, declaration),
+    }
+  }
+
+  /**
+   * Declare (or remove) a frame's camera — the field of view, or `null` to make
+   * it an ordinary frame again. A frame the DOCUMENT knows is declared there (one
+   * doc-edit); a scene-only frame through the scene's writer with an undo record
+   * (the ADR-129 split, as `setRobotHand`).
+   *
+   * @param {string} frameId
+   * @param {object|null} camera
+   * @returns {boolean}
+   */
+  setCamera(frameId, camera) {
+    return this._writeCamera(frameId, camera, null, camera == null ? 'Remove camera' : 'Set camera')
+  }
+
+  /**
+   * "Copy the current view" (ADR-081 §5 → the camera's panel, ADR-164 D3): put
+   * the camera where the viewport is, looking where it looks, with its vertical
+   * half angle — ONE undoable act. An orthographic viewport has no fov: the
+   * camera keeps its declared one and the toast says so. Refused (and said) for a
+   * parented camera or when no viewport camera is readable.
+   *
+   * @param {string} frameId
+   * @returns {boolean}
+   */
+  copyViewToCamera(frameId) {
+    const ui = this._ctrl._uiView
+    const frame = this._ctrl._scene?.objects?.get(frameId)
+    const declaration = cameraDeclarationOf(frame)
+    if (!declaration) return false
+    if (frame.parentId != null) {
+      ui?.showToast?.('This camera hangs from another frame — copy the view onto a world-placed camera, or unparent it first.', { type: 'warn' })
+      return false
+    }
+    const cam = this._ctrl._sceneView?.activeCamera
+    cam?.updateMatrixWorld?.()
+    const view = cam ? cameraPoseFromViewport({
+      position: cam.position ? { x: cam.position.x, y: cam.position.y, z: cam.position.z } : null,
+      matrixWorldElements: cam.matrixWorld?.elements ? [...cam.matrixWorld.elements] : null,
+      fovDeg: typeof cam.fov === 'number' ? cam.fov : null,
+    }) : null
+    if (!view) {
+      ui?.showToast?.('The viewport camera cannot be read — nothing was copied.', { type: 'warn' })
+      return false
+    }
+    const camera = view.fovHalfAngle !== null ? { ...frame.camera, fovHalfAngle: view.fovHalfAngle } : { ...frame.camera }
+    if (view.fovHalfAngle === null) {
+      ui?.showToast?.('Map view has no field of view — the pose was copied, the declared field of view is kept.', { type: 'info' })
+    }
+    return this._writeCamera(frameId, camera, { position: view.position, rotation: view.quaternion }, 'Copy view to camera')
+  }
+
+  /** The one write path behind setCamera / copyViewToCamera (the ADR-129 split). */
+  _writeCamera(frameId, camera, pose, label) {
+    const frame = this._ctrl._scene?.objects?.get(frameId)
+    if (!frame) return false
+    const declared = this._ctrl._ctxCtrl?.declareFrameCamera?.(frameId, camera, pose) ?? null
+    if (declared) {
+      Promise.resolve(declared).then(() => this.refreshCameras())
+      return true
+    }
+    const service = this._ctrl._service
+    if (typeof service?.setFrameCamera !== 'function') return false
+    const before = {
+      camera: frame.camera ?? null,
+      ...(pose ? { pose: {
+        position: { x: frame.translation.x, y: frame.translation.y, z: frame.translation.z },
+        rotation: { x: frame.rotation.x, y: frame.rotation.y, z: frame.rotation.z, w: frame.rotation.w },
+      } } : {}),
+    }
+    const after = { camera, ...(pose ? { pose } : {}) }
+    const cmd = createSetCameraCommand(frameId, before, after, service, label)
+    cmd.execute()
+    this._ctrl._commandStack?.push(cmd)
+    this.refreshCameras()
+    return true
   }
 
   // ── Robot roster + selection (ADR-090) ───────────────────────────────────────
@@ -870,7 +1038,7 @@ export class GraspController {
    * no-op (PHILOSOPHY #11).
    *
    * @param {{ weights?: Record<string,number>, topN?: number,
-   *           camera?: object|null, gripper?: object|null }} [params]
+   *           gripper?: object|null }} [params]
    */
   async runGraspSearch(params = {}) {
     const ctrl = this._ctrl
@@ -1042,18 +1210,41 @@ export class GraspController {
       return
     }
 
+    // Guard: WHICH camera "can it be seen" is asked from (ADR-164 D3). 0 cameras
+    // is a state — the request omits `camera` and the visibility stage passes
+    // everything. N with no pick stops here: asking from a camera nobody chose
+    // is the ADR-090 ghost again. A malformed declaration stops with its reason.
+    const cameras = this._cameras()
+    const cameraEntity = this._selectedCamera()
+    let camera = null
+    if (cameras.length > 0) {
+      const cameraGap = !cameraEntity
+        ? `${cameras.length} cameras in the scene — pick which one "can it be seen" is asked from.`
+        : (() => {
+            const d = cameraDeclarationOf(cameraEntity.frame)
+            if (d.state === CAMERA_STATE.MALFORMED) return `The camera "${cameraEntity.label}" cannot be read — ${d.errors[0]}`
+            const pose = ctrl._service?.worldPoseOf?.(cameraEntity.id) ?? null
+            camera = wireCameraOf(pose ? { position: pose.position, quaternion: pose.quaternion } : null, d)
+            return camera ? null : `The camera "${cameraEntity.label}" has no resolvable pose.`
+          })()
+      if (cameraGap) {
+        ui.contextSetGrasp({ status: 'no-camera', layout, reason: cameraGap, cameraCount: cameras.length })
+        ctrl._uiView.showToast(cameraGap, { type: 'warn' })
+        return
+      }
+    }
+
     // Default weights use core/'s REGISTERED objective names (ADR-117). The old
     // `{ reach, clearance }` defaults matched nothing in the solver's registry,
     // which drops unknown names without complaint — so every score came back
     // empty and every candidate tied at 0.0.
     const objectiveWeights = params.weights ?? defaultObjectiveWeights(gripperKind)
     const topN = Number.isFinite(params.topN) && params.topN > 0 ? Math.floor(params.topN) : 5
-    // Vision / grasp domain declarations (ADR-081 Decision 5): the panel's
-    // domain cards pass parsed camera / gripper declarations, gap-checked by
-    // GraspDeclarationCatalog's predicates before Run enables. They ride the
-    // request's open payload verbatim (declaration only — visibility / grasp
-    // judgment stays in core/); an undeclared card simply omits the key and
-    // the corresponding gate passes everything (vacuously-true contract).
+    // Vision / grasp domain declarations (ADR-081 Decision 5) are DERIVED from
+    // entities — the camera from the camera entity (resolved above), the gripper
+    // from the tcp's hand — never from panel form state (ADR-164 D3 / ADR-152 D3).
+    // Declaration only: visibility / grasp judgment stays in core/; an absent one
+    // omits the key and that gate passes everything (vacuously-true contract).
     // The bodies the obstacles come from, resolved once so the wire obstacles and
     // their names (ADR-157 D6 — the analysis names an obstacle by its index) are
     // cut from the same list.
@@ -1110,7 +1301,10 @@ export class GraspController {
         // here (kernel §5), and "not declared" stays visibly different from
         // "declared as zero margin" (原則 #31).
         ...(params.plan ? { plan: params.plan } : {}),
-        ...(params.camera  ? { camera:  params.camera }  : {}),
+        // The vision camera, DERIVED from the camera entity's world pose and
+        // declaration (ADR-164 D3) — never from a panel form. Absent with no
+        // camera in the scene (the visibility stage passes everything).
+        ...(camera ? { camera } : {}),
         // The hand, derived from the tcp's declaration (ADR-152 D3): kind + gate
         // params + shape, mm → m. Absent when undeclared (vacuously-true gate).
         ...(hand ? { gripper: wireGripperFromHand(hand) } : {}),
@@ -1433,35 +1627,6 @@ export class GraspController {
     for (const c of corners) { x += c.x; y += c.y; z += c.z }
     const n = corners.length
     return [x / n, y / n, z / n]
-  }
-
-  // ── Viewport-camera capture (ADR-081 Decision 5 「今この視点から見えるか」) ────
-
-  /**
-   * Snapshot the active viewport camera as a vision declaration for the
-   * panel's "use current view" button. This is the side-effect half of the
-   * capture: it reads the live camera (position / matrixWorld / perspective
-   * fov) and delegates ALL derivation to the pure
-   * `visionFromViewportCamera` (GraspDeclarationCatalog) — the same split as
-   * the ghost's capability gate. Returns the wire-shaped declaration
-   * `{position, viewAxis, fovHalfAngle|null}` or null when no camera is
-   * available (THREE-free test lane / detached view) — the panel reports the
-   * null instead of writing a guessed declaration (PHILOSOPHY #11).
-   *
-   * Uses `SceneView.activeCamera` (never a captured perspective-only camera —
-   * the "HTML Overlay Active Camera" contract): in Map Mode the ortho camera
-   * is captured, whose missing fov degrades to fovHalfAngle null.
-   */
-  captureViewportCamera() {
-    const cam = this._ctrl._sceneView?.activeCamera
-    if (!cam) return null
-    cam.updateMatrixWorld?.()
-    const p = cam.position
-    return visionFromViewportCamera({
-      position: p ? { x: p.x, y: p.y, z: p.z } : null,
-      matrixWorldElements: cam.matrixWorld?.elements ?? null,
-      fovDeg: typeof cam.fov === 'number' ? cam.fov : null,
-    })
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────────

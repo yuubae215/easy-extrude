@@ -969,6 +969,39 @@ world ──▶ base (robotRole:'base', parentId=null) ──▶ tcp (robotRole:
 
 ---
 
+## Vision camera roster — 0 / 1 / N cameras (ADR-164 D3)
+
+ロボットの名簿の**双子**だが、**0 の意味が違う**: ロボット 0 台は探索を止める (前提が無い)、
+カメラ 0 台は止めない (見えるかを**問わない** — 可視性の段がすべてを通す)。基数そのものが
+状態なのでクラスより先に起こす (累積 3 状態 — 核 §1.4)。
+
+```
+              ┌──────────┐  Add ▸ Camera /     ┌────────────┐  Add ▸ Camera /   ┌───────────┐
+              │  none    │  「カメラにする」 ▶  │   single   │  「カメラにする」▶│   multi   │
+              │  (0 台)  │ ◀──────────────────  │   (1 台)   │ ◀──────────────── │  (N 台)   │
+              └──────────┘  削除 / 「カメラに    └────────────┘  削除 / 解除       └───────────┘
+                    │        しない」 (undo 可)          │                              │
+   grasp: camera を載せない (問わない)   grasp: 暗黙に 1 台から問う    grasp: 明示選択が無ければ no-camera
+```
+
+- **権威**: scene (`camera` 宣言を持つ CoordinateFrame)。解決は `domain/visionCamera.js:
+  resolveCameras()` の 1 箇所、同一性は `isCameraFrame()` (`IDENTITY_RULES`)。選択の所有者は
+  `GraspController._selectedCameraId`、投影は `context.cameras` (読み取り専用)。
+- **guard**: `selectCamera(cameras, selectedId)` — 0 → null (問わない)、1 → その 1 台、N → 明示選択か null
+  (「先頭が勝つ」は無い)。選ばれたカメラが消えると選択は `refreshCameras` で落ちる。
+- **禁止遷移**: 入口通過による none → single (読み込み・テンプレがカメラを足すことは無い —
+  カメラはユーザーが置くか、文書が宣言したものだけ)。
+- **宣言の状態** (`cameraDeclarationOf`): `declared` (画角あり / なし) / `malformed` の 2 — 未宣言のカメラは
+  存在しない (宣言が無ければカメラではない)。`malformed` は Run を `no-camera` で理由つきで止める。
+
+### grasp-search FSM への影響
+
+`context.grasp` の判別 union に `no-camera` が加わった (9 状態)。N 台で未選択、または選ばれた
+カメラが読めないときだけ。**0 台では入らない** (その場合は `camera` キーを載せずに進む)。
+ワイヤの `camera` は 1 個のまま — どのカメラかはフロントの関心で、契約と `core/` は変わらない (原則 #29)。
+
+---
+
 ## Commit observation metadata — 未刻印 / 刻印済 / 空洞 / 刻印不能 (ADR-092 → ADR-116)
 
 コミット 1 個が持つ観測トレーラ (`Model-Effort` / `Task-Class`) の有無と中身。

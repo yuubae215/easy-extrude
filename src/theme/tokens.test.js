@@ -383,8 +383,11 @@ const DECLARED_VOCABULARIES = {
 // its copied `#4a4a4a`/`#3a3a3a`); `RobotMeshLoadingNotice.jsx` keeps the idle
 // `#3a3a3a` border of the pill it replaces (+1). Moving the grasp editors into
 // owner panels moved literals between files without changing the count.
-const UNDECLARED_OCCURRENCE_BASELINE = 774
-const UNDECLARED_DISTINCT_BASELINE   = 203
+// 2026-10-11: 774 → 769. ADR-164 D3 removed the grasp panel's vision card
+// (`CaptureButton`'s green `#3a6a5d`/`#1d3a33`/`#9dc8b8` and two more); the
+// camera's own panel is written in tokens.
+const UNDECLARED_OCCURRENCE_BASELINE = 769
+const UNDECLARED_DISTINCT_BASELINE   = 200  // 2026-10-11: 203 → 200 (ADR-164 D3 — the vision card's three greens left with it)
 
 const HEX_LITERAL = /#[0-9a-fA-F]{6}\b|\b0x[0-9a-fA-F]{6}\b/g
 

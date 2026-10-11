@@ -135,6 +135,16 @@ const IDENTITY_RULES = [
     why: '同じ欄の解釈が 2 箇所にあると、壊れた値を一方は不正・他方は未宣言と読み、関係の行と Run の gate が食い違う (ADR-164 D2)',
   },
   {
+    // ADR-164 D3。カメラは `camera` 宣言を持つフレームである。「このフレームはカメラか」を
+    // 呼び出し側で `.camera != null` と書き直すと、宣言の形を変えた日 (配列・空オブジェクト
+    // の扱い) に 1 経路だけ古い判定を続け、名簿・可視性の種・Run の gate が別の台数を数える。
+    name: 'カメラの同一性 (camera 宣言の有無)',
+    owners: ['src/domain/visionCamera.js'],
+    use: "isCameraFrame(obj) / resolveCameras(objects) / cameraDeclarationOf(frame)  — import from 'src/domain/visionCamera.js'",
+    all: [/\.camera\s*(?:[!=]==?\s*(?:null|undefined)|&&)|typeof\s+[\w.]+\.camera\b|!!\s*[\w.]+\.camera\b/],
+    why: 'カメラか否かの判定が散ると、名簿・可視性の既定・Run の gate がそれぞれ違う台数を数える (ADR-164 D3 — 基数 0..N)',
+  },
+  {
     // ADR-164 D4。引き上げは把持の関係の欄 (`graspFeature.lift`) で、旧位置 (Solid の
     // `lift`) は読み替えて読む。どちらから読むか・両方あるとき何と言うかを決めるのは
     // `resolveDeclaredLift` だけ、書くのは `setEntityGraspLift` だけ (旧キーの削除も)。

@@ -39,6 +39,7 @@
 import * as THREE from 'three'
 import { EntityLabel } from './EntityLabel.js'
 import { COLOR, hexNumber } from '../theme/tokens.js'
+import { frustumCorners } from '../domain/visionCamera.js'
 
 const AXIS_LENGTH   = 0.5
 const AXIS_RADIUS   = 0.015   // ~3% of axis length; matches TC shaft visual weight
@@ -161,11 +162,13 @@ export class CoordinateFrameView {
   /** @param {THREE.Vector3} position */
   updatePosition(position) {
     this._group.position.copy(position)
+    this._frustum?.position.copy(position)
   }
 
   /** @param {import('three').Quaternion} quaternion */
   updateRotation(quaternion) {
     this._group.quaternion.copy(quaternion)
+    this._frustum?.quaternion.copy(quaternion)
     // Informational label (ADR-070 決定1): keep the RPY readout current while
     // this frame is the active selection. ZYX order = ROS RPY (CODE_CONTRACTS
     // "Euler Angle Convention"); whole degrees — a pose readout, not a caliper.
@@ -211,6 +214,10 @@ export class CoordinateFrameView {
    */
   applyVisibility({ visible, dimmed = false }) {
     this._group.visible = visible
+    if (this._frustum) {
+      this._frustum.visible = visible
+      this._frustum.material.opacity = dimmed ? OPACITY_LINE_DIMMED : OPACITY_LINE_FULL
+    }
     this._labelVisible  = visible
     if (!visible) {
       this._setLabelDisplay(false)
@@ -221,6 +228,46 @@ export class CoordinateFrameView {
       this._originSphere.scale.setScalar(1.0)
     }
     this._applyXray(dimmed ? OPACITY_DIMMED : OPACITY_FULL)
+  }
+
+  // ── Vision camera frustum (ADR-164 D3) ─────────────────────────────────────
+
+  /**
+   * Draw (or remove) this frame's vision-camera frustum, frame-local in WORLD
+   * units (mm) — a separate object from the axes group, because the axes are
+   * scaled to a screen size and the frustum is a fact about the scene. The
+   * square whose inscribed cone is the solver's cone (`frustumCorners` — DEF-061),
+   * with a tick on the image-up edge (optical −Y) so the camera's roll is
+   * visible. `null` (not a camera, or no declared fov) removes it — a cone
+   * nobody declared is not drawn.
+   *
+   * @param {number|null} fovHalfAngle  rad
+   */
+  setCameraFrustum(fovHalfAngle) {
+    if (this._frustum) {
+      this._scene.remove(this._frustum)
+      this._frustum.geometry.dispose()
+      this._frustum.material.dispose()
+      this._frustum = null
+    }
+    const c = fovHalfAngle == null ? null : frustumCorners(fovHalfAngle)
+    if (!c) return
+    const pts = []
+    const seg = (a, b) => pts.push(a.x, a.y, a.z, b.x, b.y, b.z)
+    const apex = { x: 0, y: 0, z: 0 }
+    for (let i = 0; i < 4; i++) { seg(apex, c[i]); seg(c[i], c[(i + 1) % 4]) }
+    // Image-up tick: a small triangle standing on the top edge (c[0]–c[1], y = −h).
+    const h = Math.abs(c[0].y), z = c[0].z
+    seg({ x: -h * 0.3, y: -h, z }, { x: 0, y: -h * 1.3, z })
+    seg({ x: 0, y: -h * 1.3, z }, { x: h * 0.3, y: -h, z })
+    const geo = new THREE.BufferGeometry()
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3))
+    const mat = new THREE.LineBasicMaterial({ color: hexNumber(COLOR.revealTone), transparent: true, opacity: OPACITY_LINE_FULL })
+    this._frustum = new THREE.LineSegments(geo, mat)
+    this._frustum.position.copy(this._group.position)
+    this._frustum.quaternion.copy(this._group.quaternion)
+    this._frustum.visible = this._group.visible
+    this._scene.add(this._frustum)
   }
 
   // ── Floating label ─────────────────────────────────────────────────────────
@@ -366,6 +413,7 @@ export class CoordinateFrameView {
    * @param {THREE.Scene} scene
    */
   dispose(scene) {
+    this.setCameraFrustum(null)
     scene.remove(this._group)
     this._group.traverse(obj => {
       if (obj.geometry) obj.geometry.dispose()

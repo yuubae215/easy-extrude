@@ -5,8 +5,7 @@ import { funnelStages, dominantStage, funnelDelta, nearMissCloseness, specResult
 import { domainKpis, ladderRisks } from '../../view/GraspLadderMath.js'
 import { objectiveRows, unevaluatedNote } from '../../view/GraspScoreMath.js'
 import {
-  CAMERA_PRESETS, matchingPresetId,
-  cameraDeclarationGaps, OBJECTIVE, objectivesForHand, DEFAULT_OBJECTIVE_WEIGHT,
+  OBJECTIVE, objectivesForHand, DEFAULT_OBJECTIVE_WEIGHT,
   GRIPPER_KIND, reachDeclarationGaps,
 } from '../../context/GraspDeclarationCatalog.js'
 import { facesForGripperKind } from '../../domain/graspTargets.js'
@@ -15,7 +14,7 @@ import { sourceLabel } from '../../domain/searchGeometry.js'
 import { MASS_DECLARATION_STATE } from '../../domain/targetMass.js'
 import { phaseRows, analysisSummary, analysisFreshness, analysisAvailability } from '../../view/GraspPhaseMath.js'
 import { DeltaChip, useReducedMotion } from '../Feedback/FeedbackPrimitives.jsx'
-import { NumField, SortChip, PresetChips, PICKER } from './GraspFields.jsx'
+import { NumField, SortChip, PICKER } from './GraspFields.jsx'
 import { COLOR, DURATION, EASING } from '../../theme/tokens.js'
 
 /**
@@ -39,13 +38,12 @@ function barTransition(reduced) {
  * writer is GraspController — PHILOSOPHY #5) and fires registered callbacks; it owns
  * no FSM state, only the local form inputs.
  *
- * Input is organised as three domain declaration cards — Seen (camera) /
- * Reached (robot base + weights) / Grasped (gripper) — per ADR-081 Decision 5.
- * Cards seed from GraspDeclarationCatalog presets (fork & tweak, ADR-063's
- * selection-first premise), the vision card can copy the live viewport camera
- * ("use current view" → onCaptureViewportCamera), and each enabled card's gap
- * list is the Run button's submit predicate (reasons printed — #11). The cards
- * only DECLARE; every gate is solved in core/ behind the contract.
+ * Input is organised as domain cards — Seen (which camera) / Reached (robot base
+ * + weights) — per ADR-081 Decision 5. Since ADR-164 the declarations themselves
+ * live on the panels of the entities that own them (the camera's field of view
+ * on the camera — D3; the hand on the tcp — D1); these cards pick the premise and
+ * READ what is declared, with ▸ to the owner. The gap list is the Run button's
+ * submit predicate (reasons printed — #11). Every gate is solved in core/.
  *
  * Scoring is built from the contract's `score` only (ADR-057 §F): the three boolean
  * chips plus labelled `objectiveScores` bars (objective name → 0..1, comparable
@@ -102,18 +100,8 @@ function StubBadge() {
 //
 // Form fields hold strings; these parse them into the wire-shaped declaration
 // the gap predicates (GraspDeclarationCatalog) and the request consume. A
-// blank field parses to NaN (never a silent 0 — Number('') is 0, the #11
-// trap), except the OPTIONAL fovHalfAngle / fingerClearance, where blank
-// means "leave the key out".
-
+// blank field parses to NaN (never a silent 0 — Number('') is 0, the #11 trap).
 const parseNum = (s) => (typeof s === 'string' && s.trim() === '') ? NaN : Number(s)
-const isBlank  = (s) => typeof s === 'string' && s.trim() === ''
-
-function parseCameraForm(v) {
-  const cam = { position: v.position.map(parseNum), viewAxis: v.viewAxis.map(parseNum) }
-  if (!isBlank(v.fovHalfAngle)) cam.fovHalfAngle = parseNum(v.fovHalfAngle)
-  return cam
-}
 
 /**
  * Submit gaps contributed by the robot roster (ADR-090) — pure, mirroring the
@@ -162,6 +150,21 @@ function robotDeclarationGaps(robots) {
   return []
 }
 
+/**
+ * Submit gaps from the camera roster (ADR-164 D3) — the robot rule, except that
+ * 0 is NOT a gap: with no camera the search does not ask "can it be seen" (the
+ * visibility stage passes everything). N with no pick, or an unreadable camera,
+ * mirrors the controller's `no-camera` gate exactly.
+ */
+function cameraDeclarationGaps(cameras) {
+  const list = cameras?.list ?? []
+  if (list.length === 0) return []
+  if (!cameras?.selectedId) return [`${list.length} cameras in the scene — pick which one "can it be seen" is asked from`]
+  const sel = cameras.selected
+  if (sel?.state === 'malformed') return [`camera "${sel.label}": ${sel.errors?.[0] ?? 'cannot be read'}`]
+  return []
+}
+
 export function GraspSearchPanel() {
   const grasp     = useUIStore(s => s.context.grasp)
   const robots       = useUIStore(s => s.context.robots)
@@ -180,36 +183,27 @@ export function GraspSearchPanel() {
   // (a grasp request is invariant — ADR-057 §Rendering).
   const [sortKey, setSortKey]     = useState('total')
 
-  // Domain declaration cards (ADR-081 Decision 5). Both cards seed from their
-  // catalog's FIRST preset (selection-first premise, ADR-063 — never a blank
-  // numeric form); the toggle controls whether the declaration rides the
-  // request at all (off = key omitted = that gate passes vacuously).
-  const [vision, setVision] = useState(() => ({
-    enabled: false,
-    position:     CAMERA_PRESETS[0].params.position.map(String),
-    viewAxis:     CAMERA_PRESETS[0].params.viewAxis.map(String),
-    fovHalfAngle: String(CAMERA_PRESETS[0].params.fovHalfAngle),
-  }))
+  // The vision CAMERA is a scene entity (ADR-164 D3): its pose and field of view
+  // are declared on its own panel, and this panel only picks which one (0 / 1 / N)
+  // — the roster arrives derived, like the robots'.
+  const cameras = useUIStore(s => s.context.cameras)
   // The HAND is not form state any more (ADR-152 D3): it is declared on the
   // search subject's tcp and arrives in the roster projection. This card is a
   // view of it; every edit goes to the scene through one undoable command.
   const handProj = robots?.hand ?? null
   const hand     = handProj?.hand ?? null
   const handKind = hand?.kind ?? null
-  // 探索の**設定** (カメラ / 重み) は今日ここ — React state — に住み、**キーを持たない**:
-  // リロードで消え、export に載らず、undo の外に居る。ハンドは ADR-152 D3 で tcp に住み、
-  // ADR-164 D1 でその編集欄も tcp のパネルへ移った。残る 2 つの持ち主は ADR-164 D3
-  // (カメラ = シーンの実体) と ADR-165 (重み = 場の判定基準) が決めており、移るまでここに
-  // 居る — `DECLARATION_OWNERS` の `movesWith` がそれを名指しする。文書への住所は
-  // **未実装** (ADR-129 の MVP の外)。**DEF-033**。
-  const [captureNote, setCaptureNote] = useState(null)
+  // 探索の**設定** (重み) は今日ここ — React state — に住み、**キーを持たない**:
+  // リロードで消え、export に載らず、undo の外に居る。ハンドは ADR-152 D3 で tcp に、
+  // カメラは ADR-164 D3 でシーンの実体に住んだ。残る重みの持ち主は ADR-165 (場の判定基準)
+  // が決めており、移るまでここに居る — `DECLARATION_OWNERS` の `movesWith` がそれを
+  // 名指しする。文書への住所は**未実装** (ADR-129 の MVP の外)。**DEF-033**。
   // The reach envelope (ADR-128) is declared on the ROBOT's own panel now
   // (ADR-164 D1 — the ARM domain, `ArmDeclarations`); Run only reads it.
   // Read for the search SUBJECT — each arm declares its own (no row = undeclared).
   const reachDecl = useUIStore(s => s.context.reachDeclarations[s.context.robots.selectedId] ?? UNDECLARED_REACH)
   const selectEntity = (id) => { if (id) callbacks.outlinerOnSelect?.(id) }
 
-  const camParams  = useMemo(() => parseCameraForm(vision), [vision])
   const planParams = useMemo(() => ({
     reachMin:           parseNum(reachDecl.reachMin),
     reachMax:           parseNum(reachDecl.reachMax),
@@ -217,7 +211,9 @@ export function GraspSearchPanel() {
   }), [reachDecl])
   // The gap lists ARE the submit predicate (ADR-058 UX discipline): non-empty
   // disables Run and every reason is printed below the button.
-  const visionGaps = vision.enabled ? cameraDeclarationGaps(camParams) : []
+  // Which camera "can it be seen" is asked from (ADR-164 D3) — 0 is a state (not
+  // asked), N with no pick is a gap; mirrors the controller's `no-camera` gate.
+  const visionGaps = cameraDeclarationGaps(cameras)
   // The hand's own gaps mirror the controller's gate: unreadable, or contradicting
   // the tool mount (ADR-152 D3). An UNDECLARED hand is not a gap — it is a state.
   const gripGaps   = handProj?.state === 'malformed'
@@ -238,26 +234,6 @@ export function GraspSearchPanel() {
   // controller from the same relation its own gate reads, so the two cannot differ.
   const relationGaps = graspRelations?.targetHandGap ? [graspRelations.targetHandGap] : []
   const gaps       = [...robotGaps, ...targetGaps, ...featureGaps, ...relationGaps, ...visionGaps, ...gripGaps, ...reachGaps]
-
-  const applyCameraPreset = (p) => setVision(v => ({
-    ...v,
-    position:     p.params.position.map(String),
-    viewAxis:     p.params.viewAxis.map(String),
-    fovHalfAngle: String(p.params.fovHalfAngle),
-  }))
-  // "Use current view" (ADR-081 §5): the controller snapshots the active
-  // viewport camera; a null (no camera) is reported, never silently ignored.
-  const captureCamera = () => {
-    const snap = callbacks.onCaptureViewportCamera?.() ?? null
-    if (!snap) { setCaptureNote('viewport camera unavailable'); return }
-    setCaptureNote(null)
-    setVision(v => ({
-      ...v, enabled: true,
-      position: snap.position.map(String),
-      viewAxis: snap.viewAxis.map(String),
-      fovHalfAngle: snap.fovHalfAngle != null ? String(snap.fovHalfAngle) : v.fovHalfAngle,
-    }))
-  }
 
   // Keep the viewport overlay showing what Run WOULD send (ADR-128). The hand
   // kind lives in this form, so the panel is what knows when the answer changed —
@@ -284,7 +260,6 @@ export function GraspSearchPanel() {
       [OBJECTIVE.SUCTION_HOLD]:       holdWeight,
     }[o])])),
     topN:     Number(topN),
-    camera:   vision.enabled ? camParams : null,
     // Omitted, not zeroed, when undeclared (ADR-120 / 原則 #31).
     plan:     reachDecl.enabled ? planParams : null,
   })
@@ -355,31 +330,12 @@ export function GraspSearchPanel() {
           掴める. Each card only DECLARES (camera / robot base / gripper) —
           the gates themselves are solved in core/ and their results come back
           through the contract funnel below. */}
-      <DomainCard
-        title="Seen" domain="vision" declaration="camera"
-        enabled={vision.enabled}
-        onToggle={(on) => setVision(v => ({ ...v, enabled: on }))}
-        offHint="no camera declared — visibility passes everything"
-        offExtra={
-          // The one-tap capture stays reachable with the card OFF (ADR-081 §5
-          // 「ワンタップで写し取る」): tapping it declares AND fills in one gesture.
-          <CaptureButton onClick={captureCamera} note={captureNote} />
-        }
-      >
-        <PresetChips
-          presets={CAMERA_PRESETS}
-          activeId={matchingPresetId(CAMERA_PRESETS, camParams)}
-          onPick={applyCameraPreset}
-        />
-        <CaptureButton onClick={captureCamera} note={captureNote} />
-        <Vec3Fields label="position" values={vision.position}
-          onChange={(pos) => setVision(v => ({ ...v, position: pos }))} />
-        <Vec3Fields label="view axis" values={vision.viewAxis}
-          onChange={(ax) => setVision(v => ({ ...v, viewAxis: ax }))} />
-        <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
-          <NumField label="FOV half angle (rad)" value={vision.fovHalfAngle} step="0.05"
-            onChange={(s) => setVision(v => ({ ...v, fovHalfAngle: s }))} />
-        </div>
+      <DomainCard title="Seen" domain="vision" alwaysOn offHint={null}>
+        {/* WHICH camera "can it be seen" is asked from (ADR-164 D3). The camera
+            is a scene entity; its pose and field of view are declared on its own
+            panel (▸). 0 cameras = visibility is not asked — a state, said here. */}
+        <CameraPicker cameras={cameras} onSelect={(id) => callbacks.onSelectCamera?.(id)} />
+        <CameraOwnerLine cameras={cameras} onSelect={selectEntity} />
       </DomainCard>
 
       <DomainCard title="Reached" domain="path" alwaysOn
@@ -568,46 +524,6 @@ function DomainCard({ title, domain, declaration, enabled, onToggle, alwaysOn, o
   )
 }
 
-/** "Use current view" capture button + its honest unavailable note (#11). */
-function CaptureButton({ onClick, note }) {
-  return (
-    <div style={{ marginTop: '4px', marginBottom: '4px' }}>
-      <button
-        onClick={onClick}
-        title="Copy the current viewport camera into this declaration"
-        style={{
-          fontSize: '10px', padding: '3px 8px', borderRadius: '4px', cursor: 'pointer',
-          border: '1px solid #3a6a5d', background: '#1d3a33', color: '#9dc8b8',
-        }}
-      >📷 use current view</button>
-      {note && (
-        <div style={{ fontSize: '10px', color: '#caa', marginTop: '3px' }}>{note}</div>
-      )}
-    </div>
-  )
-}
-
-
-/** Labelled x/y/z triple of number inputs (form-local string values). */
-function Vec3Fields({ label, values, onChange }) {
-  return (
-    <div style={{ display: 'flex', gap: '4px', alignItems: 'center', marginTop: '4px' }}>
-      <span style={{ fontSize: '10px', color: '#aaa', width: '58px', textAlign: 'right' }}>{label}</span>
-      {['x', 'y', 'z'].map((axis, i) => (
-        <input
-          key={axis} type="number" value={values[i]} step="0.05"
-          aria-label={`${label} ${axis}`}
-          onChange={e => { const next = [...values]; next[i] = e.target.value; onChange(next) }}
-          style={{
-            width: '52px', padding: '3px 5px', borderRadius: '4px',
-            border: '1px solid #444', background: '#1a1a1a', color: '#e0e0e0', fontSize: '11px',
-          }}
-        />
-      ))}
-    </div>
-  )
-}
-
 /**
  * Robot picker — "which robot is this grasp for?" (ADR-090 Decision 3).
  *
@@ -688,6 +604,44 @@ function OwnerDeclarationLinks({ targets, robots, handProj, reachDecl, relations
           )}
         </div>
       ))}
+    </div>
+  )
+}
+
+/**
+ * CameraPicker — WHICH camera "can it be seen" is asked from (ADR-164 D3). The
+ * robot picker's three shapes; the empty state is a state, not a gap.
+ */
+function CameraPicker({ cameras, onSelect }) {
+  const list = cameras?.list ?? []
+  return (
+    <PickerRow
+      label="camera"
+      cardinality={cameras?.cardinality ?? 'none'}
+      value={cameras?.selectedId ?? ''}
+      options={list.map(c => ({ value: c.id, label: c.label }))}
+      onSelect={onSelect}
+      none={<>none in scene — visibility is not asked (add one with <code style={PICKER.hint}>Shift+A → Camera</code>)</>}
+      single={<>{list[0]?.label}</>}
+    />
+  )
+}
+
+/** What the asked-from camera declares, read here and edited on its own panel (▸). */
+function CameraOwnerLine({ cameras, onSelect }) {
+  const sel = cameras?.selected
+  if (!sel) return null
+  const fov = sel.state === 'malformed' ? 'unreadable'
+    : sel.fovHalfAngle != null ? `field of view ±${sel.fovHalfAngle} rad` : 'no field of view (line of sight only)'
+  return (
+    <div style={{ fontSize: '10px', color: COLOR.textSecondary, margin: '4px 0 2px', display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+      <span>{fov}</span>
+      <button type="button" onClick={() => onSelect(sel.id)}
+        data-testid="owner-link-camera"
+        title={`edit on ${sel.label}'s panel`}
+        style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: COLOR.infoTone, fontSize: '10px' }}>
+        ▸ {sel.label}
+      </button>
     </div>
   )
 }
@@ -784,6 +738,9 @@ function StatusLine({ grasp }) {
     // all: the request simply went out without geometry and came back with a
     // perfectly well-formed "0 candidates generated" (原則 #31).
     'no-target': { text: grasp?.reason ?? 'No object to grasp.', color: '#caa' },
+    // ADR-164 D3 — N cameras and none picked (or an unreadable one). 0 cameras
+    // never lands here: then visibility is simply not asked.
+    'no-camera': { text: grasp?.reason ?? 'No camera picked.', color: '#caa' },
     'compiling': { text: 'Compiling layout on BFF…', color: '#cc9' },
     'solving':   { text: 'BFF compile OK — requesting grasp candidates…', color: '#9c9' },
     'results':   {
