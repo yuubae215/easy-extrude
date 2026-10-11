@@ -16,6 +16,7 @@ import {
   updateRequirement,
   removeDocEntry,
   setEntityGraspFeature,
+  setEntityGraspTcp,
   setEntityHand,
 } from './DocBuilder.js'
 import { CONTEXT_DSL_VERSION, SUPPORTED_VERSIONS } from './ContextDslSchema.js'
@@ -416,5 +417,39 @@ describe('setEntityHand (ADR-152 D3)', () => {
     const snap = JSON.parse(JSON.stringify(doc))
     setEntityHand(doc, 'nope', { kind: 'suction', cupDiameter: 40 })
     assert.deepEqual(doc, snap)
+  })
+})
+
+// ── setEntityGraspTcp (ADR-164 D2) ─────────────────────────────────────────────
+
+describe('setEntityGraspTcp', () => {
+  const doc = (feature) => ({
+    ...createBlankDoc('cell'),
+    specification: { layout: { version: 'layout/1.0', entities: [
+      { ref: 'widget', type: 'Solid', name: 'Widget', position: { x: 0, y: 0, z: 0 }, dimensions: { x: 1, y: 1, z: 1 },
+        ...(feature ? { graspFeature: feature } : {}) },
+    ] } },
+  })
+
+  it('names the hand on the declaration and keeps the specs', () => {
+    const next = setEntityGraspTcp(doc({ kind: 'anywhere' }), 'widget', 'tcp_b')
+    assert.deepEqual(next.specification.layout.entities[0].graspFeature, { kind: 'anywhere', tcp: 'tcp_b' })
+  })
+
+  it('null DELETES the key — back to "not declared", never a default', () => {
+    const next = setEntityGraspTcp(doc({ kind: 'anywhere', tcp: 'tcp_a' }), 'widget', null)
+    assert.equal('tcp' in next.specification.layout.entities[0].graspFeature, false)
+  })
+
+  it('an object with no grasp declaration has no relation — no-op, nothing invented', () => {
+    const next = setEntityGraspTcp(doc(null), 'widget', 'tcp_a')
+    assert.equal('graspFeature' in next.specification.layout.entities[0], false)
+  })
+
+  it('is input-immutable', () => {
+    const d = doc({ kind: 'anywhere' })
+    const snap = JSON.parse(JSON.stringify(d))
+    setEntityGraspTcp(d, 'widget', 'tcp_a')
+    assert.deepEqual(d, snap)
   })
 })

@@ -103,7 +103,9 @@ async function undeclareHand(page) {
  * mass is declared (ADR-164 D1). Returns the mass editor there.
  */
 async function openObjectMassEditor(page) {
-  await page.getByTitle(/^edit on .*'s panel$/).first().click()
+  // The object's mass row by name: since ADR-164 D2 the grasp relation's row
+  // ("how to grasp") also links out, and it comes first.
+  await page.getByTestId('owner-link-mass').click()
   return page.getByTestId('mass-editor')
 }
 
@@ -404,7 +406,12 @@ test('S10 — 掴む場所は「言っていない」が画面に出て、文書
   await pickAnObjectIfAsked(page)
 
   // 既定 = 何も宣言していない。「導出に落ちた」と書いてあること。
-  await expect(page.getByText(/not declared — sampling/)).toBeVisible()
+  await expect(page.getByText(/not declared — sampling/).first()).toBeVisible()
+
+  // 掴み方の編集欄は把持の関係のパネルに住む (ADR-164 D2)。検査の行から ▸ で渡る —
+  // まだ宣言が無い物でも、最初の宣言を始める入口はそこにある。
+  await page.getByTestId('owner-link-grasp').click()
+  await expect(page.getByTestId('grasp-relation-title')).toBeVisible()
 
   // 把持仕様の宣言は**文書**に書かれる (ADR-119)。このシナリオは文書を採用していない。
   // かつては「先に文書を採れ」で止まった (DEF-049)。いまは同じ押下が画面の物を文書へ
@@ -417,7 +424,7 @@ test('S10 — 掴む場所は「言っていない」が画面に出て、文書
   // undo 1 回で、文書の無い元の画面へ戻る (ADR-159 D3 — シーン全体のスナップショット)。
   // ロボットも同じ台数で戻る — 再読み込みが腕を落とさないこと。
   await page.keyboard.press('Control+z')
-  await expect(page.getByText(/not declared — sampling/)).toBeVisible()
+  await expect(page.getByText(/not declared — sampling/).first()).toBeVisible()
   await expect.poll(() => page.evaluate(() => window.__easyExtrude.graspSource().robots)).toBe(robots)
 
   expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
@@ -606,6 +613,60 @@ test('S16 — 画面で留めた箱 2 個の片方へ質量を宣言すると、
   // undo 1 回で、文書の無い元の画面へ — 留めた 2 個とリンクごと (ADR-159 D3 / ADR-163 D5)。
   await page.keyboard.press('Control+z')
   await expect(editor.getByRole('button', { name: 'declare mass' })).toBeVisible()
+
+  expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
+})
+
+test('S17 — 把持は関係の行: 手を名指し、ワークが消えると ⚠ 壊れた行として残る (ADR-164 D2 / DEF-035)', async ({ page }) => {
+  // 関係 (ワーク × tcp) は文書の宣言とシーンからの導出で、行を保存しない。数えるのは
+  // 文書の宣言のほう — シーンを辿る表示は、消えたワークの宣言を原理的に出せない (原則 #31)。
+  const errors = []
+  page.on('pageerror', (e) => errors.push(e.message))
+  await page.addInitScript(() => { try { localStorage.setItem('ee_home', 'skip') } catch { /* denied */ } })
+  await page.goto('/easy-extrude/?graspStub=solve')
+  await expect.poll(() => page.evaluate(() => typeof window.__easyExtrude?.openGrasp === 'function')).toBe(true)
+  await page.evaluate(async () => {
+    const { useUIStore } = await import('/easy-extrude/src/store/uiStore.js')
+    window.__ui = useUIStore
+    await useUIStore.getState().callbacks.onForkTemplate('cell_robotics')
+  })
+  await expect.poll(() => page.evaluate(() => window.__easyExtrude.graspSource().robots)).toBe(1)
+  const rel = () => page.evaluate(() => window.__ui.getState().context.graspRelations)
+  const row = page.getByTestId('outliner-relation-row')
+
+  // 宣言 → 関係が 1 行。手は名指していない (tcp が 1 本でも既定で埋めない — ADR-164 §俯瞰 1)。
+  await page.evaluate(() => window.__ui.getState().callbacks.onSetGraspFeature('workpiece', { kind: 'anywhere' }))
+  await expect.poll(async () => (await rel()).total).toBe(1)
+  await page.getByRole('button', { name: 'Document', exact: true }).click()
+  await expect(row).toHaveCount(1)
+  await expect(row).toHaveAttribute('data-relation-state', 'hand-undeclared')
+  await expect(row).toContainText('hand not declared')
+
+  // 行を選ぶ = 第 3 の選択の種。パネルは関係を語り、ワークと tcp を同時に光らせる。
+  await row.click()
+  await expect.poll(() => page.evaluate(() => window.__easyExtrude.selectionState().kind)).toBe('relations')
+  await page.locator('#canvas-container canvas').hover()
+  if (!(await page.evaluate(() => window.__ui.getState().nPanelVisible))) await page.keyboard.press('n')
+  await expect(page.getByTestId('grasp-relation-title')).toContainText('hand not declared')
+  await page.getByRole('button', { name: /^name / }).click()
+  await expect(row).toHaveAttribute('data-relation-state', 'ok')
+  await expect(page.getByTestId('grasp-relation-title')).not.toContainText('hand not declared')
+  expect((await rel()).list[0].tcpRef, '名指した手は文書に書かれる').toBeTruthy()
+  // 関係の体は対: 名指した tcp もワークも、関係を選んでいる間は文脈として見えている。
+  const { tcpLabel, objectLabel } = (await rel()).list[0]
+  await expect.poll(() => page.evaluate(() => window.__easyExtrude.selectionState().contextualDimmed))
+    .toEqual(expect.arrayContaining([tcpLabel, objectLabel]))
+
+  // ワークを消す → 行は落ちずに ⚠ 壊れた行として残る (DEF-035)。undo で戻る。
+  const objectId = (await rel()).list[0].objectSceneId
+  await page.evaluate((id) => window.__ui.getState().callbacks.outlinerOnSelect(id), objectId)
+  await page.locator('#canvas-container canvas').hover()
+  await page.keyboard.press('Delete')
+  await expect(row).toHaveAttribute('data-relation-state', 'broken-object')
+  await expect(row).toContainText('⚠')
+  expect((await rel()).broken).toBe(1)
+  await page.keyboard.press('Control+z')
+  await expect(row).toHaveAttribute('data-relation-state', 'ok')
 
   expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
 })

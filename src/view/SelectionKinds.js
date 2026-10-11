@@ -54,6 +54,14 @@ export const SELECTION_SHAPE_BY_KIND = Object.freeze({
            '(no footprint) the DIMMED entities carry the response, and when it constrains ' +
            'nothing either, the panel says so in words rather than leaving the gesture silent (原則 #11).',
   }),
+  [SELECTION_KIND.RELATIONS]: Object.freeze({
+    paint: 'relationPair',
+    shape: 'the object and the named tcp outlined TOGETHER (both sides of the relation), ' +
+           'and revealed at DIMMED',
+    why:   'A grasp relation has no body of its own — its body is the PAIR it relates (ADR-164 D2). ' +
+           'Lighting both at once is what tells it apart from selecting either one. A broken ' +
+           'relation lights the side that is still there, and its panel says which side is missing (原則 #11).',
+  }),
 })
 
 /**
@@ -75,6 +83,12 @@ export const NPANEL_BY_SELECTION_KIND = Object.freeze({
   [SELECTION_KIND.ENTITIES]: Object.freeze({
     body: 'activeEntity',
     why:  'The active entity of the selection — generic / frame / link bodies, unchanged.',
+  }),
+  [SELECTION_KIND.RELATIONS]: Object.freeze({
+    body: 'relation',
+    why:  'The relation\'s own declarations — how to grasp (specs) and how to lift — plus which ' +
+          'hand it names and links to both sides (ADR-164 D1/D2). A broken relation keeps its ' +
+          'panel: that is where it is re-pointed.',
   }),
   [SELECTION_KIND.VARIABLES]: Object.freeze({
     body: 'variable',

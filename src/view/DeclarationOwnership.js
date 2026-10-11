@@ -21,9 +21,10 @@
  *
  * ## Rows that have not moved yet are DECLARED, not inferred (原則 #31)
  *
- * Three domains still live in the grasp-search panel because their owner does
- * not exist on screen yet: the grasp RELATION row (ADR-164 D2), the CAMERA entity
- * (ADR-164 D3) and the user's criteria on the floor (ADR-165). Each says which
+ * Two domains still live in the grasp-search panel because their owner does
+ * not exist on screen yet: the CAMERA entity (ADR-164 D3) and the user's criteria
+ * on the floor (ADR-165). The grasp RELATION moved to its own row and panel in
+ * ADR-164 D2. Each says which
  * decision moves it (`movesWith`). The census pins the set of such rows, so a new
  * declaration cannot quietly join the "not yet" bucket, and a row that moved
  * must drop its `movesWith` in the same change.
@@ -50,6 +51,8 @@ export const DECLARATION_HOME = Object.freeze({
   TCP_PANEL:   'tcp-panel',
   /** the N panel body for a selected robot base frame */
   ROBOT_PANEL: 'robot-panel',
+  /** the N panel body for a selected grasp relation (ADR-164 D2) */
+  RELATION_PANEL: 'relation-panel',
   /** the grasp-search panel — a CHECK beside its subject (ADR-110), and the
    *  interim home of the rows whose owner is not on screen yet */
   GRASP_PANEL: 'grasp-panel',
@@ -84,9 +87,12 @@ export const DECLARATION_OWNERS = Object.freeze([
   Object.freeze({
     domain: DECLARATION_DOMAIN.GRASP,
     owner: 'the grasp relation (object × hand)',
-    declarations: Object.freeze(['graspFeature', 'lift']),
-    home: DECLARATION_HOME.GRASP_PANEL,
-    movesWith: 'ADR-164 D2',
+    // `graspFeature.tcp` is the relation's right-hand side — which hand
+    // (ADR-164 D2). Its own key because it is edited on its own (re-pointing a
+    // broken relation touches nothing else).
+    declarations: Object.freeze(['graspFeature', 'graspFeature.tcp', 'lift']),
+    home: DECLARATION_HOME.RELATION_PANEL,
+    movesWith: null,
   }),
   Object.freeze({
     domain: DECLARATION_DOMAIN.VISION,

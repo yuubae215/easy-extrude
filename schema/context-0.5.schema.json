@@ -974,6 +974,11 @@
             "kind"
           ],
           "properties": {
+            "tcp": {
+              "type": "string",
+              "minLength": 1,
+              "description": "ADR-164 D2: WHICH HAND this grasp is for — the layout `ref` of a robot tcp (`robotRole: tcp`). The grasp RELATION (object × tcp) is derived from this declaration and the scene; it is never stored as a row of its own. OPTIONAL and never defaulted on read: absent = the hand is UNDECLARED and the relation row says so (even with a single tcp in the scene — a default would be a choice nobody made, ADR-164 §俯瞰). A ref with no tcp in the scene is a BROKEN relation, shown, never dropped. Not named `hand`: `graspSpec.hand` already names the hand's KIND (原則 #33 — one word, one fact)."
+            },
             "kind": {
               "enum": [
                 "anywhere",

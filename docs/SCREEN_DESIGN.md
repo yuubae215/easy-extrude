@@ -883,12 +883,12 @@ reports the roster's cardinality honestly — `none` names the way out ("add one
 Robot"), `single` shows the implied robot read-only, `multi` is a `<select>` that starts UNSET
 ("— pick one of N —") so no arm is solved for by default (`onSelectRobot`); then a note that
 placement follows that robot's `base` / `tcp` CoordinateFrame entities — edited via the CF gizmo /
-N-panel, not a header input (ADR-084 §2) — + the **owner links** under the grasp-location editor
-(ADR-164 D1: `object mass: 0.12 kg ▸ Workpiece 1` / `hand: parallel jaw ▸ robot_base tcp` /
-`reach envelope: not declared (reach margin NOT MEASURED) ▸ robot_base` — each line READS a
-declaration's state and `▸` selects the entity that owns it; the editors are on that entity's own
-N panel, see below); below it the **lift line** (ADR-157 D5: `lift out: straight up (+Z), 80 mm` /
-`not declared — the lift phase will not be judged` + the DSL snippet / the malformed reason)) +
+N-panel, not a header input (ADR-084 §2) — + the **owner links** under the object picker
+(ADR-164 D1/D2: `how to grasp: … ▸ grasp: Workpiece 1 × tcp` / `object mass: 0.12 kg ▸ Workpiece 1` /
+`hand: parallel jaw ▸ robot_base tcp` / `reach envelope: not declared (reach margin NOT MEASURED) ▸ robot_base`
+— each line READS a declaration's state and `▸` selects the entity (or the grasp relation) that owns it;
+the editors are on that owner's own N panel, see below. The grasp-spec editor and the lift line moved to
+the grasp relation's panel in ADR-164 D2)) +
 reach / clearance / stability / **hold** objective weights (the hold slot is fixed and disabled
 unless the hand is a cup)). The Seen card has a `declare` toggle; off keeps the card slot and states
 the vacuously-true consequence (PHILOSOPHY #15/#11). Presets come from the pure
@@ -907,6 +907,20 @@ enabled for a search that has no robot to solve for.
   preset chips, max opening / finger clearance or cup diameter / seal tilt; a cup adds its **hold**
   bundle — force N + pad friction μ, declared together or not at all; the hand's shape. The tcp you
   selected is the one edited (not the search subject's).
+- **Grasp relation (object × tcp)** (ADR-164 D2) — selected from the Outliner's **Document** side
+  (section `Grasp relations (N, k broken)` under the shared variables; one row `✋ <object> × <tcp>`
+  per grasp the document declares, a broken one as `⚠` in the caution hue that stays instead of
+  vanishing) or by `▸` from the grasp check / the object's panel. Selecting it outlines the object and
+  the named tcp together. Panel `Grasp (object × hand)`: the title, the state in words
+  (`which hand is not declared …` / `the object … is not in the scene` / `the hand this grasp names is
+  not a robot tcp in the scene — re-point it`), `▸ object` / `▸ tcp`, the **hand** row (`name <tcp>`
+  as one press when the scene has one tcp — never filled in for you; a `<select>` of the scene's tcps
+  otherwise; `clear`), then the **grasp-spec editor** (specs, strategy, `anywhere`, `clear` — moved
+  verbatim from the grasp panel) and the **lift line** (ADR-157 D5). A relation whose object is gone has
+  no editor — only `remove this grasp declaration`. Reached for an object with no declaration yet, the
+  panel says `no grasp declared on this object yet` and the first declaration makes it a row. The
+  object's own panel links here: `grasp: ▸ <object> × <tcp>` / `▸ how to grasp: not declared`.
+  Run is gated when the grasp names another robot's hand than the search subject's.
 - **Robot base** — `Declarations (arm)`: `declare reach envelope` (per robot; seeded from the URDF the
   viewport draws, never re-seeded once edited; a different arm than the one on screen is stated), and
   the **appearance statement** (ADR-164 D5): `realistic mesh` / `loading the realistic mesh…` /

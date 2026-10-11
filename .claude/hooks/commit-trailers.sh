@@ -8,8 +8,9 @@
 #   PreToolUse  — 刻むための**根拠を置く** (`.git/claude-commit-context`)。
 #   PostToolUse — git hook が張られていない clone のための**予備経路** (amend)。
 #
-#   Model-Effort: claude-opus-5/high        ← transcript が根拠 (申告ではない)
 #   Task-Class:   feat/core+front            ← 変更集合から決定的に導出
+#   (Model-Effort はモデル ID を値に持つので 2026-10-11 に刻むのをやめた —
+#    実行環境の上位規則と衝突したため。ADR-116 §改訂)
 #
 # なぜ主経路を移したか (ADR-092 §3 → ADR-116):
 #   PostToolUse は commit の**後**に走るので、`git commit && git push` と 1 コマンドに
@@ -177,20 +178,19 @@ meta_script="$repo/scripts/commit-meta.mjs"
 trailers="$(node "$meta_script" derive --transcript "$transcript" --repo "$repo" --rev HEAD 2>/dev/null)" || exit 0
 [ -n "$trailers" ] || exit 0
 
-model_effort="$(printf '%s\n' "$trailers" | grep '^Model-Effort:' | head -1)"
+# Task-Class だけを刻む (Model-Effort は値がモデル ID — 2026-10-11 に外した、ADR-116 §改訂)。
 task_class="$(printf '%s\n' "$trailers" | grep '^Task-Class:' | head -1)"
-[ -n "$model_effort" ] && [ -n "$task_class" ] || exit 0
+[ -n "$task_class" ] || exit 0
 
 # 既に同じ値が入っているなら何もしない (amend を繰り返して SHA を動かさない)。
-existing="$(g log -1 --format='%(trailers:key=Model-Effort,valueonly,separator=%x2c)%(trailers:key=Task-Class,valueonly,separator=%x2c)' 2>/dev/null)"
-want="${model_effort#Model-Effort: }${task_class#Task-Class: }"
+existing="$(g log -1 --format='%(trailers:key=Task-Class,valueonly,separator=%x2c)' 2>/dev/null)"
+want="${task_class#Task-Class: }"
 [ "$existing" = "$want" ] && exit 0
 
 # --- 刻む ---------------------------------------------------------------------
 # --if-exists replace: 同じ key が既にあれば置換 (amend を跨いでも重複しない)。
 new_msg="$(g log -1 --format=%B | g interpret-trailers \
   --if-exists replace \
-  --trailer "$model_effort" \
   --trailer "$task_class" 2>/dev/null)" || exit 0
 [ -n "$new_msg" ] || exit 0
 
@@ -203,10 +203,10 @@ GIT_AUTHOR_DATE="$(g log -1 --format=%aI)" \
 after="$(g rev-parse --short HEAD)"
 
 # SHA が変わったことは黙らせない (原則 #11): 直前に控えた SHA は無効になる。
-python3 - "$before" "$after" "$model_effort" "$task_class" <<'PY' 2>/dev/null || exit 0
+python3 - "$before" "$after" "$task_class" <<'PY' 2>/dev/null || exit 0
 import json, sys
-before, after, me, tc = sys.argv[1:5]
-msg = f"観測トレーラを刻みました ({before} → {after}): {me} / {tc}"
+before, after, tc = sys.argv[1:4]
+msg = f"観測トレーラを刻みました ({before} → {after}): {tc}"
 print(json.dumps({
     "suppressOutput": True,
     "hookSpecificOutput": {
@@ -214,7 +214,7 @@ print(json.dumps({
         "additionalContext": (
             f"[commit-trailers hook] 直前のコミットに観測トレーラを付与し、amend したため "
             f"SHA が {before} → {after} に変わりました。控えていた SHA は無効です。\n"
-            f"  {me}\n  {tc}"
+            f"  {tc}"
         ),
     },
     "systemMessage": msg,

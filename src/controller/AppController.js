@@ -105,6 +105,7 @@ import { SHIPPED_ROBOT_MODEL_ID }     from '../domain/robotModel.js'
 import { ContextService }             from '../service/ContextService.js'
 import { useUIStore }                 from '../store/uiStore.js'
 import { selectionAfterProjection } from '../domain/selectionAcrossProjection.js'
+import { relationRef }               from '../domain/selection.js'
 import { renderableEndEffectorFrame } from '../view/GraspGhostMath.js'
 import { mPointToMM } from '../domain/worldUnits.js'
 import { SCREEN_CLAIM }               from '../view/ScreenClaim.js'
@@ -279,6 +280,9 @@ export class AppController {
         obj.id, obj.name, type, obj.parentId ?? null,
         this._service.isExplicitVisible(obj.id),
       )
+      // ADR-164 D2: an entity coming back (undo of a delete) can mend a broken
+      // grasp relation — re-derive once per burst, like removal.
+      this._scheduleRelationRefresh()
       // Origin frames are locked — cannot be dragged to a new parent (ADR-028)
       if (obj instanceof CoordinateFrame && isOriginFrame(obj)) {
         outlinerView?.setObjectLocked(obj.id, true)
@@ -338,6 +342,10 @@ export class AppController {
       // payload is additive (older emitters omit it), so an absent `obj` also
       // invalidates: guessing "not a frame" would silently keep a stale roster.
       if (!obj || obj instanceof CoordinateFrame) this._invalidateRobotRoster()
+      // ADR-164 D2: a grasp relation whose object or tcp just left the scene is
+      // now a BROKEN row — the row must say so the moment it happens, not at the
+      // next document edit (the event owns the refresh — 原則 #32).
+      this._scheduleRelationRefresh()
     })
     // ADR-152 D3: a tcp's hand changed — the grasp panel's roster carries it.
     // ADR-164 D1: the hand is edited on the tcp's own N panel, so that panel
@@ -534,6 +542,7 @@ export class AppController {
     this._ctxService.on('contextChanged', () => {
       this._restoreSelectionAfterProjection()
       this._graspCtrl?.refreshGraspTargets()
+      this._reassertRelationSelection()
       this._updateNPanel()
     })
     // A newly loaded document is not the same scene: ids it reuses are not the
@@ -2554,6 +2563,43 @@ export class AppController {
    * one the edit removed or re-created under a new id (ADR-159's adoption) is
    * not guessed at. Through the public verb, so highlight and context follow.
    */
+  /**
+   * Re-derive the grasp relations once per burst of scene lifecycle events
+   * (ADR-164 D2). A re-projection removes and adds every entity; deriving per
+   * event would decompile the scene N times for one answer.
+   */
+  _scheduleRelationRefresh() {
+    if (this._relationRefreshPending) return
+    this._relationRefreshPending = true
+    queueMicrotask(() => {
+      this._relationRefreshPending = false
+      this._graspCtrl?.refreshGraspTargets()
+      this._reassertRelationSelection()
+    })
+  }
+
+  /**
+   * A selected grasp relation borrows its 3-D body from two entities; when they
+   * are re-created (re-projection) or one leaves (the relation breaks), the pair
+   * must be painted again from the relation's identity — its object ref, which
+   * survives both. A relation the document no longer declares cannot stay
+   * selected: there is nothing left for its panel to talk about.
+   */
+  _reassertRelationSelection() {
+    const refs = [...(this._selMgr?.relationRefs ?? [])]
+    if (refs.length === 0) return
+    const ctx = useUIStore.getState().context
+    // Declared relations, plus the graspable objects a first declaration can be
+    // started on (the relation panel reached by ▸ before anything is declared).
+    const alive = new Set([
+      ...(ctx.graspRelations?.list ?? []).map(r => r.objectRef),
+      ...(ctx.graspTargets?.list ?? []).map(t => t.ref),
+    ])
+    const kept = refs.filter(r => alive.has(r))
+    if (kept.length === 0) { this._selMgr.clearSelection(); return }
+    this._selMgr.selectMany(kept.map(relationRef))
+  }
+
   _restoreSelectionAfterProjection() {
     const kept = this._selectionBeforeProjection
     this._selectionBeforeProjection = null

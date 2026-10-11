@@ -21,6 +21,7 @@
  *       | { kind: 'empty' }
  *       | { kind: 'entities',  ids:  Set<entityId> }    // size ≥ 1
  *       | { kind: 'variables', refs: Set<variableRef> } // size ≥ 1
+ *       | { kind: 'relations', refs: Set<objectRef> }   // size ≥ 1 (ADR-164 D2)
  *
  * Two properties are load-bearing:
  *
@@ -49,13 +50,16 @@
  * @typedef {{ns: 'variable', ref: string}} VariableRef
  *   A document variable, wrapped in its namespace so it is never comparable to
  *   an entity id as a bare string.
- * @typedef {string|VariableRef} SelectionMember
+ * @typedef {{ns: 'relation', ref: string}} RelationRef
+ *   A grasp relation, filed under its object's layout ref (ADR-164 D2).
+ * @typedef {string|VariableRef|RelationRef} SelectionMember
  * @typedef {{kind: 'empty'}
  *          |{kind: 'entities',  ids:  Set<string>}
- *          |{kind: 'variables', refs: Set<string>}} Selection
+ *          |{kind: 'variables', refs: Set<string>}
+ *          |{kind: 'relations', refs: Set<string>}} Selection
  */
 
-/** The three branches of the selection union. */
+/** The four branches of the selection union. */
 export const SELECTION_KIND = Object.freeze({
   /** Nothing is selected. Cardinality 0 has exactly ONE representation. */
   EMPTY:     'empty',
@@ -63,6 +67,13 @@ export const SELECTION_KIND = Object.freeze({
   ENTITIES:  'entities',
   /** Shared design variables of the context document (`d_ref`, `cycle`, …). */
   VARIABLES: 'variables',
+  /**
+   * Grasp RELATIONS (object × tcp — ADR-164 D2). A relation has no body of its
+   * own; it is filed under its object, so its member is the object's layout ref,
+   * wrapped in its own namespace (`relationRef`) — never comparable to the object
+   * itself, which is a different thing to select.
+   */
+  RELATIONS: 'relations',
 })
 
 /**
@@ -74,6 +85,7 @@ export const SELECTION_KIND = Object.freeze({
 export const SELECTABLE_KINDS = Object.freeze([
   SELECTION_KIND.ENTITIES,
   SELECTION_KIND.VARIABLES,
+  SELECTION_KIND.RELATIONS,
 ])
 
 /** THE representation of "nothing is selected" (there is only one). */
@@ -88,6 +100,9 @@ const NO_MEMBERS = Object.freeze(new Set())
 
 /** Namespace tag of the variable-ref token. Never appears inside a ref string. */
 const VARIABLE_NS = 'variable'
+
+/** Namespace tag of the relation token (ADR-164 D2). */
+const RELATION_NS = 'relation'
 
 /**
  * Wraps a document variable ref in its namespace token, so a variable can be
@@ -111,6 +126,29 @@ export function isVariableRef(x) {
   return t.ns === VARIABLE_NS && typeof t.ref === 'string'
 }
 
+/**
+ * Wraps the OBJECT ref a grasp relation is filed under in the relation
+ * namespace (ADR-164 D2). Selecting the relation and selecting its object are
+ * different gestures with different panels, so the two must not be the same
+ * member just because they share a ref.
+ *
+ * @param {string} objectRef — the layout ref of the Solid the grasp is declared on
+ * @returns {RelationRef} frozen token
+ */
+export function relationRef(objectRef) {
+  if (typeof objectRef !== 'string' || objectRef.length === 0) {
+    throw new TypeError(`[selection] relationRef() needs a non-empty object ref, got ${JSON.stringify(objectRef)}`)
+  }
+  return Object.freeze({ ns: RELATION_NS, ref: objectRef })
+}
+
+/** @param {unknown} x @returns {x is RelationRef} true for a `relationRef()` token. */
+export function isRelationRef(x) {
+  if (typeof x !== 'object' || x === null) return false
+  const t = /** @type {{ns?: unknown, ref?: unknown}} */ (x)
+  return t.ns === RELATION_NS && typeof t.ref === 'string'
+}
+
 /** @param {unknown} x @returns {x is string} true for a bare entity id. */
 export function isEntityId(x) {
   return typeof x === 'string' && x.length > 0
@@ -128,6 +166,7 @@ export function isEntityId(x) {
  */
 export function kindOfMember(member) {
   if (isVariableRef(member)) return SELECTION_KIND.VARIABLES
+  if (isRelationRef(member)) return SELECTION_KIND.RELATIONS
   if (isEntityId(member))    return SELECTION_KIND.ENTITIES
   throw new TypeError(
     `[selection] member of unknown namespace: ${JSON.stringify(member)}. ` +
@@ -164,6 +203,10 @@ export function makeSelection(members) {
     const refs = new Set(list.map(m => /** @type {VariableRef} */ (m).ref))
     return Object.freeze({ kind: SELECTION_KIND.VARIABLES, refs })
   }
+  if ([...kinds][0] === SELECTION_KIND.RELATIONS) {
+    const refs = new Set(list.map(m => /** @type {{ref:string}} */ (m).ref))
+    return Object.freeze({ kind: SELECTION_KIND.RELATIONS, refs })
+  }
   const ids = new Set(/** @type {string[]} */ (list))
   return Object.freeze({ kind: SELECTION_KIND.ENTITIES, ids })
 }
@@ -177,6 +220,7 @@ export function makeSelection(members) {
 export function selectionMembers(sel) {
   if (sel?.kind === SELECTION_KIND.ENTITIES)  return sel.ids
   if (sel?.kind === SELECTION_KIND.VARIABLES) return sel.refs
+  if (sel?.kind === SELECTION_KIND.RELATIONS) return sel.refs
   return NO_MEMBERS
 }
 
@@ -208,6 +252,16 @@ export function variableRefsOf(sel) {
 }
 
 /**
+ * The selected grasp RELATIONS (their object refs) — empty when the selection is
+ * of another kind (ADR-164 D2).
+ * @param {Selection} sel
+ * @returns {Set<string>}
+ */
+export function relationRefsOf(sel) {
+  return sel?.kind === SELECTION_KIND.RELATIONS ? sel.refs : NO_MEMBERS
+}
+
+/**
  * Membership test in the member's OWN namespace: a bare string asks about
  * entities, a `variableRef()` token asks about variables. A variable can
  * therefore never test true against an entity selection just because the
@@ -218,7 +272,7 @@ export function variableRefsOf(sel) {
 export function selectionHas(sel, member) {
   const kind = kindOfMember(member)
   if (sel?.kind !== kind) return false
-  return selectionMembers(sel).has(isVariableRef(member) ? member.ref : member)
+  return selectionMembers(sel).has((isVariableRef(member) || isRelationRef(member)) ? member.ref : member)
 }
 
 /**

@@ -265,14 +265,17 @@ export function parseCommitContext(text, { nowSec, maxAgeSec = 300 } = {}) {
 /**
  * トレーラ行を組み立てる。
  *
- * model が読めなくても `unknown/unknown` を**宣言**する — hook が走った時点で
- * 「Claude が作ったコミット」であることは確定しており、トレーラを省くと
- * 人間のコミットと区別がつかなくなる。不在を推論させず宣言させる (原則 #31)。
+ * **2026-10-11 から `Task-Class` だけを刻む。** `Model-Effort` はモデル ID を値に持ち、
+ * 実行環境の上位規則 (push するコミットにモデル ID を入れない) と 4 回衝突した —
+ * そのたびに人がトレーラを手で外し、欠測の ratchet を上げていた。当事者の判断で
+ * 書き手から外した (ADR-116 §改訂)。過去のコミットの `Model-Effort` は report と
+ * check-commit-trailers が引き続き読む (履歴は書き換えない)。
+ *
+ * `Task-Class` は hook が走った時点で必ず書ける (変更集合からの決定的な導出) ので、
+ * 「Claude が作ったコミット」を人間のコミットと区別する印はこれ 1 つで足りる (原則 #31)。
  */
-export function buildTrailers({ session, taskClass }) {
-  const model = session?.model ?? 'unknown';
-  const effort = session?.effort ?? 'unknown';
-  return [`Model-Effort: ${model}/${effort}`, `Task-Class: ${taskClass}`];
+export function buildTrailers({ taskClass }) {
+  return [`Task-Class: ${taskClass}`];
 }
 
 // ---------------------------------------------------------------------------
@@ -329,13 +332,12 @@ function cmdDerive(argv) {
       .split('\n').map((s) => s.trim()).filter(Boolean);
   }
 
-  let session = null;
-  if (transcript) {
-    try { session = readSessionModelEffort(readFileSync(transcript, 'utf8')); } catch { /* fail-open */ }
-  }
+  // `--transcript` is still accepted (the hooks pass it) but no longer read: the
+  // model it would yield is not written any more (ADR-116 §改訂).
+  void transcript;
 
   process.stdout.write(
-    buildTrailers({ session, taskClass: deriveTaskClass({ subject, paths }) }).join('\n') + '\n',
+    buildTrailers({ taskClass: deriveTaskClass({ subject, paths }) }).join('\n') + '\n',
   );
 }
 

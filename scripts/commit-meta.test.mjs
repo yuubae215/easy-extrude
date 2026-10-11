@@ -132,13 +132,11 @@ test('assistant 応答が無ければ null (捏造しない)', () => {
   assert.equal(readSessionModelEffort(''), null);
 });
 
-test('session 不明でも unknown/unknown を宣言する — 人間のコミットと区別可能に保つ', () => {
-  // 原則 #31: 不在は検査対象のノードを持たない。トレーラを省くと
-  // 「人間が書いた」と見分けがつかず、母集団の分母が静かに狂う。
-  assert.deepEqual(buildTrailers({ session: null, taskClass: 'fix/front' }), [
-    'Model-Effort: unknown/unknown',
-    'Task-Class: fix/front',
-  ]);
+test('刻むのは Task-Class だけ — モデル ID を書かない (ADR-116 §改訂)', () => {
+  // 実行環境の上位規則 (push するコミットにモデル ID を入れない) に従う。Task-Class は
+  // 変更集合から必ず導出できるので、人間のコミットと区別する印はこれで足りる (原則 #31)。
+  assert.deepEqual(buildTrailers({ taskClass: 'fix/front' }), ['Task-Class: fix/front']);
+  for (const line of buildTrailers({ taskClass: 'fix/front' })) assert.doesNotMatch(line, /claude-|Model-Effort/);
 });
 
 test('commit && push の連鎖を検出する (刻む隙間が無い形)', () => {
@@ -249,11 +247,7 @@ test('transcript が空でもマーカーとしては成立する (刻印は unk
 });
 
 test('トレーラ行は git interpret-trailers が読める key: value 形式', () => {
-  const [me, tc] = buildTrailers({
-    session: { model: 'claude-opus-5', effort: 'high' },
-    taskClass: 'feat/core+front',
-  });
-  assert.equal(me, 'Model-Effort: claude-opus-5/high');
+  const [tc] = buildTrailers({ taskClass: 'feat/core+front' });
   assert.equal(tc, 'Task-Class: feat/core+front');
-  for (const line of [me, tc]) assert.match(line, /^[A-Za-z-]+: \S.*$/);
+  assert.match(tc, /^[A-Za-z-]+: \S.*$/);
 });

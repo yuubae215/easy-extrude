@@ -22,6 +22,7 @@ import {
 } from './GraspDeclarationMath.js'
 import { resolveGraspTargets, faceRegionSamples } from '../domain/graspTargets.js'
 import { DEFAULT_HAND_BY_KIND } from '../domain/robotHand.js'
+import { DECLARED_PAINTERS } from './SelectionKinds.js'
 
 const schema = JSON.parse(readFileSync(new URL('../../schema/layout-1.0.schema.json', import.meta.url), 'utf8'))
 
@@ -57,6 +58,9 @@ const population = [
   ...fieldsOf('graspStrategy', schema.$defs.graspStrategy),
   ...fieldsOf('hand', handDef()),
   ...solidDeclarations,
+  // ADR-164 D2 — which hand the grasp is for. Read from the schema by name, so a
+  // retired field drops out and fails the stale-row test.
+  ...('tcp' in (schema.$defs.graspFeature.properties ?? {}) ? ['graspFeature.tcp'] : []),
 ]
 
 test('宣言の欄のうち確認の絵を持たないものは 0 個 (母集団はスキーマ)', () => {
@@ -162,6 +166,13 @@ test('表が絵を名指す行は、代表の宣言で実際にその絵が出�
   const has = (pic, key) => (key in pic ? pic[key] : pic.focused?.[key]) != null
   for (const [field, row] of Object.entries(CONFIRMATION_BY_FIELD)) {
     if (row.picture === 'panel') continue
+    // A picture drawn by SELECTING something (ADR-164 D2 — the relation row) is a
+    // painter of the selection, not of the declaration overlay: it must be a
+    // painter the selection-kind table declares.
+    if (row.picture === 'selection') {
+      assert.ok(DECLARED_PAINTERS.includes(row.paint), `${field} → painter ${row.paint} is not declared in SELECTION_SHAPE_BY_KIND`)
+      continue
+    }
     assert.ok(has(jawPic, row.picture) || has(cupPic, row.picture), `${field} → ${row.picture} is never drawn`)
   }
   assert.equal(jawPic.hover.length, 4, 'the hovered face is painted')

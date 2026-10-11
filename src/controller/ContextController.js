@@ -56,7 +56,7 @@ import { applyQuestionAnswer } from '../context/FormApplication.js'
 import {
   createBlankDoc, addActor, addFact, addVariable, addRequirement,
   updateActor, updateVariable, updateRequirement, removeDocEntry,
-  setEntityGraspFeature, setEntityPose, setEntityHand, setEntityMassDeclaration,
+  setEntityGraspFeature, setEntityGraspTcp, setEntityPose, setEntityHand, setEntityMassDeclaration,
   adoptSceneEntities, docDeclaresEntity,
 } from '../context/DocBuilder.js'
 import { planSceneAdoption, adoptionRefusalMessage, adoptionToast } from '../domain/sceneAdoption.js'
@@ -540,6 +540,29 @@ export class ContextController {
     const label = feature == null ? 'Clear grasp location' : 'Declare grasp location'
     return this._declareAbout(ref, feature == null,
       doc => setEntityGraspFeature(doc, ref, feature), label, 'Could not save the grasp location')
+  }
+
+  /**
+   * Name (or un-name) the robot tcp a grasp declaration is for — the right-hand
+   * side of the grasp relation (ADR-164 D2). Same one doc-edit entry point.
+   *
+   * Unlike the other declarations this never adopts: a relation exists only
+   * because the DOCUMENT declares a grasp on the object, so an object the
+   * document does not have has no relation to name a hand for. Reaching that
+   * case is said, not swallowed (原則 #11).
+   *
+   * @param {string} ref  Layout DSL entity ref of the Solid
+   * @param {string|null} tcpRef  Layout DSL ref of the robot tcp; null = not declared
+   */
+  setGraspTcp(ref, tcpRef) {
+    if (!ref) return
+    const beforeDoc = this._ctxService.getDoc()
+    if (!docDeclaresEntity(beforeDoc, ref)) {
+      this._ctrl._uiView?.showToast?.(`"${ref}" declares no grasp in the document — there is no relation to name a hand for`, { type: 'warn' })
+      return
+    }
+    const label = tcpRef == null ? 'Clear the grasp\'s hand' : 'Name the grasp\'s hand'
+    return this._runDocEdit(beforeDoc, setEntityGraspTcp(beforeDoc, ref, tcpRef), label, 'Could not save the grasp\'s hand')
   }
 
   /**

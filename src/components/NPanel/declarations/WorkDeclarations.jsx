@@ -29,6 +29,7 @@ export function WorkDeclarations({ work }) {
         work={work}
         onSet={(ref, key, value) => callbacks.onSetMassDeclaration?.(ref, key, value)}
       />
+      <GraspRelationLink objectRef={work.ref} onSelect={(ref) => callbacks.onSelectGraspRelation?.(ref)} />
     </Section>
   )
 }
@@ -120,3 +121,26 @@ function MassEditor({ work, onSet }) {
     </div>
   )
 }
+
+/**
+ * ▸ to this object's grasp relation (ADR-164 D2) — how to grasp it and how to
+ * lift it are the RELATION's declarations, not the object's, so they are one
+ * link away rather than repeated here. 0 relations is said ("not declared"),
+ * and the link is still the way to declare the first one.
+ */
+function GraspRelationLink({ objectRef, onSelect }) {
+  const relation = useUIStore(s => (s.context.graspRelations?.list ?? []).find(r => r.objectRef === objectRef) ?? null)
+  const word = relation
+    ? `${relation.objectLabel} × ${relation.tcpLabel ?? 'hand not declared'}`
+    : 'how to grasp: not declared'
+  return (
+    <div style={{ fontSize: '10px', color: COLOR.textSecondary, marginTop: '6px' }}>
+      grasp:{' '}
+      <button type="button" data-testid="work-grasp-relation-link" onClick={() => onSelect(objectRef)}
+        style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: COLOR.infoTone, fontSize: '10px' }}>
+        ▸ {word}
+      </button>
+    </div>
+  )
+}
+

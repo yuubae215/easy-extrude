@@ -70,14 +70,15 @@ derive_args=(derive --repo "$repo" --message-file "$MSG_FILE")
 trailers="$(node "$meta_script" "${derive_args[@]}" 2>/dev/null)" || exit 0
 [ -n "$trailers" ] || exit 0
 
-model_effort="$(printf '%s\n' "$trailers" | grep '^Model-Effort:' | head -1)"
+# Task-Class だけを刻む。Model-Effort (値がモデル ID) は 2026-10-11 に書き手から外した —
+# 実行環境の上位規則「push するコミットにモデル ID を入れない」と衝突し続けたため
+# (ADR-116 §改訂)。
 task_class="$(printf '%s\n' "$trailers" | grep '^Task-Class:' | head -1)"
-[ -n "$model_effort" ] && [ -n "$task_class" ] || exit 0
+[ -n "$task_class" ] || exit 0
 
 # --if-exists replace: amend を跨いでも重複しない。
 new_msg="$(git interpret-trailers \
   --if-exists replace \
-  --trailer "$model_effort" \
   --trailer "$task_class" \
   < "$MSG_FILE" 2>/dev/null)" || exit 0
 [ -n "$new_msg" ] || exit 0

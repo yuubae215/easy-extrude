@@ -151,6 +151,11 @@ export const NAVIGATOR_SIDE_BY_SELECTION_KIND = Object.freeze({
     why:  '文書の宣言であって体ではない。3D の姿 (未確定帯) は**投影**であって体では '
         + 'ないので、幾何の木に混ぜると木の意味が 2 つになる (ADR-111 §力学 3)。',
   }),
+  [SELECTION_KIND.RELATIONS]: Object.freeze({
+    side: NAVIGATOR_SIDE.SEMANTIC,
+    why:  '把持の関係 (ワーク × tcp) は文書の宣言からの導出であって体ではない (ADR-164 D2)。'
+        + '幾何の木に置くと、片方が消えた関係 (壊れた行) を載せる枝が無い — 木は在る体しか辿らない。',
+  }),
 })
 
 /**
@@ -283,3 +288,45 @@ export function semanticSideDeclaration(summary) {
   }
   return decl
 }
+
+// ── 意味側の第 2 節: 把持の関係 (ADR-164 D2) ─────────────────────────────────
+
+/**
+ * 関係の節が取りうる状態。文書が無いときは節そのものを出さない (意味側の 0 が
+ * 既に「文書がまだ無い」を言っており、同じ 0 を 2 度言わない)。文書が在るなら
+ * 「宣言 0 個」も節として言う — 数えた 0 と、数えていない 0 を区別する (原則 #31)。
+ */
+export const RELATION_SECTION_KIND = Object.freeze({
+  HIDDEN:       'hidden',
+  NO_RELATIONS: 'no-relations',
+  RELATIONS:    'relations',
+})
+
+/**
+ * 関係の節の中身。
+ *
+ * @param {{docPresent: boolean, relations?: {list: object[], total: number, broken: number}|null}} input
+ * @returns {{kind: string, headline?: string, detail?: string, rows?: object[]}}
+ */
+export function relationSectionSummary({ docPresent = false, relations = null } = {}) {
+  if (!docPresent) return { kind: RELATION_SECTION_KIND.HIDDEN }
+  const list = relations?.list ?? []
+  if (list.length === 0) {
+    return {
+      kind: RELATION_SECTION_KIND.NO_RELATIONS,
+      headline: 'Grasp relations (0)',
+      detail: 'No object declares how it is grasped yet. Declare it from the grasp check (▸ how to grasp).',
+    }
+  }
+  const broken = relations?.broken ?? 0
+  return {
+    kind: RELATION_SECTION_KIND.RELATIONS,
+    headline: `Grasp relations (${list.length}${broken > 0 ? `, ${broken} broken` : ''})`,
+    rows: list.map(r => ({
+      ref:    r.objectRef,
+      text:   `${r.objectLabel} × ${r.tcpLabel ?? 'hand not declared'}`,
+      state:  r.state,
+    })),
+  }
+}
+

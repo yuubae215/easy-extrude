@@ -59,6 +59,8 @@ import {
   graspSpecsFor, sendsDerivedSamples,
 } from '../domain/graspTargets.js'
 import { graspFeatureGaps, GRASP_FEATURE_STATE } from '../domain/graspFeature.js'
+import { graspRelationsOf, nameableTcpsOf, relationHandGap, relationCensus, GRASP_RELATION_STATE } from '../domain/graspRelation.js'
+import { relationRef } from '../domain/selection.js'
 import { massDeclarationGaps } from '../domain/targetMass.js'
 import { liftDeclarationGaps } from '../domain/targetLift.js'
 import { analysisAvailability } from '../view/GraspPhaseMath.js'
@@ -159,6 +161,8 @@ export class GraspController {
     this._selectedTargetRef = null
     /** last published `context.graspTargets` signature — change detection, not a source */
     this._targetsSignature = null
+    /** last published `context.graspRelations` signature — change detection, not a source */
+    this._relationsSignature = null
 
     const { registerCallback } = store.getState().actions
     registerCallback('onOpenGrasp',          ()       => this.openGrasp())
@@ -175,6 +179,8 @@ export class GraspController {
     registerCallback('onSetRobotHand',         (id, hand) => this.setRobotHand(id, hand))
     registerCallback('onFocusGraspSpec',       (i) => this.focusGraspSpec(i))
     registerCallback('onHoverGraspFace',       (face) => this.hoverGraspFace(face))
+    registerCallback('onSelectGraspRelation',  (ref) => this.selectRelation(ref))
+    registerCallback('onSetGraspTcp',          (ref, tcpRef) => this.setGraspTcp(ref, tcpRef))
     this.refreshRobots()
   }
 
@@ -304,6 +310,9 @@ export class GraspController {
   selectRobot(id) {
     this._selectedRobotId = id ?? null
     this.refreshRobots()
+    // Whether the target's grasp is declared for THIS robot's hand changed
+    // (ADR-164 D2) — the relation projection carries that gap.
+    this.refreshGraspTargets()
   }
 
   // ── Grasp target roster + selection (ADR-117) ────────────────────────────────
@@ -375,10 +384,129 @@ export class GraspController {
       ? new Map([...layout.refOf].map(([id, ref]) => [ref, id]))
       : null
     const projection = targetProjection(targets, this._selectedTargetRef, sceneIdByRef)
+    this._publishRelations(layout, sceneIdByRef, projection.selectedRef)
     const signature  = JSON.stringify(projection)
     if (signature === this._targetsSignature) return
     this._targetsSignature = signature
     this._store.getState().actions.contextSetGraspTargets?.(projection)
+  }
+
+  // ── Grasp relations (ADR-164 D2) ─────────────────────────────────────────────
+  //
+  // The relation (object × tcp) is DERIVED from the document's grasp declaration
+  // and the live scene — never stored. These readers resolve it from the same one
+  // resolution of the scene the search uses (`_searchLayout`), so the Outliner
+  // row, the relation's panel, its 3-D pair and the Run gate cannot describe two
+  // different scenes (ADR-132 D1).
+
+  /**
+   * @param {{dsl: object|null}} layout  one `_searchLayout()` result
+   * @returns {import('../domain/graspRelation.js').GraspRelation[]}
+   */
+  _relations(layout) {
+    return graspRelationsOf({
+      docDsl:   this._ctrl._ctxService?.getCompiled?.()?.layoutDsl ?? null,
+      sceneDsl: layout?.dsl ?? null,
+    })
+  }
+
+  /**
+   * The layout ref of the search subject's tcp, or null when there is no subject
+   * or the geometry did not come from the scene (no ref reading to ask).
+   * @param {{refOf?: ReadonlyMap<string,string>|null}} layout
+   */
+  _subjectTcpRef(layout) {
+    const tcpId = this._selectedRobot()?.tcpFrame?.id ?? null
+    return tcpId ? (layout?.refOf?.get(tcpId) ?? null) : null
+  }
+
+  /** Publish `context.graspRelations` (sole writer — 原則 #4). */
+  _publishRelations(layout, sceneIdByRef, targetRef) {
+    const relations = this._relations(layout)
+    const idOf = (ref) => (ref ? (sceneIdByRef?.get(ref) ?? null) : null)
+    const target = relations.find(r => r.objectRef === targetRef) ?? null
+    const projection = {
+      list: relations.map(r => ({
+        ...r,
+        // A broken side has no scene id — and must not borrow one by ref from an
+        // entity of another kind (the ref of a tcp that became a plain frame).
+        objectSceneId: r.state === GRASP_RELATION_STATE.BROKEN_OBJECT ? null : idOf(r.objectRef),
+        tcpSceneId:    r.state === GRASP_RELATION_STATE.OK ? idOf(r.tcpRef) : null,
+      })),
+      ...relationCensus(relations),
+      tcps: nameableTcpsOf(layout?.dsl).map(t => ({ ...t, sceneId: idOf(t.ref) })),
+      targetHandGap: relationHandGap(target, this._subjectTcpRef(layout)),
+    }
+    const signature = JSON.stringify(projection)
+    if (signature === this._relationsSignature) return
+    this._relationsSignature = signature
+    this._store.getState().actions.contextSetGraspRelations?.(projection)
+  }
+
+  /**
+   * The scene entities a relation relates — its object and its named tcp, as far
+   * as each is still on the screen. What `SelectionManager` lights and claims
+   * when the relation is selected. Fresh on every call (原則 #23): the painter
+   * runs on a selection change, which need not follow any refresh.
+   *
+   * @param {string} objectRef
+   * @returns {string[]} scene ids (0, 1 or 2)
+   */
+  relationSceneIds(objectRef) {
+    const layout = this._searchLayout()
+    if (!layout.refOf) return []
+    const idByRef = new Map([...layout.refOf].map(([id, ref]) => [ref, id]))
+    const rel = this._relations(layout).find(r => r.objectRef === objectRef)
+    // Not declared yet (reached by ▸ to declare a first grasp): the object alone
+    // is the honest pair — the hand side does not exist.
+    if (!rel) return [idByRef.get(objectRef)].filter(Boolean)
+    const ids = []
+    if (rel.state !== GRASP_RELATION_STATE.BROKEN_OBJECT) ids.push(idByRef.get(rel.objectRef))
+    if (rel.state === GRASP_RELATION_STATE.OK) ids.push(idByRef.get(rel.tcpRef))
+    return ids.filter(Boolean)
+  }
+
+  /**
+   * Select a grasp relation (the Outliner's relation row — ADR-164 D2). The
+   * relation's object also becomes the object the search is about: the
+   * relation's panel edits HOW that object is grasped, and the 3-D declaration
+   * picture draws the search target — two subjects here would let the panel edit
+   * one object while the viewport draws another (the entrance writes the subject
+   * — the ADR-130 D2 precedent).
+   *
+   * @param {string} objectRef
+   */
+  selectRelation(objectRef) {
+    if (!objectRef) return
+    const layout = this._searchLayout()
+    if (this._graspTargets(layout.dsl).some(t => t.ref === objectRef)) {
+      this.selectGraspTarget(objectRef)
+    }
+    // The same rule for the other side: a relation that names a hand on the
+    // screen makes that hand's robot the subject, so the spec editor judges
+    // usability against the hand the grasp is FOR, and the Run gate's "declared
+    // for another robot" cannot fire for the relation the user just picked.
+    const rel = this._relations(layout).find(r => r.objectRef === objectRef)
+    if (rel?.state === GRASP_RELATION_STATE.OK && layout.refOf) {
+      const tcpId = [...layout.refOf].find(([, ref]) => ref === rel.tcpRef)?.[0] ?? null
+      const robot = robotForFrameId(this._robots(), tcpId)
+      if (robot && robot.id !== this._selectedRobotId) this.selectRobot(robot.id)
+    }
+    this._ctrl._selMgr?.selectOnly(relationRef(objectRef))
+  }
+
+  /**
+   * Name (or re-point, or un-name) the tcp a grasp is for (ADR-164 D2). The
+   * document owns it — handed to the one doc-edit entry point, re-derived after.
+   *
+   * @param {string} objectRef
+   * @param {string|null} tcpRef
+   */
+  setGraspTcp(objectRef, tcpRef) {
+    const ctxCtrl = this._ctrl._ctxCtrl
+    if (typeof ctxCtrl?.setGraspTcp !== 'function') return
+    return Promise.resolve(ctxCtrl.setGraspTcp(objectRef, tcpRef))
+      .then(() => this.refreshGraspTargets())
   }
 
   /**
@@ -834,6 +962,18 @@ export class GraspController {
       const reason = featureGaps[0]
       ui.contextSetGrasp({ status: 'no-target', layout, reason, targetCount: targets.length })
       ctrl._uiView.showToast(reason, { type: 'warn' })
+      return
+    }
+
+    // Guard: WHICH hand the grasp is declared for (ADR-164 D2). A grasp declared
+    // for another robot's tcp is not this run's grasp — solving it with the
+    // subject's hand would swap the hand silently (原則 #11). An undeclared hand
+    // is not a gap: the run uses its subject, as every older document did.
+    const relation = this._relations(resolved).find(r => r.objectRef === targetEntity.ref) ?? null
+    const relationGap = relationHandGap(relation, this._subjectTcpRef(resolved))
+    if (relationGap) {
+      ui.contextSetGrasp({ status: 'no-target', layout, reason: relationGap, targetCount: targets.length })
+      ctrl._uiView.showToast(relationGap, { type: 'warn' })
       return
     }
 

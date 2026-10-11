@@ -324,6 +324,13 @@ export const useUIStore = create((set, get) => ({
     // The twin of `robots`: same 0/1/N discipline (原則 #31), same read-model
     // rules (the layout DSL is the authority; nothing writes back here).
     graspTargets: { list: [], selectedRef: null, cardinality: 'none' },
+    // ADR-164 D2 — DERIVED grasp relations (object × tcp), one per document grasp
+    // declaration, judged against the live scene:
+    //   { list: [{ objectRef, tcpRef, state, objectLabel, tcpLabel, objectSceneId, tcpSceneId }],
+    //     total, broken, tcps: [{ ref, label, sceneId }], targetHandGap }
+    // `total`/`broken` are carried so 0 is a number somebody counted (原則 #31).
+    // Sole writer GraspController; the document + scene are the authorities.
+    graspRelations: { list: [], total: 0, broken: 0, tcps: [], targetHandGap: null },
     // ADR-164 D1 — the reach envelope declared for each arm (the ARM domain),
     // keyed by robot id (the base frame's entity id). Edited on that robot's own
     // N panel and read by the grasp panel's Run for the search subject. Sole
@@ -649,6 +656,11 @@ export const useUIStore = create((set, get) => ({
     // GraspController; the layout DSL is the authority, this is the read-model).
     contextSetGraspTargets: (graspTargets) => set(state => ({
       context: { ...state.context, graspTargets },
+    })),
+    // ADR-164 D2 — replace the derived grasp-relation projection wholesale (sole
+    // writer GraspController).
+    contextSetGraspRelations: (graspRelations) => set(state => ({
+      context: { ...state.context, graspRelations },
     })),
     // ADR-164 D1 — merge a patch into one arm's reach declaration (sole writer).
     contextSetReachDeclaration: (robotId, patch) => set(state => ({

@@ -1,6 +1,6 @@
 # 164. 宣言は、その事実を持つ実体の画面に住む — 把持まわりを 6 つのドメインへ配り直す
 
-- Status: Accepted (2026-10-11 — 当事者が俯瞰で合意。段階実装: D1・D5 実装済み、D2 → D4 → D3 は続く PR — `docs/ia-redesign/03-implementation-order.md` Phase 7)
+- Status: Accepted (2026-10-11 — 当事者が俯瞰で合意。段階実装: D1・D5 (PR1)、D2 (PR2) 実装済み、D4 → D3 は続く PR — `docs/ia-redesign/03-implementation-order.md` Phase 7)
 - Date: 2026-10-11
 - Deciders: yuubae215, Claude
 - 段: IA 再設計 Phase 7 (`docs/ia-redesign/03-implementation-order.md`)
@@ -181,6 +181,21 @@ ADR-149 がトグルを置いた理由 (a) 読み込み失敗時の戻り道 は
   同じ PR か直前で行う)。これで関係の行は保存された事実の導出になり、片方 (ワーク / tcp) がシーンに
   無い関係は**壊れた行**として数えられる (DEF-035)。旧文書 (欄なし) の読み替えと、tcp が 1 本だけの
   ときの扱いは PR2 の俯瞰で決める。
+- **PR2 の俯瞰 (2026-10-11、当事者が推奨どおり合意)** — D2 を実装する前に、言えない文が 5 つ見つかった。
+  1. **旧文書と tcp 1 本のとき — 読み込み時に書かない。** 欄の無い宣言は関係の状態 `hand-undeclared` で、
+     行は「× hand not declared」と言う。tcp が 1 本でも既定で埋めない (Yellow Card「必須入力の欠落に既定値を
+     与えない」)。関係のパネルが「name <tcp>」を 1 押下で出し、押すことが宣言になる。却下: 1 本なら読み込み時に
+     写して告げる (D4 の `lift` の扱いと同じ形だが、`lift` は*位置*の移設で事実は変わらない。手の名指しは
+     *事実の新設*で、写すと誰も言っていない事実が文書に入る)。
+  2. **宣言した手 ≠ 探索の主語の手 — Run の gap。** 手を黙って取り替えない (原則 #11)。`hand-undeclared` は
+     gap ではない (主語で解く — 旧文書すべてがそう動いていた)。関係の行を選ぶと、名指された手のロボットが
+     主語になる (入口が主語を書く — ADR-130 D2 の先例) ので、選んだ関係そのもので gap は踏まない。
+  3. **ワークごとに関係 `0..1`。** `graspFeature` が Solid に 0..1 なので、1 つのワークを 2 本の手で掴み分ける
+     語はまだ無い。ワイヤは 1 回の探索で手 1 本なので、上限を**宣言して**台帳に書いた。
+  4. **壊れた行の付け替えは tcp 側だけ。** ワーク側 (改名への追従) は DEF-035 に残した — 壊れたワークの行の
+     出口は今日は「この宣言を消す」(undo 可) だけ。
+  5. **欄の名前は `tcp`。** `graspSpec.hand` が既に*手の種別*を指すので、`hand` だと 1 語が 2 事実を運ぶ
+     (原則 #33 (1))。`tcp` は `robotRole: tcp` と同じ語で、指す先は実体である。
 
 ## 実装の記録
 
@@ -212,6 +227,37 @@ ADR-149 がトグルを置いた理由 (a) 読み込み失敗時の戻り道 は
   **落ちたことを言い続ける欄** (`uiStore.robotMeshFallbacks`、ロボットのパネルが読む) だけ。トグルが
   兼ねていた ADR-150 D2 の LOADING… は、読み込み中だけ在る表示 `RobotMeshLoadingNotice` に残した
   (操作ではないので固定スロットは要らない)。
+
+### PR2 — D2: 把持は関係の行 (2026-10-11)
+
+- **語と欄**: `graspFeature.tcp` (layout-1.0 と context-0.5 の双子に同時に — ADR-117 の教訓)。request 契約は
+  変えない (ワイヤは今の `target` のまま)。読むのは `resolveGraspFeature` だけ (解決済みの `.tcp` を全状態に
+  運び、仕様の書き直し `featureToDsl` でも落ちない)、書くのは `setEntityGraspTcp` だけ —
+  `IDENTITY_RULES` に「把持の関係の右辺」として登録した。
+- **導出**: `src/domain/graspRelation.js` の `graspRelationsOf({docDsl, sceneDsl})`。母集団は**文書の宣言**で、
+  4 状態 (`ok` / `hand-undeclared` / `broken-object` / `broken-tcp`) は保存せず毎回導出する — 状態機械ではなく
+  導出の全域表を `STATE_TRANSITIONS` §把持の関係 に起こした。GraspController が `context.graspRelations` へ
+  投影し (唯一の書き手)、再導出は `contextChanged` と実体の増減 (マイクロタスクで 1 回に畳む)。
+- **選択の第 3 の種** `relations` (ADR-107 の union を広げた。入口の 5 verb は増えず、`SelectionOwnership` の
+  census は作り直さずに通った)。member は `relationRef(objectRef)` — 同じ ref のワーク実体とは比較不能。
+  3D の姿は `relationPair` (ワークと名指された tcp を同時に outline、文脈は DIMMED)、N パネルの body は
+  `relation`、ナビゲータの住所は意味側。宣言の確認の絵の表 (`CONFIRMATION_BY_FIELD`) にも
+  `graspFeature.tcp → selection/relationPair` を足した (語 → 絵、原則 #33 (4))。
+- **画面**: Outliner の意味側 (Document) に「Grasp relations (N, k broken)」の節。壊れた行は ⚠ と caution 色で
+  残る。関係のパネル (`NPanel/declarations/GraspDeclarations.jsx`) に 手の名指し・付け替え / ▸ ワーク / ▸ tcp /
+  把持仕様の編集 (`GraspSpecEditor` を Grasp パネルから**そのまま**移した) / 引き上げの表示。
+  `DECLARATION_OWNERS` の grasp 行は `relation-panel` へ移り、`movesWith` の ratchet は 3 → 2。
+  Grasp パネルは「how to grasp: … ▸ grasp: <ワーク> × <手>」の検査の行だけを持つ。ワークのパネルにも ▸ を置いた。
+- **本文から動いた点 — まだ宣言の無い物にも入口が要った。** 編集欄を関係のパネルへ移すと、関係は宣言からの
+  導出なので「最初の宣言」を始める場所が無くなる (鶏と卵)。関係の選択は、宣言が無い掴める物についても
+  許し (パネルは「no grasp declared on this object yet」と言い、Outliner には行を立てない — 宣言が在るものだけが
+  行)、最初の宣言でそのまま関係になる。
+- **本文から動いた点 — DEF-035 は半分。** 把持の孤児は行を得たが、把持宣言を持たないワークに付いた質量・重心の
+  孤児は関係が無いので今日も黙って落ちる。DEF-035 の満期を住所ごと付け替えて残した。
+- **証拠**: `graspRelation.test.js` (9) / `GraspController.test.js` (+4: 別の手の把持で Run が止まる・パネルと同じ
+  gap・対の scene id・壊れた tcp) / `selection.test.js` (+1) / `DocBuilder.test.js` (+4) / `graspFeature.test.js` (+3) /
+  `e2e/grasp-stub.spec.js` S17 (宣言 → 行 → 名指し → ワーク削除で ⚠ → undo)。既存の S10 / S15 / S16 は編集欄の
+  移動に合わせて入口を名指しに直した (`owner-link-grasp` / `owner-link-mass`)。
 
 ## Lens notes
 

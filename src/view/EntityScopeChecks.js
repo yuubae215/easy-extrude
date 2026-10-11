@@ -127,6 +127,14 @@ const ENTITY_SCOPE_BY_KIND = Object.freeze({
     why:   'A shared design variable is a number under negotiation, not a body. ' +
            'Select one of the entities it constrains to run a grasp search.',
   }),
+  relation: Object.freeze({
+    // The third selectable kind (ADR-164 D2). The relation IS about grasping, but
+    // it is not the robot a search is solved for — selecting it does not pick a
+    // subject (ADR-130), so the entry is disabled WITH the way in.
+    grasp: false,
+    why:   'A grasp relation is a declaration, not the robot that searches. ' +
+           'Select the robot (its base or tcp) to run a grasp search for it.',
+  }),
 })
 
 /** 宣言表が覆っている実体種 (検査が母集団として引く)。 */

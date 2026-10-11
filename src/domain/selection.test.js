@@ -17,7 +17,7 @@ import {
   SELECTION_KIND, SELECTABLE_KINDS, EMPTY_SELECTION,
   variableRef, isVariableRef, kindOfMember, makeSelection,
   selectionMembers, selectionSize, entityIdsOf, variableRefsOf,
-  selectionHas, selectionSummary,
+  selectionHas, selectionSummary, relationRef, relationRefsOf,
 } from './selection.js'
 
 test('0 個の表現はちょうど 1 通り — 空の entities も空の variables も作れない', () => {
@@ -79,7 +79,7 @@ test('読み手は種をまたいで嘘をつかない — 変数選択時、選
 
 test('選択可能な種に empty は含まれない (種の無い状態は「選べるもの」ではない)', () => {
   assert.deepEqual([...SELECTABLE_KINDS].sort(),
-    [SELECTION_KIND.ENTITIES, SELECTION_KIND.VARIABLES].sort())
+    [SELECTION_KIND.ENTITIES, SELECTION_KIND.VARIABLES, SELECTION_KIND.RELATIONS].sort())
   assert.equal(SELECTABLE_KINDS.includes(SELECTION_KIND.EMPTY), false)
 })
 
@@ -89,4 +89,16 @@ test('表示用の写しは権威と別の形を持つ (§1.1 — 同名の写�
   assert.deepEqual(selectionSummary(EMPTY_SELECTION), { kind: 'empty', members: [] })
   // 写しは配列 — Set を渡すと View 側が権威を変異させられてしまう。
   assert.ok(Array.isArray(selectionSummary(sel).members))
+})
+
+test('把持の関係は第 3 の種 — 同じ ref のワーク (実体) とも変数とも別物 (ADR-164 D2)', () => {
+  const rel = makeSelection([relationRef('cube')])
+  assert.equal(rel.kind, SELECTION_KIND.RELATIONS)
+  assert.deepEqual([...relationRefsOf(rel)], ['cube'])
+  assert.equal(entityIdsOf(rel).size, 0, '関係を選んでもワークは選ばれていない')
+  assert.equal(selectionHas(rel, 'cube'), false)
+  assert.equal(selectionHas(rel, variableRef('cube')), false)
+  assert.equal(selectionHas(rel, relationRef('cube')), true)
+  assert.throws(() => makeSelection([relationRef('cube'), 'cube']), /cannot mix kinds/)
+  assert.throws(() => relationRef(''), TypeError)
 })

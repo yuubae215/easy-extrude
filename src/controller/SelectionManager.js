@@ -93,6 +93,7 @@ import {
   makeSelection,
   entityIdsOf,
   variableRefsOf,
+  relationRefsOf,
   selectionSize,
   selectionSummary,
 } from '../domain/selection.js'
@@ -143,7 +144,17 @@ export class SelectionManager {
     this._painters = {
       meshHighlight: (sel, activeId) => this._paintMeshHighlight(sel, activeId),
       undecidedBand: (sel)           => this._paintUndecidedBand(sel),
+      relationPair:  (sel)           => this._paintRelationPair(sel),
     }
+    /**
+     * The entities the `relationPair` painter lit (ADR-164 D2). A relation's
+     * body is borrowed from two entities that are NOT in the selection, so step 1
+     * of `_apply` (release the entities leaving the selection) never sees them —
+     * the painter releases its own paint from this set, the same contract every
+     * painter has ("leaving a kind releases its paint").
+     * @type {Set<string>}
+     */
+    this._relationLit = new Set()
   }
 
   // ── Reading ─────────────────────────────────────────────────────────────────
@@ -160,6 +171,9 @@ export class SelectionManager {
 
   /** The selected VARIABLE refs. Empty when the selection is of another kind. */
   get variableRefs() { return variableRefsOf(this._sel) }
+
+  /** The selected grasp RELATIONS, by object ref (ADR-164 D2). Empty for other kinds. */
+  get relationRefs() { return relationRefsOf(this._sel) }
 
   /** Selection cardinality — 0, 1 or N, in whatever kind is selected (原則 #31). */
   get count() { return selectionSize(this._sel) }
@@ -391,6 +405,30 @@ export class SelectionManager {
   }
 
   /**
+   * `relations` — the PAIR a grasp relation relates: its object and its named tcp,
+   * outlined together (ADR-164 D2). Which scene entities those are is the grasp
+   * controller's answer (`relationSceneIds` — the same one resolution of the scene
+   * the search uses); a broken relation answers with the side that is still there.
+   *
+   * Releases what it lit last time unless the new selection holds that entity
+   * itself (then the entity painter just lit it — releasing would undo it).
+   */
+  _paintRelationPair(sel) {
+    const ctrl = this._ctrl
+    const want = new Set()
+    for (const ref of relationRefsOf(sel)) {
+      for (const id of ctrl._graspCtrl?.relationSceneIds?.(ref) ?? []) want.add(id)
+    }
+    const held = entityIdsOf(sel)
+    for (const id of this._relationLit) {
+      if (want.has(id) || held.has(id)) continue
+      ctrl._scene.getObject(id)?.meshView?.setObjectSelected(false)
+    }
+    for (const id of want) ctrl._scene.getObject(id)?.meshView?.setObjectSelected(true)
+    this._relationLit = want
+  }
+
+  /**
    * Normalises the mode so that "select something" means the same thing from
    * every window. Only the Outliner used to do this, so selecting from the
    * viewport while in Edit Mode left the app in a state the status bar could not
@@ -471,6 +509,15 @@ export class SelectionManager {
       // point at (ContextService owns the ref → scene-id half; the reachability
       // is pure). No document loaded ⇒ no chain, which is a legal empty claim.
       for (const sceneId of this._ctrl._ctxService?.entitiesConstrainedBy(ref) ?? []) {
+        want(sceneId, CONTEXTUAL.DIMMED)
+      }
+    }
+    // A grasp relation (ADR-164 D2) claims its two sides at DIMMED — by the same
+    // rule as a variable: no ENTITY is selected, so FULL stays empty and the
+    // invariant holds unchanged. DIMMED is enough to make a hidden tcp frame
+    // visible; the outline that says "these two" is the painter's.
+    for (const ref of this.relationRefs) {
+      for (const sceneId of this._ctrl._graspCtrl?.relationSceneIds?.(ref) ?? []) {
         want(sceneId, CONTEXTUAL.DIMMED)
       }
     }

@@ -393,6 +393,15 @@ export class UIViewBridge {
   }
 
   /**
+   * The panel body for a selected grasp relation (ADR-164 D2) — which relation,
+   * by its object ref. The panel reads the relation itself from
+   * `context.graspRelations` so a side vanishing under a still selection shows.
+   */
+  updateNPanelForRelation(data) {
+    useUIStore.getState().actions.setNPanelData({ type: 'relation', ...data })
+  }
+
+  /**
    * Publishes the selection to the display layer (ADR-107). A COPY, deliberately
    * named unlike the authority (`SelectionManager._sel`) so a panel can never be
    * mistaken for the source — the same discipline `LinkNetworkView` follows with

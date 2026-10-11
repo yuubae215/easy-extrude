@@ -53,6 +53,13 @@ export class UIStateManager {
 
     const body = npanelBodyFor(ctrl._selMgr.selection.kind).body
     if (body === 'variable') { this._updateNPanelForVariables(); return }
+    // A grasp relation (ADR-164 D2): the body names WHICH relation; its rows are
+    // read from the derived projection the panel subscribes to (the relation's
+    // state can change under a still selection — a side deleted, re-pointed).
+    if (body === 'relation') {
+      ctrl._uiView.updateNPanelForRelation({ objectRef: [...ctrl._selMgr.relationRefs][0] ?? null })
+      return
+    }
 
     const obj = ctrl._activeObj
     if (!obj) return
