@@ -1,0 +1,503 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>判定基準のキャラメイク — フロー v2</title>
+<style>
+  :root{
+    --paper:#f5f5f4;--box:#fff;--line:#9ca3af;--line-dark:#4b5563;
+    --ink:#374151;--muted:#9ca3af;--note:#2563eb;--note-bg:#eff6ff;--sel:#dbeafe;
+    --good:#15803d;--good-bg:#f0fdf4;--warn:#b45309;--warn-bg:#fffbeb;--bad:#b91c1c;--bad-bg:#fef2f2;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+  body{font-family:"Hiragino Kaku Gothic ProN","Noto Sans JP",system-ui,sans-serif;background:var(--paper);color:var(--ink);padding:16px;}
+  header{max-width:1040px;margin:0 auto 12px;}
+  header h1{font-size:15px;font-weight:700;}
+  header p{font-size:12px;color:var(--muted);margin-top:4px;line-height:1.75;}
+  .hint{display:inline-block;margin-top:8px;font-size:11px;color:var(--note);background:var(--note-bg);border:1px solid #bfdbfe;border-radius:4px;padding:4px 8px;}
+  .decided{max-width:1040px;margin:0 auto 12px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:6px;padding:10px 13px;font-size:12px;line-height:1.85;}
+  .decided b{color:#15803d;}
+
+  .frame{max-width:1040px;margin:0 auto;background:var(--box);border:2px solid var(--line-dark);border-radius:6px;overflow:hidden;
+    display:grid;font-size:11px;grid-template-rows:36px 1fr 30px;grid-template-columns:360px 1fr;
+    grid-template-areas:"menu menu" "wpanel view" "foot foot";height:640px;}
+  @media(max-width:700px){
+    .frame{grid-template-columns:1fr;grid-template-rows:36px auto 340px 30px;grid-template-areas:"menu" "wpanel" "view" "foot";height:auto;}
+    .wpanel{border-right:none !important;border-bottom:1px dashed var(--line);}
+  }
+  .menu{grid-area:menu;display:flex;align-items:center;gap:8px;padding:0 10px;border-bottom:1px dashed var(--line);background:#fafafa;}
+  .menu .mode{font-size:10px;font-weight:700;color:var(--note);background:var(--sel);border:1px solid var(--note);border-radius:3px;padding:2px 8px;white-space:nowrap;}
+  .menu .dim{color:var(--muted);font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .who{margin-left:auto;display:flex;gap:4px;align-items:center;font-size:10px;}
+  .who .w{border:1px solid var(--line-dark);border-radius:10px;padding:1px 8px;cursor:pointer;background:#fff;white-space:nowrap;}
+  .who .w.on{background:var(--line-dark);color:#fff;font-weight:700;}
+
+  .wpanel{grid-area:wpanel;border-right:1px dashed var(--line);display:flex;flex-direction:column;overflow:hidden;}
+  .steps{display:flex;gap:2px;padding:8px;border-bottom:1px dashed var(--line);align-items:center;}
+  .sdot{width:20px;height:20px;border-radius:50%;border:1px solid var(--line);display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--muted);cursor:pointer;flex-shrink:0;}
+  .sdot.cur{background:var(--note);border-color:var(--note);color:#fff;font-weight:700;}
+  .sdot.done{background:#e5e7eb;border-color:var(--line-dark);color:var(--ink);}
+  .sline{flex:1;height:1px;background:var(--line);}
+  .wbody{flex:1;padding:12px;overflow-y:auto;}
+  .wbody h2{font-size:13px;margin-bottom:4px;}
+  .wbody .why{font-size:10px;color:var(--muted);margin-bottom:10px;line-height:1.7;}
+  .pane{display:none;} .pane.cur{display:block;}
+  .chips{display:flex;gap:5px;flex-wrap:wrap;}
+  .chip{border:1px solid var(--line-dark);border-radius:11px;padding:2px 9px;background:#fff;cursor:pointer;font-size:10.5px;}
+  .chip.on{background:var(--sel);border-color:var(--note);font-weight:700;}
+  .lbl{display:block;color:var(--muted);font-size:10px;margin:8px 0 3px;}
+
+  .qcds{display:flex;flex-direction:column;gap:6px;}
+  .qrow{border:1px solid var(--line);border-radius:5px;padding:5px 7px;}
+  .qrow .qh{display:flex;justify-content:space-between;font-weight:700;}
+  .qrow .qs{font-size:9.5px;color:var(--muted);}
+  .qrow.unasked{border-style:dashed;border-color:var(--warn);background:var(--warn-bg);}
+  input[type=range]{width:100%;accent-color:var(--note);}
+
+  .leaf{border:1px solid var(--line);border-radius:5px;padding:5px 7px;margin-bottom:6px;cursor:pointer;}
+  .leaf.focus{border:2px solid var(--note);background:#fafcff;}
+  .leaf .lh{display:flex;justify-content:space-between;align-items:center;gap:6px;}
+  .leaf .lh b{font-size:11px;}
+  .tag{font-size:8.5px;border-radius:6px;padding:0 4px;border:1px solid var(--line);color:#6b7280;}
+  .tag.d{border-color:#93c5fd;color:#1d4ed8;} .tag.q{border-color:#86efac;color:#15803d;}
+  .tag.c{border-color:#d8b4fe;color:#7e22ce;} .tag.s{border-color:#fca5a5;color:#b91c1c;}
+  .tag.draft{border-style:dashed;}
+  .pair{display:grid;grid-template-columns:62px 1fr 64px;gap:4px;align-items:center;font-size:10px;margin-top:3px;}
+  .pair .v{text-align:right;font-weight:700;font-variant-numeric:tabular-nums;}
+  .undecl{color:var(--warn);font-weight:700;}
+
+  .cands{display:flex;flex-direction:column;gap:5px;}
+  .cand{border:1px solid var(--line);border-radius:5px;padding:5px 7px;cursor:pointer;}
+  .cand.sel{border:2px solid var(--note);background:var(--sel);}
+  .cand .cn{font-weight:700;display:flex;justify-content:space-between;}
+  .faces{font-size:12px;letter-spacing:1px;}
+
+  .wfoot{border-top:1px dashed var(--line);padding:8px 12px;display:flex;justify-content:space-between;align-items:center;gap:8px;}
+  .wf-btn{border:1px solid var(--line-dark);border-radius:4px;background:#fff;font-size:11px;color:var(--ink);padding:4px 12px;cursor:pointer;font-family:inherit;}
+  .wf-btn.primary{background:var(--line-dark);color:#fff;font-weight:700;}
+  .wf-btn:disabled{opacity:.35;cursor:not-allowed;}
+  .gate{font-size:9.5px;color:var(--warn);flex:1;text-align:right;line-height:1.4;}
+
+  .view{grid-area:view;position:relative;overflow:auto;padding:12px 14px;background:repeating-linear-gradient(45deg,transparent,transparent 15px,#f3f4f6 15px,#f3f4f6 16px);}
+  .cam{font-size:9px;color:var(--muted);font-weight:700;letter-spacing:.08em;margin-bottom:8px;}
+  .card{background:#fff;border:1px solid var(--line-dark);border-radius:6px;padding:10px 12px;margin-bottom:10px;}
+  .card h3{font-size:11px;margin-bottom:6px;}
+  .stat{display:grid;grid-template-columns:96px 1fr 44px;gap:6px;align-items:center;font-size:10.5px;margin-bottom:4px;}
+  .bar{height:10px;border:1px solid var(--line-dark);border-radius:5px;background:#fff;position:relative;overflow:hidden;}
+  .bar i{position:absolute;left:0;top:0;bottom:0;border-radius:4px;transition:width .25s cubic-bezier(.2,.8,.2,1);}
+  .illu{display:flex;gap:12px;align-items:center;}
+  .illu svg{flex-shrink:0;border:1px dashed var(--line);border-radius:4px;background:#fafafa;}
+  .illu p{font-size:10.5px;line-height:1.7;}
+  table.cmp{border-collapse:collapse;font-size:10px;width:100%;}
+  table.cmp th,table.cmp td{border:1px solid #e5e7eb;padding:3px 5px;text-align:center;white-space:nowrap;}
+  table.cmp th{background:#f9fafb;}
+  table.cmp td.exp{color:#6b7280;background:#fafafa;}
+  td.g-up{background:var(--good-bg);color:var(--good);font-weight:700;}
+  td.g-eq{background:#fff;color:var(--ink);}
+  td.g-dn{background:var(--bad-bg);color:var(--bad);font-weight:700;}
+  td.selc{outline:2px solid var(--note);outline-offset:-2px;}
+  .prog{display:flex;flex-direction:column;gap:5px;}
+  .prow{display:grid;grid-template-columns:76px 1fr 64px;gap:6px;align-items:center;font-size:10.5px;}
+  .hist{font-size:9px;margin-top:3px;line-height:1.5;}
+  .loose{color:var(--bad);font-weight:700;} .tight{color:var(--good);font-weight:700;}
+  .ledger{border-left:3px solid var(--line-dark);padding:4px 8px;margin-bottom:6px;background:#fff;font-size:10.5px;line-height:1.7;}
+  .ledger.cut{border-left-color:var(--bad);background:var(--bad-bg);}
+  .ledger .seen{font-size:9px;color:var(--muted);}
+  .bar b.base{position:absolute;top:-2px;bottom:-2px;width:2px;background:#111;opacity:.55;}
+  .foot{grid-area:foot;border-top:1px dashed var(--line);padding:0 12px;display:flex;align-items:center;justify-content:space-between;background:#fafafa;font-size:10px;color:var(--muted);}
+
+  .note-panel{max-width:1040px;margin:12px auto 0;background:var(--note-bg);border:1px solid #bfdbfe;border-radius:6px;padding:12px 14px;}
+  .note-panel .np-title{font-size:12px;font-weight:700;color:var(--note);margin-bottom:6px;}
+  .note-panel p{font-size:12px;line-height:1.85;}
+  .tension{max-width:1040px;margin:14px auto 0;background:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:12px 14px;font-size:12px;line-height:1.85;}
+  .tension b{color:#92400e;}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>判定基準のキャラメイク — フロー v2</h1>
+  <p>使命は「設計する前に、エンドユーザにすべての重みを聞き切る」。左で答え、右で「そうするとどうなりそうか」を見せる(ワークベンチ同居型)。題材は単腕ピック &amp; プレースのセル。忠実度はグレーボックス、イラストは仮の図。</p>
+  <span class="hint">💡 「次へ」で進む。Step 3 で行をタップすると右のイラストが替わり、スライダーで図が動く。Step 4 で案を見たあと「← 戻る」で Step 3 の期待値を動かすと、履歴に「案 X を見た後」として残り、Step 5 に取引の記録が出る</span>
+</header>
+
+<div class="decided">
+  <b>このフローが受ける決定(当事者):</b>
+  ① エンドユーザは<b>立場</b>で、立つ人は 1〜N 人(保全・生産技術・製造技術・環境安全・決裁者・SIer…)。
+  ② 聞く語は <b>QCD + S</b>。現場で最初に言われるのは<b>タクト</b>、次に<b>位置精度</b>、言われないが効いているのが<b>安全</b>。重要な要素から言葉に分解する。C は<b>設備費と保全性</b>。
+  ③ どの要素も<b>しきい値と重みの同じ形</b>(安全も — 人と当たらないにも、どれだけマージンを取るかがある)。
+  ④ <b>しきい値 = クライテリア = 期待値</b>。期待値と実態の差で、人の感情が変わる。<br>
+  <b>v2 で受けた決定:</b> ⑤ 結果を見て期待値が動くのは<b>それでいい</b>。ただし<b>履歴は残す</b> — トレードオフは必ずあるので、性能を取るために安全を切ったなら「安全はあのとき削りましたよね?」と言えるように。
+  ⑥ それは教育ではなく<b>誘導</b>である — だから記録は「誰が・何を・何を見た後に」変えたかを持つ。
+</div>
+
+<div class="frame">
+  <div class="menu">
+    <span class="mode">判定基準を聞いている</span>
+    <span class="dim">設計はまだ始まっていない — 聞き切ってから</span>
+    <div class="who" id="who"></div>
+  </div>
+
+  <div class="wpanel">
+    <div class="steps" id="steps"></div>
+    <div class="wbody">
+
+      <div class="pane cur" data-p="0">
+        <h2>Step 1:誰に聞くか</h2>
+        <p class="why">エンドユーザの立場に立つ人を選ぶ(複数可)。職能と立場は別の事実 — 同じ保全者でも、このプロジェクトでエンドユーザかどうかは宣言で決まる。</p>
+        <span class="lbl">エンドユーザの立場に立つ人</span>
+        <div class="chips" id="roleChips"></div>
+        <p class="why" style="margin-top:10px;">選んだ人ごとに Step 2〜4 を答えてもらう。上部の切り替えで回答者が替わる。</p>
+      </div>
+
+      <div class="pane" data-p="1">
+        <h2>Step 2:何を大事にするセルか</h2>
+        <p class="why">大きい言葉から。まず型を選び、4 つの比重をつまみで直す(キャラメイクの「職業」にあたる)。<b>4 つとも</b>答える — 言われない安全も、ここで必ず問う。</p>
+        <span class="lbl">型から始める</span>
+        <div class="chips" id="archetypes"></div>
+        <span class="lbl">比重</span>
+        <div class="qcds" id="qcds"></div>
+      </div>
+
+      <div class="pane" data-p="2">
+        <h2>Step 3:期待値と重み</h2>
+        <p class="why">大きい言葉を、具体の言葉に分ける。どの行も<b>期待値</b>(ここまでは来てほしい = クライテリア)と<b>重み</b>(期待を超えた分がどれだけ嬉しいか)の同じ形。行をタップすると右に図が出る。<span id="seenNote"></span></p>
+        <div id="leaves"></div>
+      </div>
+
+      <div class="pane" data-p="3">
+        <h2>Step 4:やってみる</h2>
+        <p class="why">この期待値と重みで問うと、こんなセルが返ってくる。<b>どれがいいか</b>を選ぶ — 数値を決めるより、結果を選ぶほうが人は答えやすい。</p>
+        <div class="cands" id="cands"></div>
+        <p class="why" style="margin-top:8px;">☺ = 期待以上 / ○ = ほぼ期待どおり / ☹ = 期待未満(右の表の色と同じ)</p>
+      </div>
+
+      <div class="pane" data-p="4">
+        <h2>Step 5:聞き切ったか</h2>
+        <p class="why">全員・全要素の期待値と重みが揃うまで、設計へは進めない。足りないものは名指しする。</p>
+        <div id="missing"></div>
+      </div>
+
+    </div>
+    <div class="wfoot">
+      <button class="wf-btn" id="back">← 戻る</button>
+      <span class="gate" id="gate"></span>
+      <button class="wf-btn primary" id="next">次へ →</button>
+    </div>
+  </div>
+
+  <div class="view" id="view"></div>
+
+  <div class="foot">
+    <span>途中でやめても、答えた分は文書に残る(一括確定のモーダルにしない)</span>
+    <span>数値の判定・採点は core/ — ここは聞くことと見せること</span>
+  </div>
+</div>
+
+<div class="note-panel">
+  <div class="np-title" id="noteTitle"></div>
+  <p id="noteBody"></p>
+</div>
+
+<div class="tension">
+  <b>⚠ v2 に残した引っかかり</b><br>
+  <b>保全者がタクトを取るために安全を削った。その記録は残りました。では、削ってよかったのでしょうか。</b>
+  エンドユーザが 2 人(保全と環境安全)いて、安全を削ったのが保全だったとき、<b>環境安全の期待値</b>は動いていません。
+  ひとりが自分の期待値を緩めるのは<b>その人の主張の変更</b>ですが、安全の線が下がったセルは環境安全にも届きます。
+  緩める行為は、本人だけで完結しますか — それとも、v8 の<b>提案</b>のように、同じ要素に主張を持つ他のエンドユーザの承認を要しますか?
+  そして「誘導」を記録するなら、<b>締める</b>変更も同じ重さで残すべきでしょうか(締めるのは誰も困らないように見えて、コストやタクトを誰かから取っています)。
+  <br><br><span style="color:#6b7280;"><b>v1 の引っかかり(回収済み):</b> 見る前と見た後のどちらをクライテリアとして残すか → 見た後で<b>よい</b>、ただし見る前からの履歴を残す。それは誘導である。</span>
+</div>
+
+<script>
+const ROLES = ["保全","生産技術","製造技術","環境安全","決裁者","SIer"];
+const ARCH = {
+  "止めないライン":{D:40,Q:25,C:15,S:20},
+  "外さない":{D:20,Q:45,C:15,S:20},
+  "安く早く":{D:35,Q:15,C:35,S:15},
+  "誰も傷つけない":{D:15,Q:20,C:15,S:50},
+};
+const CAT = {D:{n:"D 速さ",s:"現場で最初に言われる"},Q:{n:"Q 品質",s:"次に言われる"},C:{n:"C コスト",s:"設備費と保全性"},S:{n:"S 安全",s:"言われないが効いている — 必ず問う"}};
+// better: -1 = 小さいほど良い, +1 = 大きいほど良い
+const LEAVES = [
+  {k:"takt",c:"D",n:"タクト",u:"s/個",min:3,max:12,step:.1,exp:6.0,better:-1,illu:"takt"},
+  {k:"acc",c:"Q",n:"位置精度",u:"±mm",min:.05,max:2,step:.05,exp:.5,better:-1,illu:"acc"},
+  {k:"hold",c:"Q",n:"落とさない(保持の余裕)",u:"倍",min:1,max:5,step:.1,exp:2.0,better:1,draft:true,illu:"hold"},
+  {k:"cost",c:"C",n:"設備費",u:"万円",min:300,max:2000,step:10,exp:800,better:-1,illu:"cost"},
+  {k:"maint",c:"C",n:"保全性(部品交換)",u:"分",min:5,max:120,step:5,exp:30,better:-1,illu:"maint"},
+  {k:"margin",c:"S",n:"人と当たらない(マージン)",u:"mm",min:0,max:1500,step:10,exp:500,better:1,illu:"margin"},
+  {k:"stop",c:"S",n:"止めたら止まる(停止距離)",u:"mm",min:10,max:400,step:5,exp:100,better:-1,draft:true,illu:"stop"},
+];
+// core/ が返す(と仮定した)候補の実態値 — スタブ
+const CANDS = {
+  A:{n:"案 A — 速さ寄り",v:{takt:4.8,acc:.6,hold:1.8,cost:950,maint:40,margin:350,stop:140}},
+  B:{n:"案 B — 釣り合い",v:{takt:6.2,acc:.4,hold:2.4,cost:780,maint:25,margin:600,stop:90}},
+  C:{n:"案 C — 安全寄り",v:{takt:7.5,acc:.3,hold:3.0,cost:880,maint:20,margin:900,stop:60}},
+};
+const NOTES = [
+  ["Step 1:職能と立場を分ける","<b>エンドユーザは立場であって職能ではない</b>(当事者)。いまの Context DSL の <code>VALID_ROLES</code> は職能 (<code>maintainer</code>) と立場 (<code>endUser</code>) を同じ列挙に入れていて、1 語に 2 種類の事実が入っている(原則 #33 (1))。ここでは「誰か」(チップの職能)と「エンドユーザの立場に立つか」(選ぶ行為)を分けた。<br>基数は 1..N。N 人いれば答えも N 組あり、食い違いは設計中の場の行列(v10 の重みの列)に出る。<b>0 人のままでは先へ進めない</b> — 聞く相手のいない聞き取りは始まらない(原則 #31)。"],
+  ["Step 2:大きい言葉から — 価値木の上の段","いきなり十数個の数値は答えられないが、4 つの比重なら答えられる。AHP(階層化意思決定法)と同じく、<b>重みは階層ごとに局所的に聞き</b>、全体の重みは掛け合わせて導出する。<br><b>型</b>はキャラメイクの職業選択にあたる:白紙から作らせず、近い型を選んで直させる(ADR-063 選択優先インテーク — 想起ゼロで始める)。<br><b>安全の行は橙の点線</b>で始まる:現場では言われないので、聞く側が列挙して必ず問う。言われなかった要素は行を持たず、発言を拾うだけの聞き方では永久に出てこない(原則 #31)。4 つすべてに触れるまで「次へ」は名指しで止まる。"],
+  ["Step 3:どの行も同じ形 — 期待値と重み(v2:見た後の変更は履歴になる)","<b>v2:案を見た後にここへ戻って期待値を動かすと、その変更は履歴に残る</b>(当事者:動くのはそれでいい、ただし履歴は残す)。行の下に「見る前 → いま」と <b>↓緩めた / ↑締めた</b> が出る。見る前の値は、初めて「やってみる」を開いた瞬間に写し取る — それより前の答えは初回の回答で、履歴にしない。<br><b>しきい値と重みの同型</b>(当事者):安全もタクトも、「ここまでは来てほしい」(期待値 = クライテリア)と「それを超えた分がどれだけ嬉しいか」(重み)の 2 つで聞く。安全だけしきい値にすると、人と当たらない<b>マージンをどれだけ取るか</b>という問いが言えなくなる。<br>Context DSL では、期待値は受け入れ判定のしきい値(L5、許容領域)、重みは目的の重みにあたる — 既にある 2 層に乗る。<br><b>図は語の確かめ</b>(原則 #33 (4)):マージンを動かすと人とロボットの間の輪が広がり、位置精度を動かすと的の円が縮む。点線の枠の行(落とさない・停止距離)は Claude が置いた<b>案</b>で、当事者の確認待ち。<br>重み 0 は「どうでもいい」の宣言として受けるが、<b>未回答とは区別</b>する(触っていない行は橙で残る)。"],
+  ["Step 4:結果を見せて選ばせる","重みの数値を直接聞くより、<b>結果を並べて「どれがいい?」</b>と聞くほうが人は答えやすい(選好の聞き出し — コンジョイント分析と同じ考え方)。<br>右の表は各案の実態値と<b>期待値との差</b>。色と顔(☺ ○ ☹)は<b>期待値と実態の差だけから</b>クライアントで導出する(当事者:差で感情が変わる)— 差は閉形式なので front で計算してよく(§AI 向けガード 軸 3)、顔は演出なのでワイヤ(契約)には足さない(原則 #29)。<br><b>総合点は出さない。</b>重みをどう組み合わせて 1 つの点にするかはスコア関数 = アイデアなので core/ が持つ。ここで front が合計を出せば、それが第二のスコア関数になる。<br>選んだ案から重みを推し量るのも core/ の仕事(ヒューリスティック)。"],
+  ["Step 5:聞き切ったか + 取引の記録","<b>v2:取引の記録。</b>「やってみる」の 1 回ごとに、締めた要素と緩めた要素を組にして「<b>タクトを取るために人と当たらないを緩めた</b>」と 1 文で残す。安全を緩めた行は赤い ⚠ <b>安全を削った</b> — 後から「安全はあのとき削りましたよね?」と言える形(当事者)。<br>どの行も<b>誰が・何を見た後に</b>変えたかを持つ。これは教育ではなく<b>誘導</b>(当事者)なので、アプリが何を見せたかも記録の一部 — 見せた案が変更の出どころとして残る。<br>追記のみで消せない:人の行為は再計算できない(v8 の証憑と同じ規則)。<br>「設計の前に聞き切る」を<b>数</b>にする:回答者 × 要素の、期待値と重みの空欄の個数。0 になるまで「設計へ」は押せず、押せない理由は名指しで出す(原則 #11 — 無言の disabled にしない)。<br>数えるのは<b>答えた行</b>ではなく<b>必要な行の中の空欄</b> — 在るものを辿る数え方では、聞かれなかった安全は出てこない(原則 #31)。"],
+];
+
+let cur = 0;
+const respondents = [];          // 選ばれた人(職能)
+let active = null;               // いま答えている人
+const ans = {};                  // ans[role] = {top:{D,Q,C,S}, touchedTop:Set, leaf:{k:{exp,w,touched}}, pick}
+let focusLeaf = "margin";
+const $ = id => document.getElementById(id);
+
+function blank(){
+  const leaf = {}; LEAVES.forEach(l => leaf[l.k] = {exp:l.exp, w:50, touched:false});
+  return {top:{D:25,Q:25,C:25,S:25}, touchedTop:new Set(), leaf, pick:null,
+          base:null,      // 初めて「やってみる」を開いた瞬間の期待値 = 見る前の期待値
+          seen:null,      // いちばん最近見た案(誘導の出どころ)
+          cycle:0,        // 「やってみる」を開いた回数
+          history:[]};    // 追記のみ — {k, from, to, after, cycle}
+}
+function A(){ return ans[active]; }
+
+function renderWho(){
+  $("who").innerHTML = respondents.length
+    ? '回答者: ' + respondents.map(r => `<span class="w${r===active?' on':''}" data-r="${r}">${r}</span>`).join("")
+    : '<span style="color:var(--warn);">回答者 0 人</span>';
+  $("who").querySelectorAll(".w").forEach(el => el.onclick = () => { active = el.dataset.r; render(); });
+}
+function renderSteps(){
+  const names = ["誰に","大事なこと","期待値と重み","やってみる","聞き切ったか"];
+  $("steps").innerHTML = names.map((n,i) => `<span class="sdot${i===cur?' cur':i<cur?' done':''}" data-s="${i}" title="${n}">${i+1}</span>`).join('<span class="sline"></span>');
+  $("steps").querySelectorAll(".sdot").forEach(d => d.onclick = () => { const i=+d.dataset.s; if (i<=cur) { cur=i; render(); } });
+}
+function renderRoles(){
+  $("roleChips").innerHTML = ROLES.map(r => `<span class="chip${respondents.includes(r)?' on':''}" data-r="${r}">${r}</span>`).join("");
+  $("roleChips").querySelectorAll(".chip").forEach(c => c.onclick = () => {
+    const r = c.dataset.r, i = respondents.indexOf(r);
+    if (i>=0) { respondents.splice(i,1); if (active===r) active = respondents[0] || null; }
+    else { respondents.push(r); if (!ans[r]) ans[r] = blank(); if (!active) active = r; }
+    render();
+  });
+}
+function renderTop(){
+  $("archetypes").innerHTML = Object.keys(ARCH).map(a => `<span class="chip" data-a="${a}">${a}</span>`).join("");
+  $("archetypes").querySelectorAll(".chip").forEach(c => c.onclick = () => {
+    const t = ARCH[c.dataset.a]; Object.assign(A().top, t); ["D","Q","C","S"].forEach(k => A().touchedTop.add(k)); render();
+  });
+  $("qcds").innerHTML = ["D","Q","C","S"].map(k => {
+    const un = !A().touchedTop.has(k);
+    return `<div class="qrow${un?' unasked':''}"><div class="qh"><span>${CAT[k].n}</span><span>${un?'<span class="undecl">未回答</span>':A().top[k]}</span></div>
+      <div class="qs">${CAT[k].s}</div><input type="range" min="0" max="100" value="${A().top[k]}" data-k="${k}"></div>`;
+  }).join("");
+  $("qcds").querySelectorAll("input").forEach(inp => inp.oninput = () => {
+    A().top[inp.dataset.k] = +inp.value; A().touchedTop.add(inp.dataset.k); renderTopLight(); renderView(); renderGate();
+  });
+}
+function renderTopLight(){
+  $("qcds").querySelectorAll(".qrow").forEach((row,i) => {
+    const k = ["D","Q","C","S"][i]; const un = !A().touchedTop.has(k);
+    row.classList.toggle("unasked", un);
+    row.querySelector(".qh span:last-child").innerHTML = un ? '<span class="undecl">未回答</span>' : A().top[k];
+  });
+}
+function fmt(l, v){ return (l.step < 1 ? (+v).toFixed(l.step < .1 ? 2 : 1) : Math.round(v)) + " " + l.u; }
+function renderLeaves(){
+  $("leaves").innerHTML = LEAVES.map(l => {
+    const a = A().leaf[l.k];
+    return `<div class="leaf${l.k===focusLeaf?' focus':''}" data-k="${l.k}">
+      <div class="lh"><b>${l.n}</b><span class="tag ${l.c.toLowerCase()}${l.draft?' draft':''}">${l.c}${l.draft?' 案':''}</span></div>
+      <div class="pair"><span>期待値</span><input type="range" min="${l.min}" max="${l.max}" step="${l.step}" value="${a.exp}" data-k="${l.k}" data-f="exp"><span class="v">${a.touched?fmt(l,a.exp):'<span class="undecl">未回答</span>'}</span></div>
+      <div class="pair"><span>重み</span><input type="range" min="0" max="100" value="${a.w}" data-k="${l.k}" data-f="w"><span class="v">${a.touched?a.w:'—'}</span></div>
+      <div class="hist" data-h="${l.k}">${histLine(l)}</div>
+    </div>`;
+  }).join("");
+  $("leaves").querySelectorAll(".leaf").forEach(el => el.addEventListener("click", () => { if (focusLeaf!==el.dataset.k){ focusLeaf = el.dataset.k; renderLeaves(); renderView(); } }));
+  $("seenNote").innerHTML = A().base ? ` <b style="color:var(--warn);">いまは案を見た後 — 期待値を動かすと「${A().seen?'案 '+A().seen:'案'}を見た後」として履歴に残る。</b>` : "";
+  $("leaves").querySelectorAll("input").forEach(inp => {
+    inp.addEventListener("click", e => e.stopPropagation());
+    inp.addEventListener("pointerdown", () => { inp.dataset.prev = A().leaf[inp.dataset.k][inp.dataset.f]; });
+    inp.addEventListener("change", () => {
+      const a = A(), k = inp.dataset.k;
+      if (inp.dataset.f !== "exp" || !a.base) return;          // 見る前の答えは履歴にしない(初回の回答)
+      const from = +(inp.dataset.prev ?? a.leaf[k].exp), to = a.leaf[k].exp;
+      if (from === to) return;
+      a.history.push({k, from, to, after:a.seen, cycle:a.cycle});
+      inp.closest(".leaf").querySelector(".hist").innerHTML = histLine(LEAVES.find(x=>x.k===k));
+    });
+    inp.oninput = () => {
+      const a = A().leaf[inp.dataset.k]; a[inp.dataset.f] = +inp.value; a.touched = true; focusLeaf = inp.dataset.k;
+      const l = LEAVES.find(x => x.k===inp.dataset.k);
+      const vs = inp.closest(".leaf").querySelectorAll(".v"); vs[0].textContent = fmt(l,a.exp); vs[1].textContent = a.w;
+      $("leaves").querySelectorAll(".leaf").forEach(x => x.classList.toggle("focus", x.dataset.k===focusLeaf));
+      renderView(); renderGate();
+    };
+  });
+}
+// 緩めた / 締めた — 「期待値を悪い側へ動かした」が緩めた
+function dir(l, from, to){ const d = l.better * (to - from); return d < 0 ? "loose" : d > 0 ? "tight" : "same"; }
+function histLine(l){
+  const a = A(); if (!a.base) return "";
+  const b = a.base[l.k], c = a.leaf[l.k].exp; const n = a.history.filter(h => h.k===l.k).length;
+  if (b === c) return n ? `<span class="ro">履歴 ${n} 件(見る前の値に戻っている)</span>` : "";
+  const d = dir(l, b, c);
+  return `見る前 ${fmt(l,b)} → いま ${fmt(l,c)} <span class="${d}">${d==="loose"?"↓ 緩めた":"↑ 締めた"}</span> <span class="ro">· 履歴 ${n} 件</span>`;
+}
+// 期待値と実態の差(閉形式)→ 表示の 3 段(演出 — クライアント導出)
+function gap(l, actual, exp){
+  const rel = l.better * (actual - exp) / Math.max(Math.abs(exp), 1e-9);
+  return rel > .08 ? "up" : rel < -.08 ? "dn" : "eq";
+}
+const FACE = {up:"☺", eq:"○", dn:"☹"};
+function renderCands(){
+  $("cands").innerHTML = Object.keys(CANDS).map(c => {
+    const f = LEAVES.map(l => FACE[gap(l, CANDS[c].v[l.k], A().leaf[l.k].exp)]).join("");
+    return `<div class="cand${A().pick===c?' sel':''}" data-c="${c}"><div class="cn"><span>${CANDS[c].n}</span><span class="faces">${f}</span></div></div>`;
+  }).join("");
+  $("cands").querySelectorAll(".cand").forEach(el => el.onclick = () => { A().pick = el.dataset.c; A().seen = el.dataset.c; renderCands(); renderView(); renderGate(); });
+}
+function missingList(){
+  const out = [];
+  if (!respondents.length) out.push("エンドユーザの立場に立つ人が 0 人");
+  respondents.forEach(r => {
+    const a = ans[r]; const top = ["D","Q","C","S"].filter(k => !a.touchedTop.has(k));
+    const lv = LEAVES.filter(l => !a.leaf[l.k].touched).map(l => l.n);
+    if (top.length) out.push(`${r}: 比重 ${top.join("・")} が未回答`);
+    if (lv.length) out.push(`${r}: ${lv.join("・")} の期待値と重みが未回答`);
+    if (!a.pick) out.push(`${r}: やってみる で案を選んでいない`);
+  });
+  return out;
+}
+function stepGaps(){
+  if (cur===0) return respondents.length ? [] : ["聞く相手を 1 人以上選んでください"];
+  if (!active) return ["回答者がいません"];
+  if (cur===1) { const t = ["D","Q","C","S"].filter(k => !A().touchedTop.has(k)); return t.length ? [`${t.map(k=>CAT[k].n).join("・")} が未回答`] : []; }
+  if (cur===2) { const n = LEAVES.filter(l => !A().leaf[l.k].touched).length; return n ? [`期待値と重みが未回答の行が ${n} 個`] : []; }
+  if (cur===3) return A().pick ? [] : ["案を 1 つ選んでください"];
+  if (cur===4) return missingList();
+  return [];
+}
+function renderGate(){
+  const g = stepGaps();
+  $("gate").textContent = g.length ? "▲ " + g[0] + (g.length>1 ? ` ほか ${g.length-1} 件` : "") : "";
+  $("next").disabled = g.length > 0;
+  $("next").textContent = cur===4 ? "設計へ →" : cur===2 ? "やってみる →" : "次へ →";
+  $("back").disabled = cur===0;
+  if (cur===4) renderMissing();
+}
+function ledgerHtml(r){
+  const a = ans[r]; if (!a || !a.history.length) return `<div class="ro" style="font-size:10px;">${r}: 案を見た後の変更はまだない</div>`;
+  const byCycle = {};
+  a.history.forEach(h => { (byCycle[h.cycle] = byCycle[h.cycle] || []).push(h); });
+  return Object.keys(byCycle).map(cy => {
+    // 1 サイクル内で同じ要素を何度も動かしたら、最初の from と最後の to だけを見る
+    const net = {}; byCycle[cy].forEach(h => { net[h.k] = net[h.k] ? {...net[h.k], to:h.to, after:h.after} : {...h}; });
+    const rows = Object.values(net).map(h => ({...h, l:LEAVES.find(x=>x.k===h.k)})).filter(h => h.from !== h.to);
+    const loose = rows.filter(h => dir(h.l,h.from,h.to)==="loose"), tight = rows.filter(h => dir(h.l,h.from,h.to)==="tight");
+    const cutS = loose.some(h => h.l.c === "S");
+    const line = (tight.length && loose.length)
+      ? `<b>${tight.map(h=>h.l.n).join("・")}</b> を取るために <b class="loose">${loose.map(h=>h.l.n).join("・")}</b> を緩めた`
+      : loose.length ? `<b class="loose">${loose.map(h=>h.l.n).join("・")}</b> を緩めた` : `<b>${tight.map(h=>h.l.n).join("・")}</b> を締めた`;
+    const detail = rows.map(h => `${h.l.n} ${fmt(h.l,h.from)} → ${fmt(h.l,h.to)}`).join(" / ");
+    const after = rows[0] && rows[0].after ? `案 ${rows[0].after}` : "案";
+    return `<div class="ledger${cutS?' cut':''}">${cutS?'⚠ <b>安全を削った</b> — ':''}${line}<br><span class="seen">👤 ${r} · ${after}を見た後(やってみる ${cy} 回目)· ${detail}</span></div>`;
+  }).join("");
+}
+function renderMissing(){
+  const m = missingList();
+  $("missing").innerHTML = m.length
+    ? `<p class="why" style="color:var(--warn);font-weight:700;">あと ${m.length} 件</p>` + m.map(x => `<div class="qrow unasked" style="margin-bottom:4px;">${x}</div>`).join("")
+    : `<div class="qrow" style="border-color:var(--good);background:var(--good-bg);color:var(--good);font-weight:700;">全員・全要素が揃いました。設計へ進めます。</div>`;
+  $("missing").innerHTML += `<p class="why" style="margin-top:10px;margin-bottom:4px;"><b>取引の記録</b>(追記のみ — 消せない)</p>` + respondents.map(ledgerHtml).join("");
+}
+
+// ---- 右:キャラのプレビュー ----
+function illu(l, a){
+  const W=150,H=110;
+  if (l.illu==="margin"){ const r = 14 + (a.exp/1500)*38;
+    return `<svg width="${W}" height="${H}"><circle cx="58" cy="55" r="${r}" fill="rgba(185,28,28,.08)" stroke="#b91c1c" stroke-dasharray="4 3"/>
+      <circle cx="58" cy="55" r="12" fill="#e5e7eb" stroke="#4b5563"/><text x="58" y="59" font-size="9" text-anchor="middle">ロボ</text>
+      <circle cx="${58+r+16}" cy="47" r="5" fill="#fff" stroke="#4b5563"/><line x1="${58+r+16}" y1="52" x2="${58+r+16}" y2="68" stroke="#4b5563"/>
+      <text x="58" y="104" font-size="9" text-anchor="middle" fill="#b91c1c">${Math.round(a.exp)} mm 離す</text></svg>`; }
+  if (l.illu==="acc"){ const r = 4 + (a.exp/2)*36;
+    return `<svg width="${W}" height="${H}"><circle cx="75" cy="52" r="42" fill="none" stroke="#d1d5db"/><circle cx="75" cy="52" r="${r}" fill="rgba(21,128,61,.12)" stroke="#15803d"/>
+      <line x1="75" y1="6" x2="75" y2="98" stroke="#e5e7eb"/><line x1="29" y1="52" x2="121" y2="52" stroke="#e5e7eb"/>
+      <text x="75" y="106" font-size="9" text-anchor="middle" fill="#15803d">この円の中に置く ±${(+a.exp).toFixed(2)}</text></svg>`; }
+  if (l.illu==="takt"){ const n = Math.max(1, Math.round(60/a.exp));
+    const dots = Array.from({length:Math.min(n,20)},(_,i)=>`<rect x="${8+i*7}" y="40" width="5" height="16" fill="#93c5fd"/>`).join("");
+    return `<svg width="${W}" height="${H}">${dots}<text x="75" y="80" font-size="10" text-anchor="middle" fill="#1d4ed8">1 分で ${n} 個</text><text x="75" y="96" font-size="9" text-anchor="middle" fill="#6b7280">${(+a.exp).toFixed(1)} 秒に 1 個</text></svg>`; }
+  if (l.illu==="stop"){ const d = 10 + (a.exp/400)*110;
+    return `<svg width="${W}" height="${H}"><rect x="8" y="44" width="14" height="14" fill="#e5e7eb" stroke="#4b5563"/><line x1="22" y1="51" x2="${22+d}" y2="51" stroke="#b91c1c" stroke-width="2"/>
+      <rect x="${22+d}" y="44" width="4" height="14" fill="#b91c1c"/><text x="75" y="84" font-size="9" text-anchor="middle" fill="#b91c1c">非常停止から ${Math.round(a.exp)} mm で止まる</text></svg>`; }
+  if (l.illu==="hold"){ const h = 10 + (a.exp/5)*70;
+    return `<svg width="${W}" height="${H}"><rect x="62" y="20" width="26" height="12" fill="#e5e7eb" stroke="#4b5563"/><rect x="62" y="34" width="26" height="14" fill="#fff" stroke="#4b5563"/>
+      <rect x="100" y="${92-h}" width="14" height="${h}" fill="#86efac"/><line x1="96" y1="${92-14}" x2="118" y2="${92-14}" stroke="#4b5563" stroke-dasharray="2 2"/>
+      <text x="60" y="104" font-size="9" text-anchor="middle" fill="#15803d">重さの ${(+a.exp).toFixed(1)} 倍で保つ</text></svg>`; }
+  if (l.illu==="cost"){ const w = 10 + (a.exp/2000)*120;
+    return `<svg width="${W}" height="${H}"><rect x="10" y="44" width="${w}" height="16" fill="#d8b4fe"/><text x="75" y="84" font-size="10" text-anchor="middle" fill="#7e22ce">${Math.round(a.exp)} 万円まで</text></svg>`; }
+  const m = Math.min(120, a.exp);
+  return `<svg width="${W}" height="${H}"><circle cx="75" cy="50" r="32" fill="none" stroke="#d1d5db" stroke-width="6"/>
+    <path d="M75 18 A32 32 0 ${m>60?1:0} 1 ${75+32*Math.sin(m/120*2*Math.PI)} ${50-32*Math.cos(m/120*2*Math.PI)}" fill="none" stroke="#a855f7" stroke-width="6"/>
+    <text x="75" y="104" font-size="9" text-anchor="middle" fill="#7e22ce">部品交換 ${Math.round(a.exp)} 分</text></svg>`;
+}
+const CCOL = {D:"#93c5fd",Q:"#86efac",C:"#d8b4fe",S:"#fca5a5"};
+function renderView(){
+  const v = $("view");
+  if (cur===0){
+    v.innerHTML = `<div class="cam">聞く相手</div>` + (respondents.length
+      ? respondents.map(r => `<div class="card"><h3>👤 ${r}</h3><div style="font-size:10px;color:var(--muted);">職能: ${r} / 立場: エンドユーザ</div></div>`).join("")
+      : `<div class="card" style="border-style:dashed;color:var(--warn);">まだ誰もいない — 聞き取りは 0 人では始まらない</div>`);
+    return;
+  }
+  if (!active) { v.innerHTML = ""; return; }
+  if (cur===1){
+    const t = A().top, sum = t.D+t.Q+t.C+t.S || 1;
+    v.innerHTML = `<div class="cam">${active} のセルの性格</div><div class="card"><h3>比重(合計に対する割合)</h3>` +
+      ["D","Q","C","S"].map(k => `<div class="stat"><span>${CAT[k].n}</span><div class="bar"><i style="width:${t[k]/sum*100}%;background:${CCOL[k]}"></i></div><span>${A().touchedTop.has(k)?Math.round(t[k]/sum*100)+'%':'?'}</span></div>`).join("") +
+      `</div><div class="card" style="font-size:10.5px;line-height:1.7;color:#6b7280;">キャラメイクの能力値と同じ:どこかを上げれば、割合として他が下がる。<b>全部 100 にはできない</b> — それがトレードオフを相手の手で感じてもらう仕掛け。</div>`;
+    return;
+  }
+  if (cur===2){
+    const l = LEAVES.find(x => x.k===focusLeaf), a = A().leaf[l.k];
+    v.innerHTML = `<div class="cam">${active} — 「${l.n}」の図</div>
+      <div class="card"><div class="illu">${illu(l,a)}<p><b>${l.n}</b>${l.draft?' <span class="tag draft">案</span>':''}<br>期待値: ${a.touched?fmt(l,a.exp):'<span class="undecl">未回答</span>'}<br>重み: ${a.touched?a.w:'—'}<br><span style="color:#6b7280;">${l.better<0?'小さいほど良い':'大きいほど良い'}</span></p></div></div>
+      <div class="card"><h3>期待値の一覧</h3>` +
+      LEAVES.map(x => { const a=A().leaf[x.k], b=A().base; const d = b ? dir(x,b[x.k],a.exp) : "same";
+        return `<div class="stat"><span>${x.n}</span><div class="bar"><i style="width:${a.w}%;background:${CCOL[x.c]};opacity:${a.touched?1:.25}"></i></div><span style="font-size:9.5px;" class="${d==='same'?'':d}">${a.touched?fmt(x,a.exp):'?'}${d==='loose'?' ↓':d==='tight'?' ↑':''}</span></div>`; }).join("") +
+      `<div style="font-size:9px;color:var(--muted);margin-top:4px;">バーの長さ = 重み、右 = 期待値(↓ = 見る前より緩めた / ↑ = 締めた)</div></div>`;
+    return;
+  }
+  if (cur===3){
+    const pick = A().pick;
+    v.innerHTML = `<div class="cam">${active} の期待値で問うと — core/ から返った案(スタブ)</div><div class="card"><table class="cmp">
+      <tr><th>要素</th><th>期待値</th>${Object.keys(CANDS).map(c=>`<th>${c}</th>`).join("")}</tr>` +
+      LEAVES.map(l => `<tr><td style="text-align:left;">${l.n}</td><td class="exp">${fmt(l,A().leaf[l.k].exp)}</td>` +
+        Object.keys(CANDS).map(c => { const g = gap(l, CANDS[c].v[l.k], A().leaf[l.k].exp);
+          return `<td class="g-${g}${pick===c?' selc':''}">${FACE[g]} ${fmt(l,CANDS[c].v[l.k])}</td>`; }).join("") + `</tr>`).join("") +
+      `</table><div style="font-size:9.5px;color:var(--muted);margin-top:6px;line-height:1.6;">色と顔は<b>期待値と実態の差</b>だけから出している(±8% を「ほぼ期待どおり」)。<b>総合点は出さない</b> — 重みの組み合わせ方は core/ のスコア関数。</div></div>`;
+    return;
+  }
+  v.innerHTML = `<div class="cam">聞き取りの進み具合</div><div class="card"><h3>回答者 × 要素</h3><div class="prog">` +
+    respondents.map(r => { const a = ans[r]; const need = 4 + LEAVES.length + 1;
+      const done = a.touchedTop.size + LEAVES.filter(l => a.leaf[l.k].touched).length + (a.pick?1:0);
+      return `<div class="prow"><span>👤 ${r}</span><div class="bar"><i style="width:${done/need*100}%;background:${done===need?'#86efac':'#fcd34d'}"></i></div><span>${done} / ${need}</span></div>`; }).join("") +
+    `</div></div><div class="card" style="font-size:10.5px;line-height:1.7;color:#6b7280;">数えているのは<b>必要な欄の中の空欄</b>。答えた数を数えると、聞かれなかった安全は 0 のまま緑に見える。</div>`;
+}
+
+function render(){
+  document.querySelectorAll(".pane").forEach(p => p.classList.toggle("cur", +p.dataset.p===cur));
+  renderWho(); renderSteps();
+  if (cur===0) renderRoles();
+  if (cur===1 && active) renderTop();
+  if (cur===2 && active) renderLeaves();
+  if (cur===3 && active) renderCands();
+  renderView(); renderGate();
+  $("noteTitle").textContent = NOTES[cur][0]; $("noteBody").innerHTML = NOTES[cur][1];
+}
+function enterTry(){ const a = A(); if (!a) return; if (!a.base) { a.base = {}; LEAVES.forEach(l => a.base[l.k] = a.leaf[l.k].exp); } a.cycle++; }
+$("next").onclick = () => { if (cur<4 && !$("next").disabled) { cur++; if (cur===3) enterTry(); render(); } else if (cur===4 && !$("next").disabled) { $("next").textContent = "設計へ進みました ✓"; } };
+$("back").onclick = () => { if (cur>0) { cur--; render(); } };
+render();
+</script>
+</body>
+</html>

@@ -79,8 +79,14 @@ import { execFileSync } from 'node:child_process'
  * 見えるので、両方外して欠測として数える (当事者判断 — PR #418)。原因は `git commit &&
  * git push` の連鎖ではなく**規約の衝突**で、内訳の他の行とは種類が違う。衝突が繰り返す
  * なら、モデル ID を含まない書式を認める検査の改訂 (ADR) が次の手になる。
+ *
+ * 2026-10-11: 15 → 16。ccr-421cb9bb-77xibo (IA v9〜v10・判定基準のキャラメイク・ADR-164/165/166)
+ * の 1 件も同じ**規約の衝突**による意図的な欠測。フックは 15 コミットに刻んだが、実行環境の
+ * 「push するコミットにモデル ID を入れない」に従って 1 コミットへまとめ直し、`Model-Effort` と
+ * `Task-Class` の両方を外した (PR #418 の先例どおり)。衝突は 2 回目なので、上の「次の手」
+ * (モデル ID を含まない書式を認める検査の改訂) の満期が近い。
  */
-export const MISSING_BASELINE = 15
+export const MISSING_BASELINE = 16
 
 /** Q3/Q4 は「在ってはならない」ので予算はゼロ。 */
 export const DEGRADED_BASELINE = 0

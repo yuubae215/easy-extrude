@@ -1,0 +1,60 @@
+GOALS adr164_a_declaration_lives_on_the_screen_of_the_entity_that_owns_the_fact
+
+goal EveryDeclarationIsShownUnderTheEntityThatOwnsIt
+uuid e6ae031e-a0c3-4f74-a2eb-e725805e127f
+summary "画面のある場所に出ている宣言は、その場所が指す実体の事実だけである。どの宣言にも持ち主の実体があり、その実体を選べば宣言に届く。持ち主のいない宣言は無い"
+state UnderReview
+labels adr-164, adr-110, adr-129, adr-149, adr-152, adr-157, ia-redesign, principle-33, principle-31, proposed, term-p-operate, change-presentation
+artifacts
+- "docs/adr/ADR-164-a-declaration-lives-on-the-screen-of-the-entity-that-owns-the-fact.md"
+
+    context Adr164Scope
+    uuid 8bc7daf6-1f7a-473f-8250-05d6f6151cb2
+    summary "ADR-164 (Proposed 2026-10-11、IA 再設計 Phase 7): パネルの中身は選んだ実体が持ち主である宣言だけ (D1 — ワーク / ハンド / 把持 / ビジョン / アーム / ユーザの 6 ドメイン)、把持は Outliner 意味側の関係の行で片方が消えた関係は壊れた行 (D2)、カメラを実体にする (D3)、引き上げを把持仕様の中へ移す (D4)、実写 / 軽量の常設トグルを撤去し自動フォールバック (D5)"
+
+    context RequirementCameFromTheOwner
+    uuid bdca752d-3ca6-443b-8a68-b0a1d79331e6
+    summary "当事者の言葉 (2026-10-10): 「Grasp 自体の仕様と、ハンドの仕様、ワークの仕様で本来のドメイン分けて整理したほうがいい」「カメラとリーチはビジョンとアームドメイン」「探索そのものはユーザドメイン」「引き上げは把持のもの — 進入と引き上げの違いは、ワークを掴んでるか掴んでないか」「50 はわざわざボタン要らん、リアルが接続できない場合のフォールバックで良い」。v9 / v10 のワイヤーフレームで確認した"
+
+    context BusinessTreeAttachPoint
+    uuid 7a626d5f-dc01-439e-984c-be1fa73e6945
+    summary "事業木へ接続 (2026-10-11, ADR-153): profit-growth.gsn の goal ScreenSaysWhatIsTrue の下に solution Adr164Tree として吊る。主語でない物の事実が主語の下にいる画面は、読めても信じられない (p_operate)。副次的に、カメラと重みが文書に住むことで宣言できる仕様が増える (L_hidden — ADR-165 側で数える)"
+
+    justification WhyNotSectionsInOnePanel
+    uuid 86abe4d9-f3ff-4539-b483-3b66bf004e76
+    summary "却下案 B (Grasp パネル 1 枚のまま節を分ける) への反証: 見た目は整うが、ロボットを選ばないとワークの質量に届かないままで、DEF-033 の『どの実体に属するか』は解けない"
+
+    justification WhyNotEverythingOnTheFloor
+    uuid 4ec93e9f-bce2-4fc2-9c4b-d7aca282b53c
+    summary "却下案 C (宣言を全部場の表へ出す) への反証: 3D で確かめる絵 (原則 #33 (4)) と宣言が離れる。場は主張の食い違いの器 (v8) で、事実の入力欄ではない"
+
+    strategy ByLettingTheOwnerTableDecideTheAddress
+    uuid 7378d1ed-6515-48c3-bb39-542336531543
+    summary "6 ドメインの表 (持ち主 × 宣言) を母集団にし、画面の住所をその表から決める。新しい語は『関係』と『カメラ』だけで、他は既にある語に線を引き直す"
+
+        goal APanelShowsOnlyItsOwnersDeclarations
+        uuid dfde409c-a0ef-4a67-b72d-d7d4ac22a378
+        summary "どの実体を選んでも、N Panel の宣言の節に出る欄はその実体が持ち主である宣言だけで、6 ドメインの表に無い宣言欄が画面に 0 個"
+        labels support-exploring
+
+            assumption OwnerTableCensusWillSettleIt
+            uuid 3b10051e-953a-4da9-9304-85ae573d25b9
+            summary "証拠予定: 実装 PR で、6 ドメインの表を母集団にした census テスト (宣言欄 → 持ち主の種の対応が表にちょうど一致し、表の外の欄が 0 個) を置く。満期=PATH:src/components/NPanel/DeclarationOwnership.test.js で決着する"
+
+        goal AGraspIsARelationRowAndABrokenOneIsVisible
+        uuid 09e42d66-8ab1-4cf6-8b58-e15a2454f11f
+        summary "把持はワークと tcp の関係の行として Outliner 意味側に立ち、把持仕様と引き上げはその行が持つ。文書が宣言したのにシーンに片方が無い把持は、黙って落ちず壊れた行として見える"
+        labels support-exploring
+
+            assumption GraspRelationTestWillSettleIt
+            uuid c2307013-3b68-495a-878f-aa322dc8e4e7
+            summary "証拠予定: 実装 PR で、関係の行の導出 (文書の把持宣言 × シーンの実体) の純粋層テストを置く — N≥2 の把持、片方が消えた把持が壊れた行になる、引き上げが把持仕様から読まれる。満期=PATH:src/domain/graspRelation.test.js で決着する"
+
+        goal RealisticAppearanceFallsBackWithoutAToggle
+        uuid 0e804743-ddc7-4a20-9060-89fbbc07ed65
+        summary "実写 / 軽量の常設トグルは画面に無い。実写メッシュが読めないときだけ軽量表示へ自動で落ち、落ちたことをロボットのパネルが言う"
+        labels support-exploring
+
+            assumption ToggleRemovalWillSettleIt
+            uuid 17a48861-1d52-46b3-b40c-b81f94a4fbf1
+            summary "証拠予定: 実装 PR でトグルのコンポーネントを消し、読み込み失敗を起こす e2e で軽量表示と提示を確かめる。満期=ADR-164"

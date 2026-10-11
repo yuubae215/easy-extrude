@@ -41,7 +41,7 @@ import { assertCoversPopulation } from './census/partition.js'
 
 const INVENTORY = 'docs/ia-redesign/01-inventory.md'
 const GROUPING  = 'docs/ia-redesign/02-grouping-criteria.md'
-const COVERAGE_HEADING = '## 被覆表: 48 行はどこへ行ったか'
+const COVERAGE_HEADING = '## 被覆表: インベントリの行はどこへ行ったか'
 
 const read = rel => readFileSync(repoPath(rel), 'utf8')
 
@@ -86,8 +86,9 @@ function coverageRows() {
 }
 
 test('the inventory is not empty and the coverage table was found', () => {
-  assert.equal(inventoryRows().length, 48,
-    'インベントリの行数が 48 でない。増減させたなら §被覆表 も同じコミットで更新すること。')
+  // 2026-10-11: 48 → 73。v9 の段階1 で、v8 以降に画面へ出た機能 25 行 (#49〜73) を追補した。
+  assert.equal(inventoryRows().length, 73,
+    'インベントリの行数が 73 でない。増減させたなら §被覆表 も同じコミットで更新すること。')
   assert.ok(coverageRows().length > 0, '§被覆表 の行を 1 つも読めていない (パーサが壊れている)')
 })
 
@@ -96,7 +97,7 @@ test('every inventory row belongs to a declared group — unaccounted rows are 0
   const declared   = coverageRows().flatMap(r => r.numbers).map(String)
 
   assertCoversPopulation({
-    what:       '機能インベントリの 48 行',
+    what:       '機能インベントリの 73 行',
     population,
     declared,
     howDerived: `${INVENTORY} の機能表の行番号 (構文で導出)`,

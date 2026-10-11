@@ -362,7 +362,13 @@ const SUPPORT_LABELS = new Map([
 // 機械可読 (満期=ADR-163 / GREP:src/domain/sceneAdoption.js / GONE:…::DEF-060) なので分子 (G3) は動かない。
 // 2026-10-04 (同日): 54 → 50。ADR-163 を実装し (Accepted)、4 goal すべてが support-verified に
 // 上がった (証拠: sceneAdoption.test.js / ScreenAdoption.test.js の node --test、e2e/grasp-stub.spec.js S16)。
-const DEBT_BASELINE = 50
+// 2026-10-11: 50 → 59。ADR-164 / ADR-165 / ADR-166 (Proposed・起票のみ — 当事者の指示「ADR に起こして」、
+// 演出は「計画してくれた記録は残しておいてね」) の木が 3 goal ずつ足した (宣言の住所 / 判定基準の聞き取りと
+// 合意 / 演出の刷新)。先例どおり実装して support-verified に上がった日に下げる。9 つとも満期は機械可読
+// (満期=ADR-164 / ADR-165 / PATH:… / GREP:CLAUDE.md::… / GONE:…::The\sBlueprint\sdevice) なので分子 (G3) は動かない。
+// 2026-10-11 (同日): 59 → 58。ADR-166 M1 (演出の棚卸しと採点) を実施し、EveryMotionSurfaceIsScored が
+// support-verified に上がった (証拠: docs/motion/inventory.md と MotionInventoryCoverage.test.js の node --test)。
+const DEBT_BASELINE = 58
 
 /**
  * G3 — 満期 trigger を持たない exploring goal の個数 (実測値)。

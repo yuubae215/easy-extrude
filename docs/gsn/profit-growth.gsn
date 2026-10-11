@@ -273,6 +273,12 @@ labels meta-goal, term-profit
                             uuid d126c790-2083-480a-a074-851c18e6ad4b
                             summary "既知の欠落 (縮小した): 本 goal の下は可読性 (ByScreenBandwidthBarriers) と操作の信頼 (ByDirectManipulationTrust) の 2 本が埋まっているが、価格・導入形態・CAD/PLC 接続・信頼性の証明は依然として未展開である。この assumption は『この decomposition が何を省いたか』を明示し続けるために残す (false rigour 対策) — 枝が入ったことで goal 全体が閉じたと読ませない"
 
+                            solution Adr166Tree
+                            uuid 60e1e38a-738e-482d-8446-53d2c9227e08
+                            summary "ADR-166 の論証木 (top goal MotionMeetsTodaysStandardAndAnnotationsReadInAnyView) を吊る。演出が今の水準で揃い、マップ注釈がどの角度からも読める — 古く見える画面は、読めても使い続けたくならない採用障壁。この木の goal ごとの証拠と鮮度の正本は木の側 — ここは寄与する項だけを持つ (ADR-153 D2)"
+                            artifacts
+                            - "docs/gsn/adr-166-motion-is-renewed-to-the-current-standard.gsn"
+
                             strategy ByScreenBandwidthBarriers
                             uuid 3a8d1c60-9b47-4e52-8f13-6c0a5d2e97b4
                             summary "Argument by 『画面が構造と状態を正しく読ませるか』という採用障壁の除去 — 狭い画面で構造が読めること (MobileStructureViewIsReadable) と、画面が語ることが描かれていることと一致すること (ScreenSaysWhatIsTrue) の 2 つ"
@@ -315,6 +321,12 @@ labels meta-goal, term-profit
                                     summary "ADR-161 の論証木 (top goal TheScreenSpeaksOneLanguage) を吊る。画面の文言が 1 つの言語で語られ、書き手の言語が混ざらない — 混ざった画面は読めても信じられない。この木の goal ごとの証拠と鮮度の正本は木の側 — ここは寄与する項だけを持つ (ADR-153 D2)"
                                     artifacts
                                     - "docs/gsn/adr-161-the-ui-speaks-english.gsn"
+
+                                    solution Adr164Tree
+                                    uuid 762f9e0f-30da-4789-ae79-662fd56fd032
+                                    summary "ADR-164 の論証木 (top goal EveryDeclarationIsShownUnderTheEntityThatOwnsIt) を吊る。画面のある場所に出ている宣言は、その場所が指す実体の事実だけ — 主語でない物の事実が主語の下にいる画面は、読めても信じられない。この木の goal ごとの証拠と鮮度の正本は木の側 — ここは寄与する項だけを持つ (ADR-153 D2)"
+                                    artifacts
+                                    - "docs/gsn/adr-164-a-declaration-lives-on-the-screen-of-the-entity-that-owns-the-fact.gsn"
 
                                     solution Adr100Tree
                                     uuid dc12c971-eaa1-4387-a487-c6b6e7b2085c
@@ -516,6 +528,12 @@ labels meta-goal, term-profit
                                     summary "ADR-152 の論証木 (top goal DeclaredGraspReachesJudgementAndPictureAlike) を吊る。把持仕様・把持戦略・手の形を同じ文書で宣言でき、判定と絵に同じ値で届く。この木の goal ごとの証拠と鮮度の正本は木の側 — ここは寄与する項だけを持つ (ADR-153 D2: 1 本の木は事業木にちょうど 1 回吊られ、投資はその項へ帰属する)"
                                     artifacts
                                     - "docs/gsn/adr-152-how-to-grasp-and-what-grasps-are-declarations-and-each-is-seen.gsn"
+
+                                    solution Adr165Tree
+                                    uuid c4db651a-9b50-4e28-8bca-39ad8b3dbcc0
+                                    summary "ADR-165 の論証木 (top goal EveryEndUsersCriteriaAreHeardAndAgreedBeforeDesign) を吊る。設計の前に全エンドユーザの全要素の期待値と重みを聞き切り、合意した線は提案でしか動かない — 後から判定基準の依存が見つかるループを減らす。この木の goal ごとの証拠と鮮度の正本は木の側 — ここは寄与する項だけを持つ (ADR-153 D2)"
+                                    artifacts
+                                    - "docs/gsn/adr-165-criteria-are-heard-in-full-before-design.gsn"
 
                                 goal OneRequestJudgesEveryDomainTogether
                                 uuid 5286f3f3-0817-4f70-b284-e8546f4b5c50

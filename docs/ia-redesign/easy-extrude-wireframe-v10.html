@@ -1,0 +1,613 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>easy-extrude — IA再設計ワイヤーフレーム v10</title>
+<style>
+  :root{
+    --paper:#f5f5f4; --box:#ffffff; --line:#9ca3af; --line-dark:#4b5563;
+    --ink:#374151; --muted:#9ca3af; --note:#2563eb; --note-bg:#eff6ff; --sel:#dbeafe;
+    --rel:#0f766e; --rel-bg:#f0fdfa;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+  body{font-family:"Hiragino Kaku Gothic ProN","Noto Sans JP",system-ui,sans-serif;
+    background:var(--paper);color:var(--ink);padding:16px;}
+  header{max-width:1040px;margin:0 auto 12px;}
+  header h1{font-size:15px;font-weight:700;}
+  header p{font-size:12px;color:var(--muted);margin-top:4px;line-height:1.75;}
+  .diff{max-width:1040px;margin:0 auto 12px;background:#f0fdf4;border:1px solid #bbf7d0;
+    border-radius:6px;padding:10px 13px;font-size:12px;line-height:1.85;}
+  .diff b{color:#15803d;}
+  .hint{display:inline-block;margin-top:8px;font-size:11px;color:var(--note);
+    background:var(--note-bg);border:1px solid #bfdbfe;border-radius:4px;padding:4px 8px;}
+  .state{display:inline-block;margin-top:8px;margin-left:6px;font-size:11px;color:#92400e;
+    background:#fffbeb;border:1px solid #fde68a;border-radius:4px;padding:4px 8px;}
+
+  .frame{
+    max-width:1040px;margin:0 auto;background:var(--box);
+    border:2px solid var(--line-dark);border-radius:6px;overflow:hidden;
+    display:grid;position:relative;font-size:11px;
+    grid-template-rows:34px 1fr 0px 22px;
+    grid-template-columns:176px 1fr 210px;
+    grid-template-areas:
+      "head head head"
+      "left main right"
+      "ba   ba   ba"
+      "foot foot foot";
+    height:660px;
+    transition:grid-template-rows .22s ease;
+  }
+  .frame.ba-open{grid-template-rows:34px 1fr 236px 22px;}
+  @media (max-width:700px){
+    .frame{grid-template-columns:118px 1fr 140px;height:600px;font-size:10px;}
+  }
+
+  .zone{position:relative;border:1px dashed var(--line);cursor:pointer;transition:background .15s;overflow:hidden;}
+  .zone:hover,.zone.active{background:#f0f7ff;}
+  .zone.active{outline:2px solid var(--note);outline-offset:-2px;}
+  .zone-label{position:absolute;top:3px;left:6px;font-size:9px;font-weight:700;
+    color:var(--muted);letter-spacing:.08em;z-index:2;}
+  .badge{position:absolute;top:3px;right:5px;width:16px;height:16px;border-radius:50%;
+    background:var(--note);color:#fff;font-size:10px;font-weight:700;
+    display:flex;align-items:center;justify-content:center;z-index:4;}
+
+  .wf-btn{border:1px solid var(--line-dark);border-radius:4px;background:#fff;
+    font-size:10px;color:var(--ink);padding:3px 7px;white-space:nowrap;cursor:pointer;font-family:inherit;}
+  .canvas-hatch{background:repeating-linear-gradient(45deg,transparent,transparent 15px,
+    #e9ebee 15px,#e9ebee 16px);}
+  .field{border:1px solid var(--line-dark);border-radius:3px;background:#fff;
+    padding:1px 5px;font-weight:600;box-shadow:inset 0 1px 2px rgba(0,0,0,.07);}
+  .undecl{border:1px dashed #b45309;border-radius:3px;background:#fffbeb;color:#92400e;
+    padding:1px 5px;font-size:9px;}
+  .ro{color:var(--muted);}
+
+  .focused{background:var(--sel);border:1px solid var(--note);font-weight:700;color:#1e3a8a;}
+  .neighbor{background:#f3f4f6;border:1px dashed var(--line);color:#6b7280;}
+
+  .hd{display:flex;align-items:center;gap:6px;padding:0 8px;height:100%;}
+  .hd .sp{flex:1;}
+
+  .lf{padding:20px 6px 6px;height:100%;display:flex;flex-direction:column;gap:4px;overflow:auto;}
+  .toggle{display:flex;border:1px solid var(--line-dark);border-radius:4px;overflow:hidden;flex-shrink:0;}
+  .toggle button{flex:1;border:none;border-right:1px solid var(--line-dark);background:#fff;
+    font-size:9px;padding:3px 0;cursor:pointer;font-family:inherit;color:var(--ink);}
+  .toggle button:last-child{border-right:none;}
+  .toggle button.on{background:var(--sel);font-weight:700;color:#1e3a8a;}
+  .row{padding:2px 4px;border-bottom:1px dotted #e5e7eb;display:flex;
+    justify-content:space-between;align-items:center;cursor:pointer;gap:4px;}
+  .row span:first-child{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .ind{padding-left:12px !important;color:#6b7280;}
+  .new{font-size:7.5px;color:#15803d;border:1px solid #86efac;background:#f0fdf4;border-radius:6px;padding:0 3px;flex-shrink:0;}
+  .relrow{border-left:3px solid var(--rel);background:var(--rel-bg);color:#115e59;}
+  .relrow.focused{background:#ccfbf1;border-left-color:var(--rel);border-top:1px solid var(--rel);border-bottom:1px solid var(--rel);border-right:1px solid var(--rel);color:#134e4a;}
+  .relrow.broken{border-left-color:#b45309;background:#fffbeb;color:#92400e;}
+  .pane{display:none;} .pane.on{display:block;}
+  .sec{font-size:8.5px;font-weight:700;color:var(--muted);letter-spacing:.06em;
+    margin-top:5px;padding-bottom:1px;border-bottom:1px solid #e5e7eb;}
+  .legend{margin-top:5px;font-size:8.5px;color:#9ca3af;line-height:1.5;}
+
+  .main-wrap{position:relative;height:100%;}
+  .hud{position:absolute;top:20px;left:8px;width:150px;border:1px solid var(--line-dark);
+    background:rgba(255,255,255,.95);border-radius:4px;padding:5px 6px;font-size:9.5px;line-height:1.6;z-index:3;}
+  .hud .ht{font-weight:700;font-size:9px;letter-spacing:.05em;color:var(--muted);margin-bottom:3px;}
+  .hud .kr{display:flex;justify-content:space-between;}
+
+  .gzwrap{position:absolute;top:20px;right:8px;z-index:3;display:flex;flex-direction:column;
+    align-items:center;gap:3px;}
+  .gizmo{width:52px;height:52px;border:1px solid var(--line-dark);border-radius:50%;
+    background:rgba(255,255,255,.95);position:relative;}
+  .gizmo span{position:absolute;font-size:8.5px;font-weight:700;color:#6b7280;
+    width:14px;height:14px;border-radius:50%;border:1px solid var(--line);background:#fff;
+    display:flex;align-items:center;justify-content:center;}
+  .gz-x{left:36px;top:19px;} .gz-y{left:19px;top:36px;} .gz-z{left:19px;top:2px;}
+  .projtog{display:flex;border:1px solid var(--line-dark);border-radius:4px;overflow:hidden;background:#fff;}
+  .projtog button{border:none;border-right:1px solid var(--line-dark);background:#fff;
+    font-size:8px;padding:2px 4px;font-family:inherit;color:var(--ink);}
+  .projtog button:last-child{border-right:none;}
+  .projtog button.on{background:var(--sel);font-weight:700;color:#1e3a8a;}
+  .retired{font-size:7.5px;color:#9ca3af;border:1px dashed #d1d5db;border-radius:3px;padding:1px 3px;
+    text-decoration:line-through;background:#fafafa;}
+
+  .obj{position:absolute;border:1px solid var(--line-dark);background:#fff;font-size:9px;
+    display:flex;align-items:center;justify-content:center;color:#6b7280;border-radius:2px;
+    transition:background .15s,border-color .15s;}
+  .obj.focused{background:var(--sel);border:2px solid var(--note);color:#1e3a8a;font-weight:700;}
+  .obj.relfocus{background:#ccfbf1;border:2px solid var(--rel);color:#134e4a;font-weight:700;}
+  .obj.ghost{border:2px dashed #7c3aed;background:rgba(124,58,237,.08);color:#5b21b6;display:none;}
+  .obj.ghost.on{display:flex;}
+  .frustum{position:absolute;width:0;height:0;border-left:44px solid transparent;border-right:44px solid transparent;
+    border-top:70px solid rgba(37,99,235,.07);pointer-events:none;}
+  .frustum.on{border-top-color:rgba(37,99,235,.22);}
+  .arrow{position:absolute;font-size:9px;font-weight:700;display:none;white-space:nowrap;}
+  .arrow.on{display:block;}
+  .a-app{color:#1d4ed8;} .a-lift{color:#b45309;}
+
+  .rt{padding:20px 7px 6px;height:100%;display:flex;flex-direction:column;gap:4px;overflow:auto;}
+  .grp{font-size:9px;font-weight:700;color:var(--muted);letter-spacing:.06em;
+    border-bottom:1px solid #e5e7eb;padding-bottom:2px;margin-top:3px;}
+  .grp .dom{font-weight:700;color:#fff;background:var(--line-dark);border-radius:6px;padding:0 4px;margin-left:3px;font-size:7.5px;letter-spacing:0;}
+  .grp .dom.rel{background:var(--rel);}
+  .kv{display:flex;justify-content:space-between;gap:4px;align-items:center;}
+  .chip{border:1px solid var(--line-dark);border-radius:8px;padding:0 5px;font-size:9px;cursor:pointer;}
+  .ok{color:#15803d;border-color:#15803d;}
+  .cap{font-size:8.5px;color:var(--muted);line-height:1.5;margin-top:2px;}
+  .rpane{display:none;} .rpane.on{display:flex;flex-direction:column;gap:4px;}
+  .seg{display:flex;border:1px solid var(--line-dark);border-radius:4px;overflow:hidden;}
+  .seg button{flex:1;border:none;border-right:1px solid var(--line-dark);background:#fff;font-size:8.5px;
+    padding:1px 0;cursor:pointer;font-family:inherit;color:var(--ink);}
+  .seg button:last-child{border-right:none;}
+  .seg button.on{background:var(--sel);font-weight:700;color:#1e3a8a;}
+  .phase2{display:grid;grid-template-columns:1fr 1fr;gap:3px;font-size:8.5px;}
+  .phase2 div{border:1px solid var(--line);border-radius:3px;padding:2px 4px;line-height:1.45;}
+  .phase2 .ap{border-color:#93c5fd;background:#eff6ff;}
+  .phase2 .lf2{border-color:#fcd34d;background:#fffbeb;}
+  .linkbtn{border:1px solid var(--rel);color:var(--rel);background:var(--rel-bg);border-radius:4px;
+    font-size:9px;padding:2px 5px;cursor:pointer;font-family:inherit;width:100%;text-align:left;}
+
+  .ft{display:flex;align-items:center;padding:0 8px;height:100%;gap:10px;font-size:9.5px;color:var(--muted);}
+
+  .ba{padding:0;height:100%;display:flex;flex-direction:column;background:#fcfcfc;}
+  .bh{display:flex;align-items:center;gap:6px;padding:3px 8px;border-bottom:1px solid var(--line);
+    font-size:10px;font-weight:700;flex-shrink:0;}
+  .btab{border:1px solid var(--line-dark);border-bottom:none;border-radius:4px 4px 0 0;background:#fff;
+    font-size:9.5px;padding:2px 7px;cursor:pointer;font-family:inherit;color:var(--ink);margin-bottom:-4px;}
+  .btab.on{background:var(--sel);font-weight:700;color:#1e3a8a;}
+  .bb{display:none;gap:12px;padding:7px 9px;overflow:auto;flex:1;}
+  .bb.on{display:flex;}
+  table.mx{border-collapse:collapse;font-size:9.5px;flex-shrink:0;}
+  table.mx th,table.mx td{border:1px solid var(--line);padding:3px 7px;text-align:center;white-space:nowrap;}
+  table.mx th{background:#f3f4f6;font-weight:700;}
+  table.mx td.x{background:#fef2f2;color:#b91c1c;font-weight:700;}
+  table.mx td.o{background:#f0fdf4;color:#15803d;}
+  .col3{min-width:0;font-size:9.5px;line-height:1.65;}
+  .col3 .lead{font-weight:700;font-size:9px;letter-spacing:.04em;color:#6b7280;margin-bottom:2px;display:block;}
+  .crit{border-right:1px dashed var(--line);padding-right:10px;flex-shrink:0;width:190px;}
+  .wrow{display:flex;align-items:center;gap:4px;}
+  .wrow span:first-child{width:62px;}
+  .bar{flex:1;height:6px;border:1px solid var(--line-dark);border-radius:3px;position:relative;background:#fff;}
+  .bar i{position:absolute;left:0;top:0;bottom:0;background:#93c5fd;border-radius:2px;}
+  .cand{border:1px solid var(--line);border-radius:3px;padding:2px 5px;margin-bottom:3px;cursor:pointer;background:#fff;
+    display:flex;justify-content:space-between;gap:6px;}
+  .cand.on{border-color:#7c3aed;background:#f5f3ff;color:#5b21b6;font-weight:700;}
+  .phases{display:flex;gap:2px;flex-wrap:wrap;}
+  .ph{border:1px solid var(--line);border-radius:3px;padding:1px 4px;font-size:8.5px;background:#fff;}
+  .ph.ok{border-color:#86efac;background:#f0fdf4;color:#15803d;}
+  .ph.ng{border-color:#fca5a5;background:#fef2f2;color:#b91c1c;font-weight:700;}
+  .ph.un{border-style:dashed;color:#9ca3af;}
+  .ph.held{box-shadow:inset 0 -2px 0 #f59e0b;}
+  table.mx td.w{font-variant-numeric:tabular-nums;}
+  table.mx tr.maint th{background:#fef3c7;color:#92400e;text-align:left;}
+  table.mx tr.maint td{background:#fffbeb;}
+  table.mx tr.maint.absent td{background:repeating-linear-gradient(45deg,#fffbeb,#fffbeb 4px,#fde68a 4px,#fde68a 5px);color:#92400e;}
+  .pri{font-size:7.5px;font-weight:700;color:#b45309;}
+  .ephemeral{font-size:7.5px;color:#9ca3af;}
+
+  .note-panel{max-width:1040px;margin:12px auto 0;background:var(--note-bg);
+    border:1px solid #bfdbfe;border-radius:6px;padding:12px 14px;min-height:104px;}
+  .note-panel .np-title{font-size:12px;font-weight:700;color:var(--note);
+    margin-bottom:6px;display:flex;align-items:center;gap:6px;}
+  .note-panel .np-num{width:18px;height:18px;border-radius:50%;background:var(--note);
+    color:#fff;font-size:11px;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;}
+  .note-panel p{font-size:12px;line-height:1.85;}
+  .note-panel .placeholder{color:var(--muted);font-size:12px;line-height:1.8;}
+  .tension{max-width:1040px;margin:14px auto 0;background:#fffbeb;border:1px solid #fde68a;
+    border-radius:6px;padding:12px 14px;font-size:12px;line-height:1.85;}
+  .tension b{color:#92400e;}
+  .domtable{max-width:1040px;margin:12px auto 0;font-size:11.5px;border-collapse:collapse;width:100%;background:#fff;}
+  .domtable th,.domtable td{border:1px solid #e5e7eb;padding:4px 8px;text-align:left;vertical-align:top;line-height:1.6;}
+  .domtable th{background:#f9fafb;}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>easy-extrude — IA再設計ワイヤーフレーム v10</h1>
+  <p>忠実度はグレーボックスのまま。<b>重みも主張になりました</b> — 場は 1 枚に戻り、把持の重みは要件の衝突と同じ行列の列です。主張する人に<b>保全者</b>(エンドユーザ — 自動化工程を受け取って保つ人)が加わり、その行は外せません。</p>
+  <span class="hint">💡 各エリアをタップすると設計根拠が下に出ます</span>
+  <span class="state">▶ 代表状態:<b>把持 (Workpiece 1 × tcp) を選択中、場は開いている</b> / 動く:行列の重みの列をタップ・[保全者が不在]で 0 の状態・候補 #1〜#3</span>
+</header>
+
+<div class="diff">
+  <b>v9 → v10 の変更点(3件。v9 の引っかかりと当事者の訂正を回収)</b><br>
+  <b>①</b> <b>重みは主張なので、衝突の行列に畳んだ。</b>場のタブ 2 枚(要件の衝突 / 把持の基準と答え)を 1 枚に戻し、
+  <b>重み 4 本を行列の列</b>にした。区間の列は「共通部分が空」で ✕、重みの列は「<b>保全者と順位が逆</b>」で ✕。答えは行列の右隣のまま。<br>
+  <b>②</b> <b>主張する人に保全者を足した(当事者の訂正)。</b>v8〜v9 の行は設計側の 3 人(vision / robot / mech)だけで、
+  <b>セルを受け取って毎日使う人がいなかった</b>。重みを主に動かすのはエンドユーザ = 自動化工程の保全者で、
+  その重み付けが<b>いちばん重要かつ外してはいけない</b>。語彙は既に在る — Context DSL の actor role に
+  <code>maintainer</code> がある(<code>VALID_ROLES</code>)。無かったのは行列の行だけ(原則 #33)。<br>
+  <b>③</b> <b>保全者の行は最上段に固定し、優先を語で持つ。</b>「外してはいけない」は数値の重み付け(保全者 ×2 など)ではなく
+  <b>人どうしの関係</b>なので、行の印 ★優先 として持つ(原則 #33 (3) — 束どうしの優先は要素の数値に散らさない)。
+</div>
+
+<div class="frame" id="frame">
+
+  <div class="zone" style="grid-area:head;" data-note="1">
+    <span class="badge">1</span>
+    <div class="hd">
+      <span class="wf-btn">Object Mode ▾</span>
+      <span class="wf-btn">+ Add ▾</span>
+      <span class="sp"></span>
+      <button class="wf-btn" id="openBa" style="font-weight:700;"><span id="hdConf">≈ 1 衝突</span> · ⚑ 0 議題 · ◇ 0 未所有 · ◎ 3 候補</button>
+      <span class="sp"></span>
+      <span class="wf-btn">Start ▾</span>
+      <span class="wf-btn">Export ▾</span>
+      <span class="wf-btn">Import ▾</span>
+    </div>
+  </div>
+
+  <!-- 左 -->
+  <div class="zone" style="grid-area:left;" data-note="2">
+    <span class="zone-label">構造(選ぶ)</span><span class="badge">2</span>
+    <div class="lf">
+      <div class="toggle">
+        <button id="tGeo">幾何</button><button id="tSem" class="on">意味</button>
+      </div>
+
+      <div class="pane" id="paneGeo">
+        <div class="row"><span>⬡ Cell footprint</span></div>
+        <div class="row"><span>□ Workbench</span></div>
+        <div class="row" data-sel="robot"><span>□ Robot</span></div>
+        <div class="row ind" data-sel="tcp"><span>⌖ tcp ✋</span></div>
+        <div class="row" data-sel="camera"><span>📷 Camera</span><span class="new">v9</span></div>
+        <div class="row"><span>□ Supply bin</span></div>
+        <div class="row ind" data-sel="work1"><span>□ Workpiece 1</span></div>
+        <div class="row ind"><span>□ Workpiece 2</span></div>
+        <div class="row ind"><span>□ Workpiece 3</span></div>
+        <div class="row"><span>□ Output tray</span></div>
+        <div class="legend">Origin の行は畳む(物体の一部)。<br>✋ = ハンドの宣言を持つ</div>
+      </div>
+
+      <div class="pane on" id="paneSem">
+        <div class="sec">実体</div>
+        <div class="row" data-sel="work1"><span>Workpiece 1</span><span class="ro">ワーク</span></div>
+        <div class="row" data-sel="tcp"><span>tcp</span><span class="ro">ハンド</span></div>
+        <div class="row" data-sel="camera"><span>Camera</span><span class="ro">ビジョン</span></div>
+        <div class="row" data-sel="robot"><span>Robot</span><span class="ro">アーム</span></div>
+        <div class="sec">関係 <span class="new">v9</span></div>
+        <div class="row relrow" data-sel="grasp" id="rowGrasp"><span>✋ 把持: Workpiece 1 × tcp</span></div>
+        <div class="row relrow"><span>✋ 把持: Workpiece 2 × tcp</span></div>
+        <div class="row relrow broken" data-sel="orphan"><span>⚠ 把持: (消えた実体) × tcp</span></div>
+        <div class="gedge" style="text-align:center;color:var(--muted);font-size:9px;">┆ feeds ┆ (SpatialLink)</div>
+        <div class="sec">共有変数</div>
+        <div class="row"><span>cycle</span></div>
+        <div class="legend">緑の帯 = 関係(持ち主が 2 つ)<br>⚠ = 片方の実体が無い関係</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 中央 -->
+  <div class="zone canvas-hatch" style="grid-area:main;" data-note="3">
+    <span class="zone-label">3Dビュー(入力の検算)</span><span class="badge">3</span>
+    <div class="main-wrap">
+      <div class="obj" style="left:26%;top:58%;width:40%;height:26%;border-style:dashed;color:#9ca3af;">Workbench</div>
+      <div class="obj" id="oRobot" style="left:30%;top:24%;width:12%;height:32%;">Robot</div>
+      <div class="obj" id="oTcp" style="left:43%;top:24%;width:7%;height:8%;font-size:8px;">tcp ✋</div>
+      <div class="obj" style="left:50%;top:50%;width:14%;height:10%;color:#9ca3af;align-items:flex-start;font-size:8px;">Supply bin</div>
+      <div class="obj" id="oWork1" style="left:52%;top:55%;width:4%;height:5%;font-size:7px;">W1</div>
+      <div class="obj" style="left:58%;top:55%;width:4%;height:5%;font-size:7px;color:#9ca3af;">W2</div>
+      <div class="obj ghost" id="oGhost" style="left:44%;top:30%;width:14%;height:22%;font-size:8px;">腕 #1</div>
+      <div class="arrow a-app" id="aApp" style="left:57%;top:40%;">↓ 進入 +z (空手)</div>
+      <div class="arrow a-lift" id="aLift" style="left:57%;top:62%;">↑ 引き上げ 50mm (W1 携行)</div>
+      <div class="obj" id="oCam" style="left:70%;top:16%;width:9%;height:8%;font-size:8px;">📷 Cam</div>
+      <div class="frustum" id="frus" style="left:63%;top:24%;"></div>
+
+      <div class="hud" data-note="4">
+        <div class="ht">シーンのKPI</div>
+        <div class="kr"><span>受け入れ</span><span>0 / 0</span></div>
+        <div style="color:#92400e;font-size:9px;">検証項目なし → 基準を定義する</div>
+      </div>
+
+      <div class="gzwrap" data-note="8">
+        <div class="gizmo"><span class="gz-z">Z</span><span class="gz-x">X</span><span class="gz-y">Y</span></div>
+        <div class="projtog"><button>正射</button><button class="on">透視</button></div>
+        <span class="retired">REAL トグル</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- 右 -->
+  <div class="zone" style="grid-area:right;" data-note="5">
+    <span class="zone-label" id="rightLabel">把持 の詳細</span><span class="badge">5</span>
+    <div class="rt">
+
+      <!-- 把持 (関係) -->
+      <div class="rpane" id="rp-grasp">
+        <div class="grp">把持<span class="dom rel">関係</span></div>
+        <div class="kv"><span>ワーク</span><span class="chip" data-sel="work1">Workpiece 1 ▸</span></div>
+        <div class="kv"><span>手</span><span class="chip" data-sel="tcp">tcp (平行) ▸</span></div>
+        <div class="grp">仕様</div>
+        <div class="kv"><span>名前</span><span class="field">top-pinch</span></div>
+        <div class="kv"><span>進入面</span><span class="field">+z</span></div>
+        <div class="kv"><span>接触面</span><span class="field">±x</span></div>
+        <div class="kv"><span>領域</span><span class="ro">面全体</span></div>
+        <div class="grp">引き上げ <span style="font-weight:400;">(掴んだ後)</span></div>
+        <div class="kv"><span>方向</span><span class="field">進入を逆に</span></div>
+        <div class="kv"><span>距離</span><span class="field">50 mm</span></div>
+        <div class="phase2">
+          <div class="ap"><b>進入</b><br>手だけが動く<br>判定: 腕・手</div>
+          <div class="lf2"><b>引き上げ</b><br>W1 を持って動く<br>判定: 腕・手・<b>W1</b></div>
+        </div>
+        <div class="cap">進入と引き上げは同じ把持の前後。携行物が 0→1 になるので干渉の当事者が増える(ADR-157)。</div>
+        <button class="linkbtn" id="askBtn">◎ この把持を場で問う ▸</button>
+      </div>
+
+      <!-- ワーク -->
+      <div class="rpane" id="rp-work1">
+        <div class="grp">実体<span class="dom">ワーク</span></div>
+        <div class="kv"><span>名前</span><span class="field">Workpiece 1</span></div>
+        <div class="kv"><span>親</span><span class="ro">Supply bin</span></div>
+        <div class="grp">位置・姿勢</div>
+        <div class="kv"><span>X</span><span class="field">412.0</span></div>
+        <div class="kv"><span>Y</span><span class="field">-38.0</span></div>
+        <div class="kv"><span>Z</span><span class="field">905.0</span></div>
+        <div class="grp">ワークの宣言</div>
+        <div class="kv"><span>質量</span><span class="field">0.12 kg</span></div>
+        <div class="kv"><span>重心</span><span class="undecl">未宣言</span></div>
+        <div class="grp">関係</div>
+        <button class="linkbtn" data-sel="grasp">✋ 把持 1 件 ▸</button>
+        <div class="cap">把持仕様と引き上げはここに<b>出ない</b> — ワークだけの事実ではないので、関係の行が持つ。</div>
+      </div>
+
+      <!-- ハンド -->
+      <div class="rpane" id="rp-tcp">
+        <div class="grp">実体<span class="dom">ハンド</span></div>
+        <div class="kv"><span>名前</span><span class="field">tcp</span></div>
+        <div class="kv"><span>取付け</span><span class="ro">flange</span></div>
+        <div class="grp">ハンドの宣言</div>
+        <div class="seg" id="handSeg"><button class="on" data-k="jaw">平行</button><button data-k="cup">吸着</button></div>
+        <div class="kv"><span>開き幅</span><span class="field">0–40 mm</span></div>
+        <div class="kv"><span>形</span><span class="ro">本体 + 指 2</span></div>
+        <div class="kv" id="holdRow" style="display:none;"><span>保持力</span><span class="undecl">未宣言</span></div>
+        <div class="grp">関係</div>
+        <button class="linkbtn" data-sel="grasp">✋ 把持 2 件 ▸</button>
+      </div>
+
+      <!-- カメラ -->
+      <div class="rpane" id="rp-camera">
+        <div class="grp">実体<span class="dom">ビジョン</span></div>
+        <div class="kv"><span>名前</span><span class="field">Camera</span></div>
+        <div class="grp">位置・姿勢</div>
+        <div class="kv"><span>X</span><span class="field">600.0</span></div>
+        <div class="kv"><span>Z</span><span class="field">1400.0</span></div>
+        <div class="grp">ビジョンの宣言</div>
+        <div class="kv"><span>画角</span><span class="field">60°</span></div>
+        <div class="kv"><span>距離</span><span class="field">300–1500</span></div>
+        <div class="kv"><span>見え方</span><span class="chip">今の視点を写す</span></div>
+        <div class="cap">現行の「📷 use current view」はここへ。カメラが実体なので、3D の視錐台で確かめられる。</div>
+      </div>
+
+      <!-- アーム -->
+      <div class="rpane" id="rp-robot">
+        <div class="grp">実体<span class="dom">アーム</span></div>
+        <div class="kv"><span>名前</span><span class="field">Robot (UR5e)</span></div>
+        <div class="kv"><span>見た目</span><span class="ro">実写</span></div>
+        <div class="grp">アームの宣言</div>
+        <div class="kv"><span>リーチ包絡</span><span class="chip">URDF から</span></div>
+        <div class="kv"><span>宣言</span><span class="undecl">未宣言</span></div>
+        <div class="cap">値は URDF から導出し、<b>宣言するかどうか</b>だけを人が決める(宣言しないとリーチ余裕は「測っていない」)。</div>
+        <div class="cap" style="color:#92400e;">実写が読めなかった日は「軽量表示に落ちています」とここに出る — 入口ではなく状態。</div>
+      </div>
+
+      <!-- 孤児 -->
+      <div class="rpane" id="rp-orphan">
+        <div class="grp">把持<span class="dom rel">関係</span></div>
+        <div class="kv"><span>ワーク</span><span class="undecl">work_4 — シーンに無い</span></div>
+        <div class="kv"><span>手</span><span class="chip" data-sel="tcp">tcp ▸</span></div>
+        <div class="cap">文書は <code>work_4</code> の把持を宣言しているが、その実体がシーンに無い。現行はこれが<b>黙って落ちる</b>(DEF-035)。関係が行を持てば、片方が消えた関係は<b>壊れた行</b>として見える。</div>
+        <div class="kv"><span></span><span class="chip">付け替える ▸</span></div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- 場 -->
+  <div class="zone" style="grid-area:ba;" data-note="6">
+    <span class="badge" style="top:5px;">6</span>
+    <div class="ba">
+      <div class="bh">
+        <span>場 — 主張の衝突</span>
+        <span style="font-weight:400;color:var(--muted);font-size:9px;">区間も重みも、食い違いは 1 人の視野の中には無い</span>
+        <span style="flex:1"></span>
+        <button class="wf-btn" id="absentBtn" style="font-size:9px;">保全者が不在</button>
+        <button class="wf-btn" id="closeBa" style="margin-right:20px;">✕</button>
+      </div>
+      <div class="bb on">
+        <table class="mx" id="mx">
+          <tr><th rowspan="2"></th><th colspan="2">要件の区間</th><th colspan="4" style="background:var(--rel-bg);color:#115e59;">把持の重み</th></tr>
+          <tr><th>d_ref</th><th>cycle</th><th>リーチ</th><th>クリアランス</th><th>安定</th><th>保持</th></tr>
+          <tr id="rowMaint" class="maint"><th>★ 保全者<div class="pri">優先 — 外せない</div></th>
+            <td></td><td class="o">✓</td><td class="w" data-w="m">0.2</td><td class="w">0.3</td><td class="w">0.1</td><td class="w">0.4</td></tr>
+          <tr><th>robot_eng</th><td class="o">✓</td><td class="o">✓</td><td class="w x" data-w="r">0.5</td><td class="w">0.2</td><td class="w">0.2</td><td class="w x">0.1</td></tr>
+          <tr><th>mech_eng</th><td class="o">✓</td><td></td><td class="w">0.2</td><td class="w">0.3</td><td class="w">0.2</td><td class="w">0.3</td></tr>
+          <tr><th>vision_eng</th><td class="o">✓</td><td></td><td class="w ro">—</td><td class="w ro">—</td><td class="w ro">—</td><td class="w ro">—</td></tr>
+        </table>
+        <div class="col3" style="width:200px;flex-shrink:0;border-left:1px dashed var(--line);padding-left:10px;" id="gapW">
+          <span class="lead" style="color:#b91c1c;">≈ 重みの順位が保全者と逆</span>
+          robot_eng は <b>リーチ &gt; 保持</b>、保全者は <b>保持 &gt; リーチ</b>。<br>
+          <span style="color:#6b7280;">数値の差ではなく<b>順位の逆転</b>を衝突と呼ぶ — 0.4 と 0.3 の違いは好みの幅だが、順位が逆なら「何を守るセルか」が違う。</span>
+          <div style="margin-top:4px;"><button class="wf-btn" style="font-size:9px;">議題にする</button></div>
+        </div>
+        <div class="col3" style="width:120px;flex-shrink:0;border-left:1px dashed var(--line);padding-left:10px;">
+          <span class="lead">答え <span class="ephemeral">(戻り値)</span></span>
+          <div class="cand on" data-c="1"><span>#1</span><span>0.82</span></div>
+          <div class="cand" data-c="2"><span>#2</span><span>0.74</span></div>
+          <div class="cand" data-c="3"><span>#3</span><span>0.61</span></div>
+          <button class="wf-btn" id="runBtn" style="width:100%;font-weight:700;margin-top:2px;font-size:8.5px;white-space:normal;">◎ 保全者の重みで問う</button>
+        </div>
+        <div class="col3" style="flex:1;min-width:150px;">
+          <span class="lead" id="phLead">#1 の動作の相</span>
+          <div class="phases" id="phases"></div>
+          <div style="font-size:8.5px;color:#6b7280;margin-top:4px;" id="phNote"></div>
+          <div style="font-size:8px;color:#9ca3af;margin-top:3px;">下線 = W1 を持っている相</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="zone" style="grid-area:foot;" data-note="7">
+    <span class="badge" style="top:2px;">7</span>
+    <div class="ft"><span>G = 移動</span><span>R = 回転</span><span>Tab = 編集</span><span>N = 詳細</span></div>
+  </div>
+
+</div>
+
+<div class="note-panel" id="notePanel">
+  <p class="placeholder">↑ エリアをタップしてください。「なぜそこに置くのか」の設計根拠が表示されます。</p>
+</div>
+
+<table class="domtable">
+  <tr><th>ドメイン</th><th>持ち主 (選ぶもの)</th><th>宣言 (#)</th><th>住所 (v9)</th></tr>
+  <tr><td>ワーク</td><td>掴まれる物</td><td>質量・重心 (#49)</td><td>⑤ ワークのパネル</td></tr>
+  <tr><td>ハンド</td><td>ロボットの tcp</td><td>種別・形 (#53)、保持力 (#64)</td><td>⑤ tcp のパネル</td></tr>
+  <tr><td>把持 (関係)</td><td>ワーク × ハンド</td><td>把持仕様 (#61)、引き上げ (#69)</td><td>② 意味側の関係行 → ⑤</td></tr>
+  <tr><td>ビジョン</td><td>カメラ (v9 で実体化)</td><td>見えるか (#56)</td><td>⑤ カメラのパネル</td></tr>
+  <tr><td>アーム</td><td>ロボット</td><td>リーチ包絡 (#66)</td><td>⑤ ロボットのパネル</td></tr>
+  <tr><td>ユーザ (主張)</td><td><b>★ 保全者</b> (エンドユーザ・優先) + 設計側の各担当</td><td>重み (#58) — 行列の列。答え (#51 #54 #55 #62 #65) は右隣</td><td>⑥ 場の行列 (1 枚)</td></tr>
+</table>
+
+<div class="tension">
+  <b>⚠ v10 に残した引っかかり</b><br>
+  <b>保全者は、設計しているあいだ、たいていその場にいません。</b>セルは設計・立ち上げを経てから保全者に渡ります。
+  いちばん重要で外せない重みの持ち主が、重みを決める時期に不在なのです。<br>
+  [保全者が不在] を押すと、行列の保全者の行が空になります。このとき — <b>設計側の誰かが代わりに書く</b>のか
+  (それは「既定値で埋める」と同じ形で、原則 #31 が禁じている)、<b>保全者の行が空のまま問うことを許す</b>のか
+  (答えは「保全者の基準ではない答え」になる)、それとも<b>空なら問えない</b>のか。
+  どれを選んでも、保全者が後から来たとき、それまでの答えをどう扱うかが一緒に決まります。
+</div>
+
+<script>
+const notes = {
+  "1": {
+    title: "ヘッダ:集約は 1 列のまま — 重みの衝突も ≈ に数える",
+    body: "v10 で重みが主張になったので、重みの順位の逆転も <b>≈ 衝突</b> の 1 件として数える。v9 で足した「◎ 把持」の独立した集約は、答え(候補数)の表示だけに縮んだ。<br>集約=常設・展開=呼び出し、は v8 と同じ規則。"
+  },
+  "2": {
+    title: "左:意味側に「関係」の節 — 把持は持ち主が 2 つあるので行を持つ",
+    body: "把持仕様は「どの手で、どの面から」— ワークだけの事実でも手だけの事実でもない。<b>持ち主が 2 つある事実を、どちらか片方のパネルに置くと、もう片方から見えなくなる</b>(現行はスキーマ上ワークの欄 <code>graspFeature</code> に住む)。だから関係そのものを行にする — ER 図の連関エンティティ、ROS MoveIt の <code>moveit_msgs/Grasp</code> が物体とも手とも別のメッセージなのと同じ理由。<br><b>副産物(DEF-035):</b> 関係が行を持てば、片方の実体が消えた関係は<b>壊れた行 ⚠</b>として見える。現行は文書に宣言があるのにシーンに実体が無い把持が黙って落ちていた(原則 #31 — 在るものを辿る表示は、無いものを出さない)。<br>幾何側には 📷 Camera が<b>新しい行</b>として立つ。Origin の行は物体の一部として畳む(現行は 11 実体が 22 行になり名前が切れていた)。"
+  },
+  "3": {
+    title: "中央:3D はそれぞれの宣言を「確かめる絵」を持つ",
+    body: "原則 #33 の 4 つ目 — 語が実物のどこを指すかを確かめる手段を、語と一緒に設計する。<br>・把持を選ぶ → ワークと tcp が<b>同時に</b>関係色で光り、<b>進入</b>(空手)と<b>引き上げ</b>(W1 携行)の 2 本の矢印が出る。<br>・カメラを選ぶ → 視錐台が濃くなる(「見えるか」を目で確かめる)。<br>・候補を選ぶ → 腕のゴースト(現行の arm preview)。<br>実写 / 軽量の<b>トグルは撤去</b>(取り消し線)。実写が読めない日は自動で軽量へ落ち、落ちたことはアームのパネルが言う — 入口ではなく状態として扱う。"
+  },
+  "4": {
+    title: "KPI HUD:v8 から変更なし",
+    body: "シーンスコープの検証は選択に依存させない。このテンプレは受け入れ基準 0 件なので「検証項目なし → 基準を定義する」(正当な 0 は宣言させ、出口を名指し — 原則 #31)。"
+  },
+  "5": {
+    title: "右:選んだ実体の事実だけが出る — 6 ドメインの住所",
+    body: "<b>v9 最大の移動。</b>現行は Robot を選ぶと、ワークの質量・カメラ・重み・把持仕様まで 1 枚のパネルに並ぶ(主語でない物の事実が主語の下にいる)。v9 では<b>パネルの中身 = 選んだ実体が持ち主である宣言</b>だけ。上の表の 6 行がその全数。<br>ドメインの切れ目は勝手に作ったものではない:ワーク・ハンドはスキーマで既に分かれていて(<code>mass</code> はワークの欄、<code>hand</code> は tcp の欄)、ビジョン・アームは Context DSL の discipline(<code>vision</code> / <code>robot</code>)と同じ線。<b>語彙は在り、無いのは線だけ</b>(原則 #33)。<br>パネル間は <b>▸ リンク</b>で渡る(把持 → ワーク / 手、ワーク → 把持 1 件)。Unity の Inspector が参照フィールドから参照先へ飛べるのと同じ形。<br>実体ごとに<b>宣言</b>の節があり、未宣言は橙の点線枠で「未宣言」と言う(既定値で埋めない — ADR-120)。"
+  },
+  "6": {
+    title: "場:1 枚に戻した — 重みは行列の列、保全者は最上段の行",
+    body: "<b>重みも主張</b>(当事者判断)。主張なら、食い違いは 1 人の視野の中には無く、集まる場所が要る — v8 で場を作ったのと同じ理由なので、別の面を立てずに<b>同じ行列の列</b>にした。v9 のタブ 2 枚は畳んだ。<br><b>衝突の定義が列の種類で違う。</b>区間の列は「共通部分が空」、重みの列は「<b>保全者と順位が逆</b>」。数値の小さな違い(0.3 と 0.4)は好みの幅で、順位が逆なら「何を守るセルか」が違う。<br><b>保全者(エンドユーザ)を行に足した。</b>v8〜v9 の行は設計側の 3 人だけで、セルを受け取って毎日使う人がいなかった。Context DSL の actor role には既に <code>maintainer</code> が在る — 無かったのは行列の行だけ(原則 #33)。<br><b>優先は語で持つ。</b>「外してはいけない」を保全者の重みを 2 倍にする等の<b>数値</b>で表すと、他の人の数値と混ざって消せる。人どうしの関係なので、行の印 ★優先 として持ち、最上段に固定する(#15 Fixed Slots)。問うボタンの名前も「保全者の重みで問う」— 誰の基準の答えかをボタンが言う。<br>答えは行列の右隣(寿命は違うが、その基準で問うた結果としてしか読めない)。"
+  },
+  "7": {
+    title: "下:ヒント — 22px、場が開いても動かない",
+    body: "#15 Fixed Slots。場はこの上に開く。"
+  },
+  "8": {
+    title: "ギズモ:投影トグルだけが残る",
+    body: "v8 と同じく向きの唯一の入口 + 投影方式。v9 で <b>REAL トグルを撤去</b>した。現行(ADR-149)がトグルを置いた理由は 2 つ — 読み込み失敗時に戻す手段と、帯域を節約したい人の選択。前者はフォールバック + 失敗の提示で足り、後者は常設の入口 1 個に見合わないと判断した(当事者判断。ADR-149 の改訂が要る)。<br>近接の原則で言えば、ビューにだけ効く操作はビューに浮かべる — 実写か軽量かは<b>ロボットの描き方</b>なので、そもそも置くならアームのパネルだった。"
+  }
+};
+const panel = document.getElementById("notePanel");
+let activeZone = null;
+document.querySelectorAll("[data-note]").forEach(el => {
+  el.addEventListener("click", e => {
+    e.stopPropagation();
+    const id = el.dataset.note;
+    if (!id || !notes[id]) return;
+    if (activeZone) activeZone.classList.remove("active");
+    if (el.classList.contains("zone")) { el.classList.add("active"); activeZone = el; }
+    panel.innerHTML = '<div class="np-title"><span class="np-num">' + id + '</span>' + notes[id].title + '</div><p>' + notes[id].body + '</p>';
+  });
+});
+
+// ---- 選択モデル(唯一の真実):'grasp' | 'work1' | 'tcp' | 'camera' | 'robot' | 'orphan' ----
+const LABEL = { grasp:"把持 の詳細(関係)", work1:"Workpiece 1 の詳細", tcp:"tcp の詳細(ハンド)",
+  camera:"Camera の詳細(ビジョン)", robot:"Robot の詳細(アーム)", orphan:"把持 の詳細(壊れた関係)" };
+let sel = "grasp";
+const $ = id => document.getElementById(id);
+function applySelection(){
+  Object.keys(LABEL).forEach(k => { const p = $("rp-" + k); if (p) p.classList.toggle("on", k === sel); });
+  $("rightLabel").textContent = LABEL[sel];
+  document.querySelectorAll(".lf [data-sel]").forEach(r => r.classList.toggle("focused", r.dataset.sel === sel));
+  const isG = sel === "grasp";
+  $("oWork1").className = "obj" + (isG ? " relfocus" : sel === "work1" ? " focused" : "");
+  $("oTcp").className   = "obj" + (isG ? " relfocus" : sel === "tcp" ? " focused" : "");
+  $("oRobot").className = "obj" + (sel === "robot" ? " focused" : "");
+  $("oCam").className   = "obj" + (sel === "camera" ? " focused" : "");
+  $("frus").classList.toggle("on", sel === "camera");
+  $("aApp").classList.toggle("on", isG); $("aLift").classList.toggle("on", isG);
+}
+document.querySelectorAll("[data-sel]").forEach(el => {
+  el.addEventListener("click", e => { e.stopPropagation(); sel = el.dataset.sel; applySelection(); });
+});
+
+// ---- 左 幾何/意味 ----
+function setPane(sem){
+  $("tGeo").classList.toggle("on", !sem); $("tSem").classList.toggle("on", sem);
+  $("paneGeo").classList.toggle("on", !sem); $("paneSem").classList.toggle("on", sem);
+}
+$("tGeo").addEventListener("click", e => { e.stopPropagation(); setPane(false); });
+$("tSem").addEventListener("click", e => { e.stopPropagation(); setPane(true); });
+
+// ---- ハンド種別:吸着のときだけ保持力の欄が出る ----
+$("handSeg").addEventListener("click", e => {
+  const b = e.target.closest("button"); if (!b) return; e.stopPropagation();
+  [...$("handSeg").children].forEach(x => x.classList.toggle("on", x === b));
+  $("holdRow").style.display = b.dataset.k === "cup" ? "flex" : "none";
+});
+
+// ---- 場 ----
+const frame = $("frame");
+function setBa(open){ frame.classList.toggle("ba-open", open); }
+$("openBa").addEventListener("click", e => { e.stopPropagation(); setBa(!frame.classList.contains("ba-open")); });
+$("closeBa").addEventListener("click", e => { e.stopPropagation(); setBa(false); });
+$("askBtn").addEventListener("click", e => { e.stopPropagation(); setBa(true); });
+// ---- 保全者の不在(基数 0)— 答えはまだ決めていない(v10 の引っかかり) ----
+let absent = false;
+const MAINT = ["0.2","0.3","0.1","0.4"];
+$("absentBtn").addEventListener("click", e => {
+  e.stopPropagation(); absent = !absent;
+  const row = $("rowMaint"); row.classList.toggle("absent", absent);
+  [...row.querySelectorAll("td.w")].forEach((td, i) => td.textContent = absent ? "?" : MAINT[i]);
+  row.querySelector(".pri").textContent = absent ? "不在 — 誰が書く?" : "優先 — 外せない";
+  $("absentBtn").textContent = absent ? "保全者が居る" : "保全者が不在";
+  $("runBtn").textContent = absent ? "◎ 誰の重みで問う?" : "◎ 保全者の重みで問う";
+  $("hdConf").textContent = absent ? "≈ ? 衝突" : "≈ 1 衝突";
+  document.querySelectorAll("#mx td.w").forEach(td => {
+    if (td.dataset.x === undefined) td.dataset.x = td.classList.contains("x") ? "1" : "0";
+    td.classList.toggle("x", !absent && td.dataset.x === "1");
+  });
+  $("gapW").innerHTML = absent
+    ? '<span class="lead" style="color:#92400e;">保全者の行が空</span>順位の衝突は<b>保全者との比較</b>で定義したので、保全者がいないと<b>衝突かどうかも決まらない</b>。<br><span style="color:#6b7280;">ここで 0.25 ずつ等分して埋めれば緑が出る — それが一番危ない形(原則 #31)。</span>'
+    : '<span class="lead" style="color:#b91c1c;">≈ 重みの順位が保全者と逆</span>robot_eng は <b>リーチ &gt; 保持</b>、保全者は <b>保持 &gt; リーチ</b>。<br><span style="color:#6b7280;">数値の差ではなく<b>順位の逆転</b>を衝突と呼ぶ。</span><div style="margin-top:4px;"><button class="wf-btn" style="font-size:9px;">議題にする</button></div>';
+});
+
+// ---- 答え:候補 → 相の判定 + 腕のゴースト ----
+const PH = ["transit","approach","close","lift","transport","place"];
+const RESULT = {
+  1: { v:["ok","ok","ok","ok","ok","un"], note:"place は配置先が未宣言なので判定していない(0 点ではなく「測っていない」— ADR-120)。" },
+  2: { v:["ok","ok","ok","ng","un","un"], note:"lift で <b>W1 が Supply bin の壁に当たる</b>。進入では当たらない — 携行物が増えたので当事者が変わった。lift で棄却されたので以降の相は判定しない。" },
+  3: { v:["ok","ng","un","un","un","un"], note:"approach で手が W2 に当たる(空手でも当たる)。" }
+};
+function showCand(c){
+  document.querySelectorAll(".cand").forEach(x => x.classList.toggle("on", x.dataset.c === String(c)));
+  const r = RESULT[c];
+  $("phLead").textContent = "#" + c + " の動作の相";
+  $("phases").innerHTML = PH.map((p, i) => {
+    const held = i >= 3 && i <= 4 ? " held" : "";
+    const mark = r.v[i] === "ok" ? "✓" : r.v[i] === "ng" ? "✕" : "—";
+    return '<span class="ph ' + r.v[i] + held + '">' + p + " " + mark + "</span>";
+  }).join("");
+  $("phNote").innerHTML = r.note;
+  $("oGhost").classList.add("on"); $("oGhost").textContent = "腕 #" + c;
+}
+document.querySelectorAll(".cand").forEach(el => el.addEventListener("click", e => { e.stopPropagation(); showCand(+el.dataset.c); }));
+
+setBa(true); showCand(1); applySelection();
+</script>
+</body>
+</html>

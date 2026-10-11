@@ -1,0 +1,69 @@
+GOALS adr165_criteria_are_heard_in_full_before_design
+
+goal EveryEndUsersCriteriaAreHeardAndAgreedBeforeDesign
+uuid 7de39dd9-aa35-4c18-a864-2fc21b686523
+summary "設計が始まる時点で、すべてのエンドユーザの、すべての要素の期待値と重みが文書にあり、全員が合意している。合意の後に線が動いたなら、誰が・何を見て・誰の承認で動かしたかが残っている"
+state UnderReview
+labels adr-165, adr-063, adr-104, adr-146, ia-redesign, principle-31, principle-33, principle-29, proposed, term-l-hidden, change-declaration
+artifacts
+- "docs/adr/ADR-165-criteria-are-heard-in-full-before-design-and-the-agreed-line-moves-only-by-proposal.md"
+- "docs/ia-redesign/criteria-charamake-flow-v4.html"
+
+    context Adr165Scope
+    uuid be95b5b1-5ae1-45b7-b328-92e53b9f9f7f
+    summary "ADR-165 (Proposed 2026-10-11、IA 再設計 Phase 8): 職能と立場を分け、エンドユーザ 1..N (D1)、価値木は QCD + S でどの要素も期待値と重みの同じ形 (D2)、キャラメイク型の聞き取りフロー (D3)、見た後の変更を履歴に残す (D4)、全員の合意で v1、以後の線の変更は他のエンドユーザ全員の承認を要する提案 (D5)、関心と差し出すものは core/ が返し持ち主が保証する (D6)"
+
+    context RequirementCameFromTheOwner
+    uuid bcde7e9b-ecce-4994-ba6b-66c1f83cb112
+    summary "当事者の言葉 (2026-10-10〜11): 「このアプリの重要な使命は、設計する前にエンドユーザにすべての重みを聞き切ること」「ゲームのキャラメイク的にやってみてどうなりそうか見せてユーザに選択させる」「しきい値がクライテリア — クライテリアって期待値」「安全はあのとき削りましたよね? と言えるように」「最初に合意したラインから変更の場合は必ず他のユーザの承認は必要」「インジケータの値を計算するためのコスト関数は、アイデア」「式と重み自体はそのインジケータを持つ人が保証する」"
+
+    context BusinessTreeAttachPoint
+    uuid d8a3be00-6985-4467-8bf8-99b44430554b
+    summary "事業木へ接続 (2026-10-11, ADR-153): profit-growth.gsn の goal CoupledSpecsAreDeclaredInOnePlace (L_hidden) の下に solution Adr165Tree として吊る。設計の前に全員の全要素を聞き切れば、他の仕様を固めた後に判定基準の依存が見つかるループが減る。副次的に、キャラメイク型の聞き取りは p_reach (インテーク) にも寄与する"
+
+    justification WhyNotAskDuringDesign
+    uuid 456bd007-2421-4d36-857d-76473a39320d
+    summary "却下案 B (重みは設計中に必要になったら聞く) への反証: 現場で言われない安全は発言を拾う聞き方では行を持たず、永久に聞かれない (原則 #31)。後から依存が見つかりループが増える"
+
+    justification WhyNotSoloChangesAfterAgreement
+    uuid 91f9f64c-d371-47ce-a695-cd15c3bfbf6c
+    summary "却下案 C (合意後の変更は本人だけで通す) への反証: 線はゼロサムで、マージンが十分なとき以外は別の誰かの線から取る。相手が知らないうちに線が下がれば、履歴が残っても合意ではない"
+
+    justification WhyNotComputeTheIndicatorInTheFront
+    uuid 6f73c022-beb2-4def-8900-50e75d54f7c2
+    summary "却下案 D (関心の値を front で重みから計算する) への反証: 計算式はアイデアで、front に置けば第二のコスト関数になる (CLAUDE.md §AI 向けガード 軸 1)。信頼は式の公開ではなく持ち主の保証から来る"
+
+    assumption ChildLeavesAreDraft
+    uuid 2d16be2a-e716-4e86-8d1a-85a1cb0ec863
+    summary "反証されうる前提: 価値木の下の段のうち『落とさない (保持の余裕)』『止めたら止まる (停止距離)』は Claude が置いた案で、当事者の確認を待つ。現場の言い方と違えば、語を差し替える (構造は変えない)"
+
+    strategy ByCountingBlanksAgreeingAndProposing
+    uuid e31a9b3d-2b32-4ad2-83c5-32d8dbe3777f
+    summary "必要な欄を列挙して空欄を数え (0 まで設計へ進めない)、全員の合意で線を固定し、以後は ADR-104 の提案 → 承認でだけ線を動かす。値の計算 (関心・差し出すもの・案) は core/ に置く"
+
+        goal UnaskedCriteriaAreCountedUntilZero
+        uuid 5cd5dd9d-23d8-4303-aee9-f2dc62678da0
+        summary "エンドユーザ × (QCDS の比重 + 各要素の期待値と重み) の空欄の個数が数えられ、0 で全員が合意するまで設計へ進めない。進めない理由は名指しで出る"
+        labels support-exploring
+
+            assumption BlankCensusWillSettleIt
+            uuid 3b909d59-1cec-4d93-b449-445030595ea5
+            summary "証拠予定: 実装 PR で、空欄の個数を数える純粋関数のテスト (安全を答えなかった人がいると 0 にならない、N=2 で片方だけ答えても 0 にならない) を置く。満期=PATH:src/context/CriteriaElicitation.test.js で決着する"
+
+        goal TheAgreedLineMovesOnlyByApprovedProposal
+        uuid 0af88cd6-c44c-4aa4-b408-09b1235cdae3
+        summary "合意済みの線は、他のエンドユーザ全員の承認でしか動かない (緩め・締めとも)。マージン外の提案は承認者ごとに差し出すものを読むまで承認できない。動いた線には誰が・何を見て・誰の承認でが残る"
+        labels support-exploring
+
+            assumption LineProposalTestWillSettleIt
+            uuid 0c2fe4c7-1b7b-4f76-982f-aee612000f07
+            summary "証拠予定: 実装 PR で、線の状態機械 (聞き取り中 / 合意済み / 変更提案中) の遷移表テストと、承認者の欠けた承認・読まずに押した承認が拒否されるテストを置く。満期=PATH:src/context/CriteriaLine.test.js で決着する"
+
+        goal IndicatorValuesComeOnlyFromCore
+        uuid b32930ce-f76c-4884-82a7-fe0144964c84
+        summary "関心インジケータと差し出すものの値は core/ が返し、front はそれを描くだけで重みからも計算しない。response 契約の版が上がっている"
+        labels support-exploring
+
+            assumption IndicatorContractWillSettleIt
+            uuid 1ac45a56-bbd3-4a9a-82c1-b201c13cc910
+            summary "証拠予定: 実装 PR で response スキーマに関心と差し出すものを足して contractVersion を上げ、src/ に関心を計算する関数が 0 個であることを census で数える。満期=ADR-165"
