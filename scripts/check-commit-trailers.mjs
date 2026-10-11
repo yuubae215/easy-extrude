@@ -90,8 +90,10 @@ import { execFileSync } from 'node:child_process'
  * 同じ**規約の衝突**。フックが刻んだ `Model-Effort` / `Task-Class` を、実行環境の「push する
  * コミットにモデル ID を入れない」に従って両方外した。**衝突は 3 回目** — 「次の手」(モデル ID を
  * 含まない書式を認める検査の改訂) はもう満期と読むべきで、PR 本文でそう名指しした。
+ *
+ * 2026-10-11 (同日): 17 → 18。同じブランチの 2 本目 (ADR-164 D2 の案 B の記録) も同じ衝突。
  */
-export const MISSING_BASELINE = 17
+export const MISSING_BASELINE = 18
 
 /** Q3/Q4 は「在ってはならない」ので予算はゼロ。 */
 export const DEGRADED_BASELINE = 0
