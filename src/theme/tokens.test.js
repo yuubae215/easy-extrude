@@ -268,11 +268,12 @@ const ACCENT_NON_PAINTERS = [
   // Both are properties of the DECLARATION being written, not of an entity in
   // the scene — nothing in the viewport becomes selected by pressing them, and
   // the object they describe is already selected either way.
-  { key: 'src/components/Grasp/GraspSearchPanel.jsx', why: 'the declared hand kind and the declared grasp faces — a declaration is not an entity' },
+  // ADR-164 D1 moved the declaration chips out of GraspSearchPanel (which no
+  // longer reads the accent) into one shared module; the meaning moved with them.
+  { key: 'src/components/Grasp/GraspFields.jsx',     why: 'the declared hand kind and the declared grasp faces (FaceChip, shared by every owner panel since ADR-164 D1) — a declaration is not an entity' },
   { key: 'src/components/Onboarding/TourCard.jsx',  why: 'the onboarding step you are on (ADR-063 tour), paired with factTone for done steps' },
   { key: 'src/view/ChromeMath.js',                  why: 'the breathing glow that marks an affordance asking for attention (ADR-065/080) — an invitation, not a selection' },
   { key: 'src/components/ProjectionToggle/ProjectionToggle.jsx', why: 'the active PROJECTION (ADR-103) — a view setting, the same "what you are operating in" meaning as ModeDropdown, not an entity' },
-  { key: 'src/components/RobotAppearanceToggle/RobotAppearanceToggle.jsx', why: 'the active robot RENDER STYLE (ADR-149) — a view setting parked next to ProjectionToggle, the same "what you are operating in" meaning, not an entity' },
 ]
 
 /**
@@ -378,7 +379,11 @@ const DECLARED_VOCABULARIES = {
 // ProjectionToggle's own `#4a4a4a`/`#3a3a3a` border literals verbatim (same
 // hover/idle border meaning, same file-local styling — not new theme intent),
 // so distinct hues do not move, only occurrences (+2).
-const UNDECLARED_OCCURRENCE_BASELINE = 775
+// 2026-10-11: 775 → 774. ADR-164 D5 removed `RobotAppearanceToggle.jsx` (−2:
+// its copied `#4a4a4a`/`#3a3a3a`); `RobotMeshLoadingNotice.jsx` keeps the idle
+// `#3a3a3a` border of the pill it replaces (+1). Moving the grasp editors into
+// owner panels moved literals between files without changing the count.
+const UNDECLARED_OCCURRENCE_BASELINE = 774
 const UNDECLARED_DISTINCT_BASELINE   = 203
 
 const HEX_LITERAL = /#[0-9a-fA-F]{6}\b|\b0x[0-9a-fA-F]{6}\b/g

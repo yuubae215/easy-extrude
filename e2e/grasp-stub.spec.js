@@ -77,18 +77,34 @@ async function reachGraspPanel(page, scenario) {
 
 /** Pick the first real option when the layout offers several graspable objects. */
 /**
- * Take the robot's hand back to UNDECLARED through the Grasped card (ADR-152 D3).
- * A new robot is born with a declared default hand (a 60 mm jaw), so the grasp
- * gate is ON by default — and a 60 mm jaw honestly cannot close on the 1 m
- * default cube. Scenarios whose premise is "no gripper declared" (objective
- * presentation, arm preview) state that premise here instead of relying on the
- * old default, which was the panel's form switched off.
+ * Take the robot's hand back to UNDECLARED on the tcp's own panel (ADR-152 D3 —
+ * the hand lives on the tcp; ADR-164 D1 — so its editor does too, not in the
+ * grasp panel). A new robot is born with a declared default hand (a 60 mm jaw),
+ * so the grasp gate is ON by default — and a 60 mm jaw honestly cannot close on
+ * the 1 m default cube. Scenarios whose premise is "no gripper declared"
+ * (objective presentation, arm preview) state that premise here instead of
+ * relying on the old default, which was the panel's form switched off.
+ *
+ * The grasp panel stays open across the selection change (it is a live search),
+ * so the caller can Run right after.
  */
 async function undeclareHand(page) {
-  const toggle = page.getByText('Grasped', { exact: true }).locator('..').getByRole('checkbox')
+  // The check names where the hand lives and links there (ADR-164 D1).
+  await page.getByRole('button', { name: /^▸ .* tcp$/ }).click()
+  const toggle = page.getByRole('checkbox', { name: 'declare the hand on this tcp' })
   await expect(toggle).toBeChecked()
   await toggle.uncheck()
-  await expect(page.getByText(/no hand declared on this robot's tcp/)).toBeVisible()
+  await expect(page.getByText(/no hand declared — graspability passes everything/)).toBeVisible()
+  await expect(page.getByText(/hand: not declared/)).toBeVisible()   // the check reads it back
+}
+
+/**
+ * Follow the grasp panel's link to the selected object's own panel, where its
+ * mass is declared (ADR-164 D1). Returns the mass editor there.
+ */
+async function openObjectMassEditor(page) {
+  await page.getByTitle(/^edit on .*'s panel$/).first().click()
+  return page.getByTestId('mass-editor')
 }
 
 async function pickAnObjectIfAsked(page) {
@@ -521,6 +537,7 @@ test('S15 — サンプルのワーク 1 (ビンの床に留まる) にその場
   // 取り込み (ADR-159) へ回り、ビンの床へ fastened のワークは毎回 DEF-060 で拒否された。
   // いまテンプレは文書として開くので、宣言は普通の doc edit — 警告が出ないことを焼く。
   const errors = []
+  page.on('console', m => { if (m.text().startsWith('DBG')) console.log(m.text().slice(0, 700)) })
   page.on('pageerror', (e) => errors.push(e.message))
   await page.goto('/easy-extrude/?graspStub=solve')
   await page.getByText('Single-arm pick & place cell', { exact: true }).click({ timeout: 20_000 })
@@ -532,7 +549,10 @@ test('S15 — サンプルのワーク 1 (ビンの床に留まる) にその場
   await expect(page.getByRole('button', { name: /Run grasp search/ })).toBeVisible({ timeout: 30_000 })
   await page.locator('select').filter({ hasText: /pick one of/ }).first().selectOption('work_1')
 
-  const editor = page.getByTestId('mass-editor')
+  // The mass is the object's own declaration — reached from the check by its link
+  // and edited on the object's panel (ADR-164 D1), never in the robot's.
+  await expect(page.getByTestId('mass-editor')).toHaveCount(0)
+  const editor = await openObjectMassEditor(page)
   await expect(editor.getByText(/not declared/).first()).toBeVisible()
   await editor.locator('input[type="number"]').first().fill('0.12')
   await editor.getByRole('button', { name: 'declare mass' }).click()
@@ -573,7 +593,7 @@ test('S16 — 画面で留めた箱 2 個の片方へ質量を宣言すると、
   await expect(page.getByRole('button', { name: /Run grasp search/ })).toBeVisible({ timeout: 30_000 })
   await pickAnObjectIfAsked(page)
 
-  const editor = page.getByTestId('mass-editor')
+  const editor = await openObjectMassEditor(page)
   await expect(editor.getByText(/not declared/).first()).toBeVisible()
   await editor.locator('input[type="number"]').first().fill('1.5')
   await editor.getByRole('button', { name: 'declare mass' }).click()

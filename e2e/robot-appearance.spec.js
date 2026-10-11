@@ -47,28 +47,40 @@ test('boot declares the realistic UR5e mesh — the first-look default, with 0 a
   // Cardinality 0 is legitimate and the declaration still exists: this is the
   // case a fan-out over live stages cannot express at all (原則 #31).
   // Default flipped skeleton → realistic in ADR-149 so the first look shows
-  // the real UR5e mesh with no user action; `skeleton` is now the explicit
-  // lightweight opt-out reached via `RobotAppearanceToggle`.
+  // the real UR5e mesh with no user action. Since ADR-164 D5 `skeleton` is
+  // reached on screen only as the automatic fallback (the toggle is gone).
   expect(a.declared).toBe('realistic')
   expect(Object.keys(a.drawn)).toHaveLength(0)
 })
 
-test('the RobotAppearanceToggle switches realistic ⇄ skeleton, round trip (ADR-149)', async ({ page }) => {
+test('no realistic / lightweight toggle on screen — the skeleton is only a fallback (ADR-164 D5)', async ({ page }) => {
   await boot(page)
   await addRobot(page)
   await expect.poll(async () => (await drawnStyles(page)).length).toBe(1)
-  // Default is realistic (ADR-149), so the toggle boots showing "REAL".
-  await expect(page.getByText('REAL', { exact: true })).toBeVisible()
+  await expect.poll(async () => (await drawnStyles(page)).join(), { timeout: 30_000 }).toBe('realistic')
+  // The ADR-149 toggle's two labels: neither is a control any more.
+  await expect(page.getByText('REAL', { exact: true })).toHaveCount(0)
+  await expect(page.getByText('LITE', { exact: true })).toHaveCount(0)
+  // The robot's own panel states what is drawn instead.
+  await page.locator('[draggable]').filter({ hasText: 'robot_base' }).first().click()
+  await page.keyboard.press('n')
+  await expect(page.getByTestId('robot-appearance-status')).toHaveText('appearance: realistic mesh')
+})
 
-  await page.getByText('REAL', { exact: true }).click()
-  await expect.poll(async () => (await appearance(page)).declared, { timeout: 30_000 }).toBe('skeleton')
-  expect(await drawnStyles(page)).toEqual(['skeleton'])
-  await expect(page.getByText('LITE', { exact: true })).toBeVisible()
-
-  await page.getByText('LITE', { exact: true }).click()
-  await expect.poll(async () => (await appearance(page)).declared, { timeout: 30_000 }).toBe('realistic')
-  expect(await drawnStyles(page)).toEqual(['realistic'])
-  await expect(page.getByText('REAL', { exact: true })).toBeVisible()
+test('a mesh that cannot load falls back to the skeleton by itself, and the robot panel says so (ADR-164 D5)', async ({ page }) => {
+  // Fail the realistic URDF before the boot-time prefetch can fetch it.
+  await page.route('**/ur5e.urdf', route => route.abort())
+  const errors = await boot(page)
+  await addRobot(page)
+  await expect.poll(async () => (await drawnStyles(page)).length).toBe(1)
+  // The automatic fallback (ADR-150 D3) — not a click — put the skeleton there.
+  await expect.poll(async () => (await drawnStyles(page)).join(), { timeout: 30_000 }).toBe('skeleton')
+  await page.locator('[draggable]').filter({ hasText: 'robot_base' }).first().click()
+  await page.keyboard.press('n')
+  // …and it is still said after the toast is gone (原則 #11).
+  await expect(page.getByTestId('robot-appearance-status'))
+    .toHaveText(/lightweight skeleton — the realistic mesh could not be loaded/)
+  expect(errors).toEqual([])
 })
 
 test('switching styles moves the arm AND the declaration together', async ({ page }) => {

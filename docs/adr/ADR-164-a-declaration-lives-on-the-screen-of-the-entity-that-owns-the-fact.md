@@ -1,11 +1,11 @@
 # 164. 宣言は、その事実を持つ実体の画面に住む — 把持まわりを 6 つのドメインへ配り直す
 
-- Status: Proposed
+- Status: Accepted (2026-10-11 — 当事者が俯瞰で合意。段階実装: D1・D5 実装済み、D2 → D4 → D3 は続く PR — `docs/ia-redesign/03-implementation-order.md` Phase 7)
 - Date: 2026-10-11
 - Deciders: yuubae215, Claude
 - 段: IA 再設計 Phase 7 (`docs/ia-redesign/03-implementation-order.md`)
 - Retires: GREP:src/components/Grasp/GraspSearchPanel.jsx::function\sMassEditor · GREP:src/components/Grasp/GraspSearchPanel.jsx::function\sHandEditor · PATH:src/components/RobotAppearanceToggle/RobotAppearanceToggle.jsx — 選択中のロボットのパネルに住んでいたワークとハンドの宣言欄と、実写 / 軽量の常設トグル。実装の PR で消える
-- Supersedes / Superseded by: なし (Accepted にする PR で ADR-149 を `Partially superseded by ADR-164` にする — 常設トグルの部分だけ。実写を既定にする部分はそのまま)
+- Supersedes / Superseded by: ADR-149 を部分的に supersede (常設トグルの部分だけ — トグルを撤去した PR1 で `Partially superseded by ADR-164` にした。実写を既定にする部分はそのまま)
 
 ## Context — Goal と力学 (§1.2 Goal)
 
@@ -158,6 +158,51 @@ ADR-149 がトグルを置いた理由 (a) 読み込み失敗時の戻り道 は
 | `docs/STATE_LEDGER.md` | §提案中の実体 にカメラの基数・把持の関係の基数の行 (本 ADR と同じコミット) |
 
 **触らない:** response 契約 (`*-response.schema.json`)、`core/` の判定。
+
+## 俯瞰で決まったこと (2026-10-11、実装の前に当事者と)
+
+実装の前の一拍俯瞰 (`/whiteboard`) で、本文のままでは言えない文が 2 つ見つかり、当事者が決めた。
+
+- **D4 の住所の改訂 — 引き上げは把持仕様の 1 つ 1 つではなく、把持の関係 (ワーク × ハンド) に 1 個。**
+  本文の「`graspFeature.specs[]` の各仕様の中へ」のままだと、(a) 今日正当な「仕様 0 個 + 引き上げ宣言あり」
+  (候補は `surfaceSamples` から作る) が言えなくなる — 基数 0 の住所が消える (原則 #31)。(b) 仕様ごとに違う
+  引き上げはワイヤに載らない — request の `target.lift` は 1 個で、`graspSpec` は閉じている
+  (`additionalProperties:false`)。関係に 1 個なら仕様 0 個でも住所があり、ワイヤは今の `target.lift` のまま。
+  進入と引き上げが「同じ把持の前後」であること (力学 2) はそのまま保たれる — 関係が把持である。
+- **D3 の基数 N — 探索に載るカメラはロボットと同じ picker で指す。** ワイヤの `camera` は 1 個なので、
+  シーンにカメラが N 台あるとき「どれのことか」の語が要る。1 台なら暗黙、N 台なら選ぶまで Run の gap、
+  0 台は見えるかを問わない (ADR-090 の robot picker と同じ形)。
+
+## 実装の記録
+
+### PR1 — D1 (ワーク・ハンド・アーム) と D5 (2026-10-11)
+
+- **住所の表**: `src/view/DeclarationOwnership.js` の `DECLARATION_OWNERS` (6 行 = 母集団)。編集欄は
+  `data-declaration="<key>"` を持ち、`src/components/NPanel/DeclarationOwnership.test.js` が「持ち主の
+  無い欄 / 住所違いの欄 / 欄の無い宣言」をそれぞれ 0 個と数える。まだ持ち主が画面に居ない 3 行
+  (把持 — D2、ビジョン — D3、ユーザ — ADR-165) は `movesWith` で名指しし、集合を ratchet で固定した。
+- **持ち主のパネル**: ワーク = `NPanel/declarations/WorkDeclarations.jsx` (質量・重心)、tcp =
+  `HandDeclarations.jsx` (種別・形・保持力)、ロボット = `ArmDeclarations.jsx` (リーチ包絡と描画の提示)。
+  Grasp パネルは宣言欄を失い、`OwnerDeclarationLinks` が状態を読んで ▸ で持ち主へ渡す (ADR-110 の
+  「主語の隣の検査」へ戻った)。共有の入力部品は `Grasp/GraspFields.jsx` へ切り出した (複製しない)。
+- **読み口**: `GraspController.workDeclarationsOf(sceneId)` / `handDeclarationsOf(frameId)` — 探索と同じ
+  1 回のシーン解決 (`_searchLayout`、ADR-163 の `refOf` を通す) から読む。**tcp は選んだ tcp のロボット**
+  を答える — 旧 Grasped カードは探索の主語のハンドを編集しており、ロボット B の tcp を選んでも A の
+  ハンドが出た。
+- **本文から動いた点 1 — リーチ包絡はロボットごと。** 本文は「アーム = ロボットのパネル」としか言って
+  いないが、包絡を store の 1 スロットにすると N 台のロボットが 1 つの宣言を共有し「どれのことか」が
+  言えない。`context.reachDeclarations[robotId]` とし、Run は探索の主語の行を読む。文書の住所はまだ無い
+  (React state → store へ移っただけ。DEF-033 と同じ問い)。
+- **本文から動いた点 2 — 表に出た既存欠陥: doc edit の再投影が選択を落としていた。** 宣言を Grasp
+  パネルで編集していた間は、そのパネルの投影を setter 自身の promise が読み直していたので見えなかった。
+  ワークのパネルへ移すと、質量を宣言した瞬間に active 実体が落ち、パネルが編集前の「not declared」を
+  出し続けた。`ContextService` が clear の前に `projectionReplacing` を出し、`AppController` が
+  `contextChanged` で選び直す — 同一性は id、なければ layout ref (`selectionAfterProjection`)。
+  CODE_CONTRACTS「A Re-projection Restores the Selection by Identity」/ PHILOSOPHY Yellow Card。
+- **D5**: `RobotAppearanceToggle` を削除。自動フォールバック (`adoptFailed`) は既に在ったので、足したのは
+  **落ちたことを言い続ける欄** (`uiStore.robotMeshFallbacks`、ロボットのパネルが読む) だけ。トグルが
+  兼ねていた ADR-150 D2 の LOADING… は、読み込み中だけ在る表示 `RobotMeshLoadingNotice` に残した
+  (操作ではないので固定スロットは要らない)。
 
 ## Lens notes
 

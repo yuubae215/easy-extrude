@@ -104,6 +104,7 @@ import { ROBOT_KINEMATICS, ROBOT_REACH_ENVELOPE, ROBOT_MODEL_LABEL } from '../vi
 import { SHIPPED_ROBOT_MODEL_ID }     from '../domain/robotModel.js'
 import { ContextService }             from '../service/ContextService.js'
 import { useUIStore }                 from '../store/uiStore.js'
+import { selectionAfterProjection } from '../domain/selectionAcrossProjection.js'
 import { renderableEndEffectorFrame } from '../view/GraspGhostMath.js'
 import { mPointToMM } from '../domain/worldUnits.js'
 import { SCREEN_CLAIM }               from '../view/ScreenClaim.js'
@@ -339,7 +340,12 @@ export class AppController {
       if (!obj || obj instanceof CoordinateFrame) this._invalidateRobotRoster()
     })
     // ADR-152 D3: a tcp's hand changed — the grasp panel's roster carries it.
-    this._service.on('tcpHandChanged', () => this._graspCtrl?.refreshRobots())
+    // ADR-164 D1: the hand is edited on the tcp's own N panel, so that panel
+    // re-reads too (the event, not the editor, owns the refresh — 原則 #32).
+    this._service.on('tcpHandChanged', () => {
+      this._graspCtrl?.refreshRobots()
+      this._updateNPanel()
+    })
     this._service.on('objectRenamed', (id, nm)  => {
       outlinerView?.setObjectName(id, nm)
       // A rename only changes a robot's LABEL now (identity is the entity id —
@@ -514,7 +520,25 @@ export class AppController {
     // so it re-derives on the document edge — not only after the panel's own
     // setter resolves. Without this, Ctrl+Z of a declaration left the panel
     // showing what the document no longer says (原則 #5 / ADR-159).
-    this._ctxService.on('contextChanged', () => this._graspCtrl?.refreshGraspTargets())
+    // ADR-164 D1: a declaration is edited on its owner's own N panel, and a doc
+    // edit re-projects the scene — which drops the selection even though the same
+    // ids come straight back. Without the re-select below, declaring an object's
+    // mass deselected it and left its panel showing the value from BEFORE the
+    // edit (a stale "not declared" — 原則 #11). The selection is captured on the
+    // event that drops it and restored when the document edge lands.
+    this._ctxService.on('projectionReplacing', () => {
+      this._selectionBeforeProjection = this._selMgr?.selection?.kind === 'entities'
+        ? this._selectionIdentity([...this._selMgr.ids], this._scene.activeId ?? null)
+        : null
+    })
+    this._ctxService.on('contextChanged', () => {
+      this._restoreSelectionAfterProjection()
+      this._graspCtrl?.refreshGraspTargets()
+      this._updateNPanel()
+    })
+    // A newly loaded document is not the same scene: ids it reuses are not the
+    // entities that were selected, so nothing is restored across it.
+    this._ctxService.on('contextLoaded', () => { this._selectionBeforeProjection = null })
 
     // ── Production Context-first overlay (ADR-050 Phase 2) ─────────────────
     // Persistent overlay coordinator (not a setMode FSM state) consuming the
@@ -885,25 +909,6 @@ export class AppController {
       this._uiView.setProjection(kind)
     })
 
-    // ── Robot appearance (realistic UR5e mesh / lightweight skeleton, ADR-149) ─
-    // `RobotStageSet.setRenderStyle()` is the one writer of the fact (ADR-148);
-    // this callback only mirrors it into the chrome. It writes the display
-    // copy OPTIMISTICALLY on click — same optimism `setRenderStyle` itself
-    // uses internally before awaiting the mesh fetch — and corrects it back to
-    // whatever `RobotStageSet` actually settled on if the load is rejected
-    // (every stage's fetch failed), surfacing the failure as a toast rather
-    // than leaving the button silently wrong (原則 #11).
-    uiView.onRobotAppearanceChange(style => {
-      this._uiView.setRobotAppearance(style)
-      this._sceneView.robotStages.setRenderStyle(style).catch(err => {
-        console.error(`AppController: could not switch robot appearance to "${style}".`, err)
-        this._uiView.showToast(
-          `Could not load the ${style} robot appearance — kept the previous one.`,
-          { type: 'error' })
-        this._uiView.setRobotAppearance(this._sceneView.robotStages.renderStyle)
-      })
-    })
-
     // ── Robot mesh loading (ADR-150 D3) ─────────────────────────────────────
     // A newly spawned arm stays hidden until the scene's declared style has
     // loaded (no skeleton flash). The set announces the load and any failure;
@@ -916,6 +921,11 @@ export class AppController {
         this._uiView.showToast(
           `Could not load the ${event.style} robot mesh — showing the lightweight skeleton instead.`,
           { type: 'error' })
+        // ADR-164 D5: the automatic fallback is the only way to the skeleton now
+        // (the toggle is gone), so the robot's panel keeps saying it happened —
+        // the toast above is gone in seconds.
+        const fallbacks = useUIStore.getState().robotMeshFallbacks
+        if (!fallbacks.includes(event.id)) this._uiView.setRobotMeshFallbacks([...fallbacks, event.id])
       }
     })
     this._uiView.setRobotAppearanceLoading(this._sceneView.robotStages.loading)
@@ -1013,12 +1023,18 @@ export class AppController {
       // Swaps every robot's drawn geometry between Universal Robots' own
       // visual meshes ('realistic', default — ADR-149) and the bundled
       // primitive skeleton ('skeleton', fetched lazily on the way back —
-      // RobotStage.setRenderStyle). Kept for debugging/e2e alongside the
-      // persistent `RobotAppearanceToggle` UI control (ADR-149), which drives
-      // the SAME writer through AppController.onRobotAppearanceChange.
+      // RobotStage.setRenderStyle). Debugging/e2e only: ADR-164 D5 removed the
+      // persistent UI toggle — the skeleton is reached on screen only as the
+      // automatic fallback when the mesh cannot load.
       // Rejects (rather than resolving either way) when the meshes could not
       // be loaded, so the caller can tell a switch from a kept-old-style.
-      setRobotAppearance: (style) => this._sceneView.robotStages.setRenderStyle(style),
+      setRobotAppearance: (style) => this._sceneView.robotStages.setRenderStyle(style).then(result => {
+        // A switch that landed is a declaration, not a fallback: the robot
+        // panel stops calling these arms "fell back" (ADR-164 D5).
+        this._uiView.setRobotAppearance(this._sceneView.robotStages.renderStyle)
+        this._uiView.setRobotMeshFallbacks([])
+        return result
+      }),
       /**
        * Read-only APPEARANCE snapshot (ADR-148) — what the scene DECLARES it
        * draws, and what each arm is actually heading for.
@@ -2531,6 +2547,55 @@ export class AppController {
   }
 
   _updateNPanel() { this._uiStateMgr.updateNPanel() }
+
+  /**
+   * Re-select what was selected before a document edit re-projected the scene
+   * (ADR-164 D1). Only entities that came back under the SAME id are restored —
+   * one the edit removed or re-created under a new id (ADR-159's adoption) is
+   * not guessed at. Through the public verb, so highlight and context follow.
+   */
+  _restoreSelectionAfterProjection() {
+    const kept = this._selectionBeforeProjection
+    this._selectionBeforeProjection = null
+    let idByRef = null
+    const next = selectionAfterProjection(kept, {
+      exists:      (id)  => !!this._scene.getObject(id),
+      idForDocRef: (ref) => this._ctxService.sceneIdForRef?.(ref) ?? null,
+      // The scene's own inverse reading — read once, only if a ref needs it.
+      idForSceneRef: (ref) => {
+        if (idByRef === null) {
+          let refOf = new Map()
+          try { refOf = this._service.decompileToLayoutDsl?.()?.refOf ?? new Map() } catch { /* inexpressible scene: no reading */ }
+          idByRef = new Map([...refOf].map(([id, r]) => [r, id]))
+        }
+        return idByRef.get(ref) ?? null
+      },
+    })
+    if (!next) return
+    // Always re-applied, even when the ids still sit in the set: the clear drops
+    // the ACTIVE entity (the N panel's subject) while the set can keep its ids.
+    this._selMgr.selectMany(next.ids, { activeId: next.activeId })
+  }
+
+  /**
+   * The selection as identities that survive a re-projection: each id with its
+   * layout ref — the document's when it has one, else the one the scene's own
+   * inverse reading gives it (the reading ADR-163's adoption names refs by).
+   * @param {string[]} ids
+   * @param {string|null} activeId
+   */
+  _selectionIdentity(ids, activeId) {
+    let sceneRefOf = null
+    const refOf = (id) => {
+      const declared = this._ctxService.refForSceneId?.(id) ?? null
+      if (declared) return declared
+      if (sceneRefOf === null) {
+        try { sceneRefOf = this._service.decompileToLayoutDsl?.()?.refOf ?? new Map() } catch { sceneRefOf = new Map() }
+      }
+      return sceneRefOf.get(id) ?? null
+    }
+    return { members: ids.map(id => ({ id, ref: refOf(id) })), activeId }
+  }
 
   /**
    * Scene-side housekeeping after ContextService adopts a document (ADR-050 §3.4).

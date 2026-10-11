@@ -883,20 +883,37 @@ reports the roster's cardinality honestly — `none` names the way out ("add one
 Robot"), `single` shows the implied robot read-only, `multi` is a `<select>` that starts UNSET
 ("— pick one of N —") so no arm is solved for by default (`onSelectRobot`); then a note that
 placement follows that robot's `base` / `tcp` CoordinateFrame entities — edited via the CF gizmo /
-N-panel, not a header input (ADR-084 §2) — + the **object card** under the grasp-location editor
-(ADR-121 / ADR-156: mass kg, centre of mass `not declared` / `assumed (centroid)` / measured x y z in the
-object frame mm, each a document declaration with a clear chip; under a suction hand it lists what
-suction hold still needs — "suction hold NOT MEASURED — needs …"; below it the **lift line** (ADR-157 D5:
-`lift out: straight up (+Z), 80 mm` / `not declared — the lift phase will not be judged` + the DSL snippet /
-the malformed reason)) + reach / clearance / stability /
-**hold** objective weights (the hold slot is fixed and disabled unless the hand is a cup)), **Grasped** (gripper: preset chips, max opening / finger
-clearance; a cup adds its **hold** bundle — force N + pad friction μ, declared together or not at all).
-A candidate's `suction_hold` bar at exactly 0 carries a **falls** tag (derived — ADR-156 D6). The Seen / Grasped cards have a `declare` toggle; off keeps the card slot and states
+N-panel, not a header input (ADR-084 §2) — + the **owner links** under the grasp-location editor
+(ADR-164 D1: `object mass: 0.12 kg ▸ Workpiece 1` / `hand: parallel jaw ▸ robot_base tcp` /
+`reach envelope: not declared (reach margin NOT MEASURED) ▸ robot_base` — each line READS a
+declaration's state and `▸` selects the entity that owns it; the editors are on that entity's own
+N panel, see below); below it the **lift line** (ADR-157 D5: `lift out: straight up (+Z), 80 mm` /
+`not declared — the lift phase will not be judged` + the DSL snippet / the malformed reason)) +
+reach / clearance / stability / **hold** objective weights (the hold slot is fixed and disabled
+unless the hand is a cup)). The Seen card has a `declare` toggle; off keeps the card slot and states
 the vacuously-true consequence (PHILOSOPHY #15/#11). Presets come from the pure
 `GraspDeclarationCatalog` (fork & tweak — the active chip is derived by value equality, editing
 forks to "custom"); each enabled card's gap list disables **Run** and prints its reasons — and the
 robot roster contributes to that same gap list (0 robots / N-with-no-pick), so Run is never
 enabled for a search that has no robot to solve for.
+**Declarations live on their owners' panels (ADR-164 D1).** The table `DECLARATION_OWNERS`
+(`src/view/DeclarationOwnership.js`) decides which N panel body carries which declaration; the census
+`src/components/NPanel/DeclarationOwnership.test.js` fails on an editor anywhere else.
+- **Object (Solid)** — `Declarations (object)`: mass kg, centre of mass `not declared` /
+  `assumed (centroid)` / measured x y z in the object frame mm, each a document declaration with a
+  clear chip; under a suction hand it lists what suction hold still needs ("suction hold NOT MEASURED —
+  needs …"). Absent on things a grasp cannot be for.
+- **Robot tcp** — `Declarations (hand)`: `declare the hand on this tcp`, kind (parallel jaw / suction),
+  preset chips, max opening / finger clearance or cup diameter / seal tilt; a cup adds its **hold**
+  bundle — force N + pad friction μ, declared together or not at all; the hand's shape. The tcp you
+  selected is the one edited (not the search subject's).
+- **Robot base** — `Declarations (arm)`: `declare reach envelope` (per robot; seeded from the URDF the
+  viewport draws, never re-seeded once edited; a different arm than the one on screen is stated), and
+  the **appearance statement** (ADR-164 D5): `realistic mesh` / `loading the realistic mesh…` /
+  `⚠ lightweight skeleton — the realistic mesh could not be loaded`. There is no realistic / lightweight
+  toggle any more; under `ProjectionToggle` a `LOADING…` notice exists only while the mesh loads.
+A doc edit re-projects the scene; the selection is restored by identity afterwards (id, else layout
+ref), so the owner's panel shows the value just declared.
 Below the cards: `topN` + the **Run** button (`onRunGraspSearch`, now carrying the optional
 `camera`/`gripper` declarations), a status line driven by the discriminated-union `status`
 (idle → compiling → solving → results / error, plus the **`no-robot`** gate that carries its own

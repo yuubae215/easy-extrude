@@ -1,6 +1,7 @@
 import { COLOR } from '../../theme/tokens.js'
 import { useState, useRef, useEffect } from 'react'
 import { useUIStore } from '../../store/uiStore.js'
+import { WorkDeclarations } from './declarations/WorkDeclarations.jsx'
 import { IFC_CLASSES } from '../../domain/IFCClassRegistry.js'
 import { PLACE_TYPE_MAP, getPlaceTypesByGeometry } from '../../domain/PlaceTypeRegistry.js'
 import { Section, NumRow, EditRow, NameInput, AXIS_COLORS, LINK_COLORS } from './npanelShared.jsx'
@@ -15,6 +16,7 @@ export function NPanelGeneric({ data }) {
     showPlaceType, placeType, placeTypeGeometry,
     spatialLinks, currentEntityId, onDeleteSpatialLink, getEntityName,
     frames, onAddFrame, onSelectFrame,
+    work,
   } = data
 
   const callbacks = useUIStore(s => s.callbacks)
@@ -106,6 +108,10 @@ export function NPanelGeneric({ data }) {
           onSelectFrame={onSelectFrame}
         />
       )}
+
+      {/* The object's own declarations — mass and centre of mass (ADR-164 D1).
+          Absent when the object is not something a grasp can be for. */}
+      <WorkDeclarations work={work ?? null} />
 
       {/* Description */}
       <DescriptionSection

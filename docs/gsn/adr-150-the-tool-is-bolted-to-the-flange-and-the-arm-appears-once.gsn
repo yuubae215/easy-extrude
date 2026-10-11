@@ -42,7 +42,7 @@ labels adr-150, adr-149, adr-148, adr-147, adr-145, adr-127, adr-083, adr-084, p
 
         goal AFailedLoadShowsTheSkeletonAndSaysSo
         uuid 103bc7da-f88d-46d1-a576-d16d2567df83
-        summary "D2/D3: メッシュが取れないとき腕は不可視のまま残らず skeleton が見え、error toast が出て、loading 表示が消える (原則 #11)。読み込み中は RobotAppearanceToggle の固定スロットが LOADING… を出す (原則 #15)"
+        summary "D2/D3: メッシュが取れないとき腕は不可視のまま残らず skeleton が見え、error toast が出て、loading 表示が消える (原則 #11)。読み込み中は RobotAppearanceToggle の固定スロットが LOADING… を出す (原則 #15)。2026-10-11: ADR-164 D5 がトグルを撤去し、LOADING… は同じ位置の RobotMeshLoadingNotice (読み込み中だけ在る表示 — 操作ではないので固定スロットは要らない) が出す"
         labels support-verified
         state Approved
 
@@ -52,7 +52,7 @@ labels adr-150, adr-149, adr-148, adr-147, adr-145, adr-127, adr-083, adr-084, p
             artifacts
             - "e2e/robot-appearance.spec.js"
             - "src/controller/AppController.js"
-            - "src/components/RobotAppearanceToggle/RobotAppearanceToggle.jsx"
+            - "src/components/RobotMeshLoadingNotice/RobotMeshLoadingNotice.jsx"
 
         goal BothStylesDrawTheSameSilhouette
         uuid 99969a7e-abd0-40f9-9274-bb8db2ebb722

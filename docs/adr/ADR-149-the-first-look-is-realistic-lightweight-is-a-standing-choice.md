@@ -1,6 +1,6 @@
 # 149. 初見は実写メッシュ — 軽量表示は常設のUIトグルで戻す選択にする
 
-- Status: Accepted
+- Status: Partially superseded by ADR-164 (2026-10-11 — 常設トグルを撤去。軽量表示は実写が読めないときの自動フォールバックだけになった。実写を既定にする部分はそのまま)
 - Date: 2026-09-22
 - Deciders: yuubae215 (ユーザー要求), Claude Sonnet 5 (実装)
 - Retires: GREP:src/controller/AppController.js::a\s+persistent\s+UI\s+control\s+is\s+future\s+work

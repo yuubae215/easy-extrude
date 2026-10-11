@@ -63,7 +63,7 @@ import { massDeclarationGaps } from '../domain/targetMass.js'
 import { liftDeclarationGaps } from '../domain/targetLift.js'
 import { analysisAvailability } from '../view/GraspPhaseMath.js'
 import { wireTargetFor, wireObstacle } from '../domain/graspWire.js'
-import { resolveSearchLayout } from '../domain/searchGeometry.js'
+import { resolveSearchLayout, SOURCE } from '../domain/searchGeometry.js'
 import { declarationPicture } from '../view/GraspDeclarationMath.js'
 import { mmPointToM, mPointToMM } from '../domain/worldUnits.js'
 import { needsClientSolvedPreview, previewPayloadFor } from '../domain/robotConfig.js'
@@ -219,7 +219,9 @@ export class GraspController {
     }
     const selected = selectRobot(robots, this._selectedRobotId)
     const projection = {
-      list:        robots.map(r => ({ id: r.id, label: r.label, hasTcp: r.hasTcp })),
+      // `tcpId` (ADR-164 D1): where this robot's hand is declared — the grasp
+      // panel links to the tcp's own N panel instead of editing it.
+      list:        robots.map(r => ({ id: r.id, label: r.label, hasTcp: r.hasTcp, tcpId: r.tcpFrame?.id ?? null })),
       // What the SELECTED robot grasps with (ADR-152 D3) — resolved from its tcp,
       // with the contradiction against its mount (if any) already worded. The
       // Grasped card is a view of this; it holds no copy (§1.1).
@@ -354,20 +356,25 @@ export class GraspController {
    * (its solid left the layout) is dropped BEFORE resolving, so the ref we keep
    * and the ref we publish can never disagree.
    *
-   * Takes the already-resolved DSL when the caller has one (a run does), so the
+   * Takes the already-resolved layout when the caller has one (a run does), so the
    * projection the panel shows and the payload the run sends come from ONE
    * resolution of the scene rather than two (ADR-132 D1) — two resolutions is how
    * a panel ends up describing geometry the request did not carry, which is the
    * ADR-117 defect in a different costume.
    *
-   * @param {object|null} [dsl]
+   * @param {{dsl: object|null, refOf?: ReadonlyMap<string,string>|null}} [layout]
    */
-  refreshGraspTargets(dsl = this._loadedLayoutDsl()) {
-    const targets = this._graspTargets(dsl)
+  refreshGraspTargets(layout = this._searchLayout()) {
+    // One resolution of the scene for both the bodies and their scene ids, so a
+    // row's link and its body cannot come from two different reads (ADR-132 D1).
+    const targets = this._graspTargets(layout?.dsl ?? null)
     if (this._selectedTargetRef && !targets.some(t => t.ref === this._selectedTargetRef)) {
       this._selectedTargetRef = null
     }
-    const projection = targetProjection(targets, this._selectedTargetRef)
+    const sceneIdByRef = layout?.refOf
+      ? new Map([...layout.refOf].map(([id, ref]) => [ref, id]))
+      : null
+    const projection = targetProjection(targets, this._selectedTargetRef, sceneIdByRef)
     const signature  = JSON.stringify(projection)
     if (signature === this._targetsSignature) return
     this._targetsSignature = signature
@@ -422,6 +429,58 @@ export class GraspController {
     if (typeof ctxCtrl?.setMassDeclaration !== 'function') return
     return Promise.resolve(ctxCtrl.setMassDeclaration(ref, key, value))
       .then(() => this.refreshGraspTargets())
+  }
+
+  // ── Declarations by OWNER (ADR-164 D1) ───────────────────────────────────────
+  //
+  // The N panel shows, for the entity you selected, the declarations that entity
+  // owns. These two readers are what it asks — read on demand from the same one
+  // resolution of the scene the search uses (`_searchLayout`), so the panel and
+  // the request can never describe two different objects (ADR-132 D1). Neither
+  // keeps a copy: the document (mass) and the tcp (hand) stay the authorities.
+
+  /**
+   * What the object with this scene id declares about itself — its mass and
+   * centre of mass (the WORK domain). `null` when the entity is not a body the
+   * search can express (not a Solid, a zero-extent one, or a scene the
+   * decompiler could not read): there is then nothing to declare on it, which is
+   * different from "declared nothing" (原則 #31).
+   *
+   * @param {string|null|undefined} sceneId
+   * @returns {{ref:string, massProperties:object, hand:object|null}|null}
+   */
+  workDeclarationsOf(sceneId) {
+    if (!sceneId) return null
+    const { dsl, refOf } = this._searchLayout()
+    const ref = refOf?.get(sceneId) ?? null
+    if (!ref) return null
+    // The things a grasp can be FOR (containers excluded) — the same population
+    // the target picker offers, so 'this object has a mass editor' and 'this
+    // object can be searched' never disagree.
+    const body = resolveGraspTargets(dsl?.entities).find(t => t.ref === ref) ?? null
+    if (!body) return null
+    // The hand of the search subject rides along only to word what suction hold
+    // is still missing (ADR-156) — it is shown, not edited, here.
+    const subject = this._selectedRobot()
+    return {
+      ref,
+      massProperties: body.massProperties,
+      hand: subject ? handOf(subject).hand : null,
+    }
+  }
+
+  /**
+   * What the robot whose tcp has this scene id grasps with (the HAND domain).
+   * `null` when the frame is not a robot's tcp.
+   *
+   * @param {string|null|undefined} frameId
+   * @returns {{robotId:string, label:string, state:string, hand:object|null,
+   *            errors:string[], mountGap:string|null, toolLengthMm:number|null}|null}
+   */
+  handDeclarationsOf(frameId) {
+    const robot = robotForFrameId(this._robots(), frameId)
+    if (!robot || robot.tcpFrame?.id !== frameId) return null
+    return { robotId: robot.id, label: robot.label, ...this._handProjection(robot) }
   }
 
   /**
@@ -749,7 +808,7 @@ export class GraspController {
     // (原則 #31). Worse, the panel's 0-candidate copy then tells the user to fix
     // the layout's geometry, which the request never carried. Stop with the real
     // reason instead of shipping a search that cannot succeed (#11).
-    this.refreshGraspTargets(dsl)
+    this.refreshGraspTargets(resolved)
     const targets      = this._graspTargets(dsl)
     const targetEntity = this._selectedTarget(targets)
     if (!targetEntity) {
@@ -1351,11 +1410,13 @@ export class GraspController {
     const service = this._ctrl._service
     let sceneDsl = null
     let warnings = []
+    let refOf = null
     if (typeof service?.decompileToLayoutDsl === 'function') {
       try {
         const out = service.decompileToLayoutDsl()
         sceneDsl = out?.dsl ?? null
         warnings = out?.warnings ?? []
+        refOf = out?.refOf ?? null
       } catch (err) {
         // A scene the decompiler cannot express is a fact, not a crash: fall to
         // the document and say what happened (原則 #11 — never a silent no-op).
@@ -1363,11 +1424,15 @@ export class GraspController {
         sceneDsl = null
       }
     }
-    return resolveSearchLayout({
+    const layout = resolveSearchLayout({
       sceneDsl,
       docDsl: this._ctrl._ctxService.getCompiled()?.layoutDsl ?? null,
       warnings,
     })
+    // The scene id → ref reading of the SAME decompile (ADR-163), so an owner's
+    // panel can find its row without re-deriving refs (ADR-164 D1). Absent when
+    // the geometry came from the document instead of the scene.
+    return { ...layout, refOf: layout.geometrySource === SOURCE.SCENE ? (refOf ?? null) : null }
   }
 
   /** The Layout DSL this search is built from, or null when nothing is renderable. */

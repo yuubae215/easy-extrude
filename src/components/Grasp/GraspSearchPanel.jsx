@@ -1,14 +1,13 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useUIStore } from '../../store/uiStore.js'
+import { useUIStore, UNDECLARED_REACH } from '../../store/uiStore.js'
 import { renderableEndEffectorFrame } from '../../view/GraspGhostMath.js'
 import { funnelStages, dominantStage, funnelDelta, nearMissCloseness, specResultRows } from '../../view/GraspFunnelMath.js'
 import { domainKpis, ladderRisks } from '../../view/GraspLadderMath.js'
 import { objectiveRows, unevaluatedNote } from '../../view/GraspScoreMath.js'
 import {
-  CAMERA_PRESETS, matchingPresetId, gripperPresetsFor,
+  CAMERA_PRESETS, matchingPresetId,
   cameraDeclarationGaps, OBJECTIVE, objectivesForHand, DEFAULT_OBJECTIVE_WEIGHT,
-  GRIPPER_KIND, DECLARED_GRIPPER_KINDS,
-  reachPresetsFor, reachDeclarationGaps,
+  GRIPPER_KIND, DECLARED_GRIPPER_KINDS, reachDeclarationGaps,
 } from '../../context/GraspDeclarationCatalog.js'
 import { facesForGripperKind } from '../../domain/graspTargets.js'
 import {
@@ -17,13 +16,11 @@ import {
   CLOSING_AXES, FULL_REGION, isFullRegion, specUsability, featureToDsl, newSpec, contactFacesOf,
 } from '../../domain/graspFeature.js'
 import { sourceLabel } from '../../domain/searchGeometry.js'
-import { defaultHandFor, HAND_BODY_KIND, wireGripperFromHand } from '../../domain/robotHand.js'
-import { mToMM } from '../../domain/worldUnits.js'
-import { CENTER_OF_MASS_KIND, MASS_DECLARATION_STATE, suctionHoldMissing } from '../../domain/targetMass.js'
-import { centerOfMassPresentation } from '../../view/GraspDeclarationMath.js'
+import { MASS_DECLARATION_STATE } from '../../domain/targetMass.js'
 import { phaseRows, analysisSummary, analysisFreshness, analysisAvailability } from '../../view/GraspPhaseMath.js'
 import { LIFT_STATE, LIFT_ALONG } from '../../domain/targetLift.js'
 import { DeltaChip, useReducedMotion } from '../Feedback/FeedbackPrimitives.jsx'
+import { NumField, SortChip, PresetChips, FaceChip } from './GraspFields.jsx'
 import { COLOR, DURATION, EASING } from '../../theme/tokens.js'
 
 /**
@@ -203,52 +200,18 @@ export function GraspSearchPanel() {
   const handProj = robots?.hand ?? null
   const hand     = handProj?.hand ?? null
   const handKind = hand?.kind ?? null
-  const setHand  = (next) => callbacks.onSetRobotHand?.(null, next)
-  // 探索の**設定** (ハンド仕様 / カメラ / 重み) は今日ここ — React state — に住み、
-  // **キーを持たない**: リロードで消え、export に載らず、undo の外に居る。配置や
-  // 掴む場所と同じ形 (宣言がインスタンスに寄生する) の 4 例目で、ADR-129 の MVP には
-  // 入れていない = **未実装**。理由は語彙が無いからではなく、*どの実体に属するのか* が未決だから
-  // (ハンドはロボットの子か、独立した実体か、探索セッションの属性か)。**DEF-033**。
+  // 探索の**設定** (カメラ / 重み) は今日ここ — React state — に住み、**キーを持たない**:
+  // リロードで消え、export に載らず、undo の外に居る。ハンドは ADR-152 D3 で tcp に住み、
+  // ADR-164 D1 でその編集欄も tcp のパネルへ移った。残る 2 つの持ち主は ADR-164 D3
+  // (カメラ = シーンの実体) と ADR-165 (重み = 場の判定基準) が決めており、移るまでここに
+  // 居る — `DECLARATION_OWNERS` の `movesWith` がそれを名指しする。文書への住所は
+  // **未実装** (ADR-129 の MVP の外)。**DEF-033**。
   const [captureNote, setCaptureNote] = useState(null)
-  // The reach envelope (ADR-128). Seeded from the catalog's first preset like
-  // every other declaration card, and OFF by default — an envelope nobody
-  // declared must stay undeclared, because an invented one produces a
-  // `reach_margin` that looks measured and is not (ADR-120 / kernel §5).
-  // ADR-141: the envelope on offer is THE ARM IN THE SCENE, derived from the
-  // URDF the viewport draws — not one of three hand-written arms, two of which
-  // this app never shipped. `null` (no robot, or a URDF that stopped agreeing
-  // with its model) means no row: the card then has nothing to seed from and
-  // stays undeclared, which is the honest state (ADR-120).
-  const reachPresets = useMemo(
-    () => reachPresetsFor(robots?.model?.reach, robots?.model?.label),
-    [robots?.model?.reach, robots?.model?.label])
-  const sceneArmReach = reachPresets[0]?.params ?? null
-  const [reachDecl, setReachDecl] = useState(() => ({
-    enabled: false,
-    reachMin:           '',
-    reachMax:           '',
-    wristConeHalfAngle: '',
-  }))
-  // Seed (and re-seed) from the arm once one is in the scene, but never
-  // overwrite numbers the user has edited: the card is a DECLARATION, and
-  // silently rewriting a declaration is how the two arms got to disagree in the
-  // first place. `touched` is what separates "not filled in yet" from "the user
-  // meant this" — a blank field and a deliberate 0.5 are different states
-  // (原則 #31), and only the first may be filled in for them.
-  const [reachTouched, setReachTouched] = useState(false)
-  useEffect(() => {
-    if (reachTouched || !sceneArmReach) return
-    setReachDecl(r => ({
-      ...r,
-      reachMin:           String(sceneArmReach.reachMin),
-      reachMax:           String(sceneArmReach.reachMax),
-      wristConeHalfAngle: String(sceneArmReach.wristConeHalfAngle),
-    }))
-  }, [reachTouched, sceneArmReach])
-  const editReach = (patch) => {
-    setReachTouched(true)
-    setReachDecl(r => ({ ...r, ...patch }))
-  }
+  // The reach envelope (ADR-128) is declared on the ROBOT's own panel now
+  // (ADR-164 D1 — the ARM domain, `ArmDeclarations`); Run only reads it.
+  // Read for the search SUBJECT — each arm declares its own (no row = undeclared).
+  const reachDecl = useUIStore(s => s.context.reachDeclarations[s.context.robots.selectedId] ?? UNDECLARED_REACH)
+  const selectEntity = (id) => { if (id) callbacks.outlinerOnSelect?.(id) }
 
   const camParams  = useMemo(() => parseCameraForm(vision), [vision])
   const planParams = useMemo(() => ({
@@ -270,17 +233,6 @@ export function GraspSearchPanel() {
   const robotGaps  = robotDeclarationGaps(robots)
   const targetGaps = targetDeclarationGaps(graspTargets)
   const reachGaps  = reachDecl.enabled ? reachDeclarationGaps(planParams) : []
-  // Not a GAP (it does not block Run — declaring other hardware is legitimate),
-  // a VISIBLE disagreement. The arm on screen is the reference because it is the
-  // only arm the user can actually see.
-  const reachMismatch = useMemo(() => {
-    if (!sceneArmReach || !Number.isFinite(planParams.reachMax)) return null
-    const same = planParams.reachMax === sceneArmReach.reachMax
-      && planParams.reachMin === sceneArmReach.reachMin
-    return same ? null
-      : `declared envelope ${planParams.reachMin}–${planParams.reachMax} m is not the arm in the ` +
-        `scene (${robots?.model?.label ?? 'the robot'}: ${sceneArmReach.reachMin}–${sceneArmReach.reachMax} m)`
-  }, [planParams, sceneArmReach, robots?.model?.label])
   // WHERE-to-grasp gaps (ADR-119 D2/D3): an unreadable declaration, or a single
   // face under a parallel jaw. Mirrors the controller's own gate exactly — a
   // disabled Run that forbids a run the controller would allow (or the reverse)
@@ -405,7 +357,7 @@ export function GraspSearchPanel() {
           the gates themselves are solved in core/ and their results come back
           through the contract funnel below. */}
       <DomainCard
-        title="Seen" domain="vision"
+        title="Seen" domain="vision" declaration="camera"
         enabled={vision.enabled}
         onToggle={(on) => setVision(v => ({ ...v, enabled: on }))}
         offHint="no camera declared — visibility passes everything"
@@ -450,12 +402,15 @@ export function GraspSearchPanel() {
           onFocusSpec={callbacks.onFocusGraspSpec}
           onHoverFace={callbacks.onHoverGraspFace}
         />
-        {/* ADR-121 / ADR-156 — what that object WEIGHS and where. Declarations
-            on the document, like the grasp location above. */}
-        <MassEditor
+        {/* ADR-164 D1 — what the object, the hand and the arm declare is edited
+            on THEIR panels (select them); this check only reads it, and says
+            where each one lives. */}
+        <OwnerDeclarationLinks
           targets={graspTargets}
-          hand={hand}
-          onSet={(ref, key, value) => callbacks.onSetMassDeclaration?.(ref, key, value)}
+          robots={robots}
+          handProj={handProj}
+          reachDecl={reachDecl}
+          onSelect={selectEntity}
         />
         {/* ADR-157 D5 — how that object is lifted out. Declared in the DSL (`lift`
             on the Solid); undeclared is a state the run reports, never a default. */}
@@ -474,43 +429,7 @@ export function GraspSearchPanel() {
             </div>
           )}
         </div>
-        {/* The reach envelope (ADR-128 / ADR-120). Until this existed, the front
-            declared no `plan{}` at all, so `reach_margin` had NO absolute basis
-            and came back permanently unmeasured — while a "reach weight" slider
-            sat right below it, weighting an objective nothing could evaluate.
-            OFF by default, and off means the key is OMITTED: an undeclared
-            envelope stays visibly different from a declared zero (原則 #31). */}
-        <label style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '10px', color: '#aaa', margin: '4px 0' }}>
-          <input
-            type="checkbox"
-            checked={reachDecl.enabled}
-            onChange={e => setReachDecl(r => ({ ...r, enabled: e.target.checked }))}
-          />
-          declare reach envelope
-          {!reachDecl.enabled && (
-            <span style={{ color: '#778' }}>— undeclared, so reach margin is NOT MEASURED</span>
-          )}
-        </label>
-        {reachDecl.enabled && (
-          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '4px' }}>
-            <NumField label="reach min" value={reachDecl.reachMin} step="0.05"
-              onChange={(s) => editReach({ reachMin: s })} />
-            <NumField label="reach max" value={reachDecl.reachMax} step="0.05"
-              onChange={(s) => editReach({ reachMax: s })} />
-            <NumField label="wrist cone (rad)" value={reachDecl.wristConeHalfAngle} step="0.05"
-              onChange={(s) => editReach({ wristConeHalfAngle: s })} />
-          </div>
-        )}
-        {/* ADR-141 — declaring a DIFFERENT arm than the one on screen is allowed
-            (the user may be modelling hardware we do not ship) but it is never
-            silent: before, the screen showed a UR5e while the search scored
-            against an arm 50 cm longer and nothing said so (原則 #11). */}
-        {reachDecl.enabled && reachMismatch && (
-          <div style={{ fontSize: '10px', color: COLOR.cautionTone, margin: '2px 0 6px' }}>
-            ⚠ {reachMismatch}
-          </div>
-        )}
-        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+        <div data-declaration="objectiveWeights" style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
           <NumField label="reach weight"     value={reach}     step="0.1" onChange={setReach} />
           <NumField label="clearance weight" value={clearance} step="0.1" onChange={setClearance} />
           <NumField label="stability weight" value={stability} step="0.1" onChange={setStability} />
@@ -522,17 +441,9 @@ export function GraspSearchPanel() {
         </div>
       </DomainCard>
 
-      <DomainCard
-        title="Grasped" domain="grasp"
-        enabled={handProj?.state === 'declared' || handProj?.state === 'malformed'}
-        onToggle={(on) => setHand(on ? defaultHandFor(GRIPPER_KIND.PARALLEL_JAW) : null)}
-        offHint="no hand declared on this robot's tcp — graspability passes everything, and the arm draws a bare flange→TCP rod (what is judged)"
-      >
-        <HandEditor handProj={handProj} onSet={setHand} />
-      </DomainCard>
 
       <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-end', marginTop: '2px' }}>
-        <NumField label="topN" value={topN} step="1" min="1" onChange={setTopN} />
+        <span data-declaration="topN"><NumField label="topN" value={topN} step="1" min="1" onChange={setTopN} /></span>
         <button
           onClick={run}
           disabled={busy || gaps.length > 0}
@@ -628,179 +539,9 @@ export function GraspSearchPanel() {
   )
 }
 
-/**
- * HandEditor — what the robot grasps with, read from and written to its tcp
- * (ADR-152 D3). Kind first (it decides which fields exist — ADR-118); then the
- * gate parameters; then the SHAPE the arm draws and core/ judges. Lengths are mm
- * (the scene's unit); a field commits on blur as ONE undoable edit, never per
- * keystroke. Contradictions with the tool mount are printed, not corrected.
- */
-function HandEditor({ handProj, onSet }) {
-  const hand = handProj?.hand ?? null
-  if (!handProj || handProj.state === 'undeclared') return null
-  if (!hand) {
-    return (
-      <div style={{ fontSize: '10px', color: COLOR.cautionTone }}>
-        {(handProj.errors ?? []).map((e, i) => <div key={i}>· {e}</div>)}
-        <FaceChip label="replace with the default parallel jaw" active={false}
-          onClick={() => onSet(defaultHandFor(GRIPPER_KIND.PARALLEL_JAW))} grow />
-      </div>
-    )
-  }
-  const jaw = hand.kind === GRIPPER_KIND.PARALLEL_JAW
-  const put = (patch) => onSet({ ...hand, ...patch })
-  const presets = gripperPresetsFor(hand.kind)
-  // Presets are wire values (m); the hand is mm. Compare and apply through the
-  // one conversion — `wireGripperFromHand` — rather than a second table.
-  const wire = wireGripperFromHand(hand)
-  const applyPreset = (p) => put(jaw
-    ? { maxOpening: mToMM(p.params.maxOpening), fingerClearance: mToMM(p.params.fingerClearance) }
-    : { cupDiameter: mToMM(p.params.cupDiameter), sealTiltTolerance: p.params.sealTiltTolerance })
-  const body = hand.body ?? null
-  return (
-    <div>
-      <div style={{ display: 'flex', gap: '6px', marginBottom: '6px' }}>
-        {DECLARED_GRIPPER_KINDS.map(k => (
-          <FaceChip key={k} label={k === GRIPPER_KIND.SUCTION ? 'suction' : 'parallel jaw'}
-            active={hand.kind === k} grow
-            onClick={() => { if (hand.kind !== k) onSet(defaultHandFor(k)) }} />
-        ))}
-      </div>
-      <PresetChips presets={presets} activeId={matchingPresetId(presets, wire)} onPick={applyPreset} />
-      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '6px' }}>
-        {jaw ? (
-          <>
-            <CommitField label="max opening (mm)" value={hand.maxOpening} onCommit={(v) => put({ maxOpening: v })} />
-            <CommitField label="finger clearance (mm)" value={hand.fingerClearance} onCommit={(v) => put({ fingerClearance: v })} />
-          </>
-        ) : (
-          <>
-            <CommitField label="cup diameter (mm)" value={hand.cupDiameter} onCommit={(v) => put({ cupDiameter: v })} />
-            <CommitField label="seal tilt (rad)" value={hand.sealTiltTolerance} step="0.05" onCommit={(v) => put({ sealTiltTolerance: v })} />
-          </>
-        )}
-      </div>
-      {!jaw && <HoldEditor hold={hand.hold ?? null} onSet={(hold) => {
-        const { hold: _h, ...rest } = hand
-        onSet(hold ? { ...rest, hold } : rest)
-      }} />}
 
-      <div style={{ fontSize: '10px', color: COLOR.textSecondary, marginBottom: '3px' }}>
-        shape {body ? '' : '— not declared: judged and drawn as the flange→TCP rod'}
-      </div>
-      {body ? (
-        <>
-          <div style={{ display: 'flex', gap: '3px', marginBottom: '4px' }}>
-            {Object.values(HAND_BODY_KIND).map(k => (
-              <FaceChip key={k} label={`housing: ${k}`} active={body.kind === k}
-                onClick={() => {
-                  if (body.kind === k) return
-                  const len = body.kind === HAND_BODY_KIND.CYLINDER ? body.length : body.size[2]
-                  put({ body: k === HAND_BODY_KIND.CYLINDER
-                    ? { kind: k, radius: 32, length: len }
-                    : { kind: k, size: [64, 64, len] } })
-                }} />
-            ))}
-            <FaceChip label="remove shape" active={false}
-              onClick={() => { const { body: _b, fingers: _f, cupHeight: _c, ...rest } = hand; onSet(rest) }} />
-          </div>
-          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-            {body.kind === HAND_BODY_KIND.CYLINDER ? (
-              <>
-                <CommitField label="housing radius" value={body.radius} onCommit={(v) => put({ body: { ...body, radius: v } })} />
-                <CommitField label="housing length" value={body.length} onCommit={(v) => put({ body: { ...body, length: v } })} />
-              </>
-            ) : (
-              ['x', 'y', 'z (length)'].map((axis, i) => (
-                <CommitField key={axis} label={`housing ${axis}`} value={body.size[i]}
-                  onCommit={(v) => put({ body: { ...body, size: body.size.map((w, j) => (j === i ? v : w)) } })} />
-              ))
-            )}
-            {jaw ? (
-              ['length', 'thickness', 'width'].map(k => (
-                <CommitField key={k} label={`finger ${k}`} value={hand.fingers[k]}
-                  onCommit={(v) => put({ fingers: { ...hand.fingers, [k]: v } })} />
-              ))
-            ) : (
-              <CommitField label="cup height" value={hand.cupHeight} onCommit={(v) => put({ cupHeight: v })} />
-            )}
-          </div>
-        </>
-      ) : (
-        <FaceChip label="declare the default shape" active={false}
-          onClick={() => { const d = defaultHandFor(hand.kind); put(jaw ? { body: d.body, fingers: d.fingers } : { body: d.body, cupHeight: d.cupHeight }) }} />
-      )}
-      {handProj.toolLengthMm != null && (
-        <div style={{ fontSize: '10px', color: COLOR.textSecondary, marginTop: '4px' }}>
-          TCP {handProj.toolLengthMm} mm from the flange (the tool mount — set by the tcp)
-        </div>
-      )}
-      {handProj.mountGap && (
-        <div style={{ fontSize: '10px', color: COLOR.cautionTone, marginTop: '2px' }}>· {handProj.mountGap}</div>
-      )}
-    </div>
-  )
-}
 
-/**
- * A number field that commits on blur / Enter (one undoable edit per change,
- * not per keystroke). A blank or unreadable entry is not written — it reverts
- * (Number('') === 0 is not a value the user typed).
- */
-function CommitField({ label, value, onCommit, step = '1', allowNegative = false }) {
-  const [text, setText] = useState(value == null ? '' : String(value))
-  useEffect(() => { setText(value == null ? '' : String(value)) }, [value])
-  const commit = () => {
-    const n = Number(text)
-    if (text.trim() === '' || !Number.isFinite(n) || (!allowNegative && n < 0)) { setText(value == null ? '' : String(value)); return }
-    if (n !== value) onCommit(n)
-  }
-  return (
-    <label style={{ fontSize: '10px', color: COLOR.textSecondary, display: 'flex', flexDirection: 'column', gap: '3px' }}>
-      {label}
-      <input
-        type="number" value={text} step={step} min="0"
-        onChange={e => setText(e.target.value)}
-        onBlur={commit}
-        onKeyDown={e => { if (e.key === 'Enter') commit() }}
-        style={{
-          width: '64px', padding: '4px 6px', borderRadius: '4px',
-          border: `1px solid ${COLOR.border}`, background: COLOR.surfaceSunken, color: COLOR.textPrimary, fontSize: '12px',
-        }}
-      />
-    </label>
-  )
-}
 
-function NumField({ label, value, onChange, step, min, disabled = false, title }) {
-  return (
-    <label title={title} style={{ fontSize: '10px', color: disabled ? '#666' : '#aaa', display: 'flex', flexDirection: 'column', gap: '3px' }}>
-      {label}
-      <input
-        type="number" value={value} step={step} min={min} disabled={disabled}
-        onChange={e => onChange(e.target.value)}
-        style={{
-          width: '64px', padding: '4px 6px', borderRadius: '4px',
-          border: '1px solid #444', background: '#1a1a1a', color: '#e0e0e0', fontSize: '12px',
-        }}
-      />
-    </label>
-  )
-}
-
-function SortChip({ label, active, onClick }) {
-  return (
-    <button
-      onClick={onClick}
-      style={{
-        fontSize: '10px', padding: '2px 7px', borderRadius: '10px', cursor: 'pointer',
-        border: `1px solid ${active ? '#3a7bd5' : '#444'}`,
-        background: active ? '#1d3a5f' : 'transparent',
-        color: active ? '#9cf' : '#aaa', fontFamily: 'inherit',
-      }}
-    >{label}</button>
-  )
-}
 
 // ── Domain declaration cards (ADR-081 Decision 5) ────────────────────────────
 
@@ -810,10 +551,10 @@ function SortChip({ label, active, onClick }) {
  * Slots — PHILOSOPHY #15; the vacuously-true gate is stated, never implied).
  * The Path card is `alwaysOn`: reach / IK / interference always run.
  */
-function DomainCard({ title, domain, enabled, onToggle, alwaysOn, offHint, offExtra, children }) {
+function DomainCard({ title, domain, declaration, enabled, onToggle, alwaysOn, offHint, offExtra, children }) {
   const on = alwaysOn || enabled
   return (
-    <div style={{ marginBottom: '8px', padding: '7px 9px', borderRadius: '5px', background: '#222', border: BORDER }}>
+    <div data-declaration={declaration} style={{ marginBottom: '8px', padding: '7px 9px', borderRadius: '5px', background: '#222', border: BORDER }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: on ? '6px' : '3px' }}>
         <span style={{ fontSize: '11px', fontWeight: 'bold', color: '#cdd' }}>{title}</span>
         <span style={{ fontSize: '9px', color: '#667' }}>({domain})</span>
@@ -855,22 +596,6 @@ function CaptureButton({ onClick, note }) {
   )
 }
 
-/**
- * Preset chip row (fork & tweak — ADR-063/058): picking a chip seeds the
- * card's fields; the active chip is DERIVED by value equality
- * (`matchingPresetId`), so any edit forks to "custom" with no stored flag.
- */
-function PresetChips({ presets, activeId, onPick }) {
-  return (
-    <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', marginBottom: '6px', alignItems: 'center' }}>
-      <span style={{ fontSize: '10px', color: '#888' }}>preset:</span>
-      {presets.map(p => (
-        <SortChip key={p.id} label={p.label} active={p.id === activeId} onClick={() => onPick(p)} />
-      ))}
-      {activeId == null && <span style={{ fontSize: '9px', color: '#997' }}>custom (forked)</span>}
-    </div>
-  )
-}
 
 /** Labelled x/y/z triple of number inputs (form-local string values). */
 function Vec3Fields({ label, values, onChange }) {
@@ -902,6 +627,56 @@ function Vec3Fields({ label, values, onChange }) {
  *   multi  — a real <select>, unset until the user picks (no default: solving for
  *            an arm nobody chose is the failure this whole ADR is about).
  */
+/**
+ * OwnerDeclarationLinks — what the object, the hand and the arm have declared,
+ * READ here and edited on their owners' panels (ADR-164 D1).
+ *
+ * The check (this panel) stays beside its subject (ADR-110) but no longer holds
+ * the declarations of three other entities: each line states the declaration's
+ * state — never a default (ADR-120) — and `▸` selects the entity that owns it,
+ * whose N panel carries the editor. A line whose owner is not on screen says so
+ * instead of offering a link that lands nowhere (原則 #11).
+ */
+function OwnerDeclarationLinks({ targets, robots, handProj, reachDecl, onSelect }) {
+  const subject = (robots?.list ?? []).find(r => r.id === robots?.selectedId) ?? null
+  const targetRow = (targets?.list ?? []).find(t => t.ref === targets?.selectedRef) ?? null
+  const mp = targets?.massProperties ?? null
+  const massWord = !mp ? null
+    : mp.mass.state === MASS_DECLARATION_STATE.DECLARED ? `${mp.mass.kg} kg`
+      : mp.mass.state === MASS_DECLARATION_STATE.UNDECLARED ? 'not declared' : 'unreadable'
+  const handWord = !handProj ? null
+    : handProj.state === 'declared' ? (handProj.hand?.kind === GRIPPER_KIND.SUCTION ? 'suction' : 'parallel jaw')
+      : handProj.state === 'malformed' ? 'unreadable' : 'not declared'
+  const rows = [
+    targetRow && massWord && { key: 'mass', label: 'object mass', word: massWord, owner: targetRow.label, id: targetRow.sceneId },
+    subject && handWord && { key: 'hand', label: 'hand', word: handWord, owner: `${subject.label} tcp`, id: subject.tcpId },
+    subject && {
+      key: 'reach', label: 'reach envelope',
+      word: reachDecl?.enabled ? `${reachDecl.reachMin}–${reachDecl.reachMax} m` : 'not declared (reach margin NOT MEASURED)',
+      owner: subject.label, id: subject.id,
+    },
+  ].filter(Boolean)
+  if (rows.length === 0) return null
+  return (
+    <div style={{ fontSize: '10px', color: COLOR.textSecondary, margin: '4px 0 6px' }}>
+      {rows.map(r => (
+        <div key={r.key} style={{ display: 'flex', gap: '4px', alignItems: 'baseline', flexWrap: 'wrap' }}>
+          <span>{r.label}: {r.word}</span>
+          {r.id ? (
+            <button type="button" onClick={() => onSelect(r.id)}
+              title={`edit on ${r.owner}'s panel`}
+              style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: COLOR.infoTone, fontSize: '10px' }}>
+              ▸ {r.owner}
+            </button>
+          ) : (
+            <span>— declared on {r.owner}, which is not in the scene</span>
+          )}
+        </div>
+      ))}
+    </div>
+  )
+}
+
 function RobotPicker({ robots, onSelect }) {
   const list = robots?.list ?? []
   return (
@@ -1071,7 +846,7 @@ function GraspSpecEditor({ targets, gripperKind, onSet, onFocusSpec, onHoverFace
   if (!ref) return null
 
   return (
-    <div style={{ marginTop: '6px', marginBottom: '6px' }}>
+    <div data-declaration="graspFeature" style={{ marginTop: '6px', marginBottom: '6px' }}>
       <div style={{ fontSize: '10px', color: COLOR.textSecondary, marginBottom: '3px' }}>how to grasp</div>
 
       {feature?.migratedFaces > 0 && (
@@ -1350,26 +1125,6 @@ function RegionInput({ label, value, onChange }) {
   )
 }
 
-/** A small toggle chip — the face vocabulary and the two declaration verbs. */
-function FaceChip({ label, active, onClick, disabled, grow }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      style={{
-        flex: grow ? 1 : undefined,
-        fontSize: '10px', padding: '3px 6px', borderRadius: '4px',
-        cursor: disabled ? 'default' : 'pointer',
-        background: active ? COLOR.accentSoft : COLOR.surfaceSunken,
-        color: disabled ? '#666' : active ? COLOR.accent : '#bbb',
-        border: `1px solid ${active ? COLOR.accent : '#444'}`,
-      }}
-    >
-      {label}
-    </button>
-  )
-}
 
 function StatusLine({ grasp }) {
   const status = grasp?.status ?? 'idle'
@@ -1423,6 +1178,12 @@ const LIFT_WORDS = Object.freeze({
 function LiftLine({ lift }) {
   if (!lift) return null
   const style = { fontSize: '10px', marginBottom: '5px' }
+  // `data-declaration` rides every branch — the census counts where the lift is
+  // shown, whatever its state (ADR-164 D1).
+  return <div data-declaration="lift"><LiftState lift={lift} style={style} /></div>
+}
+
+function LiftState({ lift, style }) {
   if (lift.state === LIFT_STATE.DECLARED) {
     const words = LIFT_WORDS[lift.along]
     if (!words) throw new Error(`GraspSearchPanel: 未宣言の引き上げの向き "${lift.along}" — LIFT_WORDS に行を足すこと`)
@@ -1889,123 +1650,4 @@ function ObjectiveBar({ label, value, verdict = null }) {
   )
 }
 
-/**
- * HoldEditor — the cup's holding capability (ADR-156 D1), ONE bundle: force (N)
- * and friction are declared together or not at all. Undeclared is a state and is
- * never filled in: until both are typed, nothing is written and suction hold
- * reads "not measured".
- */
-function HoldEditor({ hold, onSet }) {
-  const [draft, setDraft] = useState({ force: '', friction: '' })
-  if (hold) {
-    return (
-      <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end', flexWrap: 'wrap', marginBottom: '6px' }}>
-        <CommitField label="hold force (N)" value={hold.force} step="1" onCommit={(v) => v > 0 && onSet({ ...hold, force: v })} />
-        <CommitField label="pad friction μ" value={hold.friction} step="0.05" onCommit={(v) => v > 0 && onSet({ ...hold, friction: v })} />
-        <FaceChip label="clear hold" active={false} onClick={() => onSet(null)} />
-      </div>
-    )
-  }
-  const f = Number(draft.force), mu = Number(draft.friction)
-  const ready = draft.force !== '' && draft.friction !== '' && f > 0 && mu > 0
-  return (
-    <div style={{ marginBottom: '6px' }}>
-      <div style={{ fontSize: '10px', color: '#778', marginBottom: '3px' }}>
-        hold — not declared: suction hold is NOT MEASURED (never a default)
-      </div>
-      <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
-        <NumField label="hold force (N)" value={draft.force} step="1" min="0" onChange={(v) => setDraft(d => ({ ...d, force: v }))} />
-        <NumField label="pad friction μ" value={draft.friction} step="0.05" min="0" onChange={(v) => setDraft(d => ({ ...d, friction: v }))} />
-        <FaceChip label="declare hold" active={false} disabled={!ready}
-          onClick={() => ready && onSet({ force: f, friction: mu })} />
-      </div>
-    </div>
-  )
-}
 
-/**
- * MassEditor — what the SELECTED object weighs and where that weight sits
- * (ADR-121 / ADR-156). Both are declarations on the document. Absent stays
- * absent: no mass is guessed, and the centre of mass is never the centroid unless
- * the user CHOOSES "assumed (centroid)" — which is then drawn and labelled as an
- * assumption. States the missing inputs for suction hold instead of a silent gap.
- */
-function MassEditor({ targets, hand, onSet }) {
-  const ref = targets?.selectedRef ?? null
-  const mp = targets?.massProperties ?? null
-  const [draft, setDraft] = useState({ mass: '', x: '', y: '', z: '' })
-  if (!ref || !mp) return null
-  const mass = mp.mass
-  const com = mp.centerOfMass
-  const missing = hand?.kind === GRIPPER_KIND.SUCTION ? suctionHoldMissing({ hand, massProperties: mp }) : []
-  const measuredReady = ['x', 'y', 'z'].every(k => draft[k] !== '' && Number.isFinite(Number(draft[k])))
-  const massReady = draft.mass !== '' && Number(draft.mass) > 0
-  const label = { fontSize: '10px', color: COLOR.textSecondary, marginBottom: '3px' }
-  return (
-    <div data-testid="mass-editor" style={{ margin: '6px 0', padding: '6px', border: `1px solid ${COLOR.border}`, borderRadius: '4px' }}>
-      <div style={label}>
-        mass {mass.state === MASS_DECLARATION_STATE.UNDECLARED && '— not declared'}
-      </div>
-      <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end', flexWrap: 'wrap', marginBottom: '6px' }}>
-        {mass.state === MASS_DECLARATION_STATE.DECLARED ? (
-          <>
-            <CommitField label="mass (kg)" value={mass.kg} step="0.1" onCommit={(v) => v > 0 && onSet(ref, 'mass', v)} />
-            <FaceChip label="clear mass" active={false} onClick={() => onSet(ref, 'mass', null)} />
-          </>
-        ) : (
-          <>
-            <NumField label="mass (kg)" value={draft.mass} step="0.1" min="0" onChange={(v) => setDraft(d => ({ ...d, mass: v }))} />
-            <FaceChip label="declare mass" active={false} disabled={!massReady}
-              onClick={() => massReady && onSet(ref, 'mass', Number(draft.mass))} />
-          </>
-        )}
-      </div>
-
-      <div style={label}>
-        centre of mass{' '}
-        {com.state === MASS_DECLARATION_STATE.DECLARED
-          ? <span style={{ color: '#9ad' }}>— {centerOfMassPresentation(com.kind).caption}</span>
-          : com.state === MASS_DECLARATION_STATE.UNDECLARED ? '— not declared (not the centroid)' : ''}
-      </div>
-      <div style={{ display: 'flex', gap: '3px', marginBottom: '4px', flexWrap: 'wrap' }}>
-        <FaceChip label="not declared" active={com.state === MASS_DECLARATION_STATE.UNDECLARED}
-          onClick={() => onSet(ref, 'centerOfMass', null)} />
-        <FaceChip label="assumed (centroid)" active={com.kind === CENTER_OF_MASS_KIND.ASSUMED_HOMOGENEOUS}
-          onClick={() => onSet(ref, 'centerOfMass', { kind: CENTER_OF_MASS_KIND.ASSUMED_HOMOGENEOUS })} />
-      </div>
-      <div style={{ fontSize: '10px', color: '#778', marginBottom: '3px' }}>
-        measured — object frame, mm (origin = its centre)
-      </div>
-      <div style={{ display: 'flex', gap: '6px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
-        {com.kind === CENTER_OF_MASS_KIND.MEASURED
-          ? ['x', 'y', 'z'].map((k, i) => (
-            <CommitField key={k} label={k} value={com.local[k]} allowNegative
-              onCommit={(v) => {
-                const p = [com.local.x, com.local.y, com.local.z]
-                p[i] = v
-                onSet(ref, 'centerOfMass', { kind: CENTER_OF_MASS_KIND.MEASURED, point: p })
-              }} />
-          ))
-          : (
-            <>
-              {['x', 'y', 'z'].map(k => (
-                <NumField key={k} label={k} value={draft[k]} step="1" onChange={(v) => setDraft(d => ({ ...d, [k]: v }))} />
-              ))}
-              <FaceChip label="declare measured" active={false} disabled={!measuredReady}
-                onClick={() => measuredReady && onSet(ref, 'centerOfMass', {
-                  kind: CENTER_OF_MASS_KIND.MEASURED, point: ['x', 'y', 'z'].map(k => Number(draft[k])),
-                })} />
-            </>
-          )}
-      </div>
-      {[...mass.errors, ...com.errors].map((e, i) => (
-        <div key={i} style={{ fontSize: '10px', color: COLOR.cautionTone }}>· {e}</div>
-      ))}
-      {missing.length > 0 && (
-        <div data-testid="suction-hold-missing" style={{ fontSize: '10px', color: '#778', marginTop: '4px' }}>
-          suction hold NOT MEASURED — needs {missing.join(', ')}
-        </div>
-      )}
-    </div>
-  )
-}

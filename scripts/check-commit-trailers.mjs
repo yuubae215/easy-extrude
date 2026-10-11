@@ -85,8 +85,13 @@ import { execFileSync } from 'node:child_process'
  * 「push するコミットにモデル ID を入れない」に従って 1 コミットへまとめ直し、`Model-Effort` と
  * `Task-Class` の両方を外した (PR #418 の先例どおり)。衝突は 2 回目なので、上の「次の手」
  * (モデル ID を含まない書式を認める検査の改訂) の満期が近い。
+ *
+ * 2026-10-11: 16 → 17。ccr-65ad4c46-33kl9q (ADR-164 PR1 — 宣言を持ち主のパネルへ) の 1 件も
+ * 同じ**規約の衝突**。フックが刻んだ `Model-Effort` / `Task-Class` を、実行環境の「push する
+ * コミットにモデル ID を入れない」に従って両方外した。**衝突は 3 回目** — 「次の手」(モデル ID を
+ * 含まない書式を認める検査の改訂) はもう満期と読むべきで、PR 本文でそう名指しした。
  */
-export const MISSING_BASELINE = 16
+export const MISSING_BASELINE = 17
 
 /** Q3/Q4 は「在ってはならない」ので予算はゼロ。 */
 export const DEGRADED_BASELINE = 0

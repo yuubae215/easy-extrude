@@ -358,7 +358,7 @@ test('対象 0 個の projection は空リストと none を運ぶ (掴む場所
   // (= derived) ではない。0 台のときに derived を運ぶと、掴む対象が無いのに
   // 「上面全体から探します」と読める行が出る (原則 #31 の 0 の顔)。
   assert.deepEqual(p, {
-    list: [], selectedRef: null, cardinality: TARGET_CARDINALITY.NONE, feature: null, faceWords: null,
+    list: [], selectedRef: null, selectedSceneId: null, cardinality: TARGET_CARDINALITY.NONE, feature: null, faceWords: null,
     massProperties: null, lift: null,
   })
 })
