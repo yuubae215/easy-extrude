@@ -670,3 +670,47 @@ test('S17 — 把持は関係の行: 手を名指し、ワークが消えると 
 
   expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
 })
+
+test('S18 — 引き上げは関係のパネルで宣言し、where を言わなくても関係になる (ADR-164 D4)', async ({ page }) => {
+  // 引き上げは把持の関係 (ワーク × 手) の欄。仕様 0 個でも言えること (§俯瞰 D4)、
+  // 宣言が where を発明しないこと、undo で関係ごと戻ることを走っているアプリで問う。
+  const errors = []
+  page.on('pageerror', (e) => errors.push(e.message))
+  await page.addInitScript(() => { try { localStorage.setItem('ee_home', 'skip') } catch { /* denied */ } })
+  await page.goto('/easy-extrude/?graspStub=solve')
+  await expect.poll(() => page.evaluate(() => typeof window.__easyExtrude?.openGrasp === 'function')).toBe(true)
+  await page.evaluate(async () => {
+    const { useUIStore } = await import('/easy-extrude/src/store/uiStore.js')
+    window.__ui = useUIStore
+    await useUIStore.getState().callbacks.onForkTemplate('cell_robotics')
+  })
+  await expect.poll(() => page.evaluate(() => window.__easyExtrude.graspSource().robots)).toBe(1)
+  const rel = () => page.evaluate(() => window.__ui.getState().context.graspRelations)
+  const lift = () => page.evaluate(() => window.__ui.getState().context.graspTargets?.lift ?? null)
+  expect((await rel()).total, '前提: テンプレは把持を宣言していない').toBe(0)
+
+  // 宣言の無いワークの関係を開く (最初の宣言の入口 — ADR-164 D2)。
+  await page.evaluate(() => window.__ui.getState().callbacks.onSelectGraspRelation('workpiece'))
+  await page.locator('#canvas-container canvas').hover()
+  if (!(await page.evaluate(() => window.__ui.getState().nPanelVisible))) await page.keyboard.press('n')
+  const editor = page.getByTestId('lift-editor')
+  await expect(editor).toContainText('not declared')
+
+  // 向きと距離を選んで宣言 — 既定の距離は入っていない (ADR-157)。
+  await editor.getByRole('button', { name: 'straight up (+Z)' }).click()
+  await editor.getByLabel('distance (mm)').fill('50')
+  await editor.getByRole('button', { name: 'declare lift' }).click()
+  await expect.poll(async () => (await rel()).total).toBe(1)
+  await expect.poll(async () => (await lift())?.state).toBe('declared')
+  expect(await lift()).toMatchObject({ along: 'worldUp', distanceMm: 50, source: 'relation' })
+  await expect(editor).toContainText('lift out: straight up (+Z), 50 mm')
+  // where は発明されない: 宣言は引き上げだけで、仕様の状態は「誰も言っていない」のまま。
+  expect(await page.evaluate(() => window.__ui.getState().context.graspTargets?.feature?.state)).toBe('derived')
+
+  // undo で関係ごと戻る (宣言は 1 回の doc edit)。
+  await page.locator('#canvas-container canvas').hover()
+  await page.keyboard.press('Control+z')
+  await expect.poll(async () => (await rel()).total).toBe(0)
+
+  expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
+})

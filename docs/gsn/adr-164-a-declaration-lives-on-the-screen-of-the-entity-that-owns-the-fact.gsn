@@ -72,3 +72,18 @@ artifacts
             artifacts
             - "e2e/robot-appearance.spec.js"
             - "src/components/NPanel/declarations/ArmDeclarations.jsx"
+
+        goal TheLiftIsTheRelationsAndTheOldAddressIsRead
+        uuid ac6de419-6710-497f-800a-ddc85cba3857
+        summary "引き上げは把持の関係の欄 (graspFeature.lift、関係に 1 個) で、関係のパネルから宣言・変更・消去でき、仕様 0 個でも言える。旧位置 (Solid の lift) は読み込み時に関係へ読み替えて出所を言い、最初の編集で移る。2 つの住所が違う値を言えば黙って選ばず止まる。ワイヤ (target.lift) は新旧どちらから読んでも同じ値"
+        labels support-verified
+
+            solution LiftRelocationIsExecuted
+            uuid b778384f-2b76-4632-8bb4-8abead2b6784
+            summary "2026-10-11 (ADR-164 PR3): src/domain/targetLift.test.js — 旧位置と新住所が同じワイヤ値、違う値は MALFORMED で wire に載らない、同じ値なら新住所、仕様 0 個で引き上げだけが言える、どちらにも無ければ未宣言で出所なし。src/domain/graspFeature.test.js — kind の無い宣言は graspFeature が無いのと同じ答え (手は運ばれる)、kind の無い where の欄は MALFORMED、WHERE_KEYS ∪ RELATION_KEYS がスキーマの graspFeature の欄をちょうど覆う。src/context/DocBuilder.test.js — where の書き手は手と引き上げを運び、関係の欄を渡すと throw、空の {} を書かない、引き上げの書き手は where を発明せず旧キーを消す、関係の削除は旧位置ごと消す。src/domain/graspRelation.test.js — 旧位置の引き上げだけのワークも関係の行を持つ。src/controller/GraspController.test.js — 新旧の住所でワイヤの target.lift が一致。src/IdentityContainment.test.js — 引き上げの解釈は targetLift / DocBuilder / graspRelation の外に 0 個。e2e/grasp-stub.spec.js S18 (VITE_GRASP_STUB=1) — 宣言の無いワークの関係パネルで向きと距離を選んで宣言 → 関係 1 行・lift declared (source relation)・仕様は derived のまま、undo で関係 0"
+            artifacts
+            - "src/domain/targetLift.js"
+            - "src/domain/targetLift.test.js"
+            - "src/context/DocBuilder.js"
+            - "src/context/DocBuilder.test.js"
+            - "e2e/grasp-stub.spec.js"

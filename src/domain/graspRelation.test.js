@@ -93,3 +93,19 @@ test('全状態が語を持つ — 未宣言の状態は throw する', () => {
   for (const s of Object.values(GRASP_RELATION_STATE)) assert.doesNotThrow(() => relationWordsFor(s))
   assert.throws(() => relationWordsFor('orphan'), /未宣言の関係の状態/)
 })
+
+// ── 引き上げは関係の欄 — 旧位置の引き上げも関係を持つ (ADR-164 D4) ────────────
+
+test('旧位置の引き上げだけを持つワークも関係の行を持つ — 引き上げが画面から落ちない', () => {
+  const legacy = { ...box('cube'), lift: { along: 'worldUp', distance: 50 } }
+  const doc = { entities: [legacy, box('plate')] }
+  const rels = graspRelationsOf({ docDsl: doc, sceneDsl: { entities: [...doc.entities, ...ROBOTS] } })
+  assert.deepEqual(rels.map(r => [r.objectRef, r.state]), [['cube', GRASP_RELATION_STATE.HAND_UNDECLARED]])
+})
+
+test('where を言わず引き上げと手だけを言う関係は ok — kind は省略可', () => {
+  const doc = { entities: [box('cube', { tcp: 'tcp_a', lift: { along: 'worldUp', distance: 50 } })] }
+  const [r] = graspRelationsOf({ docDsl: doc, sceneDsl: { entities: [...doc.entities, ...ROBOTS] } })
+  assert.equal(r.state, GRASP_RELATION_STATE.OK)
+  assert.equal(r.tcpRef, 'tcp_a')
+})

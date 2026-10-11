@@ -7,8 +7,8 @@ import {
   graspFeatureGaps, graspFeatureSummary, DEFAULT_STRATEGY, STRATEGY_ORDER, STRATEGY_FALLBACK,
   CLOSING_AXES, FULL_REGION, isFullRegion, specUsability, featureToDsl, newSpec, contactFacesOf,
 } from '../../../domain/graspFeature.js'
-import { LIFT_STATE, LIFT_ALONG } from '../../../domain/targetLift.js'
-import { FaceChip, PICKER } from '../../Grasp/GraspFields.jsx'
+import { LIFT_STATE, LIFT_ALONG, LIFT_SOURCE, DECLARED_LIFT_DIRECTIONS } from '../../../domain/targetLift.js'
+import { FaceChip, PICKER, CommitField, NumField } from '../../Grasp/GraspFields.jsx'
 import { useUIStore } from '../../../store/uiStore.js'
 import { GRASP_RELATION_STATE, relationWordsFor } from '../../../domain/graspRelation.js'
 import { Section } from '../npanelShared.jsx'
@@ -84,9 +84,10 @@ export function GraspSpecEditor({ targets, gripperKind, onSet, onFocusSpec, onHo
 
   /** Every edit rewrites the whole declaration (the document holds a value, not a diff). */
   const write = (nextSpecs, nextStrategy = strategy, nextDeclared = declaredStrategy) =>
-    // The hand the relation names rides through every rewrite (ADR-164 D2) — the
-    // specs and the tcp are one declaration, and an edit to one must not drop the other.
-    onSet(ref, featureToDsl(nextSpecs, nextStrategy, nextDeclared, gripperKind ?? null, feature?.tcp ?? null))
+    // Only the WHERE half is written here — the relation's hand and lift ride
+    // through in the writer (`setEntityGraspFeature`, ADR-164 D4), so an edit to
+    // the specs can never un-name the hand or drop the lift.
+    onSet(ref, featureToDsl(nextSpecs, nextStrategy, nextDeclared, gripperKind ?? null))
   const patch = (i, change) => write(specsNow.map((sp, j) => (j === i ? { ...sp, ...change(sp) } : sp)))
   const move  = (i, d) => {
     const j = i + d
@@ -151,7 +152,7 @@ export function GraspSpecEditor({ targets, gripperKind, onSet, onFocusSpec, onHo
         <FaceChip
           label="anywhere"
           active={feature?.state === GRASP_FEATURE_STATE.DECLARED_ANYWHERE}
-          onClick={() => onSet(ref, { kind: GRASP_FEATURE_KIND.ANYWHERE, ...(feature?.tcp ? { tcp: feature.tcp } : {}) })}
+          onClick={() => onSet(ref, { kind: GRASP_FEATURE_KIND.ANYWHERE })}
           grow
         />
         <FaceChip
@@ -387,31 +388,74 @@ const LIFT_WORDS = Object.freeze({
 })
 
 /**
- * LiftLine — the selected object's lift declaration as a state (ADR-157 D5).
- * Declared → direction + distance; undeclared → says the lift phase will not be
- * judged and how to declare it; malformed → the reason (the run is blocked).
+ * LiftEditor — how the relation's object is LIFTED OUT once grasped
+ * (ADR-157 D5), a field of the grasp relation since ADR-164 D4.
+ *
+ * Declared → direction chips + distance + clear; undeclared → says the lift
+ * phase will not be judged, with a draft to declare one (never prefilled — no
+ * default distance, ADR-157); malformed → the reason (the run is blocked) and the
+ * same draft to replace it. A lift read from its pre-D4 address on the object is
+ * said to be so; the first edit moves it (`setEntityGraspLift`).
  */
-export function LiftLine({ lift }) {
-  if (!lift) return null
-  const style = { fontSize: '10px', marginBottom: '5px' }
+export function LiftEditor({ objectRef, lift, onSet }) {
+  const [draft, setDraft] = useState({ along: null, distance: '' })
+  if (!objectRef || !lift) return null
+  const style = { fontSize: '10px', marginBottom: '4px' }
+  const declared = lift.state === LIFT_STATE.DECLARED
+  const ready = draft.along !== null && draft.distance !== '' && Number(draft.distance) > 0
   // `data-declaration` rides every branch — the census counts where the lift is
   // shown, whatever its state (ADR-164 D1).
-  return <div data-declaration="lift"><LiftState lift={lift} style={style} /></div>
+  return (
+    <div data-declaration="graspFeature.lift" data-testid="lift-editor" style={{ margin: '6px 0' }}>
+      <LiftState lift={lift} style={style} />
+      {lift.source === LIFT_SOURCE.LEGACY && (
+        <div data-testid="lift-legacy" style={{ ...style, color: COLOR.textSecondary }}>
+          read from the old place on the object — the next edit moves it onto this grasp
+        </div>
+      )}
+      {declared ? (
+        <div style={{ display: 'flex', gap: '4px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+          {DECLARED_LIFT_DIRECTIONS.map(a => (
+            <FaceChip key={a} label={liftWordsFor(a)} active={lift.along === a}
+              onClick={() => { if (lift.along !== a) onSet(objectRef, { along: a, distance: lift.distanceMm }) }} />
+          ))}
+          <CommitField label="distance (mm)" value={lift.distanceMm} step="5"
+            onCommit={(v) => v > 0 && onSet(objectRef, { along: lift.along, distance: v })} />
+          <FaceChip label="clear lift" active={false} onClick={() => onSet(objectRef, null)} />
+        </div>
+      ) : (
+        <div style={{ display: 'flex', gap: '4px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+          {DECLARED_LIFT_DIRECTIONS.map(a => (
+            <FaceChip key={a} label={liftWordsFor(a)} active={draft.along === a}
+              onClick={() => setDraft(d => ({ ...d, along: a }))} />
+          ))}
+          <NumField label="distance (mm)" value={draft.distance} step="5" min="0"
+            onChange={(v) => setDraft(d => ({ ...d, distance: v }))} />
+          <FaceChip label="declare lift" active={false} disabled={!ready}
+            onClick={() => ready && onSet(objectRef, { along: draft.along, distance: Number(draft.distance) })} />
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** @param {string} along */
+function liftWordsFor(along) {
+  const words = LIFT_WORDS[along]
+  if (!words) throw new Error(`GraspDeclarations: 未宣言の引き上げの向き "${along}" — LIFT_WORDS に行を足すこと`)
+  return words
 }
 
 function LiftState({ lift, style }) {
   if (lift.state === LIFT_STATE.DECLARED) {
-    const words = LIFT_WORDS[lift.along]
-    if (!words) throw new Error(`GraspDeclarations: 未宣言の引き上げの向き "${lift.along}" — LIFT_WORDS に行を足すこと`)
-    return <div style={{ ...style, color: COLOR.textSecondary }}>lift out: {words}, {lift.distanceMm} mm</div>
+    return <div style={{ ...style, color: COLOR.textSecondary }}>lift out: {liftWordsFor(lift.along)}, {lift.distanceMm} mm</div>
   }
   if (lift.state === LIFT_STATE.MALFORMED) {
     return <div style={{ ...style, color: COLOR.cautionTone }}>lift: {lift.errors[0]}</div>
   }
   return (
     <div style={{ ...style, color: COLOR.textSecondary }}>
-      lift: not declared — the lift phase will not be judged. Add{' '}
-      <code style={{ color: COLOR.infoTone }}>"lift": {'{'} "along": "worldUp", "distance": 50 {'}'}</code> to the object.
+      lift: not declared — the lift phase will not be judged
     </div>
   )
 }
@@ -487,7 +531,7 @@ export function RelationDeclarations({ objectRef }) {
         // remove the declaration (undoable); re-pointing to another object is
         // not built yet (DEF-035, ADR-164 §俯瞰 4).
         <button type="button" data-testid="grasp-relation-remove"
-          onClick={() => callbacks.onSetGraspFeature?.(objectRef, null)}
+          onClick={() => callbacks.onRemoveGraspRelation?.(objectRef)}
           style={{ ...PICKER.select, flex: undefined, cursor: 'pointer', marginTop: '4px' }}>
           remove this grasp declaration
         </button>
@@ -500,7 +544,8 @@ export function RelationDeclarations({ objectRef }) {
             onFocusSpec={callbacks.onFocusGraspSpec}
             onHoverFace={callbacks.onHoverGraspFace}
           />
-          <LiftLine lift={targets?.lift ?? null} />
+          <LiftEditor objectRef={objectRef} lift={targets?.lift ?? null}
+            onSet={(ref, lift) => callbacks.onSetGraspLift?.(ref, lift)} />
         </>
       ) : (
         <div style={{ fontSize: '10px', color: COLOR.textSecondary }}>

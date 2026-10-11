@@ -164,8 +164,10 @@ function declarationsByRef(docDsl) {
 /**
  * The document-owned declaration fields of a Solid — joined onto the live body by
  * `ref`, never read from the scene (the scene does not carry them). `mass` and
- * `centerOfMass` (ADR-121 / ADR-156) and `lift` (ADR-157) are declarations about the
- * SAME object as `graspFeature` and ride the same join; listing them here is what keeps a new
+ * `centerOfMass` (ADR-121 / ADR-156) are declarations about the SAME object as
+ * `graspFeature` and ride the same join; `lift` is the pre-ADR-164-D4 address of the
+ * relation's lift (now `graspFeature.lift`), still joined so a legacy document's lift
+ * reaches `resolveDeclaredLift` to be migrated. Listing them here is what keeps a new
  * declaration from silently falling off between the document and the request.
  */
 export const DECLARATION_KEYS = Object.freeze(['graspFeature', 'mass', 'centerOfMass', 'lift'])

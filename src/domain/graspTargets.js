@@ -42,7 +42,7 @@ import { VALID_ENTITY_TYPES } from '../layout/LayoutDslSchema.js'
 import { hollowBodyGap, shellParts, isContainer } from './hollowBody.js'
 import { rotateVec3 } from './rotateVec3.js'
 import { resolveMassProperties } from './targetMass.js'
-import { resolveLift } from './targetLift.js'
+import { resolveDeclaredLift } from './targetLift.js'
 import { GRIPPER_KIND } from '../context/GraspDeclarationCatalog.js'
 import {
   resolveGraspFeature, faceNormalOrThrow, inPlaneAxesOrThrow, usableSpecs,
@@ -187,9 +187,10 @@ export function resolveBodies(entities) {
       // What it weighs and where (ADR-121 / ADR-156) — resolved at the same one
       // point for the same reason. Undeclared stays undeclared (never the centroid).
       massProperties: resolveMassProperties(e),
-      // How it comes out once grasped (ADR-157 D5) — same one point, same reason.
-      // Undeclared stays undeclared: the lift phase is then not judged.
-      lift: resolveLift(e.lift),
+      // How it comes out once grasped (ADR-157 D5) — a fact of the grasp relation
+      // since ADR-164 D4 (`graspFeature.lift`, the old `e.lift` migrated on read).
+      // Same one point, same reason. Undeclared stays undeclared: not judged.
+      lift: resolveDeclaredLift(e),
     })
   }
   return targets

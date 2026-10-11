@@ -42,7 +42,7 @@ export const UNEVALUATED_REASON_TEXT = Object.freeze({
   gripperUndeclared:   'not judged — declare the hand on the robot tcp',
   handShapeUndeclared: 'not judged — declare the hand\'s body and fingers',
   targetBoxUndeclared: 'not judged — the object has no box to measure',
-  liftUndeclared:      'not judged — declare how the object is lifted out ("lift" on the object)',
+  liftUndeclared:      'not judged — declare how the object is lifted out (on the grasp relation\'s panel)',
 })
 
 /** What each struck part is called on screen (the contract's `hits[].part`). */

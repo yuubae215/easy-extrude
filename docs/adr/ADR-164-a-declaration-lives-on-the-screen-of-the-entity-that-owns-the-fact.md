@@ -1,6 +1,6 @@
 # 164. 宣言は、その事実を持つ実体の画面に住む — 把持まわりを 6 つのドメインへ配り直す
 
-- Status: Accepted (2026-10-11 — 当事者が俯瞰で合意。段階実装: D1・D5 (PR1)、D2 (PR2) 実装済み、D4 → D3 は続く PR — `docs/ia-redesign/03-implementation-order.md` Phase 7)
+- Status: Accepted (2026-10-11 — 当事者が俯瞰で合意。段階実装: D1・D5 (PR1)、D2 (PR2)、D4 (PR3) 実装済み、D3 は続く PR — `docs/ia-redesign/03-implementation-order.md` Phase 7)
 - Date: 2026-10-11
 - Deciders: yuubae215, Claude
 - 段: IA 再設計 Phase 7 (`docs/ia-redesign/03-implementation-order.md`)
@@ -197,6 +197,20 @@ ADR-149 がトグルを置いた理由 (a) 読み込み失敗時の戻り道 は
   5. **欄の名前は `tcp`。** `graspSpec.hand` が既に*手の種別*を指すので、`hand` だと 1 語が 2 事実を運ぶ
      (原則 #33 (1))。`tcp` は `robotRole: tcp` と同じ語で、指す先は実体である。
 
+- **PR3 の俯瞰 (2026-10-11、当事者が推奨どおり合意)** — D4 を実装する前に、言えない文が 1 つ、本文から動く点が 2 つ見つかった。
+  1. **`kind` を省略可にする (1 語 1 事実 — 原則 #33 (1))。** 引き上げを関係に移すと、把持宣言を持たないワークの旧
+     `lift` を写す先に `kind` が要る — `graspFeature` が在ることが「関係が在る」と「where を言った」を兼ねていた。
+     却下: `kind: 'anywhere'` で包む (「見たうえで絞らない」という誰も言っていない選択が文書に入る)、その場合だけ旧位置に
+     残す (住所が 2 つ — §1.1)。採った形: `kind` が無ければ「where は言っていない」= graspFeature が無いのと同じ答えで、
+     手と引き上げは運ばれる。欄は 2 つの半分 `WHERE_KEYS` / `RELATION_KEYS` に割れ、書き手も半分ずつ持つ。
+  2. **版は上げない (本文 D4 の「`layout-1.0` → 版上げ」から動いた)。** ADR-152 の `faces` (旧形は読み込み時に移して
+     書き戻さない) と同じ形で、`layout/1.0` の中で読み替える。旧位置 `Solid.lift` はスキーマに LEGACY として残る。
+     版を上げると Validator・ギャラリー・往復テストの全部が 2 版を受けることになり、変わるのは住所だけで事実は変わらない
+     (本文の「旧位置の lift は読み込み時に写して告げる」は保つ)。
+  3. **関係のパネルに引き上げの書き手を置く。** それまで引き上げを書く手段は JSON の手編集だけで、パネルは表示だけだった。
+     書き手が無いと「次の編集で新住所へ移る」が起きず、旧キーは永久に残る。唯一の書き手 `setEntityGraspLift` は書くたびに
+     旧キーを消す。
+
 ## 実装の記録
 
 ### PR1 — D1 (ワーク・ハンド・アーム) と D5 (2026-10-11)
@@ -258,6 +272,28 @@ ADR-149 がトグルを置いた理由 (a) 読み込み失敗時の戻り道 は
   gap・対の scene id・壊れた tcp) / `selection.test.js` (+1) / `DocBuilder.test.js` (+4) / `graspFeature.test.js` (+3) /
   `e2e/grasp-stub.spec.js` S17 (宣言 → 行 → 名指し → ワーク削除で ⚠ → undo)。既存の S10 / S15 / S16 は編集欄の
   移動に合わせて入口を名指しに直した (`owner-link-grasp` / `owner-link-mass`)。
+
+### PR3 — D4: 引き上げは把持の関係の欄 (2026-10-11)
+
+- **住所**: `graspFeature.lift` (関係に 1 個 — layout-1.0 と context-0.5 の双子に同時に、`$defs.lift` を新住所と旧位置が
+  共有)。`graspFeature.kind` は省略可・`minProperties: 1`。request 契約は変えない (ワイヤは今の `target.lift`)。
+- **読む**: `resolveDeclaredLift(entity)` (`src/domain/targetLift.js`) ただ 1 箇所 — 新住所、なければ旧位置を読み替えて
+  `source: 'legacy'`、2 つが違う値なら `malformed` (どちらかを黙って選ばない)。`IDENTITY_RULES` に「把持の関係の引き上げ」
+  として登録 (生の `.lift` を読んでよいのは targetLift / DocBuilder / graspRelation だけ)。
+- **書く**: 欄を 2 つの半分に割った — where (`WHERE_KEYS` = kind / specs / strategy / faces) は `setEntityGraspFeature`、
+  関係 (`RELATION_KEYS` = tcp / lift) は `setEntityGraspTcp` / `setEntityGraspLift`。各書き手は自分の半分だけを書き、
+  もう半分を運ぶ。**これで PR2 の継ぎ目が 1 つ消えた**: PR2 では仕様の書き直しのたびにパネルが `feature.tcp` を手で
+  `featureToDsl` へ渡しており、where の「clear」は `graspFeature` ごと消して名指した手まで黙って落としていた。いまは
+  where を消しても手と引き上げは残り、関係そのものを消すのは別の動詞 `removeEntityGraspRelation` (壊れた行の出口 —
+  旧位置の引き上げも一緒に消す。残すと次の読みで関係が蘇る)。空の `{}` は書かない。
+- **関係の母集団**: `declaresGraspRelation(e)` = `graspFeature` か旧位置の `lift`。旧位置の引き上げだけを持つワークも
+  関係を 1 つ持つ — 数えなければ旧文書の引き上げは画面から落ちる (原則 #31)。DEF-035 の「旧位置の `lift`」はこれで片付いた。
+- **画面**: 関係のパネルの `LiftEditor` — 向き 2 つと距離 (未宣言のときは下書き、既定の距離は入れない)、`clear lift`、
+  旧位置から読んだときは「read from the old place on the object — the next edit moves it onto this grasp」。census の
+  宣言キーは `graspFeature.lift` に改名し、旧位置は `LEGACY_DECLARATION_ADDRESS` で持ち主へ解決する (編集欄は持たない)。
+- **証拠**: `targetLift.test.js` (+5) / `graspFeature.test.js` (+3、1 本は半分の書き分けへ改稿) / `DocBuilder.test.js` (+10) /
+  `graspRelation.test.js` (+2) / `GraspController.test.js` (+2: 新旧の住所でワイヤの値が一致・書き手への委譲) /
+  `e2e/grasp-stub.spec.js` S18 (宣言の無いワークに関係のパネルから引き上げだけを宣言 → 関係 1 行・where は derived のまま・undo)。
 
 ## Lens notes
 

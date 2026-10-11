@@ -89,8 +89,9 @@ export const DECLARATION_OWNERS = Object.freeze([
     owner: 'the grasp relation (object × hand)',
     // `graspFeature.tcp` is the relation's right-hand side — which hand
     // (ADR-164 D2). Its own key because it is edited on its own (re-pointing a
-    // broken relation touches nothing else).
-    declarations: Object.freeze(['graspFeature', 'graspFeature.tcp', 'lift']),
+    // broken relation touches nothing else). `graspFeature.lift` is how it is
+    // lifted out — moved off the object onto the relation by ADR-164 D4.
+    declarations: Object.freeze(['graspFeature', 'graspFeature.tcp', 'graspFeature.lift']),
     home: DECLARATION_HOME.RELATION_PANEL,
     movesWith: null,
   }),
@@ -118,14 +119,26 @@ export const DECLARATION_OWNERS = Object.freeze([
 ])
 
 /**
+ * Document addresses that are READ but never written — a retired place a
+ * declaration used to live, mapped to the declaration it is read as. They have
+ * no editor (nothing writes them), so they are not rows; the lookup resolves them
+ * to the owner of what they mean. ADR-164 D4: the Solid's `lift` is migrated
+ * onto the grasp relation on read (`resolveDeclaredLift`).
+ */
+export const LEGACY_DECLARATION_ADDRESS = Object.freeze({
+  lift: 'graspFeature.lift',
+})
+
+/**
  * The row that owns a declaration key. Throws on a key no row declares — an
  * editor for an ownerless declaration is the defect ADR-164 removes, so the
  * lookup must not fall through to a default home (原則 #31).
- * @param {string} key
+ * @param {string} key  a declaration key, or a legacy address (`LEGACY_DECLARATION_ADDRESS`)
  * @returns {DeclarationOwnerRow}
  */
 export function ownerOfDeclaration(key) {
-  const row = DECLARATION_OWNERS.find(r => r.declarations.includes(key))
+  const current = Object.hasOwn(LEGACY_DECLARATION_ADDRESS, key) ? LEGACY_DECLARATION_ADDRESS[key] : key
+  const row = DECLARATION_OWNERS.find(r => r.declarations.includes(current))
   if (!row) throw new Error(`DeclarationOwnership: "${key}" has no owner row (ADR-164 D1)`)
   return row
 }

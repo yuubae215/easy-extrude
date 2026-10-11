@@ -17,6 +17,8 @@ import {
   removeDocEntry,
   setEntityGraspFeature,
   setEntityGraspTcp,
+  setEntityGraspLift,
+  removeEntityGraspRelation,
   setEntityHand,
 } from './DocBuilder.js'
 import { CONTEXT_DSL_VERSION, SUPPORTED_VERSIONS } from './ContextDslSchema.js'
@@ -450,6 +452,80 @@ describe('setEntityGraspTcp', () => {
     const d = doc({ kind: 'anywhere' })
     const snap = JSON.parse(JSON.stringify(d))
     setEntityGraspTcp(d, 'widget', 'tcp_a')
+    assert.deepEqual(d, snap)
+  })
+})
+
+// ── 把持の関係の 2 つの半分 — where と、手・引き上げ (ADR-164 D4) ───────────────
+
+describe('grasp relation writers (ADR-164 D4)', () => {
+  const doc = (extra = {}) => ({
+    ...createBlankDoc('cell'),
+    specification: { layout: { version: 'layout/1.0', entities: [
+      { ref: 'widget', type: 'Solid', name: 'Widget', position: { x: 0, y: 0, z: 0 }, dimensions: { x: 1, y: 1, z: 1 }, ...extra },
+    ] } },
+  })
+  const widget = (d) => d.specification.layout.entities[0]
+  const UP50 = { along: 'worldUp', distance: 50 }
+
+  it('setEntityGraspFeature rewrites the where and carries the hand and the lift through', () => {
+    const next = setEntityGraspFeature(doc({ graspFeature: { kind: 'anywhere', tcp: 'tcp_a', lift: UP50 } }), 'widget',
+      { kind: 'specs', specs: [{ name: 's', hand: 'parallelJaw', approach: { from: '+z' } }] })
+    assert.equal(widget(next).graspFeature.tcp, 'tcp_a')
+    assert.deepEqual(widget(next).graspFeature.lift, UP50)
+    assert.equal(widget(next).graspFeature.kind, 'specs')
+  })
+
+  it('clearing the where keeps a relation that still names its hand or lift', () => {
+    const next = setEntityGraspFeature(doc({ graspFeature: { kind: 'anywhere', tcp: 'tcp_a' } }), 'widget', null)
+    assert.deepEqual(widget(next).graspFeature, { tcp: 'tcp_a' })
+  })
+
+  it('clearing the where of a relation that says nothing else removes the key — never `{}`', () => {
+    const next = setEntityGraspFeature(doc({ graspFeature: { kind: 'anywhere' } }), 'widget', null)
+    assert.equal('graspFeature' in widget(next), false)
+  })
+
+  it('a relation field handed to the where writer throws — each half has one writer', () => {
+    assert.throws(() => setEntityGraspFeature(doc(), 'widget', { kind: 'anywhere', tcp: 'tcp_a' }), /where の欄ではない/)
+  })
+
+  it('setEntityGraspLift on an object with no declaration creates the relation with the lift only — no invented where', () => {
+    const next = setEntityGraspLift(doc(), 'widget', UP50)
+    assert.deepEqual(widget(next).graspFeature, { lift: UP50 })
+  })
+
+  it('setEntityGraspLift moves a legacy lift: writes the relation, deletes the old key', () => {
+    const next = setEntityGraspLift(doc({ lift: UP50, graspFeature: { kind: 'anywhere' } }), 'widget', { along: 'worldUp', distance: 80 })
+    assert.equal('lift' in widget(next), false)
+    assert.deepEqual(widget(next).graspFeature, { kind: 'anywhere', lift: { along: 'worldUp', distance: 80 } })
+  })
+
+  it('clearing the last field of a relation removes the declaration (and the legacy lift)', () => {
+    const next = setEntityGraspLift(doc({ lift: UP50 }), 'widget', null)
+    assert.equal('graspFeature' in widget(next), false)
+    assert.equal('lift' in widget(next), false)
+  })
+
+  it('a legacy-lift relation can be given a hand (the relation exists before graspFeature does)', () => {
+    const next = setEntityGraspTcp(doc({ lift: UP50 }), 'widget', 'tcp_a')
+    assert.deepEqual(widget(next).graspFeature, { tcp: 'tcp_a' })
+    assert.deepEqual(widget(next).lift, UP50, 'naming the hand does not move the lift — that is the lift writer')
+  })
+
+  it('removeEntityGraspRelation removes every field and the legacy lift that would resurrect it', () => {
+    const next = removeEntityGraspRelation(doc({ lift: UP50, graspFeature: { kind: 'anywhere', tcp: 'tcp_a' } }), 'widget')
+    assert.equal('graspFeature' in widget(next), false)
+    assert.equal('lift' in widget(next), false)
+  })
+
+  it('every writer is input-immutable', () => {
+    const d = doc({ lift: UP50, graspFeature: { kind: 'anywhere', tcp: 'tcp_a' } })
+    const snap = JSON.parse(JSON.stringify(d))
+    setEntityGraspFeature(d, 'widget', null)
+    setEntityGraspLift(d, 'widget', null)
+    setEntityGraspTcp(d, 'widget', null)
+    removeEntityGraspRelation(d, 'widget')
     assert.deepEqual(d, snap)
   })
 })
