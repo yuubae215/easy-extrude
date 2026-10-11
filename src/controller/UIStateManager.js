@@ -89,7 +89,13 @@ export class UIStateManager {
         childFrames,
         () => ctrl._promptAddFrame(obj.id),
         (fid) => ctrl._selMgr.selectOnly(fid),
-        { robotRole: obj.robotRole ?? null },
+        {
+          robotRole: obj.robotRole ?? null,
+          entityId:  obj.id,
+          // The tcp's own declaration — what this robot grasps with (ADR-164 D1:
+          // the HAND domain lives on the tcp's panel). null on any other frame.
+          hand: ctrl._graspCtrl?.handDeclarationsOf(obj.id) ?? null,
+        },
       )
       return
     }
@@ -188,6 +194,10 @@ export class UIStateManager {
       frames,
       onAddFrame,
       onSelectFrame,
+      // What this object declares about itself — mass and centre of mass (ADR-164
+      // D1: the WORK domain lives on the object's own panel). null when it is not
+      // something a grasp can be for.
+      work: obj instanceof Solid ? (ctrl._graspCtrl?.workDeclarationsOf(obj.id) ?? null) : null,
     })
   }
 

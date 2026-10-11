@@ -164,6 +164,11 @@ export class ContextService extends EventEmitter {
    * @returns {Promise<object>} importFromJson の結果
    */
   async _projectScene(scene, viewContext, { preserveUndeclared = true } = {}) {
+    // Announced BEFORE the scene is cleared (ADR-164 D1): the clear drops every
+    // projected entity — and with it the selection — even when the same ids come
+    // straight back. Whoever owns the selection hears it here, on the event that
+    // drops it, and re-selects after `contextChanged` (原則 #32).
+    this.emit('projectionReplacing')
     const preserve = preserveUndeclared ? this._undeclaredIds() : null
     const result = await this._scene.importFromJson(scene, viewContext, { clear: true, preserve })
     const live = new Set(this._sceneObjectIds())
@@ -749,6 +754,18 @@ export class ContextService extends EventEmitter {
    */
   refForSceneId(sceneId) {
     return this._refForSceneId(sceneId)
+  }
+
+  /**
+   * Forward read of the same map: the scene id the current projection gave a
+   * layout ref, or null. A ref outlives the instance (ADR-129) — this is how a
+   * caller finds "the same object" again after a re-projection gave it a new id
+   * (ADR-159's adoption re-creates screen objects under compiled ids).
+   * @param {string} ref
+   * @returns {string|null}
+   */
+  sceneIdForRef(ref) {
+    return this._refToId.get(ref) ?? null
   }
 
   /** Reverse `_refToId` (scene entity id → canonical layout ref). */

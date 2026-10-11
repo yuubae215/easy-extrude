@@ -233,9 +233,9 @@ export class UIViewBridge {
   /**
    * Reflects the robot's render style into the chrome (ADR-149). The
    * AUTHORITY is `RobotStageSet._renderStyle`; this is the display copy,
-   * written on the one path that also writes the authority
-   * (AppController.onRobotAppearanceChange), both optimistically on request
-   * and again on any failure's rollback.
+   * written once the console entry point `window.__easyExtrude.
+   * setRobotAppearance` has settled (ADR-164 D5 removed the UI toggle that used
+   * to write it optimistically).
    * @param {'skeleton'|'realistic'} style
    */
   setRobotAppearance(style) {
@@ -248,6 +248,11 @@ export class UIViewBridge {
    * to say why there is no arm yet (原則 #11).
    * @param {boolean} loading
    */
+  /** ADR-164 D5 — robots drawn as the skeleton because the mesh could not load. */
+  setRobotMeshFallbacks(ids) {
+    useUIStore.getState().actions.setRobotMeshFallbacks(ids)
+  }
+
   setRobotAppearanceLoading(loading) {
     useUIStore.getState().actions.setRobotAppearanceLoading(loading)
   }
@@ -295,10 +300,6 @@ export class UIViewBridge {
     useUIStore.getState().actions.registerCallback('onProjectionChange', cb)
   }
 
-  onRobotAppearanceChange(cb) {
-    useUIStore.getState().actions.registerCallback('onRobotAppearanceChange', cb)
-  }
-
   onNodeEditorToggle(cb) {
     const wrapped = () => {
       cb()
@@ -342,6 +343,7 @@ export class UIViewBridge {
       frames:               options.frames              ?? null,
       onAddFrame:           options.onAddFrame          ?? null,
       onSelectFrame:        options.onSelectFrame       ?? null,
+      work:                 options.work                ?? null,
     })
   }
 
@@ -366,6 +368,9 @@ export class UIViewBridge {
       // entity-scope validation off the selection alone (ADR-105 D5). Deliberately
       // the role and not the name — the name is not unique across robots.
       robotRole: opts.robotRole ?? null,
+      entityId:  opts.entityId ?? null,
+      // ADR-164 D1 — the tcp's hand declaration (null on any other frame).
+      hand:      opts.hand ?? null,
     })
   }
 

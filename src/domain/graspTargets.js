@@ -605,18 +605,25 @@ export { isContainer }
  * panel can render "declared / not declared" WITHOUT reaching into the Layout DSL
  * itself — the resolution stays at its one point and the panel stays a renderer.
  *
+ * Each row also carries the scene id of its body (`sceneId`, ADR-164 D1) when
+ * the caller knows it, so the grasp panel can link to the object's own N panel —
+ * where its mass is declared — without re-deriving refs.
+ *
  * @param {GraspTarget[]} targets
  * @param {string|null} selectedRef
- * @returns {{list:{ref:string,label:string,feature:object}[], selectedRef:string|null,
+ * @param {ReadonlyMap<string,string>|null} [sceneIdByRef]  ref → scene id
+ * @returns {{list:{ref:string,label:string,feature:object,sceneId:string|null}[], selectedRef:string|null, selectedSceneId:string|null,
  *            cardinality:string, feature:object|null, faceWords:Record<string,string>|null,
  *            massProperties:object|null, lift:object|null}}
  */
-export function targetProjection(targets, selectedRef) {
+export function targetProjection(targets, selectedRef, sceneIdByRef = null) {
   const list     = targets ?? []
   const selected = selectTarget(list, selectedRef)
+  const sceneIdOf = (ref) => sceneIdByRef?.get(ref) ?? null
   return {
-    list:        list.map(t => ({ ref: t.ref, label: t.label, feature: t.feature })),
+    list:        list.map(t => ({ ref: t.ref, label: t.label, feature: t.feature, sceneId: sceneIdOf(t.ref) })),
     selectedRef: selected?.ref ?? null,
+    selectedSceneId: selected ? sceneIdOf(selected.ref) : null,
     cardinality: targetCardinality(list),
     // The SELECTED target's declaration, lifted out so the panel's "where to
     // grasp" block does not re-run the "which one" question (原則 #25 — resolved

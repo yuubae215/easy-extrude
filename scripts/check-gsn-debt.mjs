@@ -368,7 +368,11 @@ const SUPPORT_LABELS = new Map([
 // (満期=ADR-164 / ADR-165 / PATH:… / GREP:CLAUDE.md::… / GONE:…::The\sBlueprint\sdevice) なので分子 (G3) は動かない。
 // 2026-10-11 (同日): 59 → 58。ADR-166 M1 (演出の棚卸しと採点) を実施し、EveryMotionSurfaceIsScored が
 // support-verified に上がった (証拠: docs/motion/inventory.md と MotionInventoryCoverage.test.js の node --test)。
-const DEBT_BASELINE = 58
+// 2026-10-11 (同日): 58 → 56。ADR-164 PR1 (D1 + D5) で APanelShowsOnlyItsOwnersDeclarations
+// (DeclarationOwnership.test.js の census) と RealisticAppearanceFallsBackWithoutAToggle
+// (robot-appearance e2e のフォールバック) が support-verified に上がった。残る 1 つ
+// (把持の関係の行 — D2) は PR2 で上がる。
+const DEBT_BASELINE = 56
 
 /**
  * G3 — 満期 trigger を持たない exploring goal の個数 (実測値)。

@@ -786,6 +786,12 @@ const DRAFT_WITH_IMPLEMENTATION = [
        + '`FunctionMatcher.js` / `SpatialCommandParser` は 1 つも存在しない。'
        + 'ADR-052 が φ を 5W1H 語彙全体へ一般化した結果、引用だけが増えた。'
        + 'この行が消えるのは ADR-044 の判断が閉じたとき (DEF-017)' },
+  { adr: 'ADR-165',
+    why: '**言及であって実装ではない。** `src/view/DeclarationOwnership.js` (ADR-164 D1 の住所の表) が、'
+       + 'ユーザのドメイン (判定基準 — 重み・上位) の行を「まだ持ち主が画面に居ない — ADR-165 で動く」と'
+       + '`movesWith` で名指ししているだけで、ADR-165 の聞き取り・合意・線の変更提案は 1 行も実装していない。'
+       + 'census (`DeclarationOwnership.test.js`) はその名指しを ratchet で固定する側。'
+       + 'この行が消えるのは ADR-165 が Accepted になったとき' },
   { adr: 'ADR-166',
     why: '**段の 1 つ目だけが実施済みで、判断はまだ閉じていない。** `MotionInventoryCoverage.test.js` は '
        + 'M1 (演出の棚卸しと採点 — docs/motion/inventory.md) の census で、作り直しの実装ではない。'

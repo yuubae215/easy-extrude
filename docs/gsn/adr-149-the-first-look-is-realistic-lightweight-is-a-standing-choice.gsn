@@ -46,10 +46,10 @@ labels adr-149, adr-148, adr-103, adr-090, adr-109, adr-125, principle-4, princi
 
             solution ToggleClickRoundTripsBothTheStoreAndTheDeclaration
             uuid ae2ca780-8d86-4282-a32e-bbbc80cfa864
-            summary "新規 e2e: ロボットを追加 → RobotAppearanceToggle をクリック (skeleton へ) → drawn/declared が 'skeleton' → 再クリック (realistic へ) → 'realistic' に戻ることを window.__easyExtrude.robotAppearance() で焼く。ProjectionToggle 側の既存パターン (uiStore 経由の aria-pressed 反映) を流用するので、UI 層の新しい状態機械は増えない"
+            summary "新規 e2e: ロボットを追加 → RobotAppearanceToggle をクリック (skeleton へ) → drawn/declared が 'skeleton' → 再クリック (realistic へ) → 'realistic' に戻ることを window.__easyExtrude.robotAppearance() で焼く。ProjectionToggle 側の既存パターン (uiStore 経由の aria-pressed 反映) を流用するので、UI 層の新しい状態機械は増えない。**2026-10-11 退役: ADR-164 D5 がトグルを撤去した** (当事者判断 — 軽量は実写が読めないときの自動フォールバックで足りる)。この e2e は『トグルが画面に 0 個 + 読み込み失敗で自動的に落ちロボットのパネルが言う』へ置き換わり、コンポーネントは削除された。ADR-164 を Accepted にする PR で ADR-149 を Partially superseded にし、この goal はその時点の記録として残る"
             artifacts
             - "e2e/robot-appearance.spec.js"
-            - "src/components/RobotAppearanceToggle/RobotAppearanceToggle.jsx"
+            - "docs/adr/ADR-164-a-declaration-lives-on-the-screen-of-the-entity-that-owns-the-fact.md"
 
         goal AFailedLoadIsShownAndRolledBackRatherThanSilent
         uuid d1270ca6-4ee8-41ee-9aa5-18c11c4c069e

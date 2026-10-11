@@ -35,11 +35,16 @@ artifacts
         goal APanelShowsOnlyItsOwnersDeclarations
         uuid dfde409c-a0ef-4a67-b72d-d7d4ac22a378
         summary "どの実体を選んでも、N Panel の宣言の節に出る欄はその実体が持ち主である宣言だけで、6 ドメインの表に無い宣言欄が画面に 0 個"
-        labels support-exploring
+        labels support-verified
 
-            assumption OwnerTableCensusWillSettleIt
-            uuid 3b10051e-953a-4da9-9304-85ae573d25b9
-            summary "証拠予定: 実装 PR で、6 ドメインの表を母集団にした census テスト (宣言欄 → 持ち主の種の対応が表にちょうど一致し、表の外の欄が 0 個) を置く。満期=PATH:src/components/NPanel/DeclarationOwnership.test.js で決着する"
+            solution OwnerTableCensusIsExecuted
+            uuid 1653d80b-8076-4cd4-a3e1-8edaeb5e7b15
+            summary "src/components/NPanel/DeclarationOwnership.test.js (2026-10-11, 7 pass): 母集団は DECLARATION_OWNERS の 6 行。components の data-declaration を数え、持ち主の行の無い欄 0 / 住所違いの欄 0 / 表にあって欄の無い宣言 0 / ロボットと tcp のパネルにワークの宣言 0 / 文書の宣言キー (DECLARATION_KEYS) が全部持ち主を持つ / まだ動いていない行 (grasp・vision・user) が名指しで固定 (ratchet)。GraspSearchPanel に data-declaration=mass を足すと 2 本が落ちることを確認。src/controller/GraspController.test.js: workDeclarationsOf / handDeclarationsOf が選んだ実体自身の宣言を返す (tcp は探索の主語ではなく選んだ tcp のロボット)。e2e/grasp-stub.spec.js S15/S16: 対象を選んだだけでは mass-editor が 0 個、▸ リンクでワークのパネルへ渡って宣言・undo"
+            artifacts
+            - "src/components/NPanel/DeclarationOwnership.test.js"
+            - "src/view/DeclarationOwnership.js"
+            - "src/controller/GraspController.test.js"
+            - "e2e/grasp-stub.spec.js"
 
         goal AGraspIsARelationRowAndABrokenOneIsVisible
         uuid 09e42d66-8ab1-4cf6-8b58-e15a2454f11f
@@ -53,8 +58,11 @@ artifacts
         goal RealisticAppearanceFallsBackWithoutAToggle
         uuid 0e804743-ddc7-4a20-9060-89fbbc07ed65
         summary "実写 / 軽量の常設トグルは画面に無い。実写メッシュが読めないときだけ軽量表示へ自動で落ち、落ちたことをロボットのパネルが言う"
-        labels support-exploring
+        labels support-verified
 
-            assumption ToggleRemovalWillSettleIt
-            uuid 17a48861-1d52-46b3-b40c-b81f94a4fbf1
-            summary "証拠予定: 実装 PR でトグルのコンポーネントを消し、読み込み失敗を起こす e2e で軽量表示と提示を確かめる。満期=ADR-164"
+            solution FallbackE2eIsExecuted
+            uuid c99a4d09-0547-4207-804c-908b5869561d
+            summary "e2e/robot-appearance.spec.js (2026-10-11, 9 pass): REAL / LITE のどちらの文言も画面に 0 個、ロボットのパネルが『appearance: realistic mesh』。ur5e.urdf の取得を route.abort で止めると、押下なしで腕が skeleton になり、ロボットのパネルが『lightweight skeleton — the realistic mesh could not be loaded』と言い続ける。RobotAppearanceToggle.jsx は削除 (Retires の PATH)"
+            artifacts
+            - "e2e/robot-appearance.spec.js"
+            - "src/components/NPanel/declarations/ArmDeclarations.jsx"

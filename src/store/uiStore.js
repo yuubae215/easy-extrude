@@ -7,6 +7,15 @@ import { claimStage, releaseStage } from '../view/ScreenClaim.js'
 let _toastId = 0
 
 /**
+ * An arm's reach envelope before anyone declared it (ADR-164 D1 / ADR-120):
+ * off, blank, untouched. Exported so the readers and the writer start from the
+ * same "undeclared", never a seeded default.
+ */
+export const UNDECLARED_REACH = Object.freeze({
+  enabled: false, reachMin: '', reachMax: '', wristConeHalfAngle: '', touched: false,
+})
+
+/**
  * Central UI state store — bridges AppController (vanilla JS) and React components.
  *
  * AppController updates state via uiStore.getState().actions.*()
@@ -37,9 +46,11 @@ export const useUIStore = create((set, get) => ({
   //   { type: 'generic', centroid, dimensions, name, description, locationEditable,
   //     showIfcClass, ifcClass, showPlaceType, placeType, placeTypeGeometry,
   //     spatialLinks, currentEntityId, onDeleteSpatialLink, getEntityName,
-  //     frames, onAddFrame, onSelectFrame }
+  //     frames, onAddFrame, onSelectFrame, work }
   //   { type: 'frame', pos, eulerDeg, name, locked, parentOptions, currentParentId,
-  //     unreferenced, childFrames, onAddChildFrame, onSelectChildFrame }
+  //     unreferenced, childFrames, onAddChildFrame, onSelectChildFrame,
+  //     robotRole, entityId, hand }
+  //   `work` / `hand` are the selected entity's OWN declarations (ADR-164 D1).
   //   { type: 'link', link, srcName, tgtName, onDelete }
   //   { type: 'variable', ref, description, unit, summary, claims, hasShape } (ADR-107)
   nPanelData: null,
@@ -96,15 +107,18 @@ export const useUIStore = create((set, get) => ({
 
   // ── ロボットの描画スタイル (ADR-149) ────────────────────────────────────────
   // 'realistic' | 'skeleton' — 権威は `view/RobotStageSet._renderStyle`
-  // (ADR-148)。ここは AppController の onRobotAppearanceChange 経由でだけ書く
-  // *表示用の写し* であって第二の源ではない (原則 #4)。`RobotStageSet` 自身が
-  // 要求時に楽観更新してから非同期ロードするので、この写しも同じ楽観更新を行い
-  // 全滅時だけ実測へ書き戻す (AppController 側)。既定は RobotStageSet の既定と
-  // 一致させ 'realistic'。
+  // (ADR-148)。ここは *表示用の写し* であって第二の源ではない (原則 #4)。
+  // ADR-164 D5 で常設トグルが撤去され、書き手は `window.__easyExtrude.
+  // setRobotAppearance` (e2e とデバッグの入口) が解決したときの AppController
+  // ただ 1 つ。既定は RobotStageSet の既定と一致させ 'realistic'。
   robotAppearance: 'realistic',
   // 実写メッシュの読み込み中か (ADR-150 D3)。権威は `RobotStageSet` の
   // `loading` イベントで、ここはその表示用の写し。AppController の購読だけが書く。
   robotAppearanceLoading: false,
+  // 実写を採れず軽量表示へ自動で落ちたロボットの id (ADR-164 D5)。基数 0..N —
+  // 0 が既定 (全台が実写)。書き手は `adoptFailed` を購読する AppController だけ。
+  // ロボットのパネルがこれを読み「落ちた」ことを言い続ける (トーストは消えるため)。
+  robotMeshFallbacks: [],
 
   // ── Context Menu ──────────────────────────────────────────────────────────
   // { x, y, items: [{label, onClick, danger?}] } | null
@@ -310,6 +324,18 @@ export const useUIStore = create((set, get) => ({
     // The twin of `robots`: same 0/1/N discipline (原則 #31), same read-model
     // rules (the layout DSL is the authority; nothing writes back here).
     graspTargets: { list: [], selectedRef: null, cardinality: 'none' },
+    // ADR-164 D1 — the reach envelope declared for each arm (the ARM domain),
+    // keyed by robot id (the base frame's entity id). Edited on that robot's own
+    // N panel and read by the grasp panel's Run for the search subject. Sole
+    // writer: `contextSetReachDeclaration`, called only from `ArmDeclarations`
+    // (原則 #4). It still has NO address in the document — it moved from the grasp
+    // panel's React state to here so two panels can share it, not because it
+    // became a document fact (that is DEF-033's question).
+    //   { [robotId]: { enabled, reachMin, reachMax, wristConeHalfAngle (form text),
+    //                  touched (the user edited a number: never re-seed) } }
+    // A robot with no row has an UNDECLARED envelope (ADR-120) — `{}` is the
+    // honest start, and N robots never share one declaration.
+    reachDeclarations: {},
     // ADR-063 Phase 3 wizard FSM — sole writer ContextController via the pure
     // WizardCatalog transition functions; the panel only reads + fires callbacks.
     // null = inactive (the wizard tab shows its start screen). Shapes:
@@ -384,6 +410,8 @@ export const useUIStore = create((set, get) => ({
     setProjection: (kind) => set({ projection: kind }),
     setRobotAppearance: (style) => set({ robotAppearance: style }),
     setRobotAppearanceLoading: (loading) => set({ robotAppearanceLoading: loading }),
+    // ADR-164 D5 — the robots whose realistic mesh could not be adopted.
+    setRobotMeshFallbacks: (ids) => set({ robotMeshFallbacks: ids }),
 
     setGizmoRightOffset: (px) => set({ gizmoRightOffset: px }),
 
@@ -621,6 +649,16 @@ export const useUIStore = create((set, get) => ({
     // GraspController; the layout DSL is the authority, this is the read-model).
     contextSetGraspTargets: (graspTargets) => set(state => ({
       context: { ...state.context, graspTargets },
+    })),
+    // ADR-164 D1 — merge a patch into one arm's reach declaration (sole writer).
+    contextSetReachDeclaration: (robotId, patch) => set(state => ({
+      context: {
+        ...state.context,
+        reachDeclarations: {
+          ...state.context.reachDeclarations,
+          [robotId]: { ...UNDECLARED_REACH, ...state.context.reachDeclarations[robotId], ...patch },
+        },
+      },
     })),
     setTemplateGalleryPreviews: (previews) => set({ templateGalleryPreviews: previews }),
 

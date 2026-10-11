@@ -150,7 +150,7 @@ function fakeRobotScene(hand = undefined) {
  *   (`resolveSearchLayout`), not a silent degrade: the older tests below keep
  *   asserting the document path on purpose.
  */
-function makeCtrl({ bff = null, layoutDsl = LAYOUT, loaded = true, isNegotiation = true, connectSets = undefined, robotScene = true, sceneDsl = null, sceneWarnings = [], robotHand = undefined } = {}) {
+function makeCtrl({ bff = null, layoutDsl = LAYOUT, loaded = true, isNegotiation = true, connectSets = undefined, robotScene = true, sceneDsl = null, sceneWarnings = [], sceneRefOf = null, robotHand = undefined } = {}) {
   const robot = robotScene ? fakeRobotScene(robotHand) : { scene: undefined, service: {} }
   return {
     _uiView: {
@@ -161,7 +161,7 @@ function makeCtrl({ bff = null, layoutDsl = LAYOUT, loaded = true, isNegotiation
     _service: {
       bff,
       ...robot.service,
-      ...(sceneDsl ? { decompileToLayoutDsl: () => ({ dsl: sceneDsl, warnings: sceneWarnings }) } : {}),
+      ...(sceneDsl ? { decompileToLayoutDsl: () => ({ dsl: sceneDsl, warnings: sceneWarnings, refOf: sceneRefOf ?? new Map() }) } : {}),
       async connectBff() { if (connectSets !== undefined) this.bff = connectSets },
     },
     _ctxService: {
@@ -886,7 +886,7 @@ test('refreshRobots publishes the roster as a labelled read-model', () => {
   gc.refreshRobots()
   const robots = store.getState().context.robots
   assert.equal(robots.cardinality, 'single')
-  assert.deepEqual(robots.list, [{ id: 'f_base', label: 'robot_base', hasTcp: true }])
+  assert.deepEqual(robots.list, [{ id: 'f_base', label: 'robot_base', hasTcp: true, tcpId: 'f_tcp' }])
 })
 
 test('a pre-ADR-151 tcp (no mount declared) never reaches the wire — the upgrade is what makes it usable', async () => {
@@ -1460,4 +1460,51 @@ test('a backend that ignores the ask is a failure, not "no hits"', async () => {
   await gc.runGraspSearch({})
   await gc.runInterferenceAnalysis()
   assert.equal(store.getState().context.graspAnalysis.status, 'failed')
+})
+
+// ── Declarations by owner (ADR-164 D1) ───────────────────────────────────────
+
+const SCENE_REF_OF = new Map([['solid_widget', 'widget'], ['pt_1', 'tcp_pick']])
+
+test('workDeclarationsOf: the selected Solid answers with ITS mass, read from the document', () => {
+  const doc = { ...LAYOUT, entities: LAYOUT.entities.map(e => (e.ref === 'widget' ? { ...e, mass: 1.5 } : e)) }
+  const { gc } = setup({ sceneDsl: LAYOUT, sceneRefOf: SCENE_REF_OF, layoutDsl: doc })
+  const work = gc.workDeclarationsOf('solid_widget')
+  assert.equal(work.ref, 'widget')
+  assert.equal(work.massProperties.mass.state, 'declared')
+  assert.equal(work.massProperties.mass.kg, 1.5)
+})
+
+test('workDeclarationsOf: undeclared is a state, not a missing section', () => {
+  const { gc } = setup({ sceneDsl: LAYOUT, sceneRefOf: SCENE_REF_OF })
+  assert.equal(gc.workDeclarationsOf('solid_widget').massProperties.mass.state, 'undeclared')
+})
+
+test('workDeclarationsOf: null for what a grasp cannot be for (not a Solid / unknown / no scene reading)', () => {
+  const { gc } = setup({ sceneDsl: LAYOUT, sceneRefOf: SCENE_REF_OF })
+  assert.equal(gc.workDeclarationsOf('pt_1'), null)        // an AnnotatedPoint
+  assert.equal(gc.workDeclarationsOf('nope'), null)        // not in the scene's reading
+  assert.equal(gc.workDeclarationsOf(null), null)
+  // Geometry from the document (no decompiler): there is no scene id to join on.
+  const { gc: docOnly } = setup({})
+  assert.equal(docOnly.workDeclarationsOf('solid_widget'), null)
+})
+
+test('handDeclarationsOf: the selected tcp answers with its own robot, not the search subject', () => {
+  const { gc } = setup({ robotHand: JAW_HAND })
+  const hand = gc.handDeclarationsOf('f_tcp')
+  assert.equal(hand.robotId, 'f_base')
+  assert.equal(hand.state, 'declared')
+  assert.equal(hand.hand.kind, 'parallelJaw')
+  // The base frame owns the ARM, not the hand.
+  assert.equal(gc.handDeclarationsOf('f_base'), null)
+  assert.equal(gc.handDeclarationsOf('nope'), null)
+})
+
+test('the target roster rows carry their scene id so the grasp panel can link to the object (ADR-164 D1)', () => {
+  const { gc, store } = setup({ sceneDsl: LAYOUT, sceneRefOf: SCENE_REF_OF })
+  gc.refreshGraspTargets()
+  const t = store.getState().context.graspTargets
+  assert.deepEqual(t.list.map(r => [r.ref, r.sceneId]), [['widget', 'solid_widget']])
+  assert.equal(t.selectedSceneId, 'solid_widget')
 })
