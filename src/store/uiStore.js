@@ -290,6 +290,8 @@ export const useUIStore = create((set, get) => ({
     //   { status:'idle',      layout }
     //   { status:'no-layout' }
     //   { status:'no-robot',  layout, reason, robotCount }   — ADR-090 Decision 4
+    //   { status:'no-target', layout, reason, targetCount }  — ADR-117
+    //   { status:'no-camera', layout, reason, cameraCount }  — ADR-164 D3 (N cameras, none picked / unreadable)
     //   { status:'compiling', layout }
     //   { status:'solving',   layout, request }
     //   { status:'results',   layout, request, candidates, compiledObjects, selectedRank }
@@ -324,6 +326,12 @@ export const useUIStore = create((set, get) => ({
     // The twin of `robots`: same 0/1/N discipline (原則 #31), same read-model
     // rules (the layout DSL is the authority; nothing writes back here).
     graspTargets: { list: [], selectedRef: null, cardinality: 'none' },
+    // ADR-164 D3 — DERIVED vision-camera roster (a camera is a frame carrying a
+    // `camera` declaration; the scene is the authority). Sole writer
+    // GraspController.refreshCameras(). Same 0/1/N discipline as `robots`:
+    //   { list: [{ id, label, state }], selectedId, cardinality, selected: <cameraDeclarationsOf>|null }
+    // 0 = visibility is not asked (a state, not a gap).
+    cameras: { list: [], selectedId: null, cardinality: 'none', selected: null },
     // ADR-164 D2 — DERIVED grasp relations (object × tcp), one per document grasp
     // declaration, judged against the live scene:
     //   { list: [{ objectRef, tcpRef, state, objectLabel, tcpLabel, objectSceneId, tcpSceneId }],
@@ -651,6 +659,10 @@ export const useUIStore = create((set, get) => ({
     // GraspController; the scene is the authority, this is the panel's read-model).
     contextSetRobots: (robots) => set(state => ({
       context: { ...state.context, robots },
+    })),
+    // ADR-164 D3 — replace the derived camera roster wholesale (sole writer GraspController).
+    contextSetCameras: (cameras) => set(state => ({
+      context: { ...state.context, cameras },
     })),
     // ADR-117 — replace the derived grasp-target roster wholesale (sole writer
     // GraspController; the layout DSL is the authority, this is the read-model).

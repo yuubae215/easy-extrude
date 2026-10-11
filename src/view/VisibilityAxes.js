@@ -89,6 +89,8 @@ export const VISIBILITY_KIND = Object.freeze({
   ROBOT_BASE_SEEDED: 'robotBaseSeeded',
   /** robot_base born from the user's Add ▸ Robot. */
   ROBOT_BASE_ADDED:  'robotBaseAdded',
+  /** A vision camera (a frame carrying a `camera` declaration — ADR-164 D3). */
+  CAMERA:            'camera',
 })
 
 /**
@@ -113,6 +115,10 @@ export const EXPLICIT_DEFAULTS = Object.freeze({
   [VISIBILITY_KIND.ROBOT_BASE_SEEDED]: true,
   // The user just asked for it — nothing appearing would be a silent no-op (#11).
   [VISIBILITY_KIND.ROBOT_BASE_ADDED]:  true,
+  // A camera is an entity the user placed, and its frustum is what "can it be
+  // seen" is asked from (ADR-164 D3) — a camera you cannot see is a judgement
+  // you cannot check (原則 #33 (4)). Not context furniture like a plain frame.
+  [VISIBILITY_KIND.CAMERA]:            true,
 })
 
 /**
@@ -122,11 +128,12 @@ export const EXPLICIT_DEFAULTS = Object.freeze({
  * THREE imports; the caller does the `instanceof` / `isRobotBaseFrame()`
  * narrowing once (SceneService).
  *
- * @param {{isFrame: boolean, isRobotBase?: boolean, entry?: string}} descriptor
+ * @param {{isFrame: boolean, isRobotBase?: boolean, isCamera?: boolean, entry?: string}} descriptor
  * @returns {string} a `VISIBILITY_KIND` member
  */
-export function visibilityKindOf({ isFrame, isRobotBase = false, entry = VISIBILITY_ENTRY.SEED }) {
+export function visibilityKindOf({ isFrame, isRobotBase = false, isCamera = false, entry = VISIBILITY_ENTRY.SEED }) {
   if (!isFrame) return VISIBILITY_KIND.GEOMETRY
+  if (isCamera) return VISIBILITY_KIND.CAMERA
   if (!isRobotBase) return VISIBILITY_KIND.COORDINATE_FRAME
   return entry === VISIBILITY_ENTRY.USER_ADDED
     ? VISIBILITY_KIND.ROBOT_BASE_ADDED

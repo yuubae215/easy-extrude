@@ -5,6 +5,7 @@ import { Section, NumRow, EditRow, NameInput, AXIS_COLORS } from './npanelShared
 import { ROBOT_ROLE } from '../../domain/robotFrames.js'
 import { HandDeclarations } from './declarations/HandDeclarations.jsx'
 import { ArmDeclarations } from './declarations/ArmDeclarations.jsx'
+import { CameraDeclarations } from './declarations/CameraDeclarations.jsx'
 
 export function NPanelFrame({ data }) {
   const {
@@ -12,7 +13,7 @@ export function NPanelFrame({ data }) {
     parentOptions, currentParentId,
     unreferenced,
     childFrames, onAddChildFrame, onSelectChildFrame,
-    robotRole, entityId, hand,
+    robotRole, entityId, hand, camera,
   } = data
 
   const callbacks = useUIStore(s => s.callbacks)
@@ -83,6 +84,8 @@ export function NPanelFrame({ data }) {
           its hand, a robot's base carries what is declared about the arm. */}
       {robotRole === ROBOT_ROLE.TCP  && <HandDeclarations hand={hand ?? null} />}
       {robotRole === ROBOT_ROLE.BASE && <ArmDeclarations robotId={entityId ?? null} />}
+      {/* …and any other movable frame may BE a vision camera (ADR-164 D3). */}
+      {!robotRole && !locked && <CameraDeclarations camera={camera ?? null} frameId={entityId ?? null} />}
 
       {/* Child frames */}
       {(childFrames !== null || onAddChildFrame !== null) && (

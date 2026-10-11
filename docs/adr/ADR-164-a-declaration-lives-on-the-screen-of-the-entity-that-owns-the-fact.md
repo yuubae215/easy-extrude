@@ -1,10 +1,10 @@
 # 164. 宣言は、その事実を持つ実体の画面に住む — 把持まわりを 6 つのドメインへ配り直す
 
-- Status: Accepted (2026-10-11 — 当事者が俯瞰で合意。段階実装: D1・D5 (PR1)、D2 (PR2)、D4 (PR3) 実装済み、D3 は続く PR — `docs/ia-redesign/03-implementation-order.md` Phase 7)
+- Status: Accepted (2026-10-11 — 当事者が俯瞰で合意。段階実装: D1・D5 (PR1)、D2 (PR2)、D4 (PR3)、D3 (PR4) — 全 D 実装済み。`docs/ia-redesign/03-implementation-order.md` Phase 7)
 - Date: 2026-10-11
 - Deciders: yuubae215, Claude
 - 段: IA 再設計 Phase 7 (`docs/ia-redesign/03-implementation-order.md`)
-- Retires: GREP:src/components/Grasp/GraspSearchPanel.jsx::function\sMassEditor · GREP:src/components/Grasp/GraspSearchPanel.jsx::function\sHandEditor · PATH:src/components/RobotAppearanceToggle/RobotAppearanceToggle.jsx — 選択中のロボットのパネルに住んでいたワークとハンドの宣言欄と、実写 / 軽量の常設トグル。実装の PR で消える
+- Retires: GREP:src/components/Grasp/GraspSearchPanel.jsx::function\sMassEditor · GREP:src/components/Grasp/GraspSearchPanel.jsx::function\sHandEditor · PATH:src/components/RobotAppearanceToggle/RobotAppearanceToggle.jsx · GREP:src/components/Grasp/GraspSearchPanel.jsx::function\sCaptureButton · GREP:src/context/GraspDeclarationCatalog.js::CAMERA_PRESETS — 選択中のロボットのパネルに住んでいたワークとハンドの宣言欄と、実写 / 軽量の常設トグルと、React state のカメラの欄 (「📷 use current view」とその presets — D3)。実装の PR で消える
 - Supersedes / Superseded by: ADR-149 を部分的に supersede (常設トグルの部分だけ — トグルを撤去した PR1 で `Partially superseded by ADR-164` にした。実写を既定にする部分はそのまま)
 
 ## Context — Goal と力学 (§1.2 Goal)
@@ -211,6 +211,22 @@ ADR-149 がトグルを置いた理由 (a) 読み込み失敗時の戻り道 は
      書き手が無いと「次の編集で新住所へ移る」が起きず、旧キーは永久に残る。唯一の書き手 `setEntityGraspLift` は書くたびに
      旧キーを消す。
 
+- **PR4 の俯瞰 (2026-10-11、当事者が決定)** — D3 を実装する前に、問いが 4 つ見つかった。
+  1. **カメラの形 — フレーム + `camera` 宣言 (推奨どおり)。** 新しい種 `Camera` を作らず、`camera: { fovHalfAngle? }` を
+     持つ CoordinateFrame がカメラ (tcp の `hand` と同じ形、ROS の camera_link と同じ — カメラは TF フレーム)。
+     姿勢・ギズモ・Outliner の行・親付け (手首カメラ) はフレームのものをそのまま使う。同一性は `isCameraFrame()` ただ 1 つで、
+     `IDENTITY_RULES` に登録した。却下: 新しい型 (原則 #2 の形だが、種ごとの全表・add・保存形式を新設する)。
+  2. **視線はフレームの +Z (ROS optical frame — 当事者判断、推奨の +X から変えた)。** +X が画像の右、+Y が画像の**下**。
+     ワイヤの `viewAxis` はフレームの世界回転から**導出**し、保存しない (回転の隣に世界ベクトルを置くと、回したとたんに
+     古くなる第二の源 — §1.1)。「今の視点を写す」は THREE のカメラ (−Z が視線・+Y が上) を x まわり半回転で写す。
+  3. **在ることが「問う」の宣言 (推奨どおり)。** 0 台 = 見えるかを問わない (状態であって gap ではない)、1 台 = 暗黙、
+     N 台 = 選ぶまで Run は `no-camera` で止まる。`vision.enabled` の on/off は消えた — カメラを置いたまま問わない語は
+     作らない (セッションの欄が「問うか」の第二の宣言になる)。止めたいなら消す (undo 可)。
+  4. **3D の形は矩形の視錐台 (当事者判断 — 「後でソルバーも見直しましょう」)。** ただしワイヤの `camera` は半角 1 つで、
+     `core/` は**円錐**で判定する。本文の「視錐台」と判定の形の食い違いは**暫定**として DEF-061 に置き、満期を機械可読にした
+     (request 契約の `camera` に矩形の画角が現れたとき)。それまで描くのは、**内接円錐がソルバの円錐に一致する正方形**の視錐台
+     — 判定される範囲は全部描かれた中にあり、四隅だけが「描かれているが判定されていない」。カメラのパネルがそれを言う。
+
 ## 実装の記録
 
 ### PR1 — D1 (ワーク・ハンド・アーム) と D5 (2026-10-11)
@@ -294,6 +310,33 @@ ADR-149 がトグルを置いた理由 (a) 読み込み失敗時の戻り道 は
 - **証拠**: `targetLift.test.js` (+5) / `graspFeature.test.js` (+3、1 本は半分の書き分けへ改稿) / `DocBuilder.test.js` (+10) /
   `graspRelation.test.js` (+2) / `GraspController.test.js` (+2: 新旧の住所でワイヤの値が一致・書き手への委譲) /
   `e2e/grasp-stub.spec.js` S18 (宣言の無いワークに関係のパネルから引き上げだけを宣言 → 関係 1 行・where は derived のまま・undo)。
+
+### PR4 — D3: カメラはシーンの実体 (2026-10-11)
+
+- **語と欄**: `camera: { fovHalfAngle? }` を CoordinateFrame に (scene-1.3 / layout-1.0 / context-0.5 の 3 つに同時に)。request 契約は
+  変えない (ワイヤは今の `camera` のまま — 中身が実体から導出されるようになっただけ)。純粋な領域は `src/domain/visionCamera.js`:
+  同一性 `isCameraFrame`、名簿 `resolveCameras` / `selectCamera` (ロボットの規則)、宣言の読み `cameraDeclarationOf`
+  (`fovHalfAngle` 無し = 視線だけを問う、既定で埋めない / 範囲外 = malformed)、ワイヤ `wireCameraOf`、写し `cameraPoseFromViewport`、
+  描く形 `frustumCorners`。
+- **書く**: シーンの単一の書き手 `SceneService.setFrameCamera` (宣言) / `setCameraWorldPose` (写した姿勢 — 世界に置いたカメラだけ。
+  親付きのカメラは理由を言って断る) と、文書の書き手 `DocBuilder.setEntityCamera` (姿勢も同じ 1 回の doc edit に)。
+  振り分けは `setRobotHand` と同じ ADR-129 の分割 (`ContextController.declareFrameCamera`)。シーンだけのカメラは
+  `SetCameraCommand` 1 つで、「視点を写す」(姿勢 + 画角) は 1 回の undo で戻る。
+- **入口**: Add ▸ Camera (`SceneService.addCamera` — 真上 1.2 m から真下、画角は最初の preset の 0.6 rad を**宣言して**生まれる)。
+  可視性の種 `VISIBILITY_KIND.CAMERA` を宣言 (既定で見える — 置いたカメラが見えないのは無言の no-op)。
+- **画面**: カメラのパネル (`NPanel/declarations/CameraDeclarations.jsx`) — 「このフレームはカメラ」の切替 (既存のフレームを手首カメラに
+  できる)、画角、📷 copy the current view、導出した視線の読み返し、探索がこのカメラから問うか。Grasp パネルの Seen は
+  picker (0 / 1 / N) と ▸ だけになり、位置・視線・画角の欄と presets は消えた。3D はフレームの view が視錐台を描く
+  (世界単位 — 軸の画面サイズ倍率と別の物体、画像の上に印)。Outliner の行に CAMERA の札。
+- **`DECLARATION_OWNERS`**: vision 行は `camera-panel` へ移り、`movesWith` の ratchet は 2 → 1 (残るのはユーザ — ADR-165)。
+  `CONFIRMATION_BY_FIELD` に `camera.fovHalfAngle → frustum`。grasp FSM に `no-camera` を足した (9 状態 — 台帳)。
+- **本文から動いた点 — 退役**: `CAMERA_PRESETS` / `cameraDeclarationGaps` (ワイヤ形の検査) / `visionFromViewportCamera` /
+  `GraspController.captureViewportCamera` を消した。視線の欄が無くなったので、ワイヤ形の検査は検査する入力を失った。
+- **DEF-033**: カメラの半分が決着。満期 `GREP:…::objectiveWeights` は重みだけを見ているので動かさない。
+- **証拠**: `visionCamera.test.js` (11 — 同じ姿勢を ±90° 回して視線が逆を向く、の符号検査を含む) / `GraspController.test.js`
+  (+6: 0 台は載らない・N 台は no-camera → 選べば載る・読めない宣言で止まる・消えたカメラの選択は落ちる・視点の写しは 1 コマンド・
+  親付き / 読めない視点は断る) / `e2e/grasp-stub.spec.js` S19 (足す → 既定の姿勢が真下でワイヤに載る → 視点を写すと視点の
+  位置と視線がワイヤに載る・同じ要求を 2 回通しても同じ → undo ×2 で 0 台、camera は載らない)。
 
 ## Lens notes
 

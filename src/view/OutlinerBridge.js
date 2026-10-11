@@ -75,6 +75,19 @@ export class OutlinerBridge {
       useUIStore.getState().actions.outlinerUpdateItem(id, { robotRole })
   }
 
+  /**
+   * Whether a frame row is a vision camera (ADR-164 D3) → the Outliner's CAMERA
+   * badge. Driven by `frameCameraChanged` / `objectAdded`, never by the name.
+   * The native (pre-React) outliner carries no badge, hence the optional call.
+   * @param {string} id
+   * @param {boolean} isCamera
+   */
+  setIsCamera(id, isCamera) {
+    this._native?.setIsCamera?.(id, isCamera)
+    if (this._reactEnabled)
+      useUIStore.getState().actions.outlinerUpdateItem(id, { isCamera })
+  }
+
   setObjectName(id, name) {
     if (this._native) this._native.setObjectName(id, name)
     if (this._reactEnabled)

@@ -23,6 +23,7 @@ import {
 import { resolveGraspTargets, faceRegionSamples } from '../domain/graspTargets.js'
 import { DEFAULT_HAND_BY_KIND } from '../domain/robotHand.js'
 import { DECLARED_PAINTERS } from './SelectionKinds.js'
+import { frustumCorners } from '../domain/visionCamera.js'
 
 const schema = JSON.parse(readFileSync(new URL('../../schema/layout-1.0.schema.json', import.meta.url), 'utf8'))
 
@@ -67,6 +68,8 @@ const population = [
   // ADR-164 D2 — which hand the grasp is for. Read from the schema by name, so a
   // retired field drops out and fails the stale-row test.
   ...('tcp' in (schema.$defs.graspFeature.properties ?? {}) ? ['graspFeature.tcp'] : []),
+  // ADR-164 D3 — the camera's own declaration (its pose is the frame's).
+  ...fieldsOf('camera', schema.$defs.entity.properties.camera ?? {}),
 ]
 
 test('宣言の欄のうち確認の絵を持たないものは 0 個 (母集団はスキーマ)', () => {
@@ -177,6 +180,12 @@ test('表が絵を名指す行は、代表の宣言で実際にその絵が出�
     // painter the selection-kind table declares.
     if (row.picture === 'selection') {
       assert.ok(DECLARED_PAINTERS.includes(row.paint), `${field} → painter ${row.paint} is not declared in SELECTION_SHAPE_BY_KIND`)
+      continue
+    }
+    // Drawn on the camera entity by its frame view (ADR-164 D3), from the same
+    // function — a declared half angle must yield a drawable frustum.
+    if (row.picture === 'frustum') {
+      assert.equal(frustumCorners(0.5)?.length, 4, `${field} → the frustum is never drawn`)
       continue
     }
     assert.ok(has(jawPic, row.picture) || has(cupPic, row.picture), `${field} → ${row.picture} is never drawn`)

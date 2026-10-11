@@ -64,6 +64,10 @@ import {
 } from '../domain/robotFrames.js'
 import { DEFAULT_TOOL_MOUNT, toolMountEditBlockedReason } from '../domain/robotTool.js'
 import { DEFAULT_HAND_BY_KIND } from '../domain/robotHand.js'
+import {
+  isCameraFrame, resolveCameras, nextCameraName, cameraSeedPose, DEFAULT_CAMERA_DECLARATION,
+  cameraDeclarationOf,
+} from '../domain/visionCamera.js'
 import { GRIPPER_KIND } from '../context/GraspDeclarationCatalog.js'
 import {
   ORIGIN_FRAME_NAME, isOriginFrame, isOriginFrameName, findOriginFrame,
@@ -3841,6 +3845,80 @@ export class SceneService extends EventEmitter {
     return true
   }
 
+  /**
+   * Declare (or clear) a frame as a vision camera — **the one entry** that writes
+   * a frame's `camera` (ADR-164 D3, 原則 #1). The camera's panel, undo/redo and
+   * the Add menu go through here; the grasp panel's camera roster is
+   * re-published from `frameCameraChanged`, and the frame's view redraws its
+   * frustum from the same event.
+   *
+   * Refuses a robot frame (a base or tcp is the arm's; a wrist camera is its own
+   * frame under the tcp). `camera === null` makes the frame an ordinary frame
+   * again — the camera stops existing, it is not reset to a default.
+   *
+   * @param {string} frameId
+   * @param {object|null} camera  `{ fovHalfAngle? }`, stored as given (validated by readers)
+   * @returns {boolean} whether it was written
+   */
+  setFrameCamera(frameId, camera) {
+    const frame = this._model.objects.get(frameId)
+    if (!(frame instanceof CoordinateFrame)) return false
+    if (isRobotBaseFrame(frame) || isRobotTcpFrame(frame)) return false
+    const becameCamera = !isCameraFrame(frame) && camera != null
+    frame.camera = camera == null ? null : JSON.parse(JSON.stringify(camera))
+    _syncCameraFrustum(frame)
+    this.emit('frameCameraChanged', frameId)
+    // A frame the user just declared a camera takes the CAMERA kind's declared
+    // default (shown — a camera you cannot see is a judgement you cannot check),
+    // exactly as Add ▸ Camera does. Clearing it leaves the eye as the user set it.
+    if (becameCamera) this.declareExplicitVisible(frame, VISIBILITY_ENTRY.USER_ADDED)
+    else this.applyEntityVisibility(frameId)
+    return true
+  }
+
+  /**
+   * Put a WORLD-PARENTED camera at a world pose (ADR-164 D3 — "copy the current
+   * view"). Refuses anything else: a parented camera's stored pose is local to
+   * its parent, and composing the inverse through a robot flange is not done
+   * here — the caller says so instead of writing a wrong pose (原則 #11).
+   *
+   * @param {string} frameId
+   * @param {{position: {x:number,y:number,z:number}, rotation: {x:number,y:number,z:number,w:number}}} pose  world, mm
+   * @returns {boolean} whether it was written
+   */
+  setCameraWorldPose(frameId, pose) {
+    const frame = this._model.objects.get(frameId)
+    if (!isCameraFrame(frame) || frame.parentId != null) return false
+    const p = pose?.position, r = pose?.rotation
+    if (!p || !r) return false
+    frame.translation.set(p.x, p.y, p.z)
+    frame.rotation.set(r.x, r.y, r.z, r.w)
+    frame.meshView.updatePosition(frame.translation)
+    frame.meshView.updateRotation(frame.rotation)
+    this._updateWorldPoses()
+    this.emit('frameCameraChanged', frameId)
+    return true
+  }
+
+  /**
+   * Adds one vision camera (ADR-164 D3): a world-parented frame at the overhead
+   * seed pose, carrying the DECLARED default field of view. The single way a
+   * camera comes into existence from the menu (原則 #1); visible because the
+   * user just asked for it (原則 #11).
+   *
+   * @returns {CoordinateFrame} the camera frame
+   */
+  addCamera() {
+    const objects  = [...this._model.objects.values()]
+    const existing = resolveCameras(objects).length
+    const frame = this.createWorldFrame(nextCameraName(objects), cameraSeedPose(existing))
+    frame.camera = { ...DEFAULT_CAMERA_DECLARATION }
+    _syncCameraFrustum(frame)
+    this.emit('frameCameraChanged', frame.id)
+    this.declareExplicitVisible(frame, VISIBILITY_ENTRY.USER_ADDED)
+    return frame
+  }
+
   _upgradeLegacyRobotFrames() {
     let reset = 0
     for (const robot of this.getRobots()) {
@@ -4161,6 +4239,7 @@ export class SceneService extends EventEmitter {
     return visibilityKindOf({
       isFrame,
       isRobotBase: isFrame && isRobotBaseFrame(obj),
+      isCamera:    isFrame && isCameraFrame(obj),
       entry,
     })
   }
@@ -4237,6 +4316,23 @@ function _restoreRobotRole(frame, dto) {
   if (dto.hand != null && isRobotTcpFrame(frame)) {
     frame.hand = JSON.parse(JSON.stringify(dto.hand))
   }
+  // ADR-164 D3: the camera declaration, as stored (a malformed fov stays
+  // malformed and the camera's panel says why).
+  if (isCameraFrame(dto)) {
+    frame.camera = JSON.parse(JSON.stringify(dto.camera))
+    _syncCameraFrustum(frame)
+  }
+}
+
+/**
+ * Draw (or remove) a frame's frustum from its camera declaration (ADR-164 D3).
+ * Called by every path that writes `camera` — restore, `setFrameCamera`,
+ * `addCamera` — so the pixels follow the one fact (原則 #4). A malformed or
+ * fov-less declaration draws nothing (no cone nobody declared).
+ * @param {CoordinateFrame} frame
+ */
+function _syncCameraFrustum(frame) {
+  frame.meshView?.setCameraFrustum(cameraDeclarationOf(frame)?.fovHalfAngle ?? null)
 }
 
 /**

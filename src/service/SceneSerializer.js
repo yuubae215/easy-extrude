@@ -159,6 +159,10 @@ export function serializeScene(scene) {
         // What the robot grasps with (ADR-152 D3). Without it a reloaded tcp
         // would read as "no hand declared" and the grasp gate would lose it.
         hand:       obj.hand ?? null,
+        // The vision camera's declaration (ADR-164 D3). Without it a reloaded
+        // camera would be an ordinary frame and the search would stop asking
+        // "can it be seen".
+        camera:     obj.camera ?? null,
         translation: {
           x: obj.translation.x,
           y: obj.translation.y,

@@ -36,6 +36,7 @@ const HOME_FILE = Object.freeze({
   [DECLARATION_HOME.TCP_PANEL]:   'src/components/NPanel/declarations/HandDeclarations.jsx',
   [DECLARATION_HOME.ROBOT_PANEL]: 'src/components/NPanel/declarations/ArmDeclarations.jsx',
   [DECLARATION_HOME.RELATION_PANEL]: 'src/components/NPanel/declarations/GraspDeclarations.jsx',
+  [DECLARATION_HOME.CAMERA_PANEL]: 'src/components/NPanel/declarations/CameraDeclarations.jsx',
   [DECLARATION_HOME.GRASP_PANEL]: 'src/components/Grasp/GraspSearchPanel.jsx',
 })
 
@@ -44,7 +45,7 @@ const HOME_FILE = Object.freeze({
  * only: the PR that gives an owner its row removes the domain here AND drops its
  * `movesWith` in the table.
  */
-const NOT_YET_MOVED = Object.freeze([DECLARATION_DOMAIN.VISION, DECLARATION_DOMAIN.USER])
+const NOT_YET_MOVED = Object.freeze([DECLARATION_DOMAIN.USER])
 
 function walk(dir) {
   const out = []

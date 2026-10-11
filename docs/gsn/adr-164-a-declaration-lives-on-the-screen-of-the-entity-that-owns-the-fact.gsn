@@ -87,3 +87,19 @@ artifacts
             - "src/context/DocBuilder.js"
             - "src/context/DocBuilder.test.js"
             - "e2e/grasp-stub.spec.js"
+
+        goal TheCameraIsASceneEntityAndTheWireDerivesFromIt
+        uuid 357443d8-efa3-4a65-aa25-d801c60306fe
+        summary "カメラはシーンの実体 (camera 宣言を持つフレーム) で、選べばそのパネルに画角と『今の視点を写す』があり、3D に視錐台が出る。ワイヤの camera はその実体の世界姿勢 (視線 = フレームの +Z、ROS optical) から導出され、パネルの値ではない。0 台は見えるかを問わない状態、1 台は暗黙、N 台は選ぶまで Run が理由つきで止まる"
+        labels support-verified
+
+            solution CameraEntityIsExecuted
+            uuid fb60059b-cb30-4e09-bfc5-b528ab06e4f0
+            summary "2026-10-11 (ADR-164 PR4): src/domain/visionCamera.test.js (11 pass) — 同一性は camera 宣言の有無、画角なしは宣言済みで既定を入れない・範囲外は malformed、0/1/N の選択は先頭を既定にしない、同じ姿勢を X まわり +90° / −90° に回すと視線が (0,−1,0) / (0,+1,0) と逆を向く (符号が対称性で通らない)、視点の写しは optical +Z = 視線・+Y = 画像の下、正射は画角 null、正方形の視錐台の側面は ±半角。src/controller/GraspController.test.js (+6) — 0 台は camera を載せず止まらない、N 台未選択は no-camera → 選べば載る、読めない宣言は理由つきで止まる、消えたカメラの選択は落ちる、視点の写しは 1 コマンドで undo が同じ書き手を通る、親付き / 読めない視点は断って言う。src/components/NPanel/DeclarationOwnership.test.js — vision 行はカメラのパネル (CameraDeclarations.jsx) へ移り movesWith の ratchet は 2 → 1。src/view/GraspDeclarationConfirmation.test.js — camera.fovHalfAngle の確認の絵は frustum (母集団はスキーマ)。src/IdentityContainment.test.js — カメラの同一性の再導出は visionCamera.js の外に 0 個。e2e/grasp-stub.spec.js S19 (VITE_GRASP_STUB=1) — 0 台で Run が通り camera なし、Add ▸ Camera で CAMERA の札とカメラのパネル、既定の姿勢が viewAxis (0,0,−1) でワイヤに載る、📷 copy the current view で視点の位置と視線がワイヤに載り同じ要求を 2 回通しても同じ、undo ×2 で 0 台・camera なし。限界: 描く形は矩形、判定は円錐 (DEF-061)"
+            artifacts
+            - "src/domain/visionCamera.js"
+            - "src/domain/visionCamera.test.js"
+            - "src/controller/GraspController.test.js"
+            - "src/components/NPanel/declarations/CameraDeclarations.jsx"
+            - "e2e/grasp-stub.spec.js"
+

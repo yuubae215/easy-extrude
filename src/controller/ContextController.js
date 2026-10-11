@@ -56,7 +56,7 @@ import { applyQuestionAnswer } from '../context/FormApplication.js'
 import {
   createBlankDoc, addActor, addFact, addVariable, addRequirement,
   updateActor, updateVariable, updateRequirement, removeDocEntry,
-  setEntityGraspFeature, setEntityGraspTcp, setEntityGraspLift, removeEntityGraspRelation, setEntityPose, setEntityHand, setEntityMassDeclaration,
+  setEntityGraspFeature, setEntityGraspTcp, setEntityGraspLift, removeEntityGraspRelation, setEntityPose, setEntityHand, setEntityCamera, setEntityMassDeclaration,
   adoptSceneEntities, docDeclaresEntity,
 } from '../context/DocBuilder.js'
 import { planSceneAdoption, adoptionRefusalMessage, adoptionToast } from '../domain/sceneAdoption.js'
@@ -685,6 +685,27 @@ export class ContextController {
     const beforeDoc = this._ctxService.getDoc()
     const afterDoc  = setEntityHand(beforeDoc, ref, hand)
     return this._runDocEdit(beforeDoc, afterDoc, hand == null ? 'Clear hand' : 'Set hand', 'Could not save the hand')
+  }
+
+  /**
+   * Declare (or clear) a document-known frame's vision camera on the DOCUMENT
+   * (ADR-164 D3) — one undoable doc-edit, the pose included when given. Returns
+   * `null` when the document does not know this frame (the caller then writes the
+   * scene and owns that undo record — the same split as `declareTcpHand`).
+   *
+   * @param {string} frameId
+   * @param {object|null} camera
+   * @param {{position: object, rotation: object}|null} [pose]  world = local (world-parented camera)
+   * @returns {Promise|null}
+   */
+  declareFrameCamera(frameId, camera, pose = null) {
+    if (!this._ctxService.loaded) return null
+    const ref = this._ctxService.refForSceneId(frameId)
+    if (!ref) return null
+    const beforeDoc = this._ctxService.getDoc()
+    const afterDoc  = setEntityCamera(beforeDoc, ref, camera, pose)
+    const label = pose ? 'Copy view to camera' : camera == null ? 'Remove camera' : 'Set camera'
+    return this._runDocEdit(beforeDoc, afterDoc, label, 'Could not save the camera')
   }
 
   /**

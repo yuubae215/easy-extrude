@@ -162,7 +162,7 @@ export class UIViewBridge {
    * @param {number} x
    * @param {number} y
    * @param {{onBox?:Function, onSketch?:Function, onMeasure?:Function,
-   *          onImportStep?:Function, onFrame?:Function, onRobot?:Function,
+   *          onImportStep?:Function, onFrame?:Function, onRobot?:Function, onCamera?:Function,
    *          onPlace?:(type:string)=>void}} cbs
    */
   showAddMenu(x, y, cbs) {
@@ -371,6 +371,8 @@ export class UIViewBridge {
       entityId:  opts.entityId ?? null,
       // ADR-164 D1 — the tcp's hand declaration (null on any other frame).
       hand:      opts.hand ?? null,
+      // ADR-164 D3 — the frame's vision-camera declaration (null when not a camera).
+      camera:    opts.camera ?? null,
     })
   }
 

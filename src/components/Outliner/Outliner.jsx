@@ -111,7 +111,7 @@ function OutlinerRow({ item, depth, active, hasChildren, callbacks, draggingId, 
     : `background ${DURATION.hover}ms ${EASING.out}, opacity ${DURATION.hover}ms ${EASING.out}`
   const iconTransition = reduced ? undefined : `opacity ${DURATION.hover}ms ${EASING.out}`
 
-  const { id, name, type, visible, locked, ifcClass, placeType, linked, unreferenced, robotRole } = item
+  const { id, name, type, visible, locked, ifcClass, placeType, linked, unreferenced, robotRole, isCamera } = item
 
   useEffect(() => {
     if (editing && inputRef.current) {
@@ -265,6 +265,19 @@ function OutlinerRow({ item, depth, active, hasChildren, callbacks, draggingId, 
           ...dimStyle,
         }}>
           ROBOT
+        </span>
+      )}
+
+      {/* Vision camera badge (ADR-164 D3) — "can it be seen" is asked from here */}
+      {isCamera && (
+        <span title="Vision camera — the grasp search asks &quot;can it be seen&quot; from a camera" style={{
+          display: 'inline-block', fontSize: 9, fontWeight: 'bold',
+          padding: '1px 4px', borderRadius: 2, flexShrink: 0,
+          lineHeight: 1.4, cursor: 'default',
+          background: rgba(COLOR.revealTone, 0.13), border: `1px solid ${COLOR.revealTone}`, color: COLOR.revealTone,
+          ...dimStyle,
+        }}>
+          CAMERA
         </span>
       )}
 

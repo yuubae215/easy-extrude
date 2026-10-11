@@ -321,6 +321,8 @@ function generateObjects(entities, refMap, positions) {
           mountedOn:   entity.mountedOn ?? null,
           // ADR-152 D3: the tcp's hand (kind + gate params + shape, mm).
           hand:        entity.hand ?? null,
+          // ADR-164 D3: this frame is a vision camera (optical +Z = line of sight).
+          camera:      entity.camera ?? null,
           translation: { x: pos.x ?? 0, y: pos.y ?? 0, z: pos.z ?? 0 },
           rotation:    entity.rotation ?? IDENTITY_QUATERNION,
         })

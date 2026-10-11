@@ -330,6 +330,10 @@ export const CONFIRMATION_BY_FIELD = Object.freeze({
   'target.centerOfMass':             { picture: 'centerOfMass', where: 'a marker at the point, solid = measured / hollow = assumed, captioned' },
   'target.lift':                     { picture: 'lift',        where: 'an arrow from the object at the declared direction and distance, captioned' },
   'graspFeature.tcp':                { picture: 'selection', paint: 'relationPair', where: 'selecting the grasp relation row lights the object and the named tcp together (ADR-164 D2)' },
+  // ADR-164 D3 — the camera's field of view, drawn on the camera itself (its
+  // frame view, from `visionCamera.frustumCorners`): the square whose inscribed
+  // cone is what is judged (DEF-061), with an image-up tick.
+  'camera.fovHalfAngle':             { picture: 'frustum',     where: 'the frustum on the camera, its side planes at ±the half angle; image-up ticked' },
 })
 
 /** Where a field is confirmed. **Throws on an unregistered field** (原則 #31). */

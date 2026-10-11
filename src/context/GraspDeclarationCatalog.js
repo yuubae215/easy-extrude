@@ -15,19 +15,12 @@
  * - The `*Gaps()` lists are the single submit predicate for their card
  *   (disable the Run button AND print the reasons — no silent disabled,
  *   PHILOSOPHY #11; same discipline as IntakeAssist, ADR-058 UX rule).
- * - `visionFromViewportCamera` is the pure half of the "use current view"
- *   capture (ADR-081 §5): it maps a minimal camera snapshot (world position +
- *   matrixWorld elements + optional perspective fov) onto the wire declaration.
- *   The side-effect half (reading the live THREE camera) lives in
- *   GraspController.captureViewportCamera().
+ * - The vision camera is no longer a card here: since ADR-164 D3 it is a scene
+ *   entity (`domain/visionCamera.js` — its presets, gaps and the "copy the
+ *   current view" math moved with it).
  *
  * Pure and THREE-free: runs in the bare `node --test` lane (test:context).
  */
-
-import { mmToM } from '../domain/worldUnits.js'
-
-/** Round to 1e-4 (0.1mm once converted to meters) so captured values read cleanly in the form fields (+0 normalises -0). */
-const round4 = (v) => Math.round(v * 1e4) / 1e4 + 0
 
 /**
  * The objective names `core/`'s registry actually scores (ADR-117).
@@ -107,29 +100,6 @@ export function defaultObjectiveWeights(gripperKind) {
 }
 
 /**
- * Vision-camera presets (wire shape: `graspSearch.camera`). Units follow the
- * request geometry (metres in the bundled templates); angles are radians.
- * The first entry is the card's seed (selection-first premise).
- */
-export const CAMERA_PRESETS = Object.freeze([
-  Object.freeze({
-    id: 'overhead',
-    label: 'overhead (top-down)',
-    params: Object.freeze({ position: Object.freeze([0, 0, 1.2]), viewAxis: Object.freeze([0, 0, -1]), fovHalfAngle: 0.6 }),
-  }),
-  Object.freeze({
-    id: 'angled',
-    label: 'angled (45°)',
-    params: Object.freeze({ position: Object.freeze([0.9, 0, 1.0]), viewAxis: Object.freeze([-0.7071, 0, -0.7071]), fovHalfAngle: 0.5 }),
-  }),
-  Object.freeze({
-    id: 'side',
-    label: 'side (low)',
-    params: Object.freeze({ position: Object.freeze([1.2, 0, 0.4]), viewAxis: Object.freeze([-1, 0, 0]), fovHalfAngle: 0.4 }),
-  }),
-])
-
-/**
  * Reach-envelope rows to offer (wire shape: `graspSearch.plan` — ADR-084 §4).
  *
  * The envelope exists because `reach_margin` needs an ABSOLUTE basis to be a
@@ -170,7 +140,7 @@ export function reachPresetsFor(envelope, label = 'the arm in the scene') {
 
 /**
  * Why Run cannot proceed on the REACH-ENVELOPE side (ADR-128) — the sibling of
- * `cameraDeclarationGaps` / `gripperDeclarationGaps`, and only consulted when the
+ * `gripperDeclarationGaps`, and only consulted when the
  * envelope is actually declared (an undeclared envelope is not a gap, it is a
  * legitimate state that leaves `reach_margin` unmeasured).
  *
@@ -284,8 +254,6 @@ export function gripperPresetsFor(kind) {
 // enough to lose it).
 /** @type {(v: unknown) => v is number} */
 const isFiniteNumber = (v) => typeof v === 'number' && Number.isFinite(v)
-/** @type {(v: unknown) => v is number[]} */
-const isVec3 = (v) => Array.isArray(v) && v.length === 3 && v.every(isFiniteNumber)
 
 /**
  * Derived active-preset id: the preset whose every param equals the current
@@ -310,43 +278,8 @@ export function matchingPresetId(presets, params) {
 }
 
 /**
- * Gap list for a parsed camera declaration ([] = valid). The list is the
- * submit predicate for the vision card: non-empty disables Run and every
- * reason is printed (PHILOSOPHY #11).
- *
- * A declared fovHalfAngle without a viewAxis is a gap on purpose: the solver
- * applies the FOV cone only when BOTH are declared (schema wording), so the
- * combination would be silently inert — an input consumed with no effect is
- * the failure shape #11 forbids.
- *
- * @param {{ position?: unknown, viewAxis?: unknown, fovHalfAngle?: unknown }|null|undefined} cam
- * @returns {string[]}
- */
-export function cameraDeclarationGaps(cam) {
-  if (!cam || typeof cam !== 'object') return ['camera declaration is empty']
-  const gaps = []
-  if (!isVec3(cam.position)) gaps.push('camera position needs 3 finite numbers')
-  if (cam.viewAxis != null) {
-    if (!isVec3(cam.viewAxis)) {
-      gaps.push('view axis needs 3 finite numbers (or leave it out)')
-    } else if (cam.viewAxis.every(v => v === 0)) {
-      gaps.push('view axis must not be the zero vector')
-    }
-  }
-  if (cam.fovHalfAngle != null) {
-    if (!isFiniteNumber(cam.fovHalfAngle) || cam.fovHalfAngle < 0) {
-      gaps.push('FOV half angle must be a number ≥ 0 (radians)')
-    }
-    if (cam.viewAxis == null) {
-      gaps.push('FOV half angle applies only with a view axis — declare one or clear the FOV')
-    }
-  }
-  return gaps
-}
-
-/**
  * Gap list for a parsed hand declaration ([] = valid) — the Grasped card's submit
- * predicate, same discipline as `cameraDeclarationGaps`.
+ * predicate (an unreadable declaration is printed, never dropped).
  *
  * The parameter is the WIRE union (ADR-118), so the fields present depend on
  * `kind`; the type is left open per-branch rather than intersected, because an
@@ -386,42 +319,3 @@ export function gripperDeclarationGaps(g) {
   throw new Error(`gripperDeclarationGaps: 未宣言のハンド種別 "${g.kind}"`)
 }
 
-/**
- * Pure half of the "use current view" capture (ADR-081 §5): derive the wire
- * camera declaration from a minimal snapshot of the active viewport camera.
- *
- * - `position` maps directly — the scene already lives in the ROS world frame
- *   (+Z up, `camera.up = (0,0,1)`), the same frame the contract declares.
- * - `viewAxis` is the camera's look direction = the negated third column of
- *   matrixWorld (column-major elements 8..10), normalised. This avoids calling
- *   THREE's `getWorldDirection` so the caller stays THREE-free.
- * - `fovHalfAngle` derives from a perspective camera's VERTICAL fov (degrees →
- *   half angle in radians). The naive solver cone is symmetric around the view
- *   axis, so the vertical half-angle is the conservative choice (poses inside
- *   it are visible on screen regardless of aspect). An ortho camera (Map Mode)
- *   has no fov → null, and the form keeps its previous value.
- *
- * Malformed snapshots return null — the capture button then reports it
- * instead of writing a guessed declaration (PHILOSOPHY #11).
- *
- * @param {{ position?: {x:number,y:number,z:number}|null, matrixWorldElements?: ArrayLike<number>|null, fovDeg?: number|null }} snap
- * @returns {{ position: number[], viewAxis: number[], fovHalfAngle: number|null }|null}
- */
-export function visionFromViewportCamera(snap) {
-  const p = snap?.position
-  const e = snap?.matrixWorldElements
-  if (!p || !isFiniteNumber(p.x) || !isFiniteNumber(p.y) || !isFiniteNumber(p.z)) return null
-  if (!e || e.length !== 16) return null
-  const dx = -e[8], dy = -e[9], dz = -e[10]
-  if (![dx, dy, dz].every(isFiniteNumber)) return null
-  const len = Math.hypot(dx, dy, dz)
-  if (!(len > 0)) return null
-  const fov = snap.fovDeg
-  // `p` is the live viewport camera's world position — mm (ADR-136); the wire's
-  // `camera.position` is meters, matching the panel's own manually-typed values.
-  return {
-    position: [round4(mmToM(p.x)), round4(mmToM(p.y)), round4(mmToM(p.z))],
-    viewAxis: [round4(dx / len), round4(dy / len), round4(dz / len)],
-    fovHalfAngle: isFiniteNumber(fov) && fov > 0 ? round4((fov * Math.PI / 180) / 2) : null,
-  }
-}

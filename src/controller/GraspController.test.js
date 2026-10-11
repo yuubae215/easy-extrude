@@ -68,6 +68,8 @@ function fakeStore() {
       contextSetGraspAnalysis(a) { state.context.graspAnalysis = a },
       // ADR-164 D2 — the derived grasp relations (same sole writer).
       contextSetGraspRelations(r) { state.context.graspRelations = r },
+      // ADR-164 D3 — the derived camera roster (same sole writer).
+      contextSetCameras(c) { state.context.cameras = c },
     },
   }
   return { getState: () => state, _state: state }
@@ -183,6 +185,20 @@ function setup(opts = {}, deps = {}) {
   const ctrl  = makeCtrl(opts)
   const gc    = new GraspController(ctrl, store, deps)
   return { gc, ctrl, store, grasp: () => store.getState().context.grasp }
+}
+
+/** A camera 1.2 m up, looking straight down (optical +Z = world −Z: half turn about X). */
+const LOOK_DOWN_AT_1200 = { position: { x: 0, y: 0, z: 1200 }, quaternion: { x: 1, y: 0, z: 0, w: 0 } }
+
+/** Put a vision camera (a frame carrying `camera` — ADR-164 D3) into the fake scene. */
+function addCamera(gc, id, camera, pose) {
+  const ctrl = gc._ctrl
+  // World-parented: the stored translation / rotation ARE the world pose.
+  ctrl._scene.objects.set(id, { id, name: id, parentId: null, camera,
+    translation: { ...pose.position }, rotation: { ...pose.quaternion } })
+  const prev = ctrl._service.worldPoseOf
+  ctrl._service.worldPoseOf = (fid) => (fid === id ? pose : prev(fid))
+  gc.refreshCameras()
 }
 
 /** A BFF that records the request it was handed (the wiring assertions read it). */
@@ -600,17 +616,17 @@ test('a new run and disposeGhost clean up the ghost (PHILOSOPHY #9)', async () =
 
 // ── Domain declarations: camera / gripper ride the request (ADR-081 Dec. 5) ────
 
-test('camera rides verbatim; the gripper is DERIVED from the tcp hand (ADR-152 D3)', async () => {
+test('the camera is DERIVED from the camera entity, and the gripper from the tcp hand — params are not sources (ADR-164 D3 / ADR-152 D3)', async () => {
   let sent = null
   const bff = {
     async compileLayout() { return { objects: [] } },
     async graspSearch(req) { sent = req; return { candidates: [], diagnostics: DIAG_OK } },
   }
   const { gc } = setup({ bff, robotHand: JAW_HAND })
-  const camera  = { position: [0, 0, 1.2], viewAxis: [0, 0, -1], fovHalfAngle: 0.6 }
-  // A `gripper` param is not a source any more — the hand on the tcp is.
-  await gc.runGraspSearch({ weights: { reach: 1 }, topN: 3, camera, gripper: { kind: 'suction', cupDiameter: 9 } })
-  assert.deepEqual(sent.graspSearch.camera, camera)     // declaration only — no reshaping
+  addCamera(gc, 'f_cam', { fovHalfAngle: 0.6 }, LOOK_DOWN_AT_1200)
+  // Neither a `camera` nor a `gripper` param is a source any more.
+  await gc.runGraspSearch({ weights: { reach: 1 }, topN: 3, camera: { position: [9, 9, 9] }, gripper: { kind: 'suction', cupDiameter: 9 } })
+  assert.deepEqual(sent.graspSearch.camera, { position: [0, 0, 1.2], viewAxis: [0, 0, -1], fovHalfAngle: 0.6 })
   assert.deepEqual(sent.graspSearch.gripper, wireGripperFromHand(JAW_HAND))
   assert.equal(sent.graspSearch.gripper.fingers.length + sent.graspSearch.gripper.body.length, TOOL_LENGTH_M)
   assert.deepEqual(sent.graspSearch.robot,
@@ -962,42 +978,89 @@ test('an undeclared camera / gripper omits the key entirely (vacuously-true gate
   assert.ok(!('gripper' in sent.graspSearch))
 })
 
-// ── captureViewportCamera (ADR-081 Dec. 5 「今この視点から見えるか」) ──────────
+// ── The camera is a scene entity (ADR-164 D3) ─────────────────────────────────
 
-/** Column-major identity matrixWorld (camera at origin looking down world −Z). */
-const CAM_IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
+test('0 cameras: visibility is not asked — the wire omits camera, Run is not stopped', async () => {
+  const rec = recordingBff()
+  const { gc, store } = setup({ bff: rec.bff })
+  gc.refreshCameras()
+  assert.equal(store.getState().context.cameras.cardinality, 'none')
+  await gc.runGraspSearch({})
+  assert.ok(rec.sent)
+  assert.ok(!('camera' in rec.sent.graspSearch))
+})
 
-test('captureViewportCamera snapshots the active camera as a wire declaration', () => {
+test('N cameras and none picked stops with no-camera — never "first one wins"; the pick then rides', async () => {
+  const rec = recordingBff()
+  const { gc, grasp, store } = setup({ bff: rec.bff })
+  addCamera(gc, 'f_cam_a', { fovHalfAngle: 0.5 }, LOOK_DOWN_AT_1200)
+  addCamera(gc, 'f_cam_b', {}, { position: { x: 1000, y: 0, z: 0 }, quaternion: { x: 0, y: 0, z: 0, w: 1 } })
+  await gc.runGraspSearch({})
+  assert.equal(rec.sent, null)
+  assert.equal(grasp().status, 'no-camera')
+  assert.match(grasp().reason, /2 cameras/)
+  gc.selectCamera('f_cam_b')
+  assert.equal(store.getState().context.cameras.selectedId, 'f_cam_b')
+  await gc.runGraspSearch({})
+  // identity rotation: optical +Z = world +Z; no fov declared → no cone key
+  assert.deepEqual(rec.sent.graspSearch.camera, { position: [1, 0, 0], viewAxis: [0, 0, 1] })
+})
+
+test('an unreadable camera declaration stops with its reason (never dropped to "not asked")', async () => {
+  const rec = recordingBff()
+  const { gc, grasp } = setup({ bff: rec.bff })
+  addCamera(gc, 'f_cam', { fovHalfAngle: 3 }, LOOK_DOWN_AT_1200)
+  await gc.runGraspSearch({})
+  assert.equal(rec.sent, null)
+  assert.equal(grasp().status, 'no-camera')
+  assert.match(grasp().reason, /cannot be read/)
+})
+
+test('a picked camera that leaves the scene is dropped from the pick', () => {
+  const { gc, store } = setup({})
+  addCamera(gc, 'f_cam_a', {}, LOOK_DOWN_AT_1200)
+  addCamera(gc, 'f_cam_b', {}, LOOK_DOWN_AT_1200)
+  gc.selectCamera('f_cam_a')
+  gc._ctrl._scene.objects.delete('f_cam_a')
+  gc.refreshCameras()
+  // one camera left → implicit, and the stale id is gone
+  assert.equal(store.getState().context.cameras.selectedId, 'f_cam_b')
+  assert.equal(store.getState().context.cameras.cardinality, 'single')
+})
+
+test('copyViewToCamera writes the viewport pose + fov through ONE undoable command (scene-only camera)', () => {
   const { gc, ctrl } = setup({})
-  let updated = 0
+  const calls = []
+  ctrl._service.setFrameCamera = (id, cam) => { calls.push(['camera', id, cam]); ctrl._scene.objects.get(id).camera = cam; return true }
+  ctrl._service.setCameraWorldPose = (id, pose) => { calls.push(['pose', id, pose]); return true }
+  ctrl._commandStack = { pushed: [], push(c) { this.pushed.push(c) } }
+  addCamera(gc, 'f_cam', { fovHalfAngle: 0.6 }, LOOK_DOWN_AT_1200)
   ctrl._sceneView = {
     activeCamera: {
-      position: { x: 1000, y: -2000, z: 3000 },   // mm (scene, ADR-136)
-      matrixWorld: { elements: CAM_IDENTITY },
+      position: { x: 0, y: 0, z: 3000 },
+      matrixWorld: { elements: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 3000, 1] },
       fov: 60,
-      updateMatrixWorld() { updated += 1 },
+      updateMatrixWorld() {},
     },
   }
-  const snap = gc.captureViewportCamera()
-  assert.equal(updated, 1)                       // fresh matrix, not a stale frame
-  assert.deepEqual(snap.position, [1, -2, 3])     // wire is meters
-  assert.deepEqual(snap.viewAxis, [0, 0, -1])
-  assert.ok(Math.abs(snap.fovHalfAngle - Math.PI / 6) < 1e-3)
+  assert.equal(gc.copyViewToCamera('f_cam'), true)
+  assert.equal(ctrl._commandStack.pushed.length, 1)
+  const pose = calls.find(c => c[0] === 'pose')[2]
+  assert.deepEqual(pose.position, { x: 0, y: 0, z: 3000 })
+  assert.ok(Math.abs(calls.find(c => c[0] === 'camera')[2].fovHalfAngle - Math.PI / 6) < 1e-3)
+  // undo puts the old camera back through the same writers
+  ctrl._commandStack.pushed[0].undo()
+  assert.deepEqual(calls.at(-1), ['camera', 'f_cam', { fovHalfAngle: 0.6 }])
 })
 
-test('captureViewportCamera: ortho camera (no fov) degrades to fovHalfAngle null', () => {
+test('copyViewToCamera refuses (and says so) for a parented camera or an unreadable viewport', () => {
   const { gc, ctrl } = setup({})
-  ctrl._sceneView = {
-    activeCamera: { position: { x: 0, y: 0, z: 5 }, matrixWorld: { elements: CAM_IDENTITY } },
-  }
-  const snap = gc.captureViewportCamera()
-  assert.deepEqual(snap.viewAxis, [0, 0, -1])
-  assert.equal(snap.fovHalfAngle, null)
-})
-
-test('captureViewportCamera returns null without a camera (THREE-free lane) — never a guess', () => {
-  const { gc } = setup({})
-  assert.equal(gc.captureViewportCamera(), null)
+  addCamera(gc, 'f_cam', {}, LOOK_DOWN_AT_1200)
+  assert.equal(gc.copyViewToCamera('f_cam'), false)          // no viewport camera in this lane
+  assert.match(ctrl._uiView.toasts.at(-1).msg, /cannot be read/)
+  ctrl._scene.objects.get('f_cam').parentId = 'f_tcp'
+  assert.equal(gc.copyViewToCamera('f_cam'), false)
+  assert.match(ctrl._uiView.toasts.at(-1).msg, /hangs from another frame/)
 })
 
 // ── ADR-135: 到達可否を腕の形で示す (reachSolution → RobotStageSet) ─────────────

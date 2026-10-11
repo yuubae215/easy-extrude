@@ -21,11 +21,10 @@
  *
  * ## Rows that have not moved yet are DECLARED, not inferred (原則 #31)
  *
- * Two domains still live in the grasp-search panel because their owner does
- * not exist on screen yet: the CAMERA entity (ADR-164 D3) and the user's criteria
- * on the floor (ADR-165). The grasp RELATION moved to its own row and panel in
- * ADR-164 D2. Each says which
- * decision moves it (`movesWith`). The census pins the set of such rows, so a new
+ * One domain still lives in the grasp-search panel because its owner does not
+ * exist on screen yet: the user's criteria on the floor (ADR-165). The grasp
+ * RELATION moved to its own panel in ADR-164 D2, the CAMERA to its own entity
+ * and panel in ADR-164 D3. It says which decision moves it (`movesWith`). The census pins the set of such rows, so a new
  * declaration cannot quietly join the "not yet" bucket, and a row that moved
  * must drop its `movesWith` in the same change.
  */
@@ -53,6 +52,8 @@ export const DECLARATION_HOME = Object.freeze({
   ROBOT_PANEL: 'robot-panel',
   /** the N panel body for a selected grasp relation (ADR-164 D2) */
   RELATION_PANEL: 'relation-panel',
+  /** the N panel body for a selected vision camera frame (ADR-164 D3) */
+  CAMERA_PANEL: 'camera-panel',
   /** the grasp-search panel — a CHECK beside its subject (ADR-110), and the
    *  interim home of the rows whose owner is not on screen yet */
   GRASP_PANEL: 'grasp-panel',
@@ -98,9 +99,11 @@ export const DECLARATION_OWNERS = Object.freeze([
   Object.freeze({
     domain: DECLARATION_DOMAIN.VISION,
     owner: 'the camera',
+    // The field of view — the one fact the camera's pose cannot say (its pose is
+    // the frame's own, ADR-164 D3).
     declarations: Object.freeze(['camera']),
-    home: DECLARATION_HOME.GRASP_PANEL,
-    movesWith: 'ADR-164 D3',
+    home: DECLARATION_HOME.CAMERA_PANEL,
+    movesWith: null,
   }),
   Object.freeze({
     domain: DECLARATION_DOMAIN.ARM,
