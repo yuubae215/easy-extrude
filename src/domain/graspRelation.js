@@ -8,7 +8,8 @@
  * already have an authority each (§1.1):
  *
  *   - the DOCUMENT's grasp declaration on a Solid (`graspFeature`), which since
- *     ADR-164 D2 may name the tcp it is for (`graspFeature.tcp`);
+ *     ADR-164 D2 may name the tcp it is for (`graspFeature.tcp`) and since D4
+ *     carries its lift (`graspFeature.lift`; a pre-D4 `entity.lift` counts too);
  *   - the LIVE SCENE's bodies (which object, which tcp are on the screen now).
  *
  * The population is the document's declarations — not the scene's entities.
@@ -85,6 +86,19 @@ export function relationWordsFor(state) {
 }
 
 /**
+ * Does this document entity declare a grasp relation? A grasp declaration
+ * (`graspFeature`), or a lift still at its pre-ADR-164-D4 address (`entity.lift`)
+ * — the old lift is migrated onto the relation on read (`resolveDeclaredLift`),
+ * so the object it sits on HAS a relation even with no `graspFeature`. Counting
+ * only `graspFeature` would let that lift fall off the screen (原則 #31).
+ *
+ * @param {object} e  a Layout DSL entity
+ */
+export function declaresGraspRelation(e) {
+  return e?.graspFeature != null || e?.lift != null
+}
+
+/**
  * @typedef {object} GraspRelation
  * @property {string} objectRef     the Solid the grasp is declared on (= the relation's identity)
  * @property {string|null} tcpRef   the tcp the declaration names; null = not declared
@@ -115,7 +129,7 @@ export function graspRelationsOf({ docDsl = null, sceneDsl = null } = {}) {
   }
   const out = []
   for (const e of docDsl?.entities ?? []) {
-    if (!e || typeof e.ref !== 'string' || e.graspFeature == null) continue
+    if (!e || typeof e.ref !== 'string' || !declaresGraspRelation(e)) continue
     // The ONE reader of the declaration (§1.1) — an unreadable `tcp` makes the
     // whole declaration MALFORMED there (and blocks the run), so it reads as
     // "not declared" here rather than being re-validated a second way.

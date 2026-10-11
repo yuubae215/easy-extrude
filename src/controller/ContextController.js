@@ -56,7 +56,7 @@ import { applyQuestionAnswer } from '../context/FormApplication.js'
 import {
   createBlankDoc, addActor, addFact, addVariable, addRequirement,
   updateActor, updateVariable, updateRequirement, removeDocEntry,
-  setEntityGraspFeature, setEntityGraspTcp, setEntityPose, setEntityHand, setEntityMassDeclaration,
+  setEntityGraspFeature, setEntityGraspTcp, setEntityGraspLift, removeEntityGraspRelation, setEntityPose, setEntityHand, setEntityMassDeclaration,
   adoptSceneEntities, docDeclaresEntity,
 } from '../context/DocBuilder.js'
 import { planSceneAdoption, adoptionRefusalMessage, adoptionToast } from '../domain/sceneAdoption.js'
@@ -563,6 +563,36 @@ export class ContextController {
     }
     const label = tcpRef == null ? 'Clear the grasp\'s hand' : 'Name the grasp\'s hand'
     return this._runDocEdit(beforeDoc, setEntityGraspTcp(beforeDoc, ref, tcpRef), label, 'Could not save the grasp\'s hand')
+  }
+
+  /**
+   * Declare (or clear) how the object is lifted out once grasped — the grasp
+   * relation's lift (ADR-164 D4). Same one doc-edit entry point, and like the
+   * where it may adopt: declaring a lift is a statement about the object's grasp,
+   * which creates the relation (`graspFeature: {lift}`) without inventing a where.
+   *
+   * @param {string} ref  Layout DSL entity ref of the Solid
+   * @param {{along:string, distance:number}|null} lift  null clears it back to undeclared
+   */
+  setGraspLift(ref, lift) {
+    if (!ref) return
+    const label = lift == null ? 'Clear lift' : 'Declare lift'
+    return this._declareAbout(ref, lift == null,
+      doc => setEntityGraspLift(doc, ref, lift), label, 'Could not save the lift')
+  }
+
+  /**
+   * Remove a grasp relation — every field of it, and a pre-D4 lift that would
+   * otherwise bring it back (ADR-164 D4). Same one doc-edit entry point.
+   *
+   * @param {string} ref  Layout DSL entity ref of the Solid
+   */
+  removeGraspRelation(ref) {
+    if (!ref) return
+    const beforeDoc = this._ctxService.getDoc()
+    if (!docDeclaresEntity(beforeDoc, ref)) return
+    return this._runDocEdit(beforeDoc, removeEntityGraspRelation(beforeDoc, ref),
+      'Remove grasp declaration', 'Could not remove the grasp declaration')
   }
 
   /**

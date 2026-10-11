@@ -967,17 +967,36 @@
           }
         },
         "graspFeature": {
-          "description": "Declares HOW a Solid should be grasped (ADR-119 D2 / ADR-128 / ADR-152 D1). Mirrors layout-1.0 `entity.graspFeature` — changed in the SAME change, because ADR-117 already paid for letting this schema lag behind its layout twin. A closed kind-discriminated union; absence means the front derives the faces from the declared hand (ADR-118) and says so, which is a different state from an explicit `anywhere`. `faces` is the legacy face list, read and migrated to specs, never written.",
+          "description": "Declares HOW a Solid should be grasped (ADR-119 D2 / ADR-128 / ADR-152 D1). Mirrors layout-1.0 `entity.graspFeature` — changed in the SAME change, because ADR-117 already paid for letting this schema lag behind its layout twin. A closed kind-discriminated union; absence means the front derives the faces from the declared hand (ADR-118) and says so, which is a different state from an explicit `anywhere`. `faces` is the legacy face list, read and migrated to specs, never written. ADR-164 D4: the declaration IS the grasp RELATION (object × hand), and `kind` is only its WHERE — so `kind` is OPTIONAL. A relation that says only which hand (`tcp`) or how it lifts (`lift`) has said nothing about where: it is grasped exactly as with no graspFeature (faces derived from the hand) and the panel says so. At least one field — an empty object says nothing.",
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "kind"
-          ],
           "properties": {
             "tcp": {
               "type": "string",
               "minLength": 1,
               "description": "ADR-164 D2: WHICH HAND this grasp is for — the layout `ref` of a robot tcp (`robotRole: tcp`). The grasp RELATION (object × tcp) is derived from this declaration and the scene; it is never stored as a row of its own. OPTIONAL and never defaulted on read: absent = the hand is UNDECLARED and the relation row says so (even with a single tcp in the scene — a default would be a choice nobody made, ADR-164 §俯瞰). A ref with no tcp in the scene is a BROKEN relation, shown, never dropped. Not named `hand`: `graspSpec.hand` already names the hand's KIND (原則 #33 — one word, one fact)."
+            },
+            "lift": {
+              "type": "object",
+              "additionalProperties": false,
+              "description": "ADR-164 D4 (ADR-157 D5): how the object is LIFTED OUT once this relation's hand holds it — the lift phase of the pick. ONE per relation, not per spec: a relation with no spec (samples from the derived faces) may still declare its lift, and the wire carries one `target.lift`. Approach and lift are the same grasp before and after (the held set goes 0 → 1). `along`: `reverseApproach` (retrace the approach, so each candidate lifts along its own axis) or `worldUp` (+Z, ROS REP-103); `distance` in mm. Absent = the lift phase is NOT judged and the panel says so -- never a default distance. Declaration only: whether the lifted object or hand hits anything is solved in core/.",
+              "properties": {
+                "along": {
+                  "enum": [
+                    "reverseApproach",
+                    "worldUp"
+                  ]
+                },
+                "distance": {
+                  "type": "number",
+                  "exclusiveMinimum": 0,
+                  "description": "mm"
+                }
+              },
+              "required": [
+                "along",
+                "distance"
+              ]
             },
             "kind": {
               "enum": [
@@ -1155,7 +1174,8 @@
                 }
               }
             }
-          }
+          },
+          "minProperties": 1
         },
         "mass": {
           "type": "number",
@@ -1204,7 +1224,7 @@
         "lift": {
           "type": "object",
           "additionalProperties": false,
-          "description": "ADR-157 D5: how this object is LIFTED OUT once grasped -- the lift phase of the pick. `along`: `reverseApproach` (retrace the approach, so each candidate lifts along its own axis) or `worldUp` (+Z, ROS REP-103); `distance` in mm. Absent = the lift phase is NOT judged and the panel says so -- never a default distance (a lift nobody declared is not a lift that was fine). Declaration only: whether the lifted object or hand hits anything is solved in core/.",
+          "description": "LEGACY (pre-ADR-164 D4): the lift declared on the object itself. Still READ — migrated onto the grasp relation (`graspFeature.lift`) on load, and the panel says it was read from the old place — never written; the first edit of the lift moves it. Declaring both with different values is unreadable (the run stops and says so, never picks one). Same shape as `graspFeature.lift`.",
           "properties": {
             "along": {
               "enum": [

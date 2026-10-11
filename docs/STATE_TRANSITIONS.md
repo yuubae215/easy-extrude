@@ -1315,7 +1315,10 @@ stateDiagram-v2
 ちょうど 1 つの状態) で表現不能にする。導出の唯一の点は `graspRelationsOf` (`src/domain/graspRelation.js`)。
 
 母集団は**文書の宣言**であってシーンの実体ではない — シーンを辿ると消えたワークの宣言は
-原理的に出てこない (原則 #31 / DEF-035)。
+原理的に出てこない (原則 #31 / DEF-035)。ADR-164 D4 以降、宣言とは `graspFeature` (where の
+`kind` は省略可 — 手か引き上げだけを言う関係もある) か、**旧位置の `lift`** (読み込み時に関係へ
+読み替える) を持つことで、判定の唯一の点は `declaresGraspRelation`。引き上げは状態を動かさない
+(関係の欄であって、行の 4 状態の入力ではない)。
 
 | ワークがシーンに在る | `tcp` を名指している | 名指した ref がシーンのロボット tcp | 状態 | 壊れているか |
 |---|---|---|---|---|
@@ -1326,7 +1329,7 @@ stateDiagram-v2
 
 ```mermaid
 flowchart LR
-  D[文書の graspFeature 1 個] --> O{ワークはシーンに在るか}
+  D[文書の把持宣言 1 個<br/>graspFeature か旧 lift] --> O{ワークはシーンに在るか}
   O -- no --> BO[broken-object ⚠]
   O -- yes --> T{tcp を名指しているか}
   T -- no --> HU[hand-undeclared]

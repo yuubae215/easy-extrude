@@ -1382,6 +1382,32 @@ test('a declared lift rides the request in metres; an undeclared one does not ri
   assert.equal('lift' in rec2.sent.graspSearch.target, false, 'never a default lift (原則 #31)')
 })
 
+test('ADR-164 D4: the relation\'s lift and a legacy lift on the object put the same value on the wire', async () => {
+  const at = (extra) => ({ ...LAYOUT, entities: LAYOUT.entities.map(e => (e.ref === 'widget' ? { ...e, ...extra } : e)) })
+  const sent = []
+  for (const layoutDsl of [
+    at({ graspFeature: { lift: { along: 'reverseApproach', distance: 40 } } }),
+    at({ lift: { along: 'reverseApproach', distance: 40 } }),
+  ]) {
+    const rec = recordingBff()
+    const { gc } = setup({ bff: rec.bff, layoutDsl })
+    await gc.runGraspSearch({})
+    sent.push(rec.sent.graspSearch.target.lift)
+  }
+  assert.deepEqual(sent[0], { along: 'reverseApproach', distance: 0.04 })
+  assert.deepEqual(sent[1], sent[0], 'the migration is lossless on the wire')
+})
+
+test('ADR-164 D4: the lift and the relation removal go to the document\'s one writer', async () => {
+  const { gc, ctrl } = setup({ loaded: false })
+  const wrote = []
+  ctrl._ctxCtrl.setGraspLift = (ref, l) => { wrote.push(['lift', ref, l]) }
+  ctrl._ctxCtrl.removeGraspRelation = (ref) => { wrote.push(['remove', ref]) }
+  await gc.setGraspLift('widget', { along: 'worldUp', distance: 50 })
+  await gc.removeGraspRelation('widget')
+  assert.deepEqual(wrote, [['lift', 'widget', { along: 'worldUp', distance: 50 }], ['remove', 'widget']])
+})
+
 test('a malformed lift stops the run with the reason — it is not dropped', async () => {
   const broken = { ...LAYOUT, entities: LAYOUT.entities.map(e => (e.ref === 'widget' ? { ...e, lift: { along: 'sideways', distance: 50 } } : e)) }
   const rec = recordingBff()

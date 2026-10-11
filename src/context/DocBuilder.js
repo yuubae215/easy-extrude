@@ -11,6 +11,8 @@
 import { CONTEXT_DSL_VERSION } from './ContextDslSchema.js'
 import { LAYOUT_DSL_VERSION } from '../layout/LayoutDslSchema.js'
 import { constraintRef } from './ContextValidator.js'
+import { WHERE_KEYS, RELATION_KEYS } from '../domain/graspFeature.js'
+import { declaresGraspRelation } from '../domain/graspRelation.js'
 
 /**
  * Create a minimal valid blank context document.
@@ -193,15 +195,19 @@ export function setEntityPose(doc, ref, pose) {
  * Set (or clear) WHERE a layout Solid should be grasped (ADR-119 D2 / ADR-128),
  * input-immutable like every builder here.
  *
- * This is the only writer of `specification.layout.entities[].graspFeature`. It
+ * This is the only writer of the WHERE half of `specification.layout.entities[].graspFeature`
+ * (`WHERE_KEYS` — ADR-164 D4 split the declaration: which hand and how it lifts
+ * are the relation's own fields, with their own writers, and ride through here). It
  * lives in the doc builder rather than in the grasp panel because the declaration
  * belongs to the DOCUMENT, not to a run: the same statement must survive a reload,
  * an export, and an undo, which a controller-held run parameter would not.
  *
- * `feature === null` CLEARS the declaration — and clearing is not the same as
- * declaring `anywhere` (原則 #31). Deleting the key restores the "nobody said"
+ * `feature === null` CLEARS the where — and clearing is not the same as
+ * declaring `anywhere` (原則 #31). Removing it restores the "nobody said where"
  * state, which the panel then reports honestly instead of showing a phantom
- * choice the user never made.
+ * choice the user never made. The relation survives when it still names a hand
+ * or a lift; when nothing is left, the key goes (`removeEntityGraspRelation`
+ * removes the whole relation on purpose). A field outside `WHERE_KEYS` throws.
  *
  * A ref with no matching entity is a no-op clone, never a throw and never an
  * append: unlike an actor, a grasp feature has no meaning without the solid it
@@ -215,14 +221,96 @@ export function setEntityPose(doc, ref, pose) {
  * @returns {object} new doc
  */
 export function setEntityGraspFeature(doc, ref, feature) {
+  if (feature != null) {
+    const foreign = Object.keys(feature).filter(k => !WHERE_KEYS.includes(k))
+    if (foreign.length) {
+      throw new Error(`DocBuilder.setEntityGraspFeature: "${foreign[0]}" は where の欄ではない — RELATION_KEYS の書き手 (setEntityGraspTcp / setEntityGraspLift) を使うこと`)
+    }
+  }
   const clone   = _clone(doc)
   const layout  = clone.specification?.layout
   const entities = layout?.entities
   if (!Array.isArray(entities)) return clone
   const i = entities.findIndex(e => e?.ref === ref)
   if (i === -1) return clone
-  if (feature == null) delete entities[i].graspFeature
-  else entities[i].graspFeature = feature
+  // The relation's own half (which hand, how it lifts — ADR-164 D4) is not this
+  // writer's: it rides through, so clearing the where never un-names the hand.
+  const kept = _relationHalf(entities[i].graspFeature)
+  _putGraspFeature(entities[i], feature == null ? kept : { ...feature, ...kept })
+  return clone
+}
+
+/** The RELATION_KEYS half of a stored graspFeature (empty when there is none). */
+function _relationHalf(feature) {
+  const out = {}
+  if (!feature || typeof feature !== 'object' || Array.isArray(feature)) return out
+  for (const k of RELATION_KEYS) if (feature[k] !== undefined) out[k] = feature[k]
+  return out
+}
+
+/**
+ * Store a graspFeature, or delete the key when nothing is left in it — an empty
+ * object says nothing (the schema's `minProperties: 1`), and writing one would
+ * make "a relation that says nothing" a thing the document can hold.
+ */
+function _putGraspFeature(entity, feature) {
+  if (!feature || Object.keys(feature).length === 0) delete entity.graspFeature
+  else entity.graspFeature = feature
+}
+
+/**
+ * Set (or clear) how a grasped object is LIFTED OUT — the lift of the grasp
+ * RELATION (ADR-157 D5, moved onto the relation by ADR-164 D4), input-immutable.
+ *
+ * The only writer of `graspFeature.lift`, and the place the pre-D4 address
+ * (`entity.lift`, still read and migrated by `resolveDeclaredLift`) is retired:
+ * every write deletes the old key, so the first edit moves a legacy lift instead
+ * of leaving the document with two addresses.
+ *
+ * Unlike `setEntityGraspTcp`, declaring a lift on an object with NO grasp
+ * declaration creates the relation (`graspFeature: {lift}`): since D4 `kind` is
+ * optional, so this says exactly what the user said — how it lifts — and
+ * nothing about where (原則 #11: no invented `anywhere`). Clearing the last field
+ * of a relation removes the declaration.
+ *
+ * @param {object} doc
+ * @param {string} ref   Layout DSL entity ref of the Solid
+ * @param {{along:string, distance:number}|null} lift  null to clear
+ * @returns {object} new doc
+ */
+export function setEntityGraspLift(doc, ref, lift) {
+  const clone    = _clone(doc)
+  const entities = clone.specification?.layout?.entities
+  if (!Array.isArray(entities)) return clone
+  const i = entities.findIndex(e => e?.ref === ref)
+  if (i === -1) return clone
+  const e = entities[i]
+  const feature = (e.graspFeature && typeof e.graspFeature === 'object') ? { ...e.graspFeature } : {}
+  if (lift == null) delete feature.lift
+  else feature.lift = { along: lift.along, distance: lift.distance }
+  delete e.lift
+  _putGraspFeature(e, feature)
+  return clone
+}
+
+/**
+ * Remove a grasp RELATION from the document — the whole declaration (where, which
+ * hand, how it lifts) and the pre-D4 lift that would otherwise resurrect it as a
+ * relation on the next read (ADR-164 D4). The exit of a broken relation whose
+ * object is gone. A ref with no entity is a no-op clone.
+ *
+ * @param {object} doc
+ * @param {string} ref  Layout DSL entity ref of the Solid
+ * @returns {object} new doc
+ */
+export function removeEntityGraspRelation(doc, ref) {
+  const clone    = _clone(doc)
+  const entities = clone.specification?.layout?.entities
+  if (!Array.isArray(entities)) return clone
+  const i = entities.findIndex(e => e?.ref === ref)
+  if (i === -1) return clone
+  delete entities[i].graspFeature
+  delete entities[i].lift
   return clone
 }
 
@@ -252,10 +340,15 @@ export function setEntityGraspTcp(doc, ref, tcpRef) {
   if (!Array.isArray(entities)) return clone
   const i = entities.findIndex(e => e?.ref === ref)
   if (i === -1) return clone
-  const feature = entities[i].graspFeature
-  if (feature == null || typeof feature !== 'object') return clone
+  // A relation exists when the object declares a grasp — including a lift still
+  // at its pre-D4 address (ADR-164 D4), which has no graspFeature to hold the tcp
+  // yet; the object without either has no relation to name a hand for.
+  if (!declaresGraspRelation(entities[i])) return clone
+  const stored  = entities[i].graspFeature
+  const feature = (stored && typeof stored === 'object' && !Array.isArray(stored)) ? { ...stored } : {}
   if (tcpRef == null) delete feature.tcp
   else feature.tcp = tcpRef
+  _putGraspFeature(entities[i], feature)
   return clone
 }
 

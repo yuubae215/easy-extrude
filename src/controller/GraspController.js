@@ -181,6 +181,8 @@ export class GraspController {
     registerCallback('onHoverGraspFace',       (face) => this.hoverGraspFace(face))
     registerCallback('onSelectGraspRelation',  (ref) => this.selectRelation(ref))
     registerCallback('onSetGraspTcp',          (ref, tcpRef) => this.setGraspTcp(ref, tcpRef))
+    registerCallback('onSetGraspLift',         (ref, lift) => this.setGraspLift(ref, lift))
+    registerCallback('onRemoveGraspRelation',  (ref) => this.removeGraspRelation(ref))
     this.refreshRobots()
   }
 
@@ -506,6 +508,34 @@ export class GraspController {
     const ctxCtrl = this._ctrl._ctxCtrl
     if (typeof ctxCtrl?.setGraspTcp !== 'function') return
     return Promise.resolve(ctxCtrl.setGraspTcp(objectRef, tcpRef))
+      .then(() => this.refreshGraspTargets())
+  }
+
+  /**
+   * Declare (or clear) how the relation's object is lifted out (ADR-164 D4) —
+   * the relation's own field, through the one doc-edit entry point.
+   *
+   * @param {string} objectRef
+   * @param {{along:string, distance:number}|null} lift
+   */
+  setGraspLift(objectRef, lift) {
+    const ctxCtrl = this._ctrl._ctxCtrl
+    if (typeof ctxCtrl?.setGraspLift !== 'function') return
+    return Promise.resolve(ctxCtrl.setGraspLift(objectRef, lift))
+      .then(() => this.refreshGraspTargets())
+  }
+
+  /**
+   * Remove a whole grasp relation from the document (ADR-164 D4) — the exit of a
+   * relation whose object is gone. Clearing only the where (`setGraspFeature`
+   * null) would leave a relation that still names its hand or lift.
+   *
+   * @param {string} objectRef
+   */
+  removeGraspRelation(objectRef) {
+    const ctxCtrl = this._ctrl._ctxCtrl
+    if (typeof ctxCtrl?.removeGraspRelation !== 'function') return
+    return Promise.resolve(ctxCtrl.removeGraspRelation(objectRef))
       .then(() => this.refreshGraspTargets())
   }
 

@@ -49,15 +49,21 @@ function handDef() {
 // The target's own declarations (ADR-121 / ADR-156) — the Solid fields that are
 // DECLARATIONS rather than geometry. Taken from the schema by name, so a field
 // retired from the schema drops out and fails the stale-row test below.
-const solidDeclarations = ['mass', 'centerOfMass', 'lift']
+const solidDeclarations = ['mass', 'centerOfMass']
   .filter(k => k in (schema.$defs.entity.properties ?? {}))
   .map(k => `target.${k}`)
+// The lift is the RELATION's since ADR-164 D4 (`graspFeature.lift`; the Solid's
+// `lift` is a legacy read-only address with the same picture). Its picture row
+// keeps the name of what is drawn — the target's lift — so the population reads
+// it from the relation's schema.
+const relationDeclarations = ('lift' in (schema.$defs.graspFeature.properties ?? {})) ? ['target.lift'] : []
 
 const population = [
   ...fieldsOf('graspSpec', schema.$defs.graspSpec),
   ...fieldsOf('graspStrategy', schema.$defs.graspStrategy),
   ...fieldsOf('hand', handDef()),
   ...solidDeclarations,
+  ...relationDeclarations,
   // ADR-164 D2 — which hand the grasp is for. Read from the schema by name, so a
   // retired field drops out and fails the stale-row test.
   ...('tcp' in (schema.$defs.graspFeature.properties ?? {}) ? ['graspFeature.tcp'] : []),
@@ -87,8 +93,8 @@ const [target] = resolveGraspTargets([{
   rotation: { x: 0, y: 0, z: Math.SQRT1_2, w: Math.SQRT1_2 },
   mass: 0.4,
   centerOfMass: { kind: 'measured', point: [10, 0, -5] },
-  lift: { along: 'reverseApproach', distance: 40 },
   graspFeature: {
+    lift: { along: 'reverseApproach', distance: 40 },
     kind: 'specs',
     specs: [
       { name: 'pinch', hand: 'parallelJaw', approach: { from: '+z', region: { uMin: 0.2, uMax: 0.8, vMin: 0.1, vMax: 0.9 }, tiltTolerance: 0.2 }, closing: 'y', depth: 20 },

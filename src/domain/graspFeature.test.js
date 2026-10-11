@@ -30,8 +30,9 @@ import {
   resolveGraspFeature, graspFeatureGaps, graspFeatureSummary, strategySummary,
   faceNormalOrThrow, inPlaneAxesOrThrow, facesAreOpposed, FULL_REGION,
   specUsability, usableSpecs, faceWorldWord, contactFacesOf, TILTED_WORD,
-  specToDsl, featureToDsl, newSpec,
+  specToDsl, featureToDsl, newSpec, WHERE_KEYS, RELATION_KEYS,
 } from './graspFeature.js'
+import { readFileSync } from 'node:fs'
 import {
   resolveGraspTargets, surfaceSamplesFor, samplingPlanFor, graspSpecsFor,
   sendsDerivedSamples, faceRegionSamples, targetBoxFor,
@@ -392,14 +393,40 @@ test('新しい仕様は閉じ軸も深さも未宣言で始まり、名前は�
 
 // ── どの手との関係か (ADR-164 D2) ──────────────────────────────────────────────
 
-test('tcp は全状態を通って運ばれ、仕様を書き直しても落ちない', () => {
+test('tcp は全状態を通って運ばれる — 書き直しは where の半分だけを書く (ADR-164 D4)', () => {
   const dsl = { ...specs([spec()]), tcp: 'tcp_b' }
   const r = resolveGraspFeature(solid(dsl))
   assert.equal(r.tcp, 'tcp_b')
-  const written = featureToDsl(r.specs, r.strategy, r.strategyDeclared, GRIPPER_KIND.PARALLEL_JAW, r.tcp)
-  assert.equal(written.tcp, 'tcp_b')
-  assert.deepEqual(resolveGraspFeature(solid(written)), r, '不動点')
+  const written = featureToDsl(r.specs, r.strategy, r.strategyDeclared, GRIPPER_KIND.PARALLEL_JAW)
+  assert.deepEqual(Object.keys(written).filter(k => !WHERE_KEYS.includes(k)), [],
+    'the relation half (tcp / lift) is carried by the writer, never by featureToDsl')
+  assert.deepEqual(resolveGraspFeature(solid({ ...written, tcp: r.tcp })), r, '不動点')
   assert.equal(resolveGraspFeature(solid({ kind: GRASP_FEATURE_KIND.ANYWHERE, tcp: 't' })).tcp, 't')
+})
+
+// ── kind は省略可 — 宣言は関係で、kind はその where だけ (ADR-164 D4) ──────────
+
+test('kind の無い宣言は「where は言っていない」— graspFeature が無いのと同じ答えで、手は運ばれる', () => {
+  const none = resolveGraspFeature(solid(undefined))
+  const onlyLift = resolveGraspFeature(solid({ lift: { along: 'worldUp', distance: 50 } }))
+  assert.equal(onlyLift.state, GRASP_FEATURE_STATE.DERIVED)
+  assert.deepEqual(onlyLift, none, 'where unsaid reads exactly like no declaration')
+  const onlyTcp = resolveGraspFeature(solid({ tcp: 'tcp_a' }))
+  assert.equal(onlyTcp.state, GRASP_FEATURE_STATE.DERIVED)
+  assert.equal(onlyTcp.tcp, 'tcp_a')
+})
+
+test('kind の無い where の欄は読めない — 「where は言っていない」に黙って落とさない', () => {
+  const r = resolveGraspFeature(solid({ specs: [spec()] }))
+  assert.equal(r.state, GRASP_FEATURE_STATE.MALFORMED)
+  assert.match(r.errors[0], /needs a kind/)
+})
+
+test('where と関係の半分は、スキーマの graspFeature の欄をちょうど覆う (census)', () => {
+  const schema = JSON.parse(readFileSync(new URL('../../schema/layout-1.0.schema.json', import.meta.url), 'utf8'))
+  const fields = Object.keys(schema.$defs.graspFeature.properties).sort()
+  assert.deepEqual([...WHERE_KEYS, ...RELATION_KEYS].sort(), fields)
+  assert.deepEqual(WHERE_KEYS.filter(k => RELATION_KEYS.includes(k)), [], 'one field, one half')
 })
 
 test('tcp の欄が無ければ null — 既定値で埋めない', () => {

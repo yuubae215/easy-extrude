@@ -135,6 +135,18 @@ const IDENTITY_RULES = [
     why: '同じ欄の解釈が 2 箇所にあると、壊れた値を一方は不正・他方は未宣言と読み、関係の行と Run の gate が食い違う (ADR-164 D2)',
   },
   {
+    // ADR-164 D4。引き上げは把持の関係の欄 (`graspFeature.lift`) で、旧位置 (Solid の
+    // `lift`) は読み替えて読む。どちらから読むか・両方あるとき何と言うかを決めるのは
+    // `resolveDeclaredLift` だけ、書くのは `setEntityGraspLift` だけ (旧キーの削除も)。
+    // 関係の存在 (`declaresGraspRelation`) は旧位置の有無を数える側。生の欄を呼び出し側で
+    // 読み直すと、片方の住所だけを見て「未宣言」と言う第二の解釈が生まれる。
+    name: '把持の関係の引き上げ (graspFeature.lift / 旧 lift の解釈)',
+    owners: ['src/domain/targetLift.js', 'src/context/DocBuilder.js', 'src/domain/graspRelation.js'],
+    use: "resolveDeclaredLift(entity) — 書くのは setEntityGraspLift、関係の有無は declaresGraspRelation(entity)",
+    all: [/\b(e|entity|raw|feature|graspFeature|stored)\??\.lift\b(?!['"`])/],
+    why: '2 つの住所の片方だけを読む解釈が増えると、旧文書の引き上げが別の経路では未宣言に見える (ADR-164 D4)',
+  },
+  {
     // ADR-104 U2。「この提案は古びているか」は *保存しない* と決めた導出値なので、
     // 導出規則そのものが唯一の住所になる。散ると「4 つ目の状態」が事実上復活する。
     name: '提案の陳腐化判定 (from === 現在値)',

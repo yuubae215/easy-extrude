@@ -542,6 +542,13 @@ These are design-level constraints (not bugs) of the current `fastened` implemen
 - **Anti-pattern**: deriving the rows from the scene's entities (`scene.filter(e => e.graspFeature)`) — the orphan has no node to visit; storing the relation as a row of its own — a second source for the declaration.
 - **Where it is asked**: `src/domain/graspRelation.test.js` (the total derivation table), `src/IdentityContainment.test.js` (the field's one reader/writer), `e2e/grasp-stub.spec.js` S17 (delete the object → ⚠ row → undo).
 
+## One Declaration, Two Halves — Each Writer Owns Its Half (ADR-164 D4)
+
+- **Bug (2026-10-11, found while moving the lift onto the grasp relation)**: `graspFeature` carried two kinds of fact — WHERE to grasp (`kind` / `specs` / `strategy`) and what the relation says beside it (which hand, `tcp`). One writer (`setEntityGraspFeature`) replaced the whole object, so the hand survived a spec edit only because the panel remembered to thread `feature.tcp` back through `featureToDsl` — and the where's "clear" deleted the whole key, silently un-naming the hand. Adding the lift as a third field would have needed a third remembered pass-through.
+- **Concrete Rule**: when one stored object holds facts written from different places, name its halves (`WHERE_KEYS` / `RELATION_KEYS` in `src/domain/graspFeature.js`) and give each half its own writer that **carries the other half through untouched** (`setEntityGraspFeature` / `setEntityGraspTcp` / `setEntityGraspLift`). A writer handed a field of the other half throws. Removing the whole thing is its own verb (`removeEntityGraspRelation`), not "clear the where". An object left with no field is deleted, never stored as `{}` (schema `minProperties: 1`).
+- **Anti-pattern**: callers threading the other half through the value they write (`{...where, tcp: feature.tcp}`) — every new field adds a pass-through that N−1 callers forget.
+- **Where it is asked**: `src/domain/graspFeature.test.js` (the halves cover the schema's fields exactly, and never overlap), `src/context/DocBuilder.test.js` (each writer carries the other half; the foreign-field throw; no `{}`), `src/IdentityContainment.test.js` (the lift's one reader/writer).
+
 ## _promptAddFrame Must Select Frame After Creation
 
 - **Principle**: `CoordinateFrameView._group.visible` defaults to `false`. A frame only becomes visible when `_showFrameChain()` or `_setChildFramesVisible()` calls `showFull()` / `showDimmed()`. These are only called from `_switchActiveObject()`.

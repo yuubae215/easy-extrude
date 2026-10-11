@@ -78,6 +78,23 @@ export const DECLARED_FEATURE_KINDS = Object.freeze(Object.values(GRASP_FEATURE_
 export const LEGACY_FACE_LIST_KIND = 'faces'
 
 /**
+ * The two halves of one `graspFeature` (ADR-164 D4) — the declaration is the
+ * grasp RELATION, and its fields say two different kinds of fact:
+ *
+ *   WHERE_KEYS    — where on the object the hand goes (`kind` + its fields).
+ *                   Written only by `DocBuilder.setEntityGraspFeature`.
+ *   RELATION_KEYS — what the relation says beside where: which hand (`tcp`,
+ *                   `setEntityGraspTcp`) and how it lifts out (`lift`,
+ *                   `setEntityGraspLift`).
+ *
+ * Each writer owns its half and carries the other through untouched, so clearing
+ * the where never un-names the hand or drops the lift. Together they are exactly
+ * the schema's `graspFeature` properties (a census test holds that).
+ */
+export const WHERE_KEYS    = Object.freeze(['kind', 'specs', 'strategy', 'faces'])
+export const RELATION_KEYS = Object.freeze(['tcp', 'lift'])
+
+/**
  * The resolved STATE of one target's grasp-location declaration. Four values, and
  * the reason there are four rather than two is the whole ADR: silence, an explicit
  * "anywhere", a narrowed declaration, and a broken one must each be
@@ -334,6 +351,18 @@ export function resolveGraspFeature(entity) {
   }
   const tcp = raw.tcp ?? null
   const withTcp = (r) => ({ ...r, tcp })
+  // `kind` is the declaration's WHERE, and it is optional (ADR-164 D4): the
+  // declaration is the grasp RELATION, which may name only its hand or its lift.
+  // Then nothing was said about where — exactly the no-graspFeature answer
+  // (faces derived from the hand), with the relation's hand carried through.
+  // A where-field without its kind is not "where unsaid" but an unreadable where.
+  if (raw.kind === undefined) {
+    const stray = WHERE_KEYS.filter(k => k !== 'kind' && raw[k] !== undefined)
+    if (stray.length) {
+      return malformed([`graspFeature.${stray[0]} needs a kind — say which kind of where it is (${DECLARED_FEATURE_KINDS.join(' / ')})`])
+    }
+    return withTcp(resolved(GRASP_FEATURE_STATE.DERIVED))
+  }
   if (raw.kind === GRASP_FEATURE_KIND.ANYWHERE) return withTcp(resolved(GRASP_FEATURE_STATE.DECLARED_ANYWHERE))
   if (raw.kind === LEGACY_FACE_LIST_KIND) return withTcp(migrateFaceList(raw))
   if (raw.kind !== GRASP_FEATURE_KIND.SPECS) {
@@ -387,7 +416,8 @@ export function resolveGraspFeature(entity) {
  * @property {number} migratedFaces  how many legacy faces were migrated into specs (0 = none)
  * @property {string[]} errors
  * @property {string|null} tcp  the ref of the robot tcp this grasp is for (ADR-164 D2);
- *   null = not declared (and always null for `derived` / `malformed`)
+ *   null = not declared (always null for `malformed`, and for `derived` unless the
+ *   relation names its hand without saying where — ADR-164 D4)
  */
 
 function resolved(state, extra = {}) {
@@ -663,16 +693,16 @@ export function specToDsl(spec, handKind) {
  * @param {ResolvedGraspSpec[]} specs
  * @param {{order:string, fallback:string}} strategy
  * @param {boolean} strategyDeclared
+ * Only the WHERE half (`WHERE_KEYS`) — the relation's hand and lift are not
+ * this function's to write; `setEntityGraspFeature` carries them through.
+ *
  * @param {string|null} handKind
- * @param {string|null} [tcp]  the tcp the grasp is for (ADR-164 D2) — passed through
- *   so rewriting the specs never drops which hand the relation names
  * @returns {object|null}  null when there is no spec left (= clear, never `specs: []`)
  */
-export function featureToDsl(specs, strategy, strategyDeclared, handKind, tcp = null) {
+export function featureToDsl(specs, strategy, strategyDeclared, handKind) {
   if (!specs.length) return null
   const out = { kind: GRASP_FEATURE_KIND.SPECS, specs: specs.map(s => specToDsl(s, handKind)) }
   if (strategyDeclared) out.strategy = { order: strategy.order, fallback: strategy.fallback }
-  if (tcp) out.tcp = tcp
   return out
 }
 

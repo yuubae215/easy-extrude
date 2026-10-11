@@ -385,26 +385,8 @@
           ]
         },
         "lift": {
-          "type": "object",
-          "additionalProperties": false,
-          "description": "ADR-157 D5: how this object is LIFTED OUT once grasped -- the lift phase of the pick. `along`: `reverseApproach` (retrace the approach, so each candidate lifts along its own axis) or `worldUp` (+Z, ROS REP-103); `distance` in mm. Absent = the lift phase is NOT judged and the panel says so -- never a default distance (a lift nobody declared is not a lift that was fine). Declaration only: whether the lifted object or hand hits anything is solved in core/.",
-          "properties": {
-            "along": {
-              "enum": [
-                "reverseApproach",
-                "worldUp"
-              ]
-            },
-            "distance": {
-              "type": "number",
-              "exclusiveMinimum": 0,
-              "description": "mm"
-            }
-          },
-          "required": [
-            "along",
-            "distance"
-          ]
+          "$ref": "#/$defs/lift",
+          "description": "LEGACY (pre-ADR-164 D4): the lift declared on the object itself. Still READ — migrated onto the grasp relation (`graspFeature.lift`) on load, and the panel says it was read from the old place — never written; the first edit of the lift moves it. Declaring both with different values is unreadable (the run stops and says so, never picks one). Same shape as `graspFeature.lift`."
         },
         "frames": {
           "type": "array",
@@ -425,17 +407,17 @@
       }
     },
     "graspFeature": {
-      "description": "Declares HOW a Solid should be grasped (ADR-119 D2 / ADR-128 / ADR-152 D1). OPTIONAL: with no graspFeature the front derives the faces from the declared hand (ADR-118) and the panel says so — absence is a state (\"nobody said\"), distinct from an explicit `anywhere` (\"I looked and chose not to narrow\"). A closed kind-discriminated union, same governance as `gripper` (ADR-118): the kind decides which fields exist. Declared specs are used VERBATIM and never merged with the derived set (ADR-119 D3) unless the strategy itself declares `fallback: derived`.",
+      "description": "Declares HOW a Solid should be grasped (ADR-119 D2 / ADR-128 / ADR-152 D1). OPTIONAL: with no graspFeature the front derives the faces from the declared hand (ADR-118) and the panel says so — absence is a state (\"nobody said\"), distinct from an explicit `anywhere` (\"I looked and chose not to narrow\"). A closed kind-discriminated union, same governance as `gripper` (ADR-118): the kind decides which fields exist. Declared specs are used VERBATIM and never merged with the derived set (ADR-119 D3) unless the strategy itself declares `fallback: derived`. ADR-164 D4: the declaration IS the grasp RELATION (object × hand), and `kind` is only its WHERE — so `kind` is OPTIONAL. A relation that says only which hand (`tcp`) or how it lifts (`lift`) has said nothing about where: it is grasped exactly as with no graspFeature (faces derived from the hand) and the panel says so. At least one field — an empty object says nothing.",
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "kind"
-      ],
       "properties": {
         "tcp": {
           "type": "string",
           "minLength": 1,
           "description": "ADR-164 D2: WHICH HAND this grasp is for — the layout `ref` of a robot tcp (`robotRole: tcp`). The grasp RELATION (object × tcp) is derived from this declaration and the scene; it is never stored as a row of its own. OPTIONAL and never defaulted on read: absent = the hand is UNDECLARED and the relation row says so (even with a single tcp in the scene — a default would be a choice nobody made, ADR-164 §俯瞰). A ref with no tcp in the scene is a BROKEN relation, shown, never dropped. Not named `hand`: `graspSpec.hand` already names the hand's KIND (原則 #33 — one word, one fact)."
+        },
+        "lift": {
+          "$ref": "#/$defs/lift"
         },
         "kind": {
           "description": "`anywhere` = declared and deliberately not narrowed (samples follow the hand's derived faces). `specs` = grasp only as the listed grasp specs say, used as `strategy` says. `faces` is the pre-ADR-152 face list: still READ and migrated to specs on load (each face → one spec approaching from it, strategy `score`/`none` — the same answer), never written.",
@@ -483,7 +465,30 @@
             }
           }
         }
-      }
+      },
+      "minProperties": 1
+    },
+    "lift": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "ADR-164 D4 (ADR-157 D5): how the object is LIFTED OUT once this relation's hand holds it — the lift phase of the pick. ONE per relation, not per spec: a relation with no spec (samples from the derived faces) may still declare its lift, and the wire carries one `target.lift`. Approach and lift are the same grasp before and after (the held set goes 0 → 1). `along`: `reverseApproach` (retrace the approach, so each candidate lifts along its own axis) or `worldUp` (+Z, ROS REP-103); `distance` in mm. Absent = the lift phase is NOT judged and the panel says so -- never a default distance. Declaration only: whether the lifted object or hand hits anything is solved in core/.",
+      "properties": {
+        "along": {
+          "enum": [
+            "reverseApproach",
+            "worldUp"
+          ]
+        },
+        "distance": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "description": "mm"
+        }
+      },
+      "required": [
+        "along",
+        "distance"
+      ]
     },
     "graspSpec": {
       "description": "One named way to grasp this workpiece (ADR-152 D1) — a GRASP SPEC. Bundles the facts one 'face' could not hold: where the hand comes from (`approach.from` — the APPROACH face, whose outward normal the hand travels against), over which part of it (`approach.region`), how far it may tilt (`approach.tiltTolerance`), which LOCAL axis the jaws close on (`closing`; the two CONTACT faces are derived from it, never declared), and how deep the TCP goes below the approach face (`depth`, mm). The spec list's ORDER is its priority. Declaration only — whether the jaws close, whether the hand hits anything, which spec's candidates come back is solved in core/.",
