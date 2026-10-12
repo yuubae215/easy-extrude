@@ -1240,6 +1240,12 @@ Map 注釈ビュー (`AnnotatedPointView` / `AnnotatedLineView` / `AnnotatedRegi
 - **合意の途中で線が変わったら:** それまでの合意 (`pending`) は古い線への合意で、数えない (導出 —
   `pending.line ≠ 現在の線`)。次に合意した人から集め直す。
 - **履歴:** 見た後の変更 (D4) と、版を上げた承認・却下は追記のみ。人の行為は再計算できない。
+  合意前の半分 (PR3) で保存するのは**やってみた回** (`criteriaHearing.trials[] {actor, line, seen}` —
+  「やってみる」を開いた瞬間のその人の線の写し) だけで、「回 n の後に緩めた / 締めた / 安全を削った」は
+  回 n と回 n+1 (最後の回は今の線、合意が覆った人は合意の写し) の差から導く (`hearingHistory`)。
+  最初の回より前の答えは初回の回答で、履歴にしない。聞き取り中のループ (上の図の自己辺) を逐次の
+  フローに並べたのが聞き取り wizard (`CRITERIA_HEARING_WIZARD`) で、新しい状態は足さない — 段は §context.wizard の
+  `step(k)`、gate は回答者の空欄。
 
 ## 場の器 — 閉 / 開 (ADR-106 D1/D4)
 

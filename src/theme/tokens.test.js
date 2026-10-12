@@ -261,6 +261,10 @@ const ACCENT_NON_PAINTERS = [
   { key: 'src/components/NPanel/NPanelGeneric.jsx', why: 'keyboard focus ring on a numeric input' },
   { key: 'src/components/NPanel/npanelShared.jsx',  why: 'keyboard focus ring shared by the N-panel field primitives' },
   { key: 'src/components/Header/ModeDropdown.jsx',  why: 'the currently active MODE in the dropdown — a mode is not an entity' },
+  // ADR-165 D3: which END USER is answering the hearing's Steps 2–4. Like a
+  // mode, it is a property of the flow being walked, not of an entity in the
+  // scene — nothing in the viewport becomes selected by pressing it.
+  { key: 'src/components/Context/CriteriaHearingSteps.jsx', why: 'the respondent currently answering the criteria hearing — a step of a flow, not a scene entity' },
   // ADR-118: which HAND KIND is declared (parallel jaw / suction). Like a mode,
   // it is a property of the declaration being written, not of an entity in the
   // scene — nothing in the viewport is selected by pressing it.

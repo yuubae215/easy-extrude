@@ -74,3 +74,23 @@ export function criteriaElementOf(requirement) {
 export function elementsOfCategory(category) {
   return CRITERIA_ELEMENTS.filter(e => e.category === category)
 }
+
+/**
+ * **Archetypes** — starting points for the QCD + S ratio (ADR-165 D3, flow v4
+ * Step 2: "pick a type, then adjust" — the job choice of character creation).
+ *
+ * Vocabulary, not a decision (stakeholder, 2026-10-12): picking one only fills
+ * the person's draft; nothing is written until they press Save, and the saved
+ * ratio is their answer, which they adjust freely. No ratio is ever inferred
+ * from an archetype, and the census never counts an archetype as an answer.
+ * Every archetype states all four categories (safety included — S is never
+ * left for the person to forget).
+ *
+ * @type {ReadonlyArray<{key: string, label: string, mix: Readonly<{D:number,Q:number,C:number,S:number}>}>}
+ */
+export const MIX_ARCHETYPES = Object.freeze([
+  Object.freeze({ key: 'neverStop',  label: 'Never stop the line', mix: Object.freeze({ D: 40, Q: 25, C: 15, S: 20 }) }),
+  Object.freeze({ key: 'neverMiss',  label: 'Never miss',          mix: Object.freeze({ D: 20, Q: 45, C: 15, S: 20 }) }),
+  Object.freeze({ key: 'cheapFast',  label: 'Cheap and fast',      mix: Object.freeze({ D: 35, Q: 15, C: 35, S: 15 }) }),
+  Object.freeze({ key: 'nobodyHurt', label: 'Nobody gets hurt',    mix: Object.freeze({ D: 15, Q: 20, C: 15, S: 50 }) }),
+])

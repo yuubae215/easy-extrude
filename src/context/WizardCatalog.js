@@ -22,6 +22,8 @@
  *
  * FSM (ADR-063 §4, designed before the components — 核 §1.4):
  *   state = null (inactive) | { defId, status:'step', index:k } | { defId, status:'review' }
+ *           (+ a definition's own fields, kept across transitions — the
+ *           criteria hearing's `respondent`, ADR-165 D3)
  *   `next`  — allowed only when stepGaps(...) === []  (illegal `next` returns
  *             the SAME state, never a corrupt one — unrepresentable, not thrown)
  *   `back`  — always allowed (review → last step; step 0 stays)
@@ -36,6 +38,8 @@
  * @module context/WizardCatalog
  */
 import { actorGaps, variableGaps, requirementGaps } from './IntakeAssist.js'
+import { HEARING_STEP, hearingStepGaps } from './CriteriaHearing.js'
+import { endUsersOf } from './ActorStance.js'
 
 export const WIZARD_CATALOG_VERSION = 'wizard/1.0'
 
@@ -88,20 +92,74 @@ export const CELL_INTAKE_WIZARD = Object.freeze({
   ]),
 })
 
+/**
+ * The criteria hearing (ADR-165 D3 — the character-creation flow, v4): who
+ * answers → the QCD + S ratio → expectation and weight per element → try it →
+ * heard in full? → agree. Asked **one end user at a time**: the state carries
+ * `respondent` (an end user ref), and Steps 2〜4 are that person's.
+ *
+ * Its gates are not entry counts but `gaps(docLike, state)` — the census of
+ * the respondent's blanks (`CriteriaHearing.hearingStepGaps`), so "next" is
+ * refused for exactly the blanks R12 would name. The review is the agreement
+ * (`review: 'agreement'`); there is no total score anywhere in the flow — how
+ * weights combine is core/'s score function (ADR-165 D3, CLAUDE.md 軸 1).
+ */
+export const CRITERIA_HEARING_WIZARD = Object.freeze({
+  id:      'criteria-hearing',
+  version: WIZARD_CATALOG_VERSION,
+  name:    'Criteria hearing',
+  review:  'agreement',
+  // The definition's own state: the first end user answers, when there is one.
+  initial: (doc) => ({ respondent: endUsersOf(doc)[0]?.ref ?? null }),
+  steps: Object.freeze([
+    Object.freeze({
+      id:    HEARING_STEP.END_USERS,
+      kind:  HEARING_STEP.END_USERS,
+      title: 'Who is asked?',
+      prompt: 'Pick the people who stand as end users of this cell — one or more. Who they are (maintenance, EHS, approver…) is a separate fact from standing as an end user. Each of them answers Steps 2–4.',
+      gaps: (docLike, state) => hearingStepGaps(HEARING_STEP.END_USERS, docLike, state?.respondent ?? null),
+    }),
+    Object.freeze({
+      id:    HEARING_STEP.MIX,
+      kind:  HEARING_STEP.MIX,
+      title: 'What does this cell value?',
+      prompt: 'Start with the big words: how much speed, quality, cost and safety matter, relative to each other. All four are asked — safety too, even when nobody says it out loud.',
+      gaps: (docLike, state) => hearingStepGaps(HEARING_STEP.MIX, docLike, state?.respondent ?? null),
+    }),
+    Object.freeze({
+      id:    HEARING_STEP.EXPECTATIONS,
+      kind:  HEARING_STEP.EXPECTATIONS,
+      title: 'Expectation and weight',
+      prompt: 'Every element has the same two answers: the expectation (how far it must at least get — the criterion) and the weight (how much going beyond it is worth). A weight of 0 is an answer ("does not matter"); a blank is not.',
+      gaps: (docLike, state) => hearingStepGaps(HEARING_STEP.EXPECTATIONS, docLike, state?.respondent ?? null),
+    }),
+    Object.freeze({
+      id:    HEARING_STEP.TRIAL,
+      kind:  HEARING_STEP.TRIAL,
+      title: 'Try it',
+      prompt: 'See what cells these expectations would bring back, and pick the one you like. Opening this step records what you held when you looked — if you go back and change an expectation, the change is kept as "after trial n".',
+      gaps: (docLike, state) => hearingStepGaps(HEARING_STEP.TRIAL, docLike, state?.respondent ?? null),
+    }),
+  ]),
+})
+
 /** All registered wizard definitions, by id. Adding a wizard = adding a row. */
 export const WIZARD_CATALOG = Object.freeze({
-  [CELL_INTAKE_WIZARD.id]: CELL_INTAKE_WIZARD,
+  [CELL_INTAKE_WIZARD.id]:      CELL_INTAKE_WIZARD,
+  [CRITERIA_HEARING_WIZARD.id]: CRITERIA_HEARING_WIZARD,
 })
 
 // ── FSM transition functions (pure) ──────────────────────────────────────────
 
 /**
- * Enter the wizard at its first step.
+ * Enter the wizard at its first step. `extra` carries a definition's own
+ * state fields (the hearing's `respondent`); every transition keeps them.
  * @param {object} def — a WIZARD_CATALOG definition
+ * @param {object} [extra]
  * @returns {{defId:string, status:'step', index:number}}
  */
-export function startWizard(def) {
-  return { defId: def.id, status: 'step', index: 0 }
+export function startWizard(def, extra = {}) {
+  return { ...extra, defId: def.id, status: 'step', index: 0 }
 }
 
 /**
@@ -121,6 +179,9 @@ export function wizardStepGaps(def, state, docLike) {
   if (!state || state.status !== 'step') return []
   const step = def?.steps?.[state.index]
   if (!step) return []
+  // A step that declares its own gate answers for itself (the criteria
+  // hearing counts blanks, not entries); otherwise the entry count by kind.
+  if (typeof step.gaps === 'function') return step.gaps(docLike ?? {}, state)
   const key = KIND_KEY[step.kind]
   const n = (docLike?.[key] ?? []).length
   const min = step.minEntries ?? 1
@@ -142,8 +203,9 @@ export function nextWizardState(def, state, docLike) {
   if (!state || state.status !== 'step') return state
   if (wizardStepGaps(def, state, docLike).length > 0) return state
   const last = (def?.steps?.length ?? 0) - 1
-  if (state.index >= last) return { defId: state.defId, status: 'review' }
-  return { defId: state.defId, status: 'step', index: state.index + 1 }
+  const { index: _i, ...rest } = state
+  if (state.index >= last) return { ...rest, status: 'review' }
+  return { ...rest, status: 'step', index: state.index + 1 }
 }
 
 /**
@@ -157,9 +219,9 @@ export function nextWizardState(def, state, docLike) {
 export function prevWizardState(def, state) {
   if (!state) return state
   const last = (def?.steps?.length ?? 0) - 1
-  if (state.status === 'review') return { defId: state.defId, status: 'step', index: Math.max(last, 0) }
+  if (state.status === 'review') return { ...state, status: 'step', index: Math.max(last, 0) }
   if (state.status === 'step' && state.index > 0) {
-    return { defId: state.defId, status: 'step', index: state.index - 1 }
+    return { ...state, status: 'step', index: state.index - 1 }
   }
   return state
 }
@@ -178,7 +240,7 @@ export function prevWizardState(def, state) {
 export function wizardTrail(def, state, docLike) {
   const steps = def?.steps ?? []
   const nodes = steps.map((step, i) => {
-    const complete = wizardStepGaps(def, { status: 'step', index: i }, docLike).length === 0
+    const complete = wizardStepGaps(def, { ...(state ?? {}), status: 'step', index: i }, docLike).length === 0
     const current = state?.status === 'step' && state.index === i
     return {
       id: step.id,

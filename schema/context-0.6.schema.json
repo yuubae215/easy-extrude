@@ -134,6 +134,39 @@
         }
       }
     },
+    "criteriaHearing": {
+      "description": "ADR-165 D3 / D4 (before agreement). The hearing flow's trials: each time an end user opens \"Try it\", what they held then (`line`, that end user's slice of the criteria line) and the candidates shown (`seen` — core/'s ids; an empty list is a declared zero). Only the human act is stored: what changed after trial n (afterTrial), its direction and \"safety was cut\" are derived by diffing consecutive trials (CriteriaHearing.hearingHistory) — never stored.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "trials": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "actor",
+              "line",
+              "seen"
+            ],
+            "properties": {
+              "actor": {
+                "type": "string"
+              },
+              "line": {
+                "$ref": "#/$defs/criteriaLineSlice"
+              },
+              "seen": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "agenda": {
       "description": "ADR-104 D4. TABLED CONFLICTS ONLY. Conflicts are re-derived by R6 on every validate and are never stored; proposals are agenda items by existing. The agenda a person reads is the union, assembled on demand by Agenda.projectAgenda() so neither side is stored twice.",
       "type": "array",

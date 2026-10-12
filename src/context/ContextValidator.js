@@ -500,6 +500,13 @@ export function validateContext(ctx) {
       }
     }
   }
+  // A trial (ADR-165 D4, before agreement) is one person's act of looking;
+  // a trial by nobody would put "after trial n" on a person who does not exist.
+  for (const [i, t] of (ctx.criteriaHearing?.trials ?? []).entries()) {
+    if (!(ctx.actors ?? []).some(a => a.ref === t.actor)) {
+      errors.push(`criteriaHearing.trials[${i}]: "${t.actor}" does not reference any actor`)
+    }
+  }
   for (const d of lineDrift(ctx)) {
     const where = d.element ? `${d.element}.${d.field}` : d.field
     errors.push(`criteria line: "${d.actor}" ${where} is ${JSON.stringify(d.actual)} but the agreed line and its approved proposals say ${JSON.stringify(d.expected)} — the agreed line moves only by a proposal the other end users approve (ADR-165 D5)`)

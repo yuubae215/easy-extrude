@@ -98,3 +98,59 @@ test('entering negotiation projects the criteria line and the agenda (not only o
   assert.ok(Array.isArray(context.agendaRows))
   assert.ok(context.form.some(q => q.raisedBy === 'R12:unagreed-criteria'))
 })
+
+// ── ADR-165 PR3: the criteria hearing runs in the document intake ────────────
+//
+// The hearing lives outside the floor (ADR-106 D3), so it is driven here with
+// the floor CLOSED: its read model must arrive on the document edge, its
+// writes must not wait for negotiation, and opening "Try it" must record the
+// trial — twice, when the person goes back and changes an expectation.
+
+test('the hearing walks to "Try it" with the floor closed, and each look is recorded', async () => {
+  const { ContextService } = await import('../service/ContextService.js')
+  const { useUIStore } = await import('../store/uiStore.js')
+  const { CRITERIA_HEARING_WIZARD } = await import('../context/WizardCatalog.js')
+  const { hearingHistory } = await import('../context/CriteriaHearing.js')
+  const elements = ['takt', 'positionAccuracy', 'holdMargin', 'equipmentCost', 'maintainability', 'humanClearance', 'stoppingDistance']
+  const svc = new ContextService({ async importFromJson() { return { imported: 0, skipped: 0 } } })
+
+  const ctrl = makeCtrl()
+  ctrl._ctxService = svc
+  const pushed = []
+  ctrl._commandStack = { canUndo: false, push(c) { pushed.push(c) } }
+  ctrl._refreshUndoRedoState = () => {}
+  const cc = new ContextController(ctrl)
+  cc._viewContext = () => ({ camera: null, renderer: null, container: null })
+
+  await svc.loadContext({
+    version: 'context/0.6',
+    actors: [{ ref: 'a', role: 'ehs', endUser: true, mix: { D: 1, Q: 1, C: 1, S: 1 } }],
+    requirements: elements.map(k => ({ ref: `crit_a_${k}`, by: 'a', owner: 'a', kpi: { name: k }, criterion: { op: k === 'humanClearance' ? '>=' : '<=', value: 10 }, weight: 1 })),
+    specification: { layout: { version: 'layout/0.1', entities: [] } },
+  }, { camera: null, renderer: null, container: null })
+  assert.equal(cc.isNegotiation, false, 'the floor stays closed')
+  assert.equal(useUIStore.getState().context.criteriaDoc?.actors.length, 1, 'the slice is projected on the document edge')
+
+  const settle = () => new Promise(r => setTimeout(r, 0))
+  cc.startWizard(CRITERIA_HEARING_WIZARD.id)
+  assert.equal(useUIStore.getState().context.wizard.respondent, 'a')
+  cc.wizardNext(); cc.wizardNext(); cc.wizardNext()
+  await settle()
+  const wiz = useUIStore.getState().context.wizard
+  assert.equal(CRITERIA_HEARING_WIZARD.steps[wiz.index].id, 'trial')
+  assert.equal(svc.getDoc().criteriaHearing?.trials.length, 1, 'opening "Try it" recorded trial 1')
+
+  // Back to Step 3, loosen safety, try again: two trials, one round with the cut.
+  cc.wizardBack()
+  cc.hearingAnswer({ elements: { humanClearance: { criterion: { op: '>=', value: 4 } } } })
+  await settle()
+  cc.wizardNext()
+  await settle()
+  assert.equal(svc.getDoc().criteriaHearing.trials.length, 2)
+  const [round] = hearingHistory(svc.getDoc())
+  assert.equal(round.afterTrial, 1)
+  assert.equal(round.safetyCut, true)
+  assert.equal(useUIStore.getState().context.criteriaDoc.criteriaHearing.trials.length, 2, 'the panel sees what the doc says')
+  assert.ok(pushed.length >= 3, 'every write is one undoable command')
+  assert.deepEqual(ctrl._uiView.toasts, [], 'nothing was refused')
+})

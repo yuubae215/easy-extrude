@@ -11,7 +11,7 @@ artifacts
 
     context Adr165Scope
     uuid be95b5b1-5ae1-45b7-b328-92e53b9f9f7f
-    summary "ADR-165 (Accepted 2026-10-11 段階実装 — PR1 D1/D2・PR2 D4(合意後)/D5 済、IA 再設計 Phase 8): 職能と立場を分け、エンドユーザ 1..N (D1)、価値木は QCD + S でどの要素も期待値と重みの同じ形 (D2)、キャラメイク型の聞き取りフロー (D3)、見た後の変更を履歴に残す (D4)、全員の合意で v1、以後の線の変更は他のエンドユーザ全員の承認を要する提案 (D5)、関心と差し出すものは core/ が返し持ち主が保証する (D6)"
+    summary "ADR-165 (Accepted 2026-10-11 段階実装 — PR1 D1/D2・PR2 D4(合意後)/D5・PR3 D3/D4(合意前) 済、IA 再設計 Phase 8): 職能と立場を分け、エンドユーザ 1..N (D1)、価値木は QCD + S でどの要素も期待値と重みの同じ形 (D2)、キャラメイク型の聞き取りフロー (D3)、見た後の変更を履歴に残す (D4)、全員の合意で v1、以後の線の変更は他のエンドユーザ全員の承認を要する提案 (D5)、関心と差し出すものは core/ が返し持ち主が保証する (D6)"
 
     context RequirementCameFromTheOwner
     uuid bcde7e9b-ecce-4994-ba6b-66c1f83cb112
@@ -71,6 +71,22 @@ artifacts
             - "src/context/Ownership.js"
             - "src/context/ContextValidator.js"
             - "src/command/ProposalCommands.test.js"
+
+        goal TheHearingIsWalkedOnePersonAtATimeAndWhatWasSeenIsKept
+        uuid 1051bc4e-b90a-49dc-a504-f2a9573cb9b5
+        summary "聞き取りはエンドユーザ 1 人ずつ、誰に → 比重 → 期待値と重み → やってみる → 合意 の順で進み、回答者の空欄が残る段では先へ進めない。やってみるを開いた後に期待値を動かせば『回 n の後に・何を見て・どちらへ』が消せない形で残り、安全を緩めれば安全を削ったと出る。総合点はどこにも出ない"
+        labels support-verified
+
+            solution HearingFlowIsExecuted
+            uuid 431850fe-942d-425c-88f6-632d98622d7b
+            summary "src/context/CriteriaHearing.test.js (2026-10-12, PR3, 15 pass): Step 1 は 0 人で名指しで止まる / Step 2 は空欄の大項目 (S も) を名指し・全部 0 は拒否 / N=2 で gate は回答者のもの (他人の空欄で止まらず、他人の答えで通らない) / 未宣言の段は throw / wizard が回答者を next・back で保つ・空欄なら同じ状態を返す / 回の写しは seen:[] (宣言された 0) / 空欄・非エンドユーザ・合意済みは記録を拒否 (理由つき) / 行き来だけは新しい回にしない / 最初の回より前の答えは履歴にしない / 同じ人が 2 回やってみても回 1 が上書きされず 2 ラウンド残る (1 回だけのテストでは見えない形) / 安全の緩めは safety cut / 合意後は合意の写しで終わり lineHistory と二重に数えない / だれでもない回は R14 error。src/controller/ContextController.test.js: 場を閉じたまま文書の縁の投影でフローが進み、やってみるを 2 回開いて回が 2 つ・回 1 の後に安全を削った。src/schema/ContextSchema.test.js: afterTrial を保存すると reject。e2e/criteria-hearing.spec.js: 実アプリで Start ▾ → 聞き取り → やってみる → 戻って人と当たらないを緩める → 『safety was cut, after trial 1』(ブラウザで見つけた空の枠 7 つの回帰も問う)。比重の型は下書きを埋めるだけで census は空欄のまま (答えではない)。src/view/CriteriaFigureMath.test.js: 図の母集団はカタログ・未宣言は throw・空欄は描かない・数値に追従・箱からはみ出さない (語の確かめ — 原則 #33 (4))。案 (core/ の値) と ☺ ○ ☹ は PR4 — DEF-064"
+            artifacts
+            - "src/context/CriteriaHearing.js"
+            - "src/context/CriteriaHearing.test.js"
+            - "src/context/WizardCatalog.js"
+            - "src/controller/ContextController.test.js"
+            - "e2e/criteria-hearing.spec.js"
+            - "src/view/CriteriaFigureMath.js"
 
         goal IndicatorValuesComeOnlyFromCore
         uuid b32930ce-f76c-4884-82a7-fe0144964c84

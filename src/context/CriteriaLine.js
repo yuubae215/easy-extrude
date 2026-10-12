@@ -35,16 +35,16 @@
  * version is kept, and the rows already agreed stay frozen meanwhile: losing
  * the agreement does not hand the old lines back to direct edits.
  *
- * ## What is not here (後続 PR — DEF-062 / DEF-063)
+ * ## What is not here (後続 PR — DEF-062)
  *
  * Whether a change is inside the margin, and what it gives up (差し出すもの),
  * are core/'s values (ADR-165 D6 — PR4). The gate that makes approvers read
  * them is in place (`lineApprovalGuards` G3) and fires once a proposal carries
  * `offerings`; until core/ returns them nothing sets the field (DEF-062).
  *
- * The history before agreement — changes made after seeing a trial — needs
- * the trial, which arrives with the hearing flow (PR3, DEF-063). What this
- * module records is the line after agreement.
+ * The history before agreement — changes made after seeing a trial — is
+ * `CriteriaHearing.hearingHistory` (PR3). What this module records is the
+ * line after agreement.
  *
  * @module context/CriteriaLine
  */
@@ -439,13 +439,22 @@ export function lineChangeOf(f, from, to) {
 }
 
 /**
+ * **"Safety was cut"** — an expectation in category S that was loosened. The
+ * one place that says it; both halves of the history (after agreement here,
+ * before agreement in CriteriaHearing) ask this, so the two cannot disagree.
+ */
+export function isSafetyCut(f, change) {
+  return f.category === 'S' && change === LINE_CHANGE.LOOSENED
+}
+
+/**
  * **The record of the line after agreement** (ADR-165 D4, the part PR2 can
  * say): every line proposal, open or closed, in document order, with who,
  * what, which way, and who approved. "Safety was cut" is derived — an
  * expectation in category S that was loosened — never typed by anyone.
  *
  * The other half of D4 — changes made *after seeing a trial* before the
- * agreement — needs the trial, which arrives with the hearing flow (PR3).
+ * agreement — is `CriteriaHearing.hearingHistory` (PR3).
  *
  * @param {object} ctx
  */
@@ -466,7 +475,7 @@ export function lineHistory(ctx) {
         from: p.from,
         to: p.to,
         change,
-        safetyCut: f.category === 'S' && change === LINE_CHANGE.LOOSENED,
+        safetyCut: isSafetyCut(f, change),
         approvals: p.approvals ?? [],
         required: requiredApprovers(ctx, p),
         rejectedBy: p.rejectedBy ?? [],

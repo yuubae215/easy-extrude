@@ -18,7 +18,7 @@
   **ADR-112** (文書の入口の住所を恒久に — Phase 5.2、**Accepted・実装済み**) /
   **ADR-109** (残しに母集団と満期を — Phase 6、**Proposed**) /
   **ADR-164** (宣言は事実の持ち主の画面に住む — Phase 7、**Accepted・実装済み**) /
-  **ADR-165** (判定基準は設計の前に聞き切る — Phase 8、**Accepted・段階実装中 (PR1・PR2 済)**)
+  **ADR-165** (判定基準は設計の前に聞き切る — Phase 8、**Accepted・段階実装中 (PR1・PR2・PR3 済)**)
 - **状態と基数** → `docs/STATE_LEDGER.md` §提案中の実体
 
 **この表は段の全数である。** 起票済みの ADR で段を持たないものは 0 本でなければならない
@@ -416,9 +416,10 @@ Outliner の意味側 (v8 注釈②) は**未着手**。「Phase 3 と同時に�
       期待値は既存の `requirement` の行、足したのは `endUser` / `mix` / `weight` — ADR-165 §PR1 の俯瞰)
 - [x] 線の版と履歴 (D4)。(PR2 — 合意**後**の履歴 `lineHistory`。合意前の「見た後の変更」はやってみると一緒に PR3 — DEF-063)
 - [x] 空欄の個数の census (`countUnheard` — 1 人 18 欄、R12 / R13 が名指し)。(PR1)
-- [ ] 聞き取りフロー (ADR-063 の `context.wizard` FSM の上)。(PR3)
+- [x] 聞き取りフロー (ADR-063 の `context.wizard` FSM の上)。(PR3 — `CRITERIA_HEARING_WIZARD`、回答者 `respondent`、
+      段の gate は回答者の空欄。合意前の履歴 = やってみた回の写しの差。案は PR4 — DEF-064。比重の型と語の確かめの図も置いた)
 - [x] 合意と線の変更提案 (ADR-104 の提案 → 承認 / 却下を使う)。(PR2 — `CriteriaLine.js`、提案の終端に `却下` を足した。マージン外の gate は置いたが値は PR4 — DEF-062)
-- [ ] response 契約に関心と差し出すもの (contractVersion 版上げ) — 値は core/ が出す。
+- [ ] response 契約に関心と差し出すもの・やってみるの案 (contractVersion 版上げ) — 値は core/ が出す。
 
 **完了条件:** 安全を答えていないエンドユーザがいると設計へ進めない。合意後の線の変更が、他の
 エンドユーザ全員の承認なしには通らず、誰が・何を見て・誰の承認でが記録に残る。
