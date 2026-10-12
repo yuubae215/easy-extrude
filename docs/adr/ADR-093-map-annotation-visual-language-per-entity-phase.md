@@ -1,6 +1,6 @@
 # 093. Map 注釈の視覚言語を刷新 — アニメーションの位相を実体の同一性から導き、「基数 N の lockstep」を構造で消す
 
-- Status: Accepted (実装済 — ADR-031 §8 のアニメーション表を置き換え。相互作用モデル §1-§7 は不変)
+- Status: Partially superseded by ADR-166 (D3 Blueprint アトモスフィアのみ — 2026-10-12、ADR-166 M3a で床の光に置換。D1 位相を同一性から導く・D2 曲線 2 本・D4 Boundary の撤回 (crest は光の壁へ移設)・D5 Route の位置の揺らぎ・D6 reduced motion は Accepted のまま継承)
 - Date: 2026-07-25
 - Deciders: yuubae215, Claude (pairing)
 - Supersedes / Superseded by: ADR-031 §8「Animations」を置き換える (ADR-031 の §1-§7 = 相互作用モデルは有効。ADR-066 Tier 分類と ADR-065 reduced-motion 境界を無改変で継承)

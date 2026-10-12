@@ -4,8 +4,8 @@
 - Date: 2026-10-11
 - Deciders: yuubae215, Claude
 - 段: 本 ADR の M1〜M4 (下の §段)。IA 再設計の順序表には載せない (画面の住所を変えないため)
-- Retires: GREP:src/view/AnnotatedRegionView.js::The\sBlueprint\sdevice — Map モード用に選んだ製図台の装置 (対角ハッチ・コーナー登録マーク)。M3 の PR で消える
-- Supersedes / Superseded by: なし (M3 を Accepted にする PR で ADR-093 を `Partially superseded by ADR-166` にする — D3 Blueprint アトモスフィアの部分だけ。D1 位相を同一性から導く・D2 曲線 2 本・D6 reduced motion は継承)
+- Retires: なし — 宣言していた `GREP:src/view/AnnotatedRegionView.js::The\sBlueprint\sdevice` (製図台の装置 = 対角ハッチ・コーナー登録マーク) は M3a (2026-10-12) で退役済み。本 ADR は M3b/M4 が残るので Proposed のまま — Proposed の Retires は「在らねばならない」と問われるため、満期の来た行をここで閉じる
+- Supersedes / Superseded by: ADR-093 を部分的に置き換える (D3 Blueprint アトモスフィアの部分だけ — M3a で実施 2026-10-12。D1 位相を同一性から導く・D2 曲線 2 本・D6 reduced motion は継承)
 
 ## Context — Goal と力学 (§1.2 Goal)
 
@@ -69,10 +69,35 @@ Tier (Fact / Affordance / Delight) は従来どおり守る。棚卸しで出た
 |---|---|---|
 | **M1 棚卸し** (**実施 2026-10-11**) | モーション基盤 (`src/theme/motion.js`・`MotionGovernor`・`MotionMath`) か reduced-motion の境界を参照する演出を、品質ゲート・Tier・「今ならこう作る」との差で採点した表を作る。各演出の撮影 (screencast DSL — ADR-160) は、作り直す PR の直前に刷新前の動画として撮る | 表のファイル = 母集団 (構文から導出)。**結果は `docs/motion/inventory.md`** — 53 ファイル・21 行、C 4 行 (背景 / リンクの波紋 / マップ注釈 / 起動ホーム)。2026-10-12 に母集団を追補して 62 ファイル・29 行 (基盤を通らずに見た目を書き換えるもの — キューブの状態の手掛かり `MeshView` ほか)、census は `src/MotionInventoryCoverage.test.js` |
 | **M2 方向性を決める** (**実施 2026-10-12**) | モーション・アイデンティティ 5 軸を当事者と決め、CLAUDE.md に「モーション・アイデンティティ」節として固定する。背景 (SceneStage) のアトモスフィアを Void Grid 型から選び直す | CLAUDE.md に節があり、5 軸が埋まっている。**結果**: 節は CLAUDE.md、軸の母集団は animation-fx Step 1.5 から導出して `src/MotionIdentity.test.js` が問う |
-| **M3 マップ注釈 = 床の光** | 案 B。注釈の名札を EntityLabel に揃える (名札の仕組みを 1 つに — ADR-155 D1 の続き)。投影・角度に依らず読める (見る角度を `MapVisualMath` の入力にする)。Zone の強さを役割で決める。消滅演出 (P9) と選択時の見せ方を入れる | 純粋層テスト (位相の同一性・linear 禁止・reduced motion のフレーム一致を継承 + 角度の入力) と、刷新前後の動画 |
+| **M3a マップ注釈 = 床の光** (**実施 2026-10-12**) | 案 B。注釈の名札を EntityLabel に揃える (名札の仕組みを 1 つに — ADR-155 D1 の続き)。投影・角度に依らず読める (見る角度を `MapVisualMath` の入力にする)。Zone の強さを役割で決める。Blueprint 装置を退役 | 純粋層テスト (位相の同一性・linear 禁止・reduced motion のフレーム一致を継承 + 角度の入力 + 役割の表)。刷新前後の静止画 `docs/motion/media/m3a-*.png` (動画は M3b の後に M3 全体で撮る) |
+| **M3b 選択・消滅・置く前** | 選択時の見せ方 (BoxHelper の白い箱 → 光が強まって `land` で着地)、消滅演出 (P9 — ライフサイクルに `exiting`、論理の可視性と描画の可視性を 2 欄に分ける)、配置プレビュー (`MapPreviewMath`) を同じ光で描く | `exiting` の状態機械 (STATE_TRANSITIONS)、hit-test が退場中の注釈を拾わないこと、刷新前後の動画 |
 | **M4 残りの演出** | M1 の採点が低い順に作り直す (最初の候補: リンクの波紋 + リンク線、キューブの状態の手掛かり — ホバー・選択・接近、起動ホーム) | M1 の表の全行が「今の水準」になるか、残す理由が書かれている |
 
 M3 は M2 の後に置く — 床の光は M2 で決める背景の光源を共有するので、先に作ると光源が 2 つになる (§1.1)。
+M3 は 2 本に割った (当事者合意 2026-10-12): `exiting` の状態追加と見た目の刷新が同じ差分に混ざるとレビューできないため。
+
+**M3a で決めたこと (2026-10-12、当事者合意 — 「M3a からおすすめで」):**
+
+| 問い | 決定 | 正本 |
+|---|---|---|
+| 床の光の形 | **2 つの形を視角で受け渡す**。床に寝る**縁の光** (縁で明るく内へ消える — 光だまりの縁が境界) と、縁に立つ**光の幕** (床で明るく上へ消える)。真上からは床が、斜めからは幕が読みを運び、`floor + curtain ≥ 1` がどの角度でも成り立つ | `FloorLightGeometry.edgeBand / lightCurtain`、`MapVisualMath.floorLightGains` |
+| 見る角度 | `viewElevation = abs(forward·Z)` (真上 1、床すれすれ 0)。AppController が毎フレーム 1 回、描いたばかりの world 行列から読む (割り当て 0) | `MapVisualMath.viewElevation` |
+| 強さ | 面積ではなく**役割**。Zone = `ground` (いちばん静か)、他は `mark`。選択 ×1.4、違反は絶対値 1.6 で全役割の上 (Tier F は Tier A に勝つ)。未宣言の種は throw | `EMPHASIS_BY_PLACE_TYPE` / `emphasisFor` |
+| 光の色 | 分類色 (事実) を舞台の光へ 30% 寄せる。色相は分類なので支配的チャネルを変えない (テストが種ごとに問う) | `lightTint` (← `StageMath.STAGE_LIGHT`) |
+| Boundary | 垂直ハッチ tick を退役し、壁に立つ光の幕へ。ADR-093 D4 の crest (壁を伝う光) は幕の上で継承 | `boundaryLightFrame` (旧 `boundaryTickFrame`) |
+| Anchor | 目盛りと 45° datum square を退役。十字の芯と hold-and-kick は残し、床の光は Hub より**絞った硬いスポット** | `AnnotatedPointView` |
+| 名札 | 3 つの手書き div を EntityLabel に。アクセントは分類色 | `EntityLabel` |
+
+**語彙 (原則 #33):** 「Zone は地、印は前、違反は最前面」を言う語が無く、強さが Zone の fill 帯・halo の base・rim の peak の
+数値に散っていた → **強さの段** (`ground` / `mark`) と修飾子 (`selected` / `urgent`) を 1 つの表にした。
+「見る角度」は入力として存在しなかった → `viewElevation` を起こした。光の語は M2 の `STAGE_LIGHT` が既に在ったので足していない。
+
+**M3a で分かったこと (原則 #19):** 役割の表を書いた初回のテストが、`selected` の mark (1.0 × 1.4 = 1.4) が `urgent` (1.35) を
+上回ることを出した — 「違反は最前面」を散文で決めても、乗算の修飾子と絶対値の修飾子が交差する所で破れる。
+「違反は選択された最も明るい印より明るい」を全種の直積で問う形にして、urgent を 1.6 に上げた。
+既存の不具合も 1 つ消えた: `setContainsViolated` が `LineMaterial.color` に数値を代入していた (Color を置き換えて
+しまう) — 色の書き手を各 view の `_applyColors()` 1 つに集めたことで、違反・分類変更・解除の 3 経路が同じ書き方になった (原則 #4)。
+**検証できていないこと:** Route と Boundary の見た目はテンプレに実例が無く、実機の撮影をしていない (純粋層のテストのみ)。
 
 **M1 で分かったこと (起票時の見込みからの追記 — 原則 #19):** 母集団は起票時に書いた「約 33 ファイル」ではなく **53**。
 起票時はモーション基盤を import するファイルだけを数えていたが、reduced-motion の境界 (`useReducedMotion`) を
@@ -129,7 +154,7 @@ reduced 境界の外) を含む 9 本を採点した。どちらも M4 の最初
 
 | 触るもの | 中身 |
 |---|---|
-| `src/view/Annotated*View.js` / `MapVisualMath.js` / `DecalTextures.js` | M3 — 床の光、角度の入力、名札の統一 |
+| `src/view/Annotated*View.js` / `MapVisualMath.js` / `FloorLightGeometry.js` (新設) / `AppController` (視角を渡す) | M3a — 床の光、角度の入力、役割の強さ、名札の統一 (**実施**)。`DecalTextures.hatchTexture` は `GraspDeclarationView` が使うので残した |
 | `src/view/SceneStage.js` / `StageMath.js` / `SceneView.js` (グリッドのフェード) / `src/theme/tokens.js` (地の色・舞台の光・`EASING`) | M2 — 背景のアトモスフィアと曲線の語彙 (**実施**) |
 | `CLAUDE.md` | M2 — モーション・アイデンティティ節 |
 | `.claude/skills/animation-fx/` | M1〜M4 で得た再利用できる知見の書き戻し |

@@ -6,31 +6,38 @@
  * entity movement — each move just updates group.position and rebuilds local
  * geometry; no per-component world-position bookkeeping is needed.
  *
- * Renders:
- *  - A Line2 (fat line) as a closed ring in place-type color
- *  - A translucent fill mesh (ShapeGeometry in centroid-local XY plane)
- *  - A drifting drafting-hatch layer over the fill (Zone only)
+ * Renders — LIGHT ON THE FLOOR (ADR-166 M3), lit by the one stage light:
+ *  - A Line2 (fat line) as a closed ring in place-type color (the fact)
+ *  - A faint interior wash (ShapeGeometry in centroid-local XY plane)
+ *  - An EDGE BAND: light lying on the floor, brightest at the boundary and
+ *    fading inward — a pool of light whose rim is the region's edge
+ *  - A LIGHT CURTAIN standing on the ring, brightest at the floor and fading
+ *    upward — what stays legible when the camera skims the floor and the band
+ *    compresses (the two are complementary in the view angle —
+ *    `MapVisualMath.floorLightGains`)
  *  - Vertex dot markers (small spheres) at each vertex
- *  - L-shaped corner ticks at each vertex (drafting registration marks)
  *  - A BoxHelper for selection highlight
  *  - Two rim rings (Zone only) that pulse outward in 180°-offset phases
  *
- * Animations — curves live in `MapVisualMath` (pure, tested); ADR-093 revises the
- * ADR-031 §8 parameters:
+ * ADR-093 D3's Blueprint dressing (drifting diagonal hatch + L-shaped corner
+ * registration marks) was retired by ADR-166 M3: it assumed a camera looking
+ * straight down, and in perspective it collapsed to stripes.
+ *
+ * Loudness is the ROLE, not the area (`emphasisFor`): a Zone is ground — the
+ * quietest light on screen even though it is usually the biggest thing.
+ *
+ * Animations — curves live in `MapVisualMath` (pure, tested):
  *  - Pending boundary: dashOffset scrolls — "marching ants" flow effect
- *  - Zone: fill opacity breathes on `breathe()` (sin², seamless at the loop) on a
- *    PER-ENTITY phase, in a narrower band than ADR-031 §8's 0.15–0.65 — the hatch
- *    and the eased rim now carry the "area" reading, so a heavy wash only hid the
- *    geometry underneath (P11 抑制)
+ *  - Zone: the floor light breathes on `breathe()` (sin², seamless at the loop)
+ *    on a PER-ENTITY phase (ADR-093 D1)
  *  - Zone: two rim rings, radius eased outward (easeOutCubic) against a quadratic
  *    alpha tail, half a cycle apart
- *  - Zone: the hatch drifts slowly — an authored area, not a poured one
  *
- * Reduced motion: the hatch freezes, the fill parks mid-band, one rim ring holds
- * mid-flight — the area stays fully legible (PHILOSOPHY #30/#11). Preference from
- * the ONE boundary (`src/theme/motion.js`), re-read live.
+ * Reduced motion: the light parks mid-band, one rim ring holds mid-flight — the
+ * area stays fully legible (PHILOSOPHY #30/#11). Preference from the ONE
+ * boundary (`src/theme/motion.js`), re-read live.
  *
- * @see ADR-029, ADR-031, ADR-093
+ * @see ADR-029, ADR-031, ADR-093, ADR-166
  */
 import * as THREE from 'three'
 import { Line2 }         from 'three/addons/lines/Line2.js'
@@ -38,9 +45,11 @@ import { LineGeometry }  from 'three/addons/lines/LineGeometry.js'
 import { LineMaterial }  from 'three/addons/lines/LineMaterial.js'
 import { getPlaceTypeEntry } from '../domain/PlaceTypeRegistry.js'
 import { prefersReducedMotion, onReducedMotionChange } from '../theme/motion.js'
-import { hatchTexture } from './DecalTextures.js'
+import { EntityLabel } from './EntityLabel.js'
+import { edgeBand, lightCurtain } from './FloorLightGeometry.js'
 import {
-  phaseFor, entryFrame, zoneFillFrame, zoneRimFrame, hatchOffset,
+  phaseFor, entryFrame, zoneFillFrame, zoneRimFrame,
+  emphasisFor, floorLightGains, lightTint,
   ZONE_RIM_RINGS, ZONE_RIM_PERIOD, ZONE_FILL_MIN, ZONE_FILL_MAX,
 } from './MapVisualMath.js'
 
@@ -51,8 +60,12 @@ const UNSELECTED_WIDTH   = 2
 const CONFIRMED_OPACITY  = 1.00
 const PENDING_OPACITY    = 0.90
 const RIM_PULSE_DURATION = ZONE_RIM_PERIOD   // seconds per rim ring cycle
-const HATCH_LINES        = 14            // hatch repetitions across the region's larger side
-const CORNER_TICK_FRAC   = 0.06          // corner mark arm length as a fraction of the bbox diagonal
+const VIOLATION_COLOR    = 0xEF4444
+const WASH_GAIN          = 0.35   // interior wash = breath × this — the band carries the light
+const BAND_GAIN          = 1.6    // edge band = breath × this (additive, capped at 1)
+const BAND_INSET         = 0.78   // band runs from the edge 22% of the way to the centroid
+const CURTAIN_PEAK       = 0.55   // light curtain opacity at full gain
+const CURTAIN_FRAC       = 0.05   // curtain height as a fraction of the region's span (#27)
 
 export class AnnotatedRegionView {
   /**
@@ -119,17 +132,13 @@ export class AnnotatedRegionView {
     this._fillMesh.renderOrder = 1
     this._group.add(this._fillMesh)
 
-    // ── Hatch layer (Zone only) ────────────────────────────────────────────
-    // The Blueprint device: a flat wash says "coloured in", diagonal hatch says
-    // "authored area" — and a slow drift keeps it alive without touching the
-    // fill's opacity channel (#4: one owner per channel). Shares the fill's
-    // ShapeGeometry, whose UVs are the shape's own local XY, so `repeat` set
-    // from the region's bbox gives a constant hatch pitch per region at ANY
-    // scene scale (#27). The texture is a caller-owned clone — disposed below.
-    this._hatchTex = hatchTexture()
-    this._hatchMat = new THREE.MeshBasicMaterial({
-      map:                this._hatchTex,
-      color:              this._colorForType(placeType),
+    // ── Floor light: edge band + light curtain (ADR-166 M3) ───────────────
+    // Additive, tinted by `material.color` with a per-vertex grey fade (0 =
+    // contributes nothing), so the light needs no alpha channel and the tint
+    // has one writer (#4). Geometry comes from the pure `FloorLightGeometry`.
+    const lightMat = (polygonOffsetUnits) => new THREE.MeshBasicMaterial({
+      color:              lightTint(this._colorForType(placeType)),
+      vertexColors:       true,
       transparent:        true,
       opacity:            0,
       depthTest:          true,
@@ -138,13 +147,20 @@ export class AnnotatedRegionView {
       side:               THREE.DoubleSide,
       polygonOffset:      true,
       polygonOffsetFactor: -1,
-      polygonOffsetUnits: -5,   // one step ahead of the fill so it never z-fights it
-      fog:                false,
+      polygonOffsetUnits,
     })
-    this._hatchMesh = new THREE.Mesh(this._fillGeo, this._hatchMat)
-    this._hatchMesh.renderOrder = 2
-    this._hatchMesh.visible = (placeType === 'Zone')
-    this._group.add(this._hatchMesh)
+    this._bandGeo = new THREE.BufferGeometry()
+    this._bandMat = lightMat(-5)   // one step ahead of the wash so it never z-fights it
+    this._band = new THREE.Mesh(this._bandGeo, this._bandMat)
+    this._band.renderOrder = 2
+    this._group.add(this._band)
+
+    this._curtainGeo = new THREE.BufferGeometry()
+    this._curtainMat = lightMat(0)
+    this._curtainMat.polygonOffset = false   // stands up off the floor — nothing to fight
+    this._curtain = new THREE.Mesh(this._curtainGeo, this._curtainMat)
+    this._curtain.renderOrder = 2
+    this._group.add(this._curtain)
 
     // ── Vertex dots ────────────────────────────────────────────────────────
     // 6×6 segments read as hexagons in the top-down Map camera (see the same
@@ -157,21 +173,6 @@ export class AnnotatedRegionView {
     /** @type {THREE.Mesh[]} */
     this._dots = []
 
-    // ── Corner registration ticks ──────────────────────────────────────────
-    // Two short arms at each vertex, along the incoming and outgoing edges — the
-    // drafting mark that makes a polygon read as a DEFINED boundary rather than a
-    // shape someone dragged. Static information (never animated), one geometry
-    // rebuilt with the ring.
-    this._cornerMat = new THREE.LineBasicMaterial({
-      color:       this._colorForType(placeType),
-      depthTest:   true,
-      depthWrite:  false,
-      transparent: true,
-      opacity:     0.85,
-    })
-    /** @type {THREE.LineSegments|null} */
-    this._corners = null
-
     // ── Rim rings (Zone only, dual-wave pulse) ─────────────────────────────
     // Two rings share one geometry but have independent materials so their
     // opacities can be animated at 180° phase offset for a continuous double-
@@ -181,7 +182,7 @@ export class AnnotatedRegionView {
     this._rims = []
     for (let i = 0; i < ZONE_RIM_RINGS; i++) {
       const mat = new THREE.MeshBasicMaterial({
-        color:              this._colorForType(placeType),
+        color:              lightTint(this._colorForType(placeType)),
         depthTest:          true,
         depthWrite:         false,
         transparent:        true,
@@ -208,29 +209,14 @@ export class AnnotatedRegionView {
     this.boxHelper.visible = false
     scene.add(this.boxHelper)
 
-    // ── HTML name label ────────────────────────────────────────────────────
-    this._label = null
-    if (container) {
-      this._label = document.createElement('div')
-      const hexStr = this._colorForType(placeType).toString(16).padStart(6, '0')
-      Object.assign(this._label.style, {
-        position:      'fixed',
-        pointerEvents: 'none',
-        userSelect:    'none',
-        background:    'rgba(20, 20, 20, 0.80)',
-        color:         '#e0e0e0',
-        fontSize:      '11px',
-        fontFamily:    'sans-serif',
-        padding:       '1px 5px',
-        borderRadius:  '3px',
-        whiteSpace:    'nowrap',
-        display:       'none',
-        zIndex:        '50',
-        borderLeft:    `3px solid #${hexStr}`,
-      })
-      this._label.textContent = name
-      container.appendChild(this._label)
-    }
+    // ── Name label (the one label mechanism — EntityLabel, ADR-155 D1) ─────
+    /** @type {EntityLabel|null} */
+    this._label = (renderer && container) ? new EntityLabel(renderer, container) : null
+    this._label?.setText(name)
+    this._label?.setAccent(this._cssColor(placeType))
+    this._label?.setWanted(true)
+    this._labelAnchor = new THREE.Vector3()
+    this._containsViolated = false
 
     // ── Set initial geometry ───────────────────────────────────────────────
     this._setPoints(points)
@@ -273,9 +259,7 @@ export class AnnotatedRegionView {
     const fillShape = new THREE.Shape(localPts.map(lp => new THREE.Vector2(lp.x, lp.y)))
     this._fillGeo = new THREE.ShapeGeometry(fillShape)
     this._fillMesh.geometry = this._fillGeo
-    // The hatch shares the fill geometry (and therefore its UVs = local XY).
-    this._hatchMesh.geometry = this._fillGeo
-    this._applyHatchScale(localPts)
+    this._buildFloorLight(localPts)
 
     // Vertex dots at local positions
     for (const lp of localPts) {
@@ -308,65 +292,36 @@ export class AnnotatedRegionView {
       r.mesh.scale.setScalar(1)
     }
 
-    this._buildCornerTicks(localPts)
     this._updateBoxHelper(localPts)
   }
 
   /**
-   * Sets the hatch texture `repeat` so the pattern crosses the region about
-   * `HATCH_LINES` times regardless of the region's world size — the hatch pitch
-   * is then a property of the ENTITY, not of the scene's unit scale (#27; a
-   * world-unit pitch is invisible in an mm-scale cell and a solid block in a
-   * site plan). ShapeGeometry's UVs are the local XY coordinates, so `repeat` is
-   * `HATCH_LINES / extent`.
+   * Rebuilds the edge band and the light curtain for the current ring. Both
+   * sizes come from the region's OWN extent (#27): the band is a fraction of
+   * the way to the centroid, the curtain a fraction of the span — so the light
+   * looks the same in an mm-scale cell and a 100 m site plan.
    * @param {THREE.Vector3[]} localPts centroid-relative vertices
    */
-  _applyHatchScale(localPts) {
+  _buildFloorLight(localPts) {
     let ext = 0
     for (const lp of localPts) ext = Math.max(ext, Math.abs(lp.x), Math.abs(lp.y))
     const span = Math.max(ext * 2, 1e-6)
-    const rep = HATCH_LINES / span
-    this._hatchTex.repeat.set(rep, rep)
-  }
 
-  /**
-   * Rebuilds the corner registration ticks: at each vertex, one short arm toward
-   * the previous vertex and one toward the next. Arm length scales with the
-   * polygon's own extent (#27 again) and is capped at a third of the shorter
-   * adjacent edge so small polygons do not turn into solid outlines.
-   * @param {THREE.Vector3[]} localPts centroid-relative vertices
-   */
-  _buildCornerTicks(localPts) {
-    if (this._corners) {
-      this._group.remove(this._corners)
-      this._corners.geometry.dispose()
-      this._corners = null
-    }
-    const n = localPts.length
-    if (n < 3) return
-    let ext = 0
-    for (const lp of localPts) ext = Math.max(ext, Math.abs(lp.x), Math.abs(lp.y))
-    const nominal = Math.max(ext * 2, 1e-6) * CORNER_TICK_FRAC * Math.SQRT2
-    const pos = new Float32Array(n * 2 * 6)   // 2 arms × 2 vertices × xyz
-    let k = 0
-    const dir = new THREE.Vector3()
-    for (let i = 0; i < n; i++) {
-      const here = localPts[i]
-      for (const other of [localPts[(i - 1 + n) % n], localPts[(i + 1) % n]]) {
-        dir.subVectors(other, here)
-        const edge = dir.length()
-        if (edge < 1e-9) { k += 6; continue }
-        const len = Math.min(nominal, edge / 3)
-        dir.multiplyScalar(len / edge)
-        pos[k++] = here.x;           pos[k++] = here.y;           pos[k++] = here.z
-        pos[k++] = here.x + dir.x;   pos[k++] = here.y + dir.y;   pos[k++] = here.z + dir.z
-      }
-    }
-    const geo = new THREE.BufferGeometry()
-    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
-    this._corners = new THREE.LineSegments(geo, this._cornerMat)
-    this._corners.renderOrder = 3
-    this._group.add(this._corners)
+    const band = edgeBand(localPts, BAND_INSET)
+    this._bandGeo.dispose()
+    this._bandGeo = new THREE.BufferGeometry()
+    this._bandGeo.setAttribute('position', new THREE.Float32BufferAttribute(band.positions, 3))
+    this._bandGeo.setAttribute('color',    new THREE.Float32BufferAttribute(band.shade, 3))
+    this._bandGeo.setIndex(new THREE.BufferAttribute(band.index, 1))
+    this._band.geometry = this._bandGeo
+
+    const curtain = lightCurtain(localPts, true, span * CURTAIN_FRAC)
+    this._curtainGeo.dispose()
+    this._curtainGeo = new THREE.BufferGeometry()
+    this._curtainGeo.setAttribute('position', new THREE.Float32BufferAttribute(curtain.positions, 3))
+    this._curtainGeo.setAttribute('color',    new THREE.Float32BufferAttribute(curtain.shade, 3))
+    this._curtainGeo.setIndex(new THREE.BufferAttribute(curtain.index, 1))
+    this._curtain.geometry = this._curtainGeo
   }
 
   /**
@@ -393,14 +348,21 @@ export class AnnotatedRegionView {
     return entry ? parseInt(entry.color.slice(1), 16) : DEFAULT_COLOR
   }
 
+  /** CSS form of the place-type colour, for the label's accent bar. */
+  _cssColor(placeType) {
+    return `#${this._colorForType(placeType).toString(16).padStart(6, '0')}`
+  }
+
   // ── Per-frame animation ────────────────────────────────────────────────────
 
   /**
-   * Drives pending-line scroll, Zone fill breathing, and dual rim ring pulse.
+   * Drives pending-line scroll, the floor light and the Zone rim pulse.
    * Called every frame from the AppController animation loop.
    * @param {number} t  elapsed seconds (performance.now() / 1000)
+   * @param {number} [elevation]  how far the camera looks down ∈ [0,1]
+   *   (`MapVisualMath.viewElevation`); omitted → straight down.
    */
-  tick(t) {
+  tick(t, elevation = 1) {
     if (!this._group.visible) return
     if (this._bornAt === null) this._bornAt = t
     const reduced = this._reduced
@@ -416,19 +378,19 @@ export class AnnotatedRegionView {
     if (entry.scale !== 1) this._group.scale.setScalar(entry.scale)
     else if (this._group.scale.x !== 1) this._group.scale.setScalar(1)
 
-    if (this._placeType !== 'Zone') {
-      this._fillMat.opacity = FILL_OPACITY * entry.opacity
-      return
-    }
+    // The light: role × view angle × (Zone) per-entity breath.
+    const isZone = this._placeType === 'Zone'
+    const gain = emphasisFor(this._placeType, { selected: this._isSelected, urgent: this._containsViolated })
+    const view = floorLightGains(elevation)
+    const breath = isZone
+      ? zoneFillFrame(t, this._phase, { selected: this._isSelected, reduced }).opacity
+      : FILL_OPACITY
+    const env = gain * entry.opacity
+    this._fillMat.opacity    = breath * WASH_GAIN * view.floor * env
+    this._bandMat.opacity    = Math.min(breath * BAND_GAIN, 1) * view.floor * env
+    this._curtainMat.opacity = CURTAIN_PEAK * view.curtain * env
 
-    // Fill breathing: seamless sin², per-entity phase, faster when selected.
-    this._fillMat.opacity =
-      zoneFillFrame(t, this._phase, { selected: this._isSelected, reduced }).opacity * entry.opacity
-
-    // Hatch: a slow drift (never an opacity flicker — the fill owns that channel).
-    const off = hatchOffset(t, this._phase, reduced)
-    this._hatchTex.offset.set(off.u, off.v)
-    this._hatchMat.opacity = (this._isSelected ? 0.30 : 0.20) * entry.opacity
+    if (!isZone) return
 
     // Rim pulse: radius eased outward against a quadratic alpha tail, rings half
     // a cycle apart. `_rimPeriod` is shortened while a contains-link is violated.
@@ -436,7 +398,7 @@ export class AnnotatedRegionView {
     for (let i = 0; i < this._rims.length; i++) {
       const f = zoneRimFrame(t, this._phase, i, { period, reduced })
       this._rims[i].mesh.scale.setScalar(f.scale)
-      this._rims[i].mat.opacity = f.opacity * entry.opacity
+      this._rims[i].mat.opacity = f.opacity * Math.min(gain, 1) * entry.opacity
     }
   }
 
@@ -447,42 +409,46 @@ export class AnnotatedRegionView {
    * @param {boolean} violated
    */
   setContainsViolated(violated) {
+    this._containsViolated = violated
     this._rimPeriod = violated ? 1.0 : RIM_PULSE_DURATION
-    const color = violated ? 0xEF4444 : this._colorForType(this._placeType)
-    for (const r of this._rims) r.mat.color.setHex(color)
-    this._hatchMat.color.setHex(color)
-    this._lineMat.color = color
+    this._applyColors()
+  }
+
+  /**
+   * Sole writer of every material colour (PHILOSOPHY #4): the ring and dots
+   * carry the fact colour, the light carries it warmed toward the stage light,
+   * and a violation overrides both with the danger colour.
+   */
+  _applyColors() {
+    const fact  = this._containsViolated ? VIOLATION_COLOR : this._colorForType(this._placeType)
+    const light = lightTint(fact)
+    this._lineMat.color.setHex(fact)
+    this._fillMat.color.setHex(fact)
+    this._dotMat.color.setHex(fact)
+    this._bandMat.color.setHex(light)
+    this._curtainMat.color.setHex(light)
+    for (const r of this._rims) r.mat.color.setHex(light)
+    this.boxHelper.material?.color.setHex(fact)
   }
 
   // ── Label update (call once per frame while visible) ──────────────────────
 
   /**
-   * Projects the region centroid to screen and updates label position.
+   * Anchors the name label at the region centroid.
    * Must be called from the animation loop while visible.
    * @param {import('three').Camera} [camera]  Active camera (orthographic in Map mode).
    */
   updateLabelPosition(camera) {
     if (!this._label) return
     const cam = camera ?? this._camera
-    if (!cam || !this._renderer || !this._group.visible) return
-    const worldPos = new THREE.Vector3()
-    this._group.getWorldPosition(worldPos)
-    const ndc    = worldPos.project(cam)
-    const canvas = this._renderer.domElement
-    const rect   = canvas.getBoundingClientRect()
-    const sx = (ndc.x  + 1) / 2 * rect.width  + rect.left
-    const sy = (-ndc.y + 1) / 2 * rect.height + rect.top
-
-    if (ndc.z > 1) { this._label.style.display = 'none'; return }
-
-    this._label.style.display = 'block'
-    this._label.style.left    = `${Math.round(sx + 4)}px`
-    this._label.style.top     = `${Math.round(sy - 10)}px`
+    if (!cam || !this._group.visible) return
+    this._group.getWorldPosition(this._labelAnchor)
+    this._label.updatePosition(cam, this._labelAnchor)
   }
 
   /** Updates the label text (e.g. after rename). */
   setName(name) {
-    if (this._label) this._label.textContent = name
+    this._label?.setText(name)
   }
 
   // ── Move support ───────────────────────────────────────────────────────────
@@ -509,22 +475,11 @@ export class AnnotatedRegionView {
    */
   setPlaceType(placeType) {
     this._placeType = placeType
-    const hex = this._colorForType(placeType)
-    this._lineMat.color.setHex(hex)
-    this._fillMat.color.setHex(hex)
-    this._dotMat.color.setHex(hex)
-    this._cornerMat.color.setHex(hex)
-    this._hatchMat.color.setHex(hex)
-    for (const r of this._rims) r.mat.color.setHex(hex)
-    this.boxHelper.material?.color.setHex(hex)
+    this._applyColors()
     this._fillMat.opacity = FILL_OPACITY
     const isZone = placeType === 'Zone'
     for (const r of this._rims) r.mesh.visible = isZone
-    this._hatchMesh.visible = isZone
-    if (this._label) {
-      const hexStr = hex.toString(16).padStart(6, '0')
-      this._label.style.borderLeft = `3px solid #${hexStr}`
-    }
+    this._label?.setAccent(this._cssColor(placeType))
   }
 
   /**
@@ -545,10 +500,8 @@ export class AnnotatedRegionView {
 
   setVisible(visible) {
     this._group.visible = visible
-    if (!visible) {
-      this.boxHelper.visible = false
-      if (this._label) this._label.style.display = 'none'
-    }
+    this._label?.setWanted(visible)
+    if (!visible) this.boxHelper.visible = false
     // Re-arm the entry pop (undo of a soft delete is a boundary moment too, #4).
     if (visible) this._bornAt = null
   }
@@ -592,18 +545,18 @@ export class AnnotatedRegionView {
     scene.remove(this.boxHelper)
     this._lineGeo.dispose()
     this._lineMat.dispose()
-    if (this._fillGeo) this._fillGeo.dispose()  // shared by fill + hatch meshes
+    if (this._fillGeo) this._fillGeo.dispose()
     this._fillMat.dispose()
-    this._hatchMat.dispose()
-    this._hatchTex.dispose()    // caller-owned clone (DecalTextures ownership note)
+    this._bandGeo.dispose()
+    this._bandMat.dispose()
+    this._curtainGeo.dispose()
+    this._curtainMat.dispose()
     if (this._rimGeo) this._rimGeo.dispose()    // shared by every rim ring
     for (const r of this._rims) r.mat.dispose()
     this._rims = []
-    if (this._corners) this._corners.geometry.dispose()
-    this._cornerMat.dispose()
     this._dotGeo.dispose()
     this._dotMat.dispose()
     this._dots = []
-    if (this._label) this._label.remove()
+    this._label?.dispose()
   }
 }

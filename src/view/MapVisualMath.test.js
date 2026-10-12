@@ -5,11 +5,15 @@ import {
   phaseFor, livePulse, entryFrame, ENTRY_POP,
   hubPingFrame, hubCoreFrame, HUB_PING_RINGS, HUB_PING_PERIOD,
   anchorFrame, ANCHOR_PERIOD,
-  zoneFillFrame, zoneRimFrame, hatchOffset,
+  zoneFillFrame, zoneRimFrame,
   ZONE_FILL_MIN, ZONE_FILL_MAX, ZONE_RIM_RINGS, ZONE_RIM_PERIOD,
   routeFlowFrame, ROUTE_HEADS, ROUTE_TRAIL,
-  boundaryTickFrame,
+  boundaryLightFrame,
+  viewElevation, floorLightGains, FLOOR_LIGHT,
+  EMPHASIS_BY_PLACE_TYPE, EMPHASIS_GAIN, emphasisFor, lightTint, LIGHT_WARMTH,
 } from './MapVisualMath.js'
+import { STAGE_LIGHT } from './StageMath.js'
+import { PLACE_TYPES } from '../domain/PlaceTypeRegistry.js'
 
 /**
  * These tests are where the anti-vanilla rules are ASKED (CLAUDE.md「After fixing
@@ -37,15 +41,19 @@ const FRAME_FUNCTIONS = {
   anchorFrame:       (t, reduced) => anchorFrame(t, 0.3, { reduced }),
   zoneFillFrame:     (t, reduced) => zoneFillFrame(t, 0.3, { reduced }),
   zoneRimFrame:      (t, reduced) => zoneRimFrame(t, 0.3, 0, { reduced }),
-  hatchOffset:       (t, reduced) => hatchOffset(t, 0.3, reduced),
   routeFlowFrame:    (t, reduced) => routeFlowFrame(t, 1, 1, 0.3, { reduced }),
-  boundaryTickFrame: (t, reduced) => boundaryTickFrame(t, 0.4, 0.3, reduced),
+  boundaryLightFrame: (t, reduced) => boundaryLightFrame(t, 0.4, 0.3, reduced),
 }
 
 test('the reduced-motion table covers every exported frame function', () => {
   // `livePulse` and `phaseFor` are helpers, not frames: they have no static
-  // branch to check (a phase is not motion). Everything else must be registered.
-  const helpers = new Set(['phaseFor', 'livePulse'])
+  // branch to check (a phase is not motion). The floor-light helpers (ADR-166
+  // M3) are not functions of time at all — the view angle, the role and the
+  // light's colour do not move. Everything else must be registered.
+  const helpers = new Set([
+    'phaseFor', 'livePulse',
+    'viewElevation', 'floorLightGains', 'emphasisFor', 'lightTint',
+  ])
   const exported = Object.entries(MapVisualMath)
     .filter(([name, v]) => typeof v === 'function' && !helpers.has(name))
     .map(([name]) => name)
@@ -230,7 +238,7 @@ test('anchorFrame holds perfectly still for most of the cycle', () => {
     if (f.scale === 1) stillFrames++
     total++
     assert.ok(f.scale >= 1 && f.scale < 1.5, `anchor scale out of range: ${f.scale}`)
-    assert.ok(f.tickOpacity > 0 && f.tickOpacity <= 1)
+    assert.ok(f.haloOpacity > 0 && f.haloOpacity <= 1)
   }
   assert.ok(stillFrames / total > 0.5, 'a datum marker must be still more than it moves')
 })
@@ -282,15 +290,6 @@ test('zoneRimFrame falls back to the default period on malformed input', () => {
   assert.deepEqual(bad, good)
 })
 
-test('hatchOffset crawls forward in time and freezes under reduced motion', () => {
-  const a = hatchOffset(0, 0.3)
-  const b = hatchOffset(10, 0.3)
-  assert.ok(b.u > a.u && b.v > a.v, 'the hatch must drift')
-  const r1 = hatchOffset(0, 0.3, true)
-  const r2 = hatchOffset(99, 0.3, true)
-  assert.deepEqual(r1, r2, 'reduced motion must freeze the hatch, not remove it')
-})
-
 // ── Route ───────────────────────────────────────────────────────────────────
 
 test('routeFlowFrame keeps every bead on the polyline', () => {
@@ -338,22 +337,22 @@ test('routeFlowFrame parks a populated channel under reduced motion', () => {
 
 // ── Boundary ────────────────────────────────────────────────────────────────
 
-test('boundaryTickFrame never blanks a tick (the hatch is information)', () => {
+test('boundaryLightFrame never blanks the wall (the wall is information)', () => {
   for (let t = 0; t < 12; t += 0.05) {
     for (let a = 0; a <= 1; a += 0.05) {
-      const v = boundaryTickFrame(t, a, 0.2)
-      assert.ok(v >= 0.25 - 1e-9 && v <= 1 + 1e-9, `tick intensity out of range: ${v}`)
+      const v = boundaryLightFrame(t, a, 0.2)
+      assert.ok(v >= 0.25 - 1e-9 && v <= 1 + 1e-9, `wall intensity out of range: ${v}`)
     }
   }
-  assert.equal(boundaryTickFrame(NaN, 0.5, 0), 0.55)
-  assert.equal(boundaryTickFrame(1, NaN, 0), boundaryTickFrame(1, 0, 0))
+  assert.equal(boundaryLightFrame(NaN, 0.5, 0), 0.55)
+  assert.equal(boundaryLightFrame(1, NaN, 0), boundaryLightFrame(1, 0, 0))
 })
 
-test('boundaryTickFrame crest travels along the wall and wraps', () => {
+test('boundaryLightFrame crest travels along the wall and wraps', () => {
   const peakTimeFor = (arc) => {
     let best = 0, bestT = 0
     for (let t = 0; t < 5.2; t += 0.01) {
-      const v = boundaryTickFrame(t, arc, 0)
+      const v = boundaryLightFrame(t, arc, 0)
       if (v > best) { best = v; bestT = t }
     }
     return { best, bestT }
@@ -363,5 +362,83 @@ test('boundaryTickFrame crest travels along the wall and wraps', () => {
   assert.ok(mid.bestT > start.bestT, 'the crest must arrive later further along the wall')
   assert.ok(start.best > 0.9 && mid.best > 0.9, 'every tick must be reached by the crest')
   // Wrap: a tick at 0.98 is nearer the crest at 0.02 than a naive |a-c| suggests.
-  assert.ok(boundaryTickFrame(0, 0.98, 0) > 0.25, 'the wall must wrap for the nearest crest')
+  assert.ok(boundaryLightFrame(0, 0.98, 0) > 0.25, 'the wall must wrap for the nearest crest')
+})
+
+// ── Floor light (ADR-166 M3) — the angle, the role, the one light ───────────
+//
+// The Blueprint device was retired because it was legible from ONE angle. The
+// property that replaces it is asked here as numbers, over the whole range of
+// view angles, so a future tweak that lets the reading drop out at a glancing
+// angle fails the suite instead of shipping.
+
+test('viewElevation is |forward·Z| clamped to [0,1], and a broken camera reads as top-down', () => {
+  assert.equal(viewElevation(-1), 1)            // looking straight down
+  assert.equal(viewElevation(1), 1)             // the sign is discarded
+  assert.equal(viewElevation(0), 0)             // skimming the floor
+  assert.equal(viewElevation(-0.5), 0.5)
+  assert.equal(viewElevation(-3), 1)
+  for (const bad of [NaN, Infinity, undefined]) assert.equal(viewElevation(bad), 1)
+})
+
+test('floorLightGains: the floor and the curtain together never drop the reading, at any angle', () => {
+  for (let deg = 0; deg <= 90; deg += 1) {
+    const e = Math.sin((deg * Math.PI) / 180)
+    const g = floorLightGains(e)
+    assert.ok(g.floor >= FLOOR_LIGHT.floorMin - 1e-9 && g.floor <= 1 + 1e-9, `floor ${g.floor} at ${deg}°`)
+    assert.ok(g.curtain >= FLOOR_LIGHT.curtainMin - 1e-9 && g.curtain <= 1 + 1e-9, `curtain ${g.curtain} at ${deg}°`)
+    assert.ok(g.floor + g.curtain >= 1 - 1e-9, `the reading drops out at ${deg}° (${g.floor} + ${g.curtain})`)
+  }
+})
+
+test('floorLightGains hands the reading from the floor to the curtain as the camera drops', () => {
+  const top = floorLightGains(1), oblique = floorLightGains(Math.sin(Math.PI / 4)), grazing = floorLightGains(Math.sin(Math.PI / 18))
+  assert.ok(top.floor > oblique.floor && oblique.floor > grazing.floor, 'the floor pool must compress as the camera drops')
+  assert.ok(top.curtain < oblique.curtain && oblique.curtain < grazing.curtain, 'the curtain must stand up as the camera drops')
+  assert.ok(top.floor > top.curtain, 'from straight above the floor carries the reading')
+  assert.ok(grazing.curtain > grazing.floor, 'at a glancing angle the curtain carries the reading')
+  assert.deepEqual(floorLightGains(NaN), floorLightGains(1))
+})
+
+test('every place type in the registry has a declared emphasis, and nothing else does (#31)', () => {
+  const kinds = PLACE_TYPES.map(e => e.name)
+  assert.deepEqual(
+    Object.keys(EMPHASIS_BY_PLACE_TYPE).sort(), [...kinds, 'unclassified'].sort(),
+    'EMPHASIS_BY_PLACE_TYPE must have exactly one row per registry place type plus `unclassified`',
+  )
+})
+
+test('emphasisFor throws on an undeclared kind instead of falling through to a default', () => {
+  assert.throws(() => emphasisFor('Corridor'), /no emphasis declared/)
+  assert.throws(() => emphasisFor('toString'), /no emphasis declared/)   // not a prototype key
+  assert.equal(emphasisFor(null), EMPHASIS_GAIN.mark)                    // unclassified is DECLARED
+})
+
+test('a Zone is ground: the quietest light on screen, by role not by area', () => {
+  for (const kind of ['Route', 'Boundary', 'Hub', 'Anchor', null]) {
+    assert.ok(emphasisFor('Zone') < emphasisFor(kind), `Zone must be quieter than ${kind}`)
+  }
+  assert.ok(emphasisFor('Zone', { selected: true }) > emphasisFor('Zone'), 'selection raises the light')
+})
+
+test('a violation outranks every role, selected or not (Tier F over Tier A)', () => {
+  const loudestCalm = Math.max(...Object.keys(EMPHASIS_BY_PLACE_TYPE)
+    .map(k => emphasisFor(k === 'unclassified' ? null : k, { selected: true })))
+  for (const k of Object.keys(EMPHASIS_BY_PLACE_TYPE)) {
+    const kind = k === 'unclassified' ? null : k
+    assert.ok(emphasisFor(kind, { urgent: true }) > loudestCalm, `a violated ${k} must outshine every calm annotation`)
+  }
+})
+
+test('lightTint warms the type colour toward the ONE stage light, and keeps the hue legible', () => {
+  const light = parseInt(STAGE_LIGHT.color.slice(1), 16)
+  assert.equal(lightTint(0x27AE60, 1), light, 'k = 1 must be exactly the stage light — the light has one source')
+  assert.equal(lightTint(0x27AE60, 0), 0x27AE60, 'k = 0 must be exactly the fact colour')
+  assert.ok(LIGHT_WARMTH > 0 && LIGHT_WARMTH < 0.5, 'the type colour must stay the dominant term (the hue IS the classification)')
+  // Each place type keeps its own dominant channel after warming.
+  const dominant = (h) => [h >> 16 & 0xff, h >> 8 & 0xff, h & 0xff].indexOf(Math.max(h >> 16 & 0xff, h >> 8 & 0xff, h & 0xff))
+  for (const e of PLACE_TYPES) {
+    const hex = parseInt(e.color.slice(1), 16)
+    assert.equal(dominant(lightTint(hex)), dominant(hex), `${e.name}: warming changed the dominant channel`)
+  }
 })

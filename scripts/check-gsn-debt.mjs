@@ -384,6 +384,10 @@ const SUPPORT_LABELS = new Map([
 // IndicatorValuesComeOnlyFromCore が support-verified へ (満期 = src/CriteriaIndicatorCensus.test.js)。
 // 2026-10-12: 52 → 51。ADR-166 M2 (モーション・アイデンティティと作業セルの背景) で
 // MotionIdentityIsFixedInOnePlace が support-verified へ (src/MotionIdentity.test.js の node --test)。
+// 2026-10-12 (同日): 51 → 51。ADR-166 M3a (床の光) で AnnotationsAreLightOnTheFloorAndReadFromAnyAngle が
+// support-verified へ (MapVisualMath.test.js / FloorLightGeometry.test.js)。M3 を 2 本に割ったので、M3b
+// (選択・消滅・置く前) の goal AnnotationsSelectAndLeaveAsLight が exploring で 1 つ増えた — 満期は
+// 機械可読 (GREP:src/view/MapVisualMath.js::exitFrame) なので分子 (G3) は動かない。
 const DEBT_BASELINE = 51
 
 /**

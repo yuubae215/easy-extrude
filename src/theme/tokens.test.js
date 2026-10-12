@@ -391,7 +391,12 @@ const DECLARED_VOCABULARIES = {
 // camera's own panel is written in tokens.
 // 2026-10-12: 769 → 767, distinct 200 → 199. ADR-166 M2 retired the Void Grid
 // atmosphere: the fog colour `0x15152a` and the white dust sprite left with it.
-const UNDECLARED_OCCURRENCE_BASELINE = 767
+// 2026-10-12: 767 → 757. ADR-166 M3 retired the Blueprint device and the three
+// hand-rolled annotation name tags: the tags' `#e0e0e0` text went to
+// EntityLabel (−3), the white datum material left with the device, and the
+// violation red that was repeated per setter became one `VIOLATION_COLOR`
+// constant per view (the colour itself is unchanged — tokenising it is M4's).
+const UNDECLARED_OCCURRENCE_BASELINE = 757
 const UNDECLARED_DISTINCT_BASELINE   = 199
 
 const HEX_LITERAL = /#[0-9a-fA-F]{6}\b|\b0x[0-9a-fA-F]{6}\b/g

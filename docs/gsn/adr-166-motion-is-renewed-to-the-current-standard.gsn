@@ -65,8 +65,21 @@ artifacts
         goal AnnotationsAreLightOnTheFloorAndReadFromAnyAngle
         uuid b5a0a592-0956-4f77-82c4-e93fd8b4aee2
         summary "マップ注釈は床に当たった光として描かれ、透視でも正射でも、斜めの角度でも同じ意味で読める。名札は EntityLabel の 1 つの仕組みで、N 個の注釈は同位相で動かない (ADR-093 D1 を継承)"
+        labels support-verified
+
+            solution FloorLightIsBuiltAndAskedAtEveryAngle
+            uuid 1929ca50-3977-4d84-a221-f96f7261b185
+            summary "M3a 実施 (2026-10-12、当事者合意): Blueprint 装置 (ハッチ・コーナーマーク・Anchor の目盛りと datum square・Boundary の垂直 tick) を退役し、注釈を床の光に (縁の光 edgeBand + 光の幕 lightCurtain)。src/view/MapVisualMath.test.js が 0〜90° の全視角で floor + curtain ≥ 1 (読みが途切れない)・視角が下がるほど床から幕へ受け渡すこと・役割の表が registry の種とちょうど一致し未宣言で throw すること・Zone が最も静かなこと・違反が選択された最も明るい印より明るいこと・光が STAGE_LIGHT から来ること・位相の de-sync と reduced motion のフレーム一致 (継承) を問い、src/view/FloorLightGeometry.test.js が光の減衰の向きと寸法が呼び手由来 (#27) であることを問う (pnpm test 1750+ pass)。名札は EntityLabel の 1 つ。刷新前後の静止画 docs/motion/media/m3a-*.png。検証していないこと: Route / Boundary の実機撮影 (テンプレに実例が無い)"
+            artifacts
+            - "src/view/MapVisualMath.test.js"
+            - "src/view/FloorLightGeometry.test.js"
+            - "docs/motion/media/m3a-pick-place-before-after.png"
+
+        goal AnnotationsSelectAndLeaveAsLight
+        uuid 8749034f-49a6-4c0c-8bef-e1990e179c1b
+        summary "注釈の選択は光が強まって着地することで見え、消えるときは退場の曲線で消える (P9 — 出現と対)。退場中の注釈は論理的にはもう居ないので hit-test に拾われない。置く前のプレビューも置いた後と同じ光で描かれる (M3b)"
         labels support-exploring
 
-            assumption FloorLightWillSettleIt
-            uuid 1b551fec-664b-41dc-b1e7-9ef2a11600f6
-            summary "証拠予定: M3 の PR で Blueprint 装置を消し、見る角度を入力にした純粋層テスト (角度に依らず分類が読める・lockstep 不能・reduced motion でフレーム一致) と刷新前後の動画を置く。満期=GONE:src/view/AnnotatedRegionView.js::The\sBlueprint\sdevice で決着する"
+            assumption ExitingIsTwoColumnsNotOne
+            uuid dba088ef-f322-455d-96a7-5774cfc1fd3d
+            summary "証拠予定: M3b の PR でライフサイクルに exiting を足し、論理の可視性 (visible getter — hit-test が読む) と描画の可視性 (tick だけが書く) を 2 欄に分ける。純粋層テストで退場の着地と reduced での即時を、view の単体で『退場中に visible が false』を問う。満期=GREP:src/view/MapVisualMath.js::exitFrame で決着する"
