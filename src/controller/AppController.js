@@ -4670,6 +4670,9 @@ export class AppController {
         if (obj instanceof Solid || obj instanceof Profile || obj instanceof ImportedMesh) {
           obj.meshView.updateLabelPosition?.(this._sceneView.activeCamera)
         }
+        // State cues follow their targets (ADR-166 M4a — hover / selection /
+        // violation land and fade instead of swapping).
+        if (obj instanceof Solid || obj instanceof Profile) obj.meshView.tick(t)
         if (obj instanceof AnnotatedPoint)  {
           // Constant screen-size marker, capped to 5% of the scene radius so it
           // stays proportionate; floor at the legacy 0.25-unit world radius so
@@ -4714,6 +4717,7 @@ export class AppController {
           }
           obj.meshView.updateScale(this._camera, this._sceneView.renderer, maxWS)
           obj.meshView.updateLabelPosition(this._sceneView.activeCamera)
+          obj.meshView.tick(t)   // context dimming + active sphere follow (ADR-166 M4a)
         }
       }
       // Map annotations still going out after a soft delete (ADR-166 M3b). A

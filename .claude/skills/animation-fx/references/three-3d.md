@@ -284,3 +284,24 @@ mesh.rotation.y += (tx - mesh.rotation.y) * (1 - Math.pow(0.002, dt));
 mesh.rotation.x += (ty - mesh.rotation.x) * (1 - Math.pow(0.002, dt));
 mat.uniforms.uHover.value += ((hovering ? 1 : 0) - mat.uniforms.uHover.value) * 0.08;
 ```
+
+### 離散状態の手掛かり (ホバー・選択・違反) は「区間」で追わせる
+
+上の指数追従は連続入力 (ポインタ位置) 向き。**真偽値の状態** には、変化の時点の値・時刻・目標を写した
+**区間** `{from, at, target}` を使う — 同じ要求 2 回で再開しない / 途中反転は画面の値から続く /
+曲線を役割で選べる (到着 = outExpo、手放し = outQuad、事実 (違反) は即時 + 余韻)。
+フレーム率に依存する `+= (target - v) * 0.08` は曲線を選んでいない (= linear 禁止と同じ欠陥)。
+
+```javascript
+// setter は目標だけ書く。画面は tick だけが書く (書き手 1 つ)
+function retarget(t, seg, target) { return seg.target === target ? seg : { from: level(t, seg), at: t, target } }
+function level(t, seg) {
+  const leg = seg.target >= seg.from ? RISE : FALL           // {curve, duration}
+  const p = (t - seg.at) / leg.duration
+  return p >= 1 ? seg.target : seg.from + (seg.target - seg.from) * leg.curve(Math.max(0, p))
+}
+// 優先順位つきの複数手掛かり: 低い順に lerp を重ねる (満ちれば強い方が勝ち、間は連続)
+```
+
+落とし穴: setter の中で「今の値を書く」ために時計なしで区間を作り直すと、壊れた時計 = 着地なので
+追従が一度も動かない。毎フレーム書くマテリアルに `needsUpdate` を立てない (program が変わる時だけ)。

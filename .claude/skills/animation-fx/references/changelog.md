@@ -18,3 +18,4 @@
 - v3.1 | 構造要求「原則ベースで成長を受け入れる構成に」 | evolution.md 新設 (入口→分類→昇格→検証→予算→系譜→矛盾解決→廃止) / changelog.md 実履歴バックフィル | P7 P9 P11 P12 (スキル自身への適用)
 - v3.2 | 感想「毎回同じテイストになるとつまらない」(メタ要求) | SKILL.md Step 1.5 モーション・アイデンティティ新設 (5軸を project 契約に固定 / auto memory 台帳で project 間逸らし) + チェックリスト1項 | P11 P12 (ポートフォリオ層の誕生)
 - v3.3 | easy-extrude ADR-166 M2 (Void Grid → Studio の作業セル) | postfx-scene.md B. Studio に「フォグを外すときはフォグが担っていた機能 (グリッド端の隠蔽) を数え、床側の smoothstep フェードで畳む」 | P4 P9
+- v3.4 | easy-extrude ADR-166 M4a (キューブのホバー・選択・違反の切替) | three-3d.md §micro に「離散状態の手掛かりは区間で追わせる」(役割で曲線・同要求で再開しない・優先順位は lerp の層・setter で区間を作り直さない) | P1 P3 P9

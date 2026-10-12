@@ -71,10 +71,29 @@ Tier (Fact / Affordance / Delight) は従来どおり守る。棚卸しで出た
 | **M2 方向性を決める** (**実施 2026-10-12**) | モーション・アイデンティティ 5 軸を当事者と決め、CLAUDE.md に「モーション・アイデンティティ」節として固定する。背景 (SceneStage) のアトモスフィアを Void Grid 型から選び直す | CLAUDE.md に節があり、5 軸が埋まっている。**結果**: 節は CLAUDE.md、軸の母集団は animation-fx Step 1.5 から導出して `src/MotionIdentity.test.js` が問う |
 | **M3a マップ注釈 = 床の光** (**実施 2026-10-12**) | 案 B。注釈の名札を EntityLabel に揃える (名札の仕組みを 1 つに — ADR-155 D1 の続き)。投影・角度に依らず読める (見る角度を `MapVisualMath` の入力にする)。Zone の強さを役割で決める。Blueprint 装置を退役 | 純粋層テスト (位相の同一性・linear 禁止・reduced motion のフレーム一致を継承 + 角度の入力 + 役割の表)。刷新前後の静止画 `docs/motion/media/m3a-*.png` (動画は M3b の後に M3 全体で撮る) |
 | **M3b 選択・消滅・置く前** (**実施 2026-10-12**) | 選択時の見せ方 (BoxHelper の白い箱 → 光が強まって `land` で着地)、消滅演出 (P9 — ライフサイクルに `exiting`、論理の可視性と描画の可視性を 2 欄に分ける)、配置プレビュー (`MapPreviewMath`) を同じ光で描く | `exiting` の状態機械 (STATE_TRANSITIONS)、hit-test が退場中の注釈を拾わないこと、刷新前後の動画。**結果**: 下の「M3b で決めたこと」、実機の静止画 `docs/motion/media/m3b-*.png`。**動画は得られていない** — 下の「分かったこと」 |
-| **M4 残りの演出** | M1 の採点が低い順に作り直す (最初の候補: リンクの波紋 + リンク線、キューブの状態の手掛かり — ホバー・選択・接近、起動ホーム) | M1 の表の全行が「今の水準」になるか、残す理由が書かれている |
+| **M4 残りの演出** | M1 の採点が低い順に作り直す。4 本に割った (当事者合意 2026-10-12): **M4a 状態の手掛かりの追従** (キューブのホバー・選択・違反・接近、座標フレームの減光、領域ゴーストの絞り込み — **実施 2026-10-12**) → **M4b リンク** (波紋 + リンク線を一体で) → **M4c 起動ホーム** → **M4d B の残り** | M1 の表の全行が「今の水準」になるか、残す理由が書かれている。**M4a の結果**: 下の「M4a で決めたこと」、3 行が A へ (`docs/motion/inventory.md`) |
 
 M3 は M2 の後に置く — 床の光は M2 で決める背景の光源を共有するので、先に作ると光源が 2 つになる (§1.1)。
 M3 は 2 本に割った (当事者合意 2026-10-12): `exiting` の状態追加と見た目の刷新が同じ差分に混ざるとレビューできないため。
+
+**M4a で決めたこと (2026-10-12、当事者合意 — 俯瞰の推奨 2 点「M4 を 4a→4b→4c→4d に割る」「接近の色は snapTone」に「両方おすすめで」):**
+
+| 問い | 決定 | 正本 |
+|---|---|---|
+| 追従の源 | M3b の選択の区間 (`retargetSelection` / `selectionLevel`) を**移して一般化**する。複製しない — `MapVisualMath` は同名の adapter を残し、マップ注釈の選択の振る舞いは不変 (両脚 `land` のまま) | `CueFollowMath` (`retargetCue` / `cueLevel` / `settledCue` / `blendLayers`) |
+| 曲線と時間 | 到着は入力への応答なので `land` (outExpo)、手放しは `fade` (outQuad)。ホバー到着 0.15 s (DOM の `DURATION.hover` と同じ tempo)、選択到着 0.24 s (マップ注釈と同じ `SELECT_LAND` — 1 つの事実)、手放し 0.2 s、違反は**即時** (Tier F — 事実はイーズインしない) で余韻 0.3 s、減光は `fade` 両方向。すべて応答帯 ≤ 300 ms。3D の `fade` 曲線 `easeOutQuad` を `MotionMath` に足した | `HOVER_CUE` / `SELECTION_CUE` / `VIOLATION_CUE` / `DIM_CUE` |
+| 優先順位 | 違反 > 選択 > ホバーの合成は残し、その上に度合いを乗せる (層の合成 — 満ちれば強い方が勝つ、間は連続) | `blendLayers`、`MeshView._syncEmissive(t)` |
+| 書き手 | setter は目標 (真偽値) を記録するだけ、画面は `tick(t)` だけが書く。AppController の描画ループが Solid / Profile / 座標フレームを毎フレーム tick する (母集団は `_scene.objects` のまま — 増えた義務は 1 行ずつ) | `MeshView.tick` / `CoordinateFrameView.tick` / `RegionGhostView.tick` |
+| 最初の状態 | 画面に現れる瞬間・最初の tick より前の設定は**着地済み**で始める (開いた瞬間に暗転を演じない) | `settledCue` |
+| 接近の色 | `#F59E0B` (トークン外の 4 色目) → `snapTone` (噛んだ瞬間の `SnapFlash` と同じ色)。近づく → 噛む が 1 色の物語になる。接近は距離で決まるので時間の追従はかけない (かけると手より遅れる) | `MeshView.setApproachWarmth` |
+
+**語彙 (原則 #33):** 「ホバーした箱は短く温まり、離れたら少し遅れて冷める」が言えなかった — `_hovered` / `_selected` が「目標」と「画面の値」を兼ねていた (1 語 1 事実の違反)。語は**足していない**: M3b で起こした区間がその語で、置き場所を共有モジュールに移しただけ。「近づく → 噛む」は色の語 `snapTone` が既に在ったので、線をつないだだけ。
+
+**M4a で分かったこと (原則 #19):**
+- **書き手を tick に移すと、settled の書き込みが目標の変化を飲み込む。** 座標フレームの初版は `applyVisibility` の中で「今の値を書く」ために時計なしで区間を作り直しており、壊れた時計は着地を意味するので、減光は毎回一瞬で終わっていた (追従が書かれているのに一度も動かない)。setter では**目標だけ**を書き、区間を作り直すのは tick だけにした — 例外は画面に現れる瞬間 (着地済みで始めるのが正しい)。
+- **毎フレーム書く値に `needsUpdate` を付けると、毎フレームシェーダを作り直す。** 座標フレームの `_applyXray` は呼ばれる頻度が低い前提で常に `needsUpdate = true` を立てていた。追従で毎フレーム呼ばれるようになったので、program が変わる (transparent / depthTest が切り替わる) ときだけ立てる。
+
+**実機:** 時計を 1/12 に落とした実機 (本物の時計) で、選択の解除 (fade)・ホバー (land)・選択 (land — `SelectPulse` と同じ瞬間) の中間フレームを撮った — `docs/motion/media/m4a-cube-cues-slowed-clock.png` (面の平均色が 122 → 116 → 103 → 98 → 97 と数フレームかけて下がる)。**検証できていないこと:** 座標フレームの減光・領域ゴーストの絞り込み・グラブの接近の色の実機撮影 (純粋層のテストと配線の読みのみ)、時間軸の動画 (M3b で仮想時間の録画の時計が単調でないと分かっている)。**残し**: キューブの選択の輪郭 `boxHelper` は切替のまま (書き手が `RotationHandler` にもあり、`SelectPulse` の行と一緒に M4d)。座標フレームの親子の接続線は呼び手が値を渡す別の書き手なので切替のまま (M4d)。
 
 **M3b で決めたこと (2026-10-12、当事者合意 — 俯瞰の推奨 3 点に「はい、お願いします」):**
 
@@ -204,6 +223,8 @@ reduced 境界の外) を含む 9 本を採点した。どちらも M4 の最初
 | `.claude/skills/animation-fx/` | M1〜M4 で得た再利用できる知見の書き戻し |
 | `docs/STATE_LEDGER.md` | 「Map 注釈ビュー (motion)」行 — 基数 `0..N` の位相の扱いは継承、角度の入力を追記 (M3 の PR)。M3b で 4 相と 2 欄・退場中の母集団を追記 |
 | `src/view/Annotated*View.js` / `MapVisualMath.js` / `EntityLabel.js` / `AppController` (`_exitingAnnotations`) / `PlaceToolController` | M3b — ライフサイクル 4 相と 2 欄、選択の着地、BoxHelper の退役、名札の強調が位置を消す不具合の修正、置く前のプレビューの光 (**実施**)。hit-test のロジックは触っていない (退場中の注釈はモデルの外にいて、`visible` は `present` を返す) |
+
+| `src/view/CueFollowMath.js` (新設) / `MotionMath.js` (`easeOutQuad`) / `MapVisualMath.js` (adapter) / `MeshView.js` / `CoordinateFrameView.js` / `RegionGhostView.js` / `AppController` (tick を 2 行) | M4a — 状態の手掛かりの追従、接近の色 (**実施**)。当たり判定・選択の書き手 (`SelectionManager`)・接近の強さの計算 (`computeApproachWarmth`)・`SnapFlash` の曲線は触っていない |
 
 **触らない:** 契約、`core/`、注釈の意味 (place type の分類と違反アラーム — ADR-043)。
 

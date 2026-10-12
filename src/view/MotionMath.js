@@ -22,6 +22,18 @@ export function easeOutCubic(p) {
 }
 
 /**
+ * Quadratic ease-out: a quiet decelerating change — the `fade` role of the
+ * motion identity (CLAUDE.md「モーション・アイデンティティ」: 不透明度・色 = outQuad).
+ * Gentler than `easeOutCubic` so an opacity or colour change is never louder
+ * than the move it accompanies. f(0)=0, f(1)=1. p ∈ [0,1] → [0,1].
+ * @param {number} p
+ */
+export function easeOutQuad(p) {
+  const t = clamp01(p)
+  return 1 - (1 - t) * (1 - t)
+}
+
+/**
  * Cubic ease-in: leaves slowly, accelerates away — the `exit` role of the
  * motion identity (CLAUDE.md「モーション・アイデンティティ」: 退場 = inCubic). An
  * element that is leaving lingers for a beat, then goes; the mirror of

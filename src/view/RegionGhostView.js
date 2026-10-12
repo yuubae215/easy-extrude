@@ -27,6 +27,8 @@
 import * as THREE from 'three'
 import { PERSONA_PALETTE } from '../theme/semantic.js'
 import { gapBandRects, GAP_COLOR, RESOLVE_COLOR } from './RegionGhostMath.js'
+import { prefersReducedMotion, onReducedMotionChange } from '../theme/motion.js'
+import { CUE_REST, DIM_CUE, cueLevel, retargetCue } from './CueFollowMath.js'
 
 /**
  * Persona palette — distinct hues mapped by actor index (`ctx.actors` order).
@@ -39,6 +41,9 @@ const Z_FILL_BASE    = 2   // mm lift for the first persona fill
 const Z_FILL_STEP    = 0.4 // mm stagger per persona so layers don't z-fight
 const Z_OVERLAY      = 4   // mm lift for the agreement / gap overlay (above fills)
 const DIM_OPACITY    = 0.04
+const EDGE_OPACITY     = 0.95
+const EDGE_DIM_OPACITY = 0.12
+const LABEL_DIM_OPACITY = 0.25
 
 /** Deterministic persona colour for an actor index. */
 export function personaColor(index) {
@@ -62,6 +67,13 @@ export class RegionGhostView {
     this._ghost     = ghost
     this._visible   = true
     this._filter    = null
+    // Persona-filter de-emphasis FOLLOWS the filter (ADR-166 M4a): the regions
+    // that fall out of focus fade out on `fade`, so the cause (the filter just
+    // chosen) and the effect read as one change. NaN until the first tick —
+    // a filter set before the overlay is ever drawn settles at once.
+    this._clock     = NaN
+    this._reduced   = prefersReducedMotion()
+    this._unsubReduced = onReducedMotionChange(r => { this._reduced = r })
     this._disposables = [] // { geometry?, material? } pairs to dispose
     this._labels      = [] // { el, anchor } HTML labels
 
@@ -103,7 +115,7 @@ export class RegionGhostView {
 
       this._disposables.push({ geometry: fill.geometry, material: fillMat })
       this._disposables.push({ geometry: edge.geometry, material: edgeMat })
-      this._regionMeshes.push({ actor: r.actor, fillMat, edgeMat, baseOpacity: 0.16, label, labelEntry })
+      this._regionMeshes.push({ actor: r.actor, fillMat, edgeMat, baseOpacity: 0.16, label, labelEntry, dimCue: CUE_REST, labelOpacity: null })
     })
 
     // ── Intersection overlay: agreement zone (filled) or gap band (red) ──────
@@ -205,15 +217,26 @@ export class RegionGhostView {
 
   tick(t, camera, renderer) {
     if (!this._visible) return
+    this._clock = t
+    this._rebuild()
     this._updateLabels(camera, renderer)
   }
 
+  /**
+   * Sole writer of the regions' fill / edge / label opacity (原則 #4). Each
+   * region's dim level follows its target (`DIM_CUE`); reduced motion and the
+   * pre-first-tick clock land at once.
+   */
   _rebuild() {
+    const t = this._clock
     for (const m of this._regionMeshes) {
-      const dim = this._filter && m.actor !== this._filter
-      m.fillMat.opacity = dim ? DIM_OPACITY : m.baseOpacity
-      m.edgeMat.opacity = dim ? 0.12 : 0.95
-      m.label.style.opacity = dim ? '0.25' : '1'
+      const dim = !!this._filter && m.actor !== this._filter
+      m.dimCue = retargetCue(t, m.dimCue, dim, DIM_CUE, this._reduced)
+      const d = cueLevel(t, m.dimCue, DIM_CUE, this._reduced)
+      m.fillMat.opacity = m.baseOpacity + (DIM_OPACITY - m.baseOpacity) * d
+      m.edgeMat.opacity = EDGE_OPACITY + (EDGE_DIM_OPACITY - EDGE_OPACITY) * d
+      const label = (1 + (LABEL_DIM_OPACITY - 1) * d).toFixed(3)
+      if (label !== m.labelOpacity) { m.labelOpacity = label; m.label.style.opacity = label }
     }
   }
 
@@ -232,6 +255,8 @@ export class RegionGhostView {
   }
 
   dispose() {
+    this._unsubReduced?.()
+    this._unsubReduced = null
     this._scene.remove(this._group)
     for (const d of this._disposables) {
       d.geometry?.dispose()

@@ -88,3 +88,31 @@ artifacts
             - "src/view/AnnotationLifecycle.test.js"
             - "src/view/EntityLabel.test.js"
             - "docs/motion/media/m3b-exit-slowed-clock.png"
+
+        goal StateCuesFollowTheirTargets
+        uuid f07039dd-f7b9-4060-9f01-1d3c6149318f
+        summary "キューブ・座標フレーム・領域ゴーストの状態の手掛かり (ホバー・選択・違反・文脈の減光・ペルソナの絞り込み) は、切り替えの境目に役割どおりの曲線と時間を持つ (到着 = land、手放し = fade、違反は即時 + 余韻)。追従の源は 1 つで、マップ注釈の選択と共有する。グラブの接近は噛んだ瞬間の閃光と同じ色で温まる (M4a)"
+        labels support-verified
+
+            solution CueFollowIsOneSourceAndAsked
+            uuid dba35aae-45c8-4fff-84cb-4bcce82a3acc
+            summary "M4a 実施 (2026-10-12、当事者合意): M3b の retargetSelection / selectionLevel を src/view/CueFollowMath.js へ移して一般化 (MapVisualMath は同名の adapter を残す — 振る舞い不変、MapVisualMath.test.js / AnnotationLifecycle.test.js は書き換えずに緑。テストの fixture 1 箇所だけ target: true → 1)。src/view/CueFollowMath.test.js が全プロファイルの脚が応答帯 (≤ 300 ms) に在ること・到着が outExpo で手放しが outQuad であること・同じ要求 2 回で再開しないこと・途中反転で両方向に跳ねないこと・違反が即時で余韻を残すこと・reduced と壊れた時計で即着地すること・層の合成が満ちれば優先順位どおりであることを問い、マップ注釈と同じ SELECT_LAND であることを等値で問う。MeshView / CoordinateFrameView / RegionGhostView は真偽値を目標とし tick(t) が唯一の書き手。接近の色は snapTone (tokens.test.js の宣言外の色 755 → 751、種類 199 → 198)。pnpm test 1789 pass。実機: 時計 1/12 の静止画 docs/motion/media/m4a-cube-cues-slowed-clock.png で解除の fade・選択の land の中間フレームを確認。検証していないこと: 座標フレーム・領域ゴースト・接近の色の実機撮影、時間軸の動画 (仮想時間の録画は M3b で時計が単調でないと分かっている)"
+            artifacts
+            - "src/view/CueFollowMath.test.js"
+            - "src/view/MapVisualMath.test.js"
+            - "src/theme/tokens.test.js"
+            - "docs/motion/inventory.md"
+            - "docs/motion/media/m4a-cube-cues-slowed-clock.png"
+
+        goal RemainingMotionMeetsTheStandard
+        uuid 131cccd7-12fe-447f-919f-43bcd8cf57c8
+        summary "M1 の採点表の全行が『今の水準』(A) になるか、残す理由が書かれている (M4b リンク / M4c 起動ホーム / M4d B の残り)"
+        state ToBeDeveloped
+        labels support-exploring
+
+            assumption TheInventoryRowsCloseOneByOne
+            uuid 726be535-c8df-4be1-bd62-02a63fa70c6b
+            summary "計画: M4b (RippleEffect + SpatialLinkView を一体で — 2 端から中点へ光が走る、違反の脈動の位相を同一性から、reduced の境界を読む) → M4c (起動ホーム) → M4d (B の残り)。各段は inventory の行を A にするか残す理由を書く。MotionInventoryCoverage.test.js が母集団と行の一致を問い続ける。満期=GREP:docs/motion/inventory.md::M4d\s✓"
+            artifacts
+            - "docs/motion/inventory.md"
+            - "src/MotionInventoryCoverage.test.js"

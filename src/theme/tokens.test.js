@@ -398,8 +398,12 @@ const DECLARED_VOCABULARIES = {
 // constant per view (the colour itself is unchanged — tokenising it is M4's).
 // 757 → 755 (ADR-166 M3b): the white BoxHelper literals of the annotation
 // views retired — selection is the light, not a wireframe box.
-const UNDECLARED_OCCURRENCE_BASELINE = 755
-const UNDECLARED_DISTINCT_BASELINE   = 199
+// 755 → 751 (ADR-166 M4a): the cube's grab-approach amber `#F59E0B` became
+// `snapTone` (the colour SnapFlash continues), and the white literals of the
+// approach and of the frame sphere became one shared constant per view.
+// Distinct 199 → 198: the amber was the only use of its hue.
+const UNDECLARED_OCCURRENCE_BASELINE = 751
+const UNDECLARED_DISTINCT_BASELINE   = 198
 
 const HEX_LITERAL = /#[0-9a-fA-F]{6}\b|\b0x[0-9a-fA-F]{6}\b/g
 
