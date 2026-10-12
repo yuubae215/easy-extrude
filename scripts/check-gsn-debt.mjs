@@ -392,7 +392,10 @@ const SUPPORT_LABELS = new Map([
 // (MapVisualMath.test.js のライフサイクル / 選択 + AnnotationLifecycle.test.js の構文 census)。満期に
 // 書いた `exitFrame` は `lifecycleEnvelope` という名で実装された (退場だけでなく入場も運ぶため) — 満期の
 // GREP ではなく goal の昇格で決着させた。
-const DEBT_BASELINE = 50
+// 2026-10-12 (同日): 50 → 51。ADR-166 M4 を 4 段に割った (当事者合意)。M4a の StateCuesFollowTheirTargets は
+// support-verified で生まれ (CueFollowMath.test.js)、残り 3 段を 1 つの goal RemainingMotionMeetsTheStandard
+// (exploring) として宣言した — 満期は機械可読 (GREP:docs/motion/inventory.md::M4d\s✓) なので分子 (G3) は動かない。
+const DEBT_BASELINE = 51
 
 /**
  * G3 — 満期 trigger を持たない exploring goal の個数 (実測値)。

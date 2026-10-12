@@ -319,6 +319,9 @@ angle = this._rotate.startAngle - currentAngle
 | `hlMesh.visible` | `setFaceHighlight()` |
 | `cuboid.visible` / `wireframe.visible` | `setVisible()` |
 | `boxHelper.visible` | `setObjectSelected()` |
+| `cuboidMat.emissive` | `_syncEmissive(t)` (called only from `tick(t)` — ADR-166 M4a) |
+
+**State cues follow, they do not swap (ADR-166 M4a).** A view's state setters (`setHovered` / `setObjectSelected` / `setConstraintViolated` on `MeshView`; `applyVisibility({dimmed})` / `setObjectSelected` on `CoordinateFrameView`; `setPersonaFilter` on `RegionGhostView`) record the **target** only. The pixels are written by the view's per-frame `tick(t)`, which advances a segment from `src/view/CueFollowMath.js` (`retargetCue` / `cueLevel` — arrival `land`, release `fade`, violation immediate + afterglow, reduced motion = at once). Consequences: (1) a view with a cue MUST be ticked every frame by its owner loop (AppController for Solid / Profile / CoordinateFrame; ContextController's ghost-mode tick for region ghosts) — an unticked view keeps its last pixels; (2) do not write a cue's material value from a setter "for immediacy" — that is a second writer (原則 #4); (3) do not hand-write a follow curve in a view — profiles live in `CueFollowMath` (one source, shared with the map annotations' selection).
 
 ## Frame View Must Be Hidden Before Detach (Undo)
 

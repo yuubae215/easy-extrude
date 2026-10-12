@@ -36,6 +36,7 @@
  */
 import { clamp01, easeOutCubic, easeOutBack, easeOutExpo, easeInCubic, breathe } from './MotionMath.js'
 import { STAGE_LIGHT } from './StageMath.js'
+import { CUE_REST, SELECT_LAND, ANNOTATION_SELECTION_CUE, cueLevel, retargetCue } from './CueFollowMath.js'
 
 // ── Floor light — the light, the view angle, the role (ADR-166 M3) ──────────
 //
@@ -423,34 +424,33 @@ export function lifecycleEnvelope(t, life, reduced = false) {
 // on screen instead of jumping (#24: the segment start is a snapshot taken at
 // the change, never re-read from the frame it produced).
 
-/** Selection landing length (seconds) — the response band (≤ 300 ms). */
-export const SELECT_LAND = 0.24
+/**
+ * Selection landing length (seconds). The source is `CueFollowMath` (ADR-166
+ * M4a moved the segment there so the cube and the annotations land together);
+ * re-exported under the name M3b gave it.
+ */
+export { SELECT_LAND }
 /** How much the floor light grows when selected (× its resting size). */
 export const SELECT_GROW = 1.15
 
 /**
- * @typedef {{from: number, at: number|null, target: boolean}} SelectionSegment
+ * @typedef {import('./CueFollowMath.js').CueSegment} SelectionSegment
  */
 
 /** Not selected, settled. */
-export const UNSELECTED = Object.freeze({ from: 0, at: null, target: false })
+export const UNSELECTED = CUE_REST
 
 /**
  * Selection level ∈ [0,1] at clock `t` (0 = resting, 1 = fully selected).
  * Reduced motion and malformed clocks land on the target at once.
+ * An adapter over `cueLevel` with the annotations' profile.
  * @param {number} t loop clock (seconds)
  * @param {SelectionSegment} seg
  * @param {boolean} [reduced]
  * @returns {number}
  */
 export function selectionLevel(t, seg, reduced = false) {
-  if (!seg) return 0
-  const target = seg.target ? 1 : 0
-  if (reduced || seg.at === null || badClock(t) || badClock(seg.at)) return target
-  const e = t - seg.at
-  if (e >= SELECT_LAND) return target
-  if (e <= 0) return clamp01(seg.from)
-  return clamp01(seg.from) + (target - clamp01(seg.from)) * easeOutExpo(e / SELECT_LAND)
+  return cueLevel(t, seg, ANNOTATION_SELECTION_CUE, reduced)
 }
 
 /**
@@ -464,10 +464,7 @@ export function selectionLevel(t, seg, reduced = false) {
  * @returns {SelectionSegment}
  */
 export function retargetSelection(t, seg, selected, reduced = false) {
-  const target = !!selected
-  const cur = seg ?? UNSELECTED
-  if (cur.target === target) return cur
-  return { from: selectionLevel(t, cur, reduced), at: badClock(t) ? null : t, target }
+  return retargetCue(t, seg, selected ? 1 : 0, ANNOTATION_SELECTION_CUE, reduced)
 }
 
 /**

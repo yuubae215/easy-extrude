@@ -51,7 +51,7 @@ const FRAME_FUNCTIONS = {
   // the information), so it is asked by its own tests below, not by the
   // "still shows something" property.
   lifecycleEnvelope: (t, reduced) => lifecycleEnvelope(t, { present: true, bornAt: 0, exitAt: null, exitPending: false }, reduced),
-  selectionLevel:    (t, reduced) => selectionLevel(t, { from: 0, at: 0, target: true }, reduced),
+  selectionLevel:    (t, reduced) => selectionLevel(t, { from: 0, at: 0, target: 1 }, reduced),
 }
 
 test('the reduced-motion table covers every exported frame function', () => {

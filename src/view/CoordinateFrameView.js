@@ -24,8 +24,10 @@
  *   longer reach it.
  *
  * setObjectSelected(bool) is layered ON TOP of the visibility state:
- *   true  → origin sphere turns gold + scales up (marks the active frame)
+ *   true  → origin sphere turns `accent` + scales up (marks the active frame)
  *   false → origin sphere white + normal scale
+ * Both the dimming and the sphere FOLLOW their targets in tick(t) (ADR-166
+ * M4a — `CueFollowMath`): the switch has a shape instead of a swap.
  *
  * Interface contract:
  *   - No `cuboid` property (returns null) → not raycast-able.
@@ -40,6 +42,8 @@ import * as THREE from 'three'
 import { EntityLabel } from './EntityLabel.js'
 import { COLOR, hexNumber } from '../theme/tokens.js'
 import { frustumCorners } from '../domain/visionCamera.js'
+import { prefersReducedMotion, onReducedMotionChange } from '../theme/motion.js'
+import { CUE_REST, DIM_CUE, SELECTION_CUE, settledCue, cueLevel, retargetCue } from './CueFollowMath.js'
 
 const AXIS_LENGTH   = 0.5
 const AXIS_RADIUS   = 0.015   // ~3% of axis length; matches TC shaft visual weight
@@ -50,6 +54,10 @@ const OPACITY_FULL   = 1.0
 const OPACITY_DIMMED = 0.30   // context frames (visible but de-emphasised)
 const OPACITY_LINE_FULL   = 0.80  // connection line — full
 const OPACITY_LINE_DIMMED = 0.28  // connection line — dimmed
+const SELECTED_SPHERE_SCALE = 1.6 // origin sphere of the active frame
+
+const WHITE  = new THREE.Color(0xffffff)
+const ACCENT = new THREE.Color(hexNumber(COLOR.accent))
 
 // Parent axes ghost constants (ADR-034 §7)
 const GHOST_OPACITY   = 0.35
@@ -96,6 +104,16 @@ export class CoordinateFrameView {
    */
   constructor(scene, camera = null, renderer = null, container = null) {
     this._scene    = scene
+    // State cues (ADR-166 M4a): `applyVisibility` / `setObjectSelected` set the
+    // TARGETS; tick(t) moves what is on screen toward them. Context dimming
+    // fades both ways; the active frame's sphere lands like every selection.
+    this._dimTarget    = false
+    this._dimCue       = CUE_REST
+    this._sphereLit    = false
+    this._sphereCue    = CUE_REST
+    this._xrayOpacity  = null   // last opacity written by _applyXray (skip no-op writes)
+    this._reduced      = prefersReducedMotion()
+    this._unsubReduced = onReducedMotionChange(r => { this._reduced = r })
     this._camera   = camera
     this._renderer = renderer
 
@@ -213,21 +231,61 @@ export class CoordinateFrameView {
    * @param {{visible: boolean, dimmed?: boolean}} composed
    */
   applyVisibility({ visible, dimmed = false }) {
+    const appearing = visible && !this._group.visible
     this._group.visible = visible
-    if (this._frustum) {
-      this._frustum.visible = visible
-      this._frustum.material.opacity = dimmed ? OPACITY_LINE_DIMMED : OPACITY_LINE_FULL
-    }
+    if (this._frustum) this._frustum.visible = visible
     this._labelVisible  = visible
+    this._dimTarget = dimmed
+    if (dimmed) {
+      // A frame that lost the selection must not keep the marker of the one
+      // that has it — the marker leaves at once, not on a fade.
+      this._sphereLit = false
+      this._sphereCue = CUE_REST
+    }
     if (!visible) {
       this._setLabelDisplay(false)
       return
     }
-    if (dimmed) {
-      this._originSphere.material.color.setHex(0xffffff)
-      this._originSphere.scale.setScalar(1.0)
+    if (appearing) {
+      // A frame coming onto the screen starts AT its level — it does not fade
+      // from whatever it was the last time it was drawn. Every other change of
+      // target is left to tick(t), which gives it its shape.
+      this._dimCue    = settledCue(dimmed ? 1 : 0)
+      this._sphereCue = settledCue(this._sphereLit ? 1 : 0)
+      this._writeCues(NaN)
     }
-    this._applyXray(dimmed ? OPACITY_DIMMED : OPACITY_FULL)
+  }
+
+  /**
+   * Per-frame motion (ADR-166 M4a) — called once per frame by AppController's
+   * loop. Moves the context dimming and the active frame's sphere toward their
+   * targets.
+   * @param {number} t loop clock (seconds)
+   */
+  tick(t) {
+    if (!this._group.visible) return
+    this._writeCues(t)
+  }
+
+  /**
+   * Sole writer of the axes' opacity, the frustum's opacity and the origin
+   * sphere's colour and size (原則 #4). A NaN clock lands every cue on its
+   * target (`cueLevel`'s malformed-clock rule) — the settled write, used only
+   * when a frame appears with its cues already settled.
+   * @param {number} t loop clock (seconds)
+   */
+  _writeCues(t) {
+    const r = this._reduced
+    this._dimCue    = retargetCue(t, this._dimCue, this._dimTarget, DIM_CUE, r)
+    this._sphereCue = retargetCue(t, this._sphereCue, this._sphereLit, SELECTION_CUE, r)
+    const d = cueLevel(t, this._dimCue, DIM_CUE, r)
+    const s = cueLevel(t, this._sphereCue, SELECTION_CUE, r)
+    if (this._frustum) {
+      this._frustum.material.opacity = OPACITY_LINE_FULL + (OPACITY_LINE_DIMMED - OPACITY_LINE_FULL) * d
+    }
+    this._applyXray(OPACITY_FULL + (OPACITY_DIMMED - OPACITY_FULL) * d)
+    this._originSphere.material.color.lerpColors(WHITE, ACCENT, s)
+    this._originSphere.scale.setScalar(1 + (SELECTED_SPHERE_SCALE - 1) * s)
   }
 
   // ── Vision camera frustum (ADR-164 D3) ─────────────────────────────────────
@@ -332,8 +390,7 @@ export class CoordinateFrameView {
    * @param {boolean} selected
    */
   setObjectSelected(selected) {
-    this._originSphere.material.color.setHex(selected ? hexNumber(COLOR.accent) : 0xffffff)
-    this._originSphere.scale.setScalar(selected ? 1.6 : 1.0)
+    this._sphereLit = selected   // tick(t) lands the sphere (`SELECTION_CUE`)
     // Label enrichment (ADR-070): the RPY readout appears only while selected —
     // staged disclosure keeps the default label short.
     this._cfSelected = selected
@@ -413,6 +470,8 @@ export class CoordinateFrameView {
    * @param {THREE.Scene} scene
    */
   dispose(scene) {
+    this._unsubReduced?.()
+    this._unsubReduced = null
     this.setCameraFrustum(null)
     scene.remove(this._group)
     this._group.traverse(obj => {
@@ -502,19 +561,18 @@ export class CoordinateFrameView {
    * @param {number} opacity  0–1
    */
   _applyXray(opacity) {
+    if (opacity === this._xrayOpacity) return
+    this._xrayOpacity = opacity
+    // Runs every frame while a dim cue is moving: recompile (needsUpdate) only
+    // when the program actually changes — the transparent/depthTest flags.
     const transparent = opacity < 1.0
-    for (const line of [this._lineX, this._lineY, this._lineZ]) {
-      line.material.depthTest   = false
-      line.material.transparent = transparent
-      line.material.opacity     = opacity
-      line.material.needsUpdate = true
-      line.renderOrder          = 1
+    for (const mat of [this._lineX.material, this._lineY.material, this._lineZ.material, this._originSphere.material]) {
+      if (mat.transparent !== transparent || mat.depthTest !== false) mat.needsUpdate = true
+      mat.depthTest   = false
+      mat.transparent = transparent
+      mat.opacity     = opacity
     }
-    this._originSphere.material.depthTest   = false
-    this._originSphere.material.transparent = transparent
-    this._originSphere.material.opacity     = opacity
-    this._originSphere.material.needsUpdate = true
-    this._originSphere.renderOrder          = 1
+    for (const obj of [this._lineX, this._lineY, this._lineZ, this._originSphere]) obj.renderOrder = 1
   }
 
   /** Lazily creates the dashed connection line Three.js object. */

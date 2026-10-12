@@ -20,6 +20,10 @@ import { geometryEngine } from '../service/GeometryEngine.js'
 import { EntityLabel } from './EntityLabel.js'
 import { COLOR, hexNumber, dim } from '../theme/tokens.js'
 import { SUBELEMENT_COLORS } from '../theme/semantic.js'
+import { prefersReducedMotion, onReducedMotionChange } from '../theme/motion.js'
+import {
+  CUE_REST, HOVER_CUE, SELECTION_CUE, VIOLATION_CUE, cueLevel, retargetCue, blendLayers,
+} from './CueFollowMath.js'
 
 /**
  * Default cuboid body colour — the base `setIfcTint` restores.
@@ -49,6 +53,22 @@ const EMISSIVE_VIOLATION = hexNumber(dim(COLOR.dangerTone, 0.45))
 const EMISSIVE_SELECTED  = hexNumber(dim(COLOR.accent, 0.30))
 const EMISSIVE_HOVERED   = hexNumber(dim(COLOR.accent, 0.12))
 
+/** The same three cues as linear-RGB triples — the layers `_syncEmissive` blends. */
+const rgbOf = hex => { const c = new THREE.Color(hex); return [c.r, c.g, c.b] }
+const RGB_VIOLATION = rgbOf(EMISSIVE_VIOLATION)
+const RGB_SELECTED  = rgbOf(EMISSIVE_SELECTED)
+const RGB_HOVERED   = rgbOf(EMISSIVE_HOVERED)
+const RGB_DARK      = [0, 0, 0]
+
+/**
+ * Grab-approach warmth (ADR-166 M4a). The edges warm toward `snapTone` — the
+ * colour `SnapFlash` fires when the snap engages — so approaching and engaging
+ * are one story told in one colour. It was `#F59E0B`, an amber outside the
+ * token vocabulary that said nothing the flash then continued.
+ */
+const APPROACH_REST = new THREE.Color(0xffffff)
+const APPROACH_HOT  = new THREE.Color(hexNumber(COLOR.snapTone))
+
 export class MeshView {
   /**
    * @param {THREE.Scene} scene
@@ -58,6 +78,15 @@ export class MeshView {
    */
   constructor(scene, camera = null, renderer = null, container = null) {
     this._selected           = false
+    // Cue segments (ADR-166 M4a): the booleans are TARGETS; what is on screen
+    // follows them in tick(t) — the boundary between two states has a shape.
+    /** @type {{hover: import('./CueFollowMath.js').CueSegment, select: import('./CueFollowMath.js').CueSegment, violation: import('./CueFollowMath.js').CueSegment}} */
+    this._cues               = { hover: CUE_REST, select: CUE_REST, violation: CUE_REST }
+    this._emissiveRgb        = [0, 0, 0]
+    /** @type {Array<[number[], number]>} */
+    this._emissiveLayers     = [[RGB_HOVERED, 0], [RGB_SELECTED, 0], [RGB_VIOLATION, 0]]
+    this._reduced            = prefersReducedMotion()
+    this._unsubReduced       = onReducedMotionChange(r => { this._reduced = r })
     this._constraintViolated = false
     this._hovered            = false
 
@@ -453,7 +482,6 @@ export class MeshView {
   /** Updates the visual appearance for object-selected state */
   setObjectSelected(sel) {
     this._selected = sel
-    this._syncEmissive()
     this._syncLabel()
     this.boxHelper.visible = sel
   }
@@ -519,12 +547,13 @@ export class MeshView {
   setApproachWarmth(t) {
     const mat = this.wireframe.material
     if (t <= 0) {
-      mat.color.setHex(0xffffff)
+      mat.color.copy(APPROACH_REST)
       mat.opacity = 0.4
     } else {
-      const base  = new THREE.Color(0xffffff)
-      const amber = new THREE.Color(0xF59E0B)
-      mat.color.lerpColors(base, amber, t * t)   // ease-in for drama
+      // Distance drives this, not time — so no clock and no follow: easing it
+      // in time would make the edges lag the hand. ease-in: quiet far away,
+      // committed near the threshold where SnapFlash takes over.
+      mat.color.lerpColors(APPROACH_REST, APPROACH_HOT, t * t)
       mat.opacity = 0.4 + t * 0.5
     }
   }
@@ -532,7 +561,6 @@ export class MeshView {
   /** Sets or clears the spatial-constraint violation tint (red emissive). */
   setConstraintViolated(violated) {
     this._constraintViolated = violated
-    this._syncEmissive()
   }
 
   /**
@@ -546,24 +574,39 @@ export class MeshView {
   setHovered(hovered) {
     if (this._hovered === hovered) return
     this._hovered = hovered
-    this._syncEmissive()
     this._syncLabel()
   }
 
   /**
-   * Sole writer of cuboidMat.emissive — composes violation > selection > hover
-   * (highest-priority cue wins; PHILOSOPHY #4 one owner).
+   * Per-frame motion (ADR-166 M4a) — called once per frame by AppController's
+   * loop. Advances the state cues toward their targets and writes the result.
+   * @param {number} t loop clock (seconds)
    */
-  _syncEmissive() {
-    if (this._constraintViolated) {
-      this.cuboidMat.emissive.set(EMISSIVE_VIOLATION)
-    } else if (this._selected) {
-      this.cuboidMat.emissive.set(EMISSIVE_SELECTED)
-    } else if (this._hovered) {
-      this.cuboidMat.emissive.set(EMISSIVE_HOVERED)
-    } else {
-      this.cuboidMat.emissive.set(0x000000)
-    }
+  tick(t) {
+    this._syncEmissive(t)
+  }
+
+  /**
+   * Sole writer of cuboidMat.emissive — composes violation > selection > hover
+   * (highest-priority cue wins at full level; PHILOSOPHY #4 one owner). Each cue
+   * follows its target on its own profile (`CueFollowMath`): hover arrives on
+   * `land` in `HOVER_LAND`, selection lands with the annotations'
+   * `SELECT_LAND`, a violation arrives at once (Tier F) and leaves an
+   * afterglow; every cue lets go on `fade`. Reduced motion: at once.
+   * @param {number} t loop clock (seconds)
+   */
+  _syncEmissive(t) {
+    const r = this._reduced
+    const c = this._cues
+    c.hover     = retargetCue(t, c.hover,     this._hovered,            HOVER_CUE,     r)
+    c.select    = retargetCue(t, c.select,    this._selected,           SELECTION_CUE, r)
+    c.violation = retargetCue(t, c.violation, this._constraintViolated, VIOLATION_CUE, r)
+    const layers = this._emissiveLayers   // rising priority; reused — no per-frame allocation
+    layers[0][1] = cueLevel(t, c.hover,     HOVER_CUE,     r)
+    layers[1][1] = cueLevel(t, c.select,    SELECTION_CUE, r)
+    layers[2][1] = cueLevel(t, c.violation, VIOLATION_CUE, r)
+    const out = blendLayers(this._emissiveRgb, RGB_DARK, layers)
+    this.cuboidMat.emissive.setRGB(out[0], out[1], out[2])
   }
 
   /** No-op: boxHelper geometry is kept in sync by updateGeometry() */
@@ -902,6 +945,8 @@ export class MeshView {
    * @param {THREE.Scene} scene
    */
   dispose(scene) {
+    this._unsubReduced?.()
+    this._unsubReduced = null
     if (this._label) {
       this._label.dispose()
       this._label = null
