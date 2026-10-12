@@ -21,6 +21,8 @@ const require = createRequire(import.meta.url)
 const contractVersionDoc = require('@easy-extrude/grasp-contract/contract-version.json')
 const requestSchema      = require('@easy-extrude/grasp-contract/schema/grasp-search-request.schema.json')
 const responseSchema     = require('@easy-extrude/grasp-contract/schema/grasp-search-response.schema.json')
+const criteriaRequestSchema  = require('@easy-extrude/grasp-contract/schema/criteria-trial-request.schema.json')
+const criteriaResponseSchema = require('@easy-extrude/grasp-contract/schema/criteria-trial-response.schema.json')
 
 /**
  * Canonical contract version, read from the package — never hardcoded here.
@@ -30,11 +32,15 @@ export const CONTRACT_VERSION = contractVersionDoc.contractVersion
 
 /** @typedef {import('./contract.request').GraspSearchRequest}  GraspSearchRequest */
 /** @typedef {import('./contract.response').GraspSearchResponse} GraspSearchResponse */
+/** @typedef {import('./contract.criteria-request').CriteriaTrialRequest}   CriteriaTrialRequest */
+/** @typedef {import('./contract.criteria-response').CriteriaTrialResponse} CriteriaTrialResponse */
 
 const ajv = new Ajv2020({ allErrors: true, strict: false })
 
 const _validateRequest  = ajv.compile(requestSchema)
 const _validateResponse = ajv.compile(responseSchema)
+const _validateCriteriaRequest  = ajv.compile(criteriaRequestSchema)
+const _validateCriteriaResponse = ajv.compile(criteriaResponseSchema)
 
 /**
  * Format ajv errors into a compact string array suitable for a JSON response.
@@ -64,6 +70,26 @@ export function validateRequest(value) {
 export function validateResponse(value) {
   const valid = _validateResponse(value)
   return { valid: Boolean(valid), errors: formatErrors(_validateResponse.errors) }
+}
+
+/**
+ * Validate a value against the CriteriaTrialRequest schema (ADR-165 D6).
+ * @param {unknown} value
+ * @returns {{ valid: boolean, errors: string[] }}
+ */
+export function validateCriteriaRequest(value) {
+  const valid = _validateCriteriaRequest(value)
+  return { valid: Boolean(valid), errors: formatErrors(_validateCriteriaRequest.errors) }
+}
+
+/**
+ * Validate a value against the CriteriaTrialResponse schema (ADR-165 D6).
+ * @param {unknown} value
+ * @returns {{ valid: boolean, errors: string[] }}
+ */
+export function validateCriteriaResponse(value) {
+  const valid = _validateCriteriaResponse(value)
+  return { valid: Boolean(valid), errors: formatErrors(_validateCriteriaResponse.errors) }
 }
 
 /**

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useUIStore } from '../../store/uiStore.js'
 import { AGENDA_SOURCE, AGENDA_STATE } from '../../context/Agenda.js'
+import { CRITERIA_ELEMENTS } from '../../context/CriteriaCatalog.js'
 import { CriteriaLineSection } from './CriteriaLineSection.jsx'
 import { COLOR } from '../../theme/tokens.js'
 
@@ -143,6 +144,44 @@ function DraftForm({ draft, actors, keyring, onSubmit, onDiscard }) {
   )
 }
 
+const elementLabel = (key) => CRITERIA_ELEMENTS.find(e => e.key === key)?.label ?? key
+const elementUnit = (key) => CRITERIA_ELEMENTS.find(e => e.key === key)?.unit ?? ''
+
+/**
+ * What a change to the agreed line gives up (ADR-165 D5 / D6) — core/'s
+ * assessment, drawn per end user. Approvers read it before approving (G3);
+ * reading is each approver's own act, recorded with their key.
+ */
+function MarginBlock({ row, actors, callbacks }) {
+  const m = row.line.margin
+  const name = (ref) => actors.find(a => a.ref === ref)?.name ?? ref
+  const g = row.line.marginNeedsReading ? (callbacks.onProposalMarginReadGuards?.(row.ref) ?? { ok: false, reasons: [] }) : null
+  const byActor = m.kind === 'evaluated'
+    ? m.offerings.reduce((acc, o) => ({ ...acc, [o.actor]: [...(acc[o.actor] ?? []), o] }), {})
+    : {}
+  return (
+    <div style={{ marginTop: '4px', fontSize: '10px', color: TONE.text, lineHeight: 1.5 }} data-testid={`line-margin-${row.ref}`}>
+      <div style={{ color: row.line.marginNeedsReading ? TONE.pending : TONE.muted }}>{row.line.marginSentence}.</div>
+      {Object.entries(byActor).map(([actor, list]) => (
+        <div key={actor}>
+          {name(actor)} gives up: {list.map(o => `${elementLabel(o.key)} ${o.from} → ${o.to} ${elementUnit(o.key)}`).join('; ')}
+        </div>
+      ))}
+      {row.line.offeringsReadBy.length > 0 && <div style={{ color: TONE.muted }}>read by {row.line.offeringsReadBy.join(', ')}</div>}
+      {g && (
+        <button
+          onClick={() => callbacks.onProposalMarginRead?.(row.ref)}
+          disabled={!g.ok}
+          title={g.ok ? `Mark as read by ${g.readers.join(', ')}` : g.reasons.join(' ')}
+          style={{ background: 'transparent', border: `1px solid ${TONE.border}`, color: g.ok ? TONE.text : TONE.muted, borderRadius: '3px', padding: '2px 8px', fontSize: '11px', cursor: g.ok ? 'pointer' : 'not-allowed', marginTop: '2px' }}
+        >
+          I have read what it gives up
+        </button>
+      )}
+    </div>
+  )
+}
+
 function AgendaRow({ row, guards, actors, callbacks }) {
   const style = STATE_STYLE[row.state] ?? STATE_STYLE[AGENDA_STATE.OPEN]
   const isProposal = row.source === AGENDA_SOURCE.PROPOSAL
@@ -208,6 +247,8 @@ function AgendaRow({ row, guards, actors, callbacks }) {
           )}
         </div>
       )}
+
+      {open && row.line?.margin && <MarginBlock row={row} actors={actors} callbacks={callbacks} />}
 
       {/* The reason travels with the disabled control, always. */}
       {open && blocked && (

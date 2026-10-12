@@ -587,6 +587,30 @@ export const openApiSpec = {
       },
     },
 
+    // ── Criteria hearing (ADR-165 D6 — delegated to the core API) ─────────
+    '/criteria/trial': {
+      post: {
+        tags: ['Grasp'],
+        summary: 'Turn the end users\' criteria line into candidates, interest and what a change gives up',
+        description: [
+          'Validates against `criteria-trial-request.schema.json` of',
+          '@easy-extrude/grasp-contract, forwards to the core API `/criteria-trial`',
+          '(same host as `GRASP_SEARCH_URL`), validates the response against',
+          '`criteria-trial-response.schema.json`. The values are the core API\'s cost',
+          'function (an idea); the BFF computes nothing from the weights.',
+          'The schema files are the documentation of the shapes — not restated here.',
+        ].join('\n'),
+        requestBody: { required: true, content: { 'application/json': { schema: { type: 'object' } } } },
+        responses: {
+          200: { description: 'Candidates, interest per end user × category, proposal assessment', content: { 'application/json': { schema: { type: 'object' } } } },
+          400: { description: 'Request fails contract validation / version mismatch / a line the solver cannot judge', content: { 'application/json': { schema: { $ref: '#/components/schemas/LayoutError' } } } },
+          401: { description: 'Unauthorised', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
+          502: { description: 'Upstream returned a non-conforming or version-mismatched response', content: { 'application/json': { schema: { $ref: '#/components/schemas/LayoutError' } } } },
+          503: { description: 'core API unreachable / timed out', content: { 'application/json': { schema: { $ref: '#/components/schemas/LayoutError' } } } },
+        },
+      },
+    },
+
     // ── Import ────────────────────────────────────────────────────────────
     '/import/step': {
       post: {

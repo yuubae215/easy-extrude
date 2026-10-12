@@ -7,8 +7,10 @@ import { CriteriaFigure } from './CriteriaFigure.jsx'
 import { CRITERION_OPS } from '../../context/IntakeVocabulary.js'
 import { endUsersOf, isEndUser, jobFunctionOf } from '../../context/ActorStance.js'
 import { answersOf, countUnheard } from '../../context/CriteriaElicitation.js'
-import { lineStatus, LINE_STATUS, LINE_CHANGE } from '../../context/CriteriaLine.js'
+import { lineStatus, LINE_STATUS, LINE_CHANGE, currentLine } from '../../context/CriteriaLine.js'
 import { hearingHistory, isRespondentFrozen, trialsOfActor } from '../../context/CriteriaHearing.js'
+import { gapOf, GAP, GAP_FACE } from '../../view/CriteriaGapMath.js'
+import { useUIStore } from '../../store/uiStore.js'
 import { COLOR } from '../../theme/tokens.js'
 
 /**
@@ -242,7 +244,7 @@ export function HearingHistory({ doc, actor }) {
       {rounds.map(r => (
         <div key={`${r.actor}-${r.afterTrial}`} style={{ borderLeft: `3px solid ${r.safetyCut ? COLOR.dangerTone : COLOR.border}`, padding: '2px 7px', margin: '3px 0', ...text('10px', COLOR.textPrimary) }}>
           {r.safetyCut && <b style={{ color: COLOR.dangerTone }}>⚠ safety was cut · </b>}
-          {r.actor}, after trial {r.afterTrial}{r.seen.length ? ` (saw ${r.seen.join(', ')})` : ' (no candidates were shown)'}:{' '}
+          {r.actor}, after trial {r.afterTrial}{r.seen.length ? ` (saw ${r.seen.map(c => c.label).join(', ')}${r.chosen ? `; picked ${r.seen.find(c => c.id === r.chosen)?.label ?? r.chosen}` : ''})` : ' (no candidates were shown)'}:{' '}
           {r.changes.map(c => `${c.element ? elementLabel(c.element) : 'ratio'} ${c.field === 'weight' ? 'weight ' : ''}${CHANGE_WORD[c.change] ?? c.change} (${show(c.from)} → ${show(c.to)})`).join('; ')}
         </div>
       ))}
@@ -250,25 +252,155 @@ export function HearingHistory({ doc, actor }) {
   )
 }
 
+/** A number as the floor reads it (no exponent for yen, a few digits for millimetres). */
+const fmt = (v) => Math.abs(v) >= 1000 ? Math.round(v).toLocaleString('en-US') : String(Math.round(v * 1000) / 1000)
+
+const GAP_TONE = Object.freeze({
+  [GAP.MEETS]:  COLOR.successTone,
+  [GAP.TIGHT]:  COLOR.cautionTone,
+  [GAP.MISSES]: COLOR.dangerTone,
+  [GAP.UNSURE]: COLOR.textSecondary,
+})
+
 /**
- * Step 4 — try it. The candidates are core/'s (generating a cell and its
- * actual values is an idea — 軸 1), and the service that returns them is
- * 後続 PR (ADR-165 PR4, DEF-064) together with the ☺ ○ ☹ against expectations. Until then the step says so instead of drawing
- * numbers nobody computed; the trial itself — what was held when looking —
- * is still recorded, and changes after it are still history.
+ * The candidates of one look, against the respondent's expectations. Values
+ * are core/'s, each with where it came from; the faces are the closed-form
+ * gap (CriteriaGapMath — reads no weight). No column is marked "best" and
+ * nothing is totalled: choosing is the person's (ADR-165 D3).
+ */
+function CandidateTable({ seen, chosen, expectations, callbacks, canChoose }) {
+  const cell = { padding: '2px 5px', borderBottom: `1px solid ${COLOR.border}`, ...text('10px', COLOR.textPrimary) }
+  const nominal = seen.some(c => c.actuals.some(a => a.basis === 'nominal'))
+  return (
+    <div style={{ overflowX: 'auto' }}>
+      <table style={{ borderCollapse: 'collapse', width: '100%' }} data-testid="trial-candidate-table">
+        <thead>
+          <tr>
+            <th style={{ ...cell, textAlign: 'left' }}>Your expectation</th>
+            {seen.map(c => (
+              <th key={c.id} style={{ ...cell, textAlign: 'center', background: c.id === chosen ? COLOR.accentSoft : 'transparent' }}>
+                <div>{c.label}</div>
+                <button
+                  style={{ ...chip(c.id === chosen), marginTop: '2px' }}
+                  disabled={!canChoose}
+                  aria-label={`choose ${c.label}`}
+                  onClick={() => callbacks.onHearingChoose?.(c.id)}
+                >{c.id === chosen ? 'chosen' : 'choose'}</button>
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {CRITERIA_ELEMENTS.map(e => {
+            const exp = expectations[e.key]?.criterion
+            return (
+              <tr key={e.key}>
+                <td style={cell}>{e.label}{exp ? ` ${exp.op} ${fmt(exp.value)} ${e.unit}` : ''}</td>
+                {seen.map(c => {
+                  const a = c.actuals.find(x => x.key === e.key)
+                  if (!a) return <td key={c.id} style={cell}>—</td>
+                  const g = exp ? gapOf(exp, a) : null
+                  return (
+                    <td key={c.id} style={{ ...cell, textAlign: 'center' }} data-testid={`gap-${c.id}-${e.key}`} data-gap={g ?? ''}>
+                      {g && <b style={{ color: GAP_TONE[g] }}>{GAP_FACE[g]} </b>}
+                      {fmt(a.value)}{a.range ? <span style={text('9px')}> ({fmt(a.range[0])}–{fmt(a.range[1])})</span> : null}
+                    </td>
+                  )
+                })}
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+      {nominal && (
+        <div style={text('9px')}>
+          Values are the solver&apos;s nominal cell types (a range, not a quote). &quot;?&quot; = the range straddles your expectation — a measured or quoted value would decide it.
+        </div>
+      )}
+    </div>
+  )
+}
+
+/**
+ * Everyone's interest, per end user × category — core/'s values, drawn as
+ * bars. 1 = the line that decides the outcome most right now, 0 = slack.
+ * The formula is core/'s; each row is vouched for by its person (ADR-165 D6).
+ */
+function InterestPanel({ doc, indicator }) {
+  if (!indicator || indicator.status !== 'results') return null
+  const users = endUsersOf(doc)
+  return (
+    <div style={{ marginTop: '8px' }} data-testid="interest-panel">
+      <div style={text('9px')}>Whose line is deciding the outcome now (the solver&apos;s indicator — each row is vouched for by its person):</div>
+      {users.map(u => {
+        const rows = indicator.interest.filter(r => r.actor === u.ref)
+        if (rows.length === 0) {
+          return (
+            <div key={u.ref} style={text('10px')}>
+              {u.name ?? u.ref} — no indicator: {indicator.omitted.includes(u.ref) ? 'some answers are still blank' : 'not in this answer'}
+            </div>
+          )
+        }
+        return (
+          <div key={u.ref} style={{ display: 'flex', gap: '6px', alignItems: 'center', margin: '2px 0' }} data-testid={`interest-${u.ref}`}>
+            <span style={{ ...text('10px', COLOR.textPrimary), width: '72px', overflow: 'hidden', textOverflow: 'ellipsis' }}>{u.name ?? u.ref}</span>
+            {CRITERIA_CATEGORIES.map(c => {
+              const v = rows.find(r => r.category === c)?.value ?? 0
+              return (
+                <span key={c} title={`${CRITERIA_CATEGORY_LABELS[c]}: ${v.toFixed(2)}`} style={{ display: 'flex', alignItems: 'center', gap: '2px', flex: 1 }}>
+                  <span style={text('9px')}>{c}</span>
+                  <span style={{ flex: 1, height: '6px', background: COLOR.surfaceSunken, borderRadius: '3px', overflow: 'hidden' }}>
+                    <span style={{ display: 'block', width: `${Math.round(v * 100)}%`, height: '100%', background: COLOR.accent }} />
+                  </span>
+                </span>
+              )
+            })}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+/**
+ * Step 4 — try it. The candidates and the interest are core/'s (generating a
+ * cell and its actual values is an idea — 軸 1); this step draws them. The
+ * look is recorded when core/'s answer arrives, with what was shown; when the
+ * solver cannot be asked the look is recorded with nothing shown and the
+ * reason is said — never numbers nobody computed.
  */
 export function TrialStep({ doc, respondent, callbacks }) {
+  const indicator = useUIStore(st => st.context.criteriaIndicator)
   const actor = (doc.actors ?? []).find(a => a.ref === respondent)
   if (!actor) return <RespondentBar doc={doc} respondent={respondent} callbacks={callbacks} />
   const trials = trialsOfActor(doc, respondent)
+  const last = trials[trials.length - 1] ?? null
+  const seen = last?.seen ?? []
+  const expectations = currentLine(doc)[respondent]?.elements ?? {}
+  const mine = indicator && indicator.respondent === respondent ? indicator : null
+  const frozen = isRespondentFrozen(doc, respondent)
   return (
     <div>
       <RespondentBar doc={doc} respondent={respondent} callbacks={callbacks} />
       <div style={{ ...text('10px'), border: `1px dashed ${COLOR.border}`, borderRadius: '4px', padding: '6px 8px' }} data-testid="trial-candidates">
-        No candidates to compare yet — the solver that turns a line into candidate cells is not connected.
-        What you hold now is recorded{trials.length ? ` as trial ${trials.length}` : ''}: go back and change an
-        expectation, and it is kept as "after trial {trials.length || 1}".
+        {mine?.status === 'loading'
+          ? 'Asking the solver for candidates for this line…'
+          : mine && mine.status !== 'results'
+            ? `No candidates to compare — ${mine.message}`
+            : seen.length === 0 && last
+              ? 'The solver has no candidate to show for this line.'
+              : null}
+        {last && (
+          <span>
+            {' '}What you held is recorded as trial {trials.length}: go back and change an expectation, and it is kept
+            as &quot;after trial {trials.length}&quot;.
+          </span>
+        )}
       </div>
+      {seen.length > 0 && (
+        <CandidateTable seen={seen} chosen={last.chosen ?? null} expectations={expectations} callbacks={callbacks} canChoose={!frozen} />
+      )}
+      <InterestPanel doc={doc} indicator={indicator} />
       <HearingHistory doc={doc} actor={respondent} />
     </div>
   )

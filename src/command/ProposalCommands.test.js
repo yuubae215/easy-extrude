@@ -338,7 +338,9 @@ test('線の変更: 署名は他のエンドユーザの鍵だけで作られ、
   const first = createApproveProposalCommand(svc, 'prop_line', sigB, VC)
   await first.execute()
   assert.equal(svc.getDoc().requirements.find(r => r.ref === 'crit_a_takt').criterion.value, 10)
-  assert.deepEqual(svc.projectAgenda().find(r => r.ref === 'prop_line').line, { approvals: ['b'], required: ['b', 'c'] })
+  const { approvals, required, margin } = svc.projectAgenda().find(r => r.ref === 'prop_line').line
+  assert.deepEqual({ approvals, required }, { approvals: ['b'], required: ['b', 'c'] })
+  assert.equal(margin, null, 'raised without the solver here: no margin recorded (pre-PR4 shape)')
 
   const sigC = svc.signatureForProposal('prop_line', keyringOf(['c']))
   const second = createApproveProposalCommand(svc, 'prop_line', sigC, VC)

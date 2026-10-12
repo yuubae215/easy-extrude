@@ -380,7 +380,9 @@ const SUPPORT_LABELS = new Map([
 // 機械可読のままなので分子 (G3) は動かない。
 // 2026-10-12: 54 → 53。ADR-165 PR2 (D4 の合意後 + D5) で TheAgreedLineMovesOnlyByApprovedProposal が
 // support-verified に上がった (CriteriaLine.test.js の node --test)。
-const DEBT_BASELINE = 53
+// 2026-10-12: 53 → 52。ADR-165 PR4 (D6 — 契約 v9 + core/ の criteria レーン) で
+// IndicatorValuesComeOnlyFromCore が support-verified へ (満期 = src/CriteriaIndicatorCensus.test.js)。
+const DEBT_BASELINE = 52
 
 /**
  * G3 — 満期 trigger を持たない exploring goal の個数 (実測値)。

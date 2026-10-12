@@ -1,0 +1,134 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://easy-extrude.dev/schema/criteria-trial-response.json",
+  "title": "CriteriaTrialResponse",
+  "description": "core API -> BFF output for the criteria hearing (ADR-165 D3 / D6). Candidate cells with their actual values, every end user's interest per category, and the assessment of a proposed line. Only facts the solver decided ride the wire: no total score (how weights combine is the solver's idea), no faces or colours (the client derives the gap against an expectation — closed form), no verdict of which candidate is best. Wire form uses camelCase.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "contractVersion": {
+      "type": "integer",
+      "description": "Internal contract version (see contract-version.json)."
+    },
+    "candidates": {
+      "type": "array",
+      "description": "Candidate cells, in a stable order. Zero is a legitimate answer (the solver has nothing to show) and is not the same as the solver being unreachable.",
+      "items": { "$ref": "#/$defs/candidate" }
+    },
+    "interest": {
+      "type": "array",
+      "description": "Exactly one row per (sent end user × category D/Q/C/S). The owner of a row is its `actor`: the formula and the weights behind it are vouched for by that person (ADR-165 D6).",
+      "items": { "$ref": "#/$defs/interest" }
+    },
+    "proposal": { "$ref": "#/$defs/proposalAssessment" }
+  },
+  "required": ["contractVersion", "candidates", "interest", "proposal"],
+  "$defs": {
+    "elementKey": {
+      "enum": ["takt", "positionAccuracy", "holdMargin", "equipmentCost", "maintainability", "humanClearance", "stoppingDistance"]
+    },
+    "category": { "enum": ["D", "Q", "C", "S"] },
+    "candidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "description": "Deterministic: the same cell answers with the same id on every call." },
+        "label": { "type": "string" },
+        "actuals": {
+          "type": "array",
+          "description": "One actual value per element — all seven.",
+          "minItems": 7,
+          "maxItems": 7,
+          "items": { "$ref": "#/$defs/actual" }
+        }
+      },
+      "required": ["id", "label", "actuals"]
+    },
+    "actual": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "key": { "$ref": "#/$defs/elementKey" },
+        "value": { "type": "number" },
+        "basis": {
+          "description": "Where the value came from. nominal = the solver's curated cell type (with a range); derived = computed from the scene's geometry; declared = a person overrode it with a quote or a measurement.",
+          "enum": ["nominal", "derived", "declared"]
+        },
+        "range": {
+          "type": "array",
+          "description": "[low, high] the value may really fall in. Absent = the value is exact for this basis.",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": { "type": "number" }
+        }
+      },
+      "required": ["key", "value", "basis"]
+    },
+    "interest": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "actor": { "type": "string", "minLength": 1 },
+        "category": { "$ref": "#/$defs/category" },
+        "value": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "How much this person's line in this category is deciding the outcome now (0 = slack, 1 = the most decisive line in this line set)."
+        }
+      },
+      "required": ["actor", "category", "value"]
+    },
+    "proposalAssessment": {
+      "description": "Closed kind-discriminated union. `evaluated` with no offerings = inside the margin.",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": { "kind": { "const": "notAsked" } },
+          "required": ["kind"]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": { "const": "evaluated" },
+            "baseline": { "type": "string", "description": "Candidate id the solver keeps under the current line." },
+            "proposed": { "type": "string", "description": "Candidate id the solver keeps under the proposed line." },
+            "offerings": {
+              "type": "array",
+              "description": "What the change gives up: per end user (the proposer included), each element whose actual value gets worse against that person's current expectation. Empty = inside the margin.",
+              "items": { "$ref": "#/$defs/offering" }
+            }
+          },
+          "required": ["kind", "baseline", "proposed", "offerings"]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": { "kind": { "const": "unsatisfiable" } },
+          "required": ["kind"],
+          "description": "No candidate meets the proposed line."
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": { "kind": { "const": "noBaseline" } },
+          "required": ["kind"],
+          "description": "No candidate meets the current line, so there is nothing to give up from."
+        }
+      ]
+    },
+    "offering": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "actor": { "type": "string", "minLength": 1 },
+        "key": { "$ref": "#/$defs/elementKey" },
+        "from": { "type": "number" },
+        "to": { "type": "number" }
+      },
+      "required": ["actor", "key", "from", "to"]
+    }
+  }
+}

@@ -26,7 +26,7 @@ grasp-search バックエンド (`core/`) の同居により、このリポジ�
 |--------|---------|------|
 | フロント | `src/` (+ `schema/`, `examples/`) | ブラウザ 3D エディタ / Layout・Context DSL の公開スキーマ・コンパイラ・バリデータ / 決定的 core (`SynonymQuotient`・`CanonicalForm`) |
 | 契約 | `packages/grasp-contract` (repo 内の中立正本 — ADR-082 で submodule から吸収) | BFF ⇄ コアAPI の I/O JSON Schema + `contractVersion` (ADR-074) |
-| バックエンド | `server/` (BFF) + `core/` (Python 判定エンジン + FastAPI, uv 管理) | 制約の **解法**: 候補生成 → ドメイン段階フィルタ (リーチ/IK/把持性/可視性/干渉 — ADR-075/081) → 加重スコア (ADR-076)、propose-only レコメンドレーン (ADR-077)、bin-picking シーン層 (ADR-078) |
+| バックエンド | `server/` (BFF) + `core/` (Python 判定エンジン + FastAPI, uv 管理) | 制約の **解法**: 候補生成 → ドメイン段階フィルタ (リーチ/IK/把持性/可視性/干渉 — ADR-075/081) → 加重スコア (ADR-076)、propose-only レコメンドレーン (ADR-077)、bin-picking シーン層 (ADR-078)、判定基準の聞き取りレーン — 案・関心・差し出すもの (ADR-165 D6) |
 
 `templates/` は手書き完成 DSL テンプレ (契約形式リクエスト実例) = バックエンドレイヤ
 付属の受け入れフィクスチャ (`core/tests/test_templates.py` が消費)。フロントの

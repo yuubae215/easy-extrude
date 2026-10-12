@@ -154,3 +154,140 @@ test('the hearing walks to "Try it" with the floor closed, and each look is reco
   assert.ok(pushed.length >= 3, 'every write is one undoable command')
   assert.deepEqual(ctrl._uiView.toasts, [], 'nothing was refused')
 })
+
+// ── ADR-165 PR4: "Try it" asks core/, and the look records what was shown ─────
+//
+// The fake BFF stands where the real one does (`ctrl._service.bff`). Two
+// properties are asked that one pass cannot see: an answer that arrives after
+// the line moved is DROPPED (the line it describes is no longer the document's),
+// and a solver that cannot be reached still records the look with `seen: []`
+// and says why — never a silent no-op, never a fabricated candidate.
+
+const ELEMENTS = ['takt', 'positionAccuracy', 'holdMargin', 'equipmentCost', 'maintainability', 'humanClearance', 'stoppingDistance']
+
+function wireAnswer(refs) {
+  return {
+    contractVersion: 9,
+    candidates: [{ id: 'nominal:gantry', label: 'Gantry', actuals: ELEMENTS.map(k => ({ key: k, value: 5, basis: 'nominal', range: [4, 6] })) }],
+    interest: refs.flatMap(r => ['D', 'Q', 'C', 'S'].map(c => ({ actor: r, category: c, value: c === 'S' ? 1 : 0 }))),
+    proposal: { kind: 'notAsked' },
+  }
+}
+
+async function hearingSetup(bff, endUsers = ['a']) {
+  const { ContextService } = await import('../service/ContextService.js')
+  const svc = new ContextService({ async importFromJson() { return { imported: 0, skipped: 0 } } })
+  const ctrl = makeCtrl()
+  ctrl._ctxService = svc
+  ctrl._service = { bff }
+  const pushed = []
+  ctrl._commandStack = { canUndo: false, push(c) { pushed.push(c) } }
+  ctrl._refreshUndoRedoState = () => {}
+  const cc = new ContextController(ctrl)
+  cc._viewContext = () => ({ camera: null, renderer: null, container: null })
+  await svc.loadContext({
+    version: 'context/0.6',
+    actors: endUsers.map(r => ({ ref: r, role: 'ehs', endUser: true, mix: { D: 1, Q: 1, C: 1, S: 1 } })),
+    requirements: endUsers.flatMap(r => ELEMENTS.map(k => ({ ref: `crit_${r}_${k}`, by: r, owner: r, kpi: { name: k }, criterion: { op: k === 'humanClearance' ? '>=' : '<=', value: 10 }, weight: 1 }))),
+    specification: { layout: { version: 'layout/0.1', entities: [] } },
+  }, { camera: null, renderer: null, container: null })
+  return { svc, ctrl, cc, pushed }
+}
+
+const settle = () => new Promise(r => setTimeout(r, 0))
+
+test('"Try it" records the candidates core/ showed, and the interest lands on the store', async () => {
+  const { useUIStore } = await import('../store/uiStore.js')
+  const { CRITERIA_HEARING_WIZARD } = await import('../context/WizardCatalog.js')
+  const asked = []
+  const { svc, cc, ctrl } = await hearingSetup({ async criteriaTrial(req) { asked.push(req); return wireAnswer(['a']) } })
+  cc.startWizard(CRITERIA_HEARING_WIZARD.id)
+  cc.wizardNext(); cc.wizardNext()
+  await cc.wizardNext()
+  await settle()
+  assert.equal(asked.length, 1)
+  assert.equal(asked[0].line.endUsers[0].ref, 'a')
+  assert.equal(asked[0].line.endUsers[0].elements.length, 7, 'the whole line is sent, in catalog order')
+  assert.equal('contractVersion' in asked[0], false, 'the BFF stamps the version, not the client')
+  const [trial] = svc.getDoc().criteriaHearing.trials
+  assert.deepEqual(trial.seen.map(c => c.id), ['nominal:gantry'])
+  assert.deepEqual(trial.seen[0].actuals[0], { key: 'takt', value: 5, basis: 'nominal', range: [4, 6] })
+  const ind = useUIStore.getState().context.criteriaIndicator
+  assert.equal(ind.status, 'results')
+  assert.equal(ind.interest.length, 4)
+  // The pick is the person's, on that look.
+  cc.hearingChoose('nominal:gantry')
+  await settle()
+  assert.equal(svc.getDoc().criteriaHearing.trials[0].chosen, 'nominal:gantry')
+  assert.deepEqual(ctrl._uiView.toasts, [])
+})
+
+test('an answer that arrives after the line moved is dropped, never recorded as what was seen', async () => {
+  const { CRITERIA_HEARING_WIZARD } = await import('../context/WizardCatalog.js')
+  let release
+  const gate = new Promise(r => { release = r })
+  const { svc, cc } = await hearingSetup({ async criteriaTrial() { await gate; return wireAnswer(['a']) } })
+  cc.startWizard(CRITERIA_HEARING_WIZARD.id)
+  cc.wizardNext(); cc.wizardNext()
+  const pending = cc.wizardNext()
+  // While core/ is thinking, the person goes back and loosens safety.
+  cc.hearingAnswer({ elements: { humanClearance: { criterion: { op: '>=', value: 4 } } } })
+  await settle()
+  release()
+  await pending
+  await settle()
+  assert.equal(svc.getDoc().criteriaHearing?.trials?.length ?? 0, 0, 'the answer described a line the document no longer states')
+})
+
+test('an unreachable solver still records the look with seen = [] and names why', async () => {
+  const { useUIStore } = await import('../store/uiStore.js')
+  const { CRITERIA_HEARING_WIZARD } = await import('../context/WizardCatalog.js')
+  const { svc, cc } = await hearingSetup(null)
+  cc.startWizard(CRITERIA_HEARING_WIZARD.id)
+  cc.wizardNext(); cc.wizardNext()
+  await cc.wizardNext()
+  await settle()
+  assert.deepEqual(svc.getDoc().criteriaHearing.trials[0].seen, [])
+  const ind = useUIStore.getState().context.criteriaIndicator
+  assert.equal(ind.status, 'unavailable')
+  assert.match(ind.message, /not reachable/)
+})
+
+test('a change to the agreed line carries the margin core/ assessed — or says it was not assessed', async () => {
+  const { agreeToLine } = await import('../context/CriteriaLine.js')
+  const { useUIStore } = await import('../store/uiStore.js')
+  const asked = []
+  const offerings = [{ actor: 'b', key: 'humanClearance', from: 400, to: 200 }]
+  const bff = { async criteriaTrial(req) { asked.push(req); return { ...wireAnswer(['a', 'b']), proposal: { kind: 'evaluated', baseline: 'x', proposed: 'y', offerings } } } }
+  const { svc, cc } = await hearingSetup(bff, ['a', 'b'])
+  await svc.applyContextDoc(agreeToLine(agreeToLine(svc.getDoc(), 'a'), 'b'), { camera: null, renderer: null, container: null })
+  assert.ok(svc.getDoc().criteriaAgreement?.agreed, 'the line is agreed (v1)')
+  const target = { kind: 'requirement.criterion', ref: 'crit_a_takt' }
+  const pushed = []
+  cc._ctrl._commandStack = { canUndo: false, push(c) { pushed.push(c) } }
+  await cc.proposeChange(target, { op: '<=', value: 10 }, { op: '<=', value: 8 }, 'faster', 'a')
+  assert.equal(asked.length, 1)
+  const takt = (l) => l.endUsers.find(u => u.ref === 'a').elements.find(e => e.key === 'takt').value
+  assert.equal(takt(asked[0].line), 10)
+  assert.equal(takt(asked[0].proposedLine), 8, 'the proposed line is the line with the change written')
+  const p = svc.getDoc().proposals.at(-1)
+  assert.deepEqual(p.margin, { kind: 'evaluated', baseline: 'x', proposed: 'y', offerings })
+
+  // b reads it, then may approve.
+  useUIStore.getState().actions.contextGrantKey('b')
+  try {
+    assert.equal(cc.marginReadGuardsFor(p.ref).ok, true)
+    cc.readProposalMargin(p.ref)
+    await settle()
+    assert.deepEqual(svc.getDoc().proposals.at(-1).offeringsReadBy, ['b'])
+  } finally {
+    useUIStore.getState().actions.contextRevokeKey('b')
+  }
+
+  // Unreachable solver: the margin says so (never "inside").
+  cc._ctrl._service = { bff: null }
+  await cc.proposeChange(target, { op: '<=', value: 10 }, { op: '<=', value: 9 }, 'a bit faster', 'a')
+  const q = svc.getDoc().proposals.at(-1)
+  assert.equal(q.margin.kind, 'unassessed')
+  assert.match(q.margin.reason, /not reachable/)
+})

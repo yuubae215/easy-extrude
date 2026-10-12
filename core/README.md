@@ -39,6 +39,10 @@ uv run python -m easy_extrude_core.api  # ローカル起動 (既定 127.0.0.1:4
 
 - `POST /grasp-search`: body=`GraspSearchRequest` (camelCase wire) -> `GraspSearchResponse`
   (`by_alias=True` で camelCase)。判定は engine に委譲し、境界は整形のみ。
+- `POST /criteria-trial`: body=`CriteriaTrialRequest` (エンドユーザ全員の線 + 任意の提案後の線) ->
+  `CriteriaTrialResponse` (案と実態値・関心・提案の評価)。評価は `criteria/` の純粋関数
+  (ADR-165 D6 — 1 つのコスト関数 J、関心はその感度の有限差分)。案の出どころは
+  `create_app(cell_source=...)` で差し替える (既定 = naive な名目セル表)。評価できない線は 400 + 理由。
 - `GET /healthz`: `{"status":"ok","contractVersion":N}` (可観測性 + デプロイ照合)。
 - エラーの約束: 400 (contractVersion 不一致, expected/received 付き) / 422 (形違い) /
   401 (内部トークン無し) / 413 (body 上限) / 504 (実行時間ガード) / 500 (想定外)。

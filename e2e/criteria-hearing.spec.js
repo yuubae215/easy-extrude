@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test'
+import { readFileSync } from 'node:fs'
 
 /**
  * Criteria hearing — ADR-165 D3 / D4 (PR3), pressed in the real app.
@@ -68,8 +69,10 @@ test('the hearing is walked step by step and a change after a trial is kept', as
   await page.getByRole('button', { name: 'Review →' }).isVisible()
   await page.getByRole('button', { name: 'Next →' }).click()
 
-  // Step 4 — the look is recorded.
+  // Step 4 — the look is recorded. No BFF runs in this lane, so the solver is
+  // named as unreachable and the look is kept with nothing shown (seen = []).
   await expect(page.getByTestId('trial-candidates')).toContainText('recorded as trial 1')
+  await expect(page.getByTestId('trial-candidates')).toContainText('not reachable')
   // Found in this run: the intake's "added in this document" list fell through
   // to the requirements for any unknown step kind and drew 7 empty cards here.
   await expect(page.getByText('added in this document', { exact: false })).toHaveCount(0)
@@ -92,6 +95,88 @@ test('the hearing is walked step by step and a change after a trial is kept', as
   await page.getByRole('button', { name: 'Review →' }).click()
   await expect(page.getByTestId('hearing-review')).toContainText('Everything is heard')
   await expect(page.getByTestId('hearing-review')).toContainText('safety was cut')
+
+  expect(errors).toEqual([])
+})
+
+/**
+ * ADR-165 PR4 — the candidates and everyone's interest, pressed in the real app.
+ *
+ * The BFF is faked at the network edge (page.route), not in the app: the app's
+ * own BffClient, controller and panel run. The candidates are the contract's
+ * canonical example — core/'s real naive output — and the interest rows are
+ * written for whoever the request names (a fixture, not a cost function).
+ */
+const EXAMPLE = JSON.parse(readFileSync(new URL('../packages/grasp-contract/examples/criteria-trial-response.json', import.meta.url), 'utf8'))
+
+test('"Try it" shows core/\'s candidates with faces against the expectation, the pick is kept, and interest is drawn', async ({ page }) => {
+  const errors = []
+  page.on('pageerror', e => errors.push(e.message))
+  const asked = []
+  await page.route('**/api/auth/token', r => r.fulfill({ json: { token: 'e2e' } }))
+  await page.route('**/api/criteria/trial', async r => {
+    const body = r.request().postDataJSON()
+    asked.push(body)
+    const interest = body.line.endUsers.flatMap(u => ['D', 'Q', 'C', 'S'].map(c => ({ actor: u.ref, category: c, value: c === 'S' ? 1 : 0.25 })))
+    await r.fulfill({ json: { ...EXAMPLE, interest, proposal: { kind: 'notAsked' } } })
+  })
+  await page.addInitScript(() => { try { localStorage.setItem('ee_home', 'skip') } catch { /* storage denied */ } })
+  await page.goto('/easy-extrude/')
+  await expect(page.locator('#canvas-container canvas')).toBeVisible()
+
+  await page.getByRole('button', { name: 'Start ▾' }).click()
+  await page.getByText('From a context template (New Project)', { exact: true }).click()
+  await page.getByRole('button', { name: /^Empty Project/ }).click()
+  const replace = page.locator('button:text-is("Replace")')
+  if (await replace.waitFor({ state: 'visible', timeout: 2000 }).then(() => true).catch(() => false)) await replace.click()
+
+  await page.getByRole('button', { name: 'Start ▾' }).click()
+  await page.getByText('Hear the criteria (end users)', { exact: true }).click()
+  await page.getByLabel('end user name').fill('Sato')
+  await page.getByLabel('job function').selectOption('ehs')
+  await page.getByRole('button', { name: 'add end user' }).click()
+  await page.getByRole('button', { name: 'Next →' }).click()
+  await page.getByTestId('mix-archetypes').getByRole('button', { name: 'Nobody gets hurt' }).click()
+  await page.getByRole('button', { name: 'Save ratio' }).click()
+  await page.getByRole('button', { name: 'Next →' }).click()
+  for (const [k, v] of ELEMENTS) {
+    await page.getByLabel(`${k} expectation`).fill(v)
+    await page.getByLabel(`${k} weight`).fill('1')
+  }
+  await page.getByRole('button', { name: 'Save expectations' }).click()
+  await page.getByRole('button', { name: 'Next →' }).click()
+
+  // The candidates are core/'s, the faces the closed-form gap: takt <= 6 s —
+  // the 6-axis arm (4 s ± 15 %) meets it; the cobot (8 s) misses.
+  const table = page.getByTestId('trial-candidate-table')
+  await expect(table).toBeVisible()
+  await expect(table).toContainText('High-speed SCARA')
+  await expect(page.getByTestId('gap-nominal:six-axis-fenced-takt')).toHaveAttribute('data-gap', 'meets')
+  await expect(page.getByTestId('gap-nominal:cobot-takt')).toHaveAttribute('data-gap', 'misses')
+  // "Never touch a person" >= 500 mm: the SCARA (200) misses — the face says so, no total anywhere.
+  await expect(page.getByTestId('gap-nominal:scara-fast-humanClearance')).toHaveAttribute('data-gap', 'misses')
+  await expect(page.getByText(/total/i)).toHaveCount(0)
+  expect(asked).toHaveLength(1)
+  expect(asked[0].line.endUsers[0].elements).toHaveLength(7)
+  expect('contractVersion' in asked[0]).toBe(false)
+
+  // Everyone's interest, drawn per category.
+  await expect(page.getByTestId('interest-panel')).toBeVisible()
+
+  // The pick is the person's and is kept on the look.
+  await page.getByRole('button', { name: 'choose Gantry (Cartesian)' }).click()
+  await expect(page.getByRole('button', { name: 'choose Gantry (Cartesian)' })).toHaveText('chosen')
+
+  // Back, loosen safety, look again: the history says what was seen and picked.
+  await page.getByRole('button', { name: '← Back' }).click()
+  await page.getByLabel('humanClearance expectation').fill('150')
+  await page.getByRole('button', { name: 'Save expectations' }).click()
+  await page.getByRole('button', { name: 'Next →' }).click()
+  await expect(page.getByTestId('trial-candidates')).toContainText('recorded as trial 2')
+  const history = page.getByTestId('hearing-history')
+  await expect(history).toContainText('safety was cut')
+  await expect(history).toContainText('picked Gantry (Cartesian)')
+  expect(asked).toHaveLength(2)
 
   expect(errors).toEqual([])
 })

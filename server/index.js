@@ -19,6 +19,7 @@ import { authRouter }     from './src/routes/auth.js'
 import { importRouter }   from './src/routes/import.js'
 import { layoutRouter }   from './src/routes/layout.js'
 import { graspRouter }    from './src/routes/grasp.js'
+import { criteriaRouter } from './src/routes/criteria.js'
 import { openApiSpec }    from './src/openapi.js'
 import { createSession, removeSession, handleMessage } from './src/ws/sessionManager.js'
 
@@ -44,6 +45,7 @@ app.use('/api/scenes', jwtMiddleware, scenesRouter)
 app.use('/api/import', jwtMiddleware, importRouter)
 app.use('/api/layout', jwtMiddleware, layoutRouter)
 app.use('/api/grasp',  jwtMiddleware, graspRouter)
+app.use('/api/criteria', jwtMiddleware, criteriaRouter)
 
 // ── Health check ──────────────────────────────────────────────────────────────
 

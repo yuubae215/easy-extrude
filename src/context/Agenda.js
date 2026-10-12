@@ -42,7 +42,7 @@
 
 import { ownerOf, TARGET_KIND, isOwnerUndeclared, isOwnerlessDeclared } from './Ownership.js'
 import { PROPOSAL_STATE } from './Proposal.js'
-import { isLineProposal, requiredApprovers } from './CriteriaLine.js'
+import { isLineProposal, requiredApprovers, marginNeedsReading, marginSentence } from './CriteriaLine.js'
 import { hasKey } from './Keyring.js'
 
 /** Ref prefix for agenda items (parallel to `conflict_` / `nc_` / `prop_`). */
@@ -265,7 +265,12 @@ export function projectAgenda(ctx, validatorResult = {}) {
       // ADR-165 D5: a change to the agreed line waits on every other end user,
       // so the row says how many have approved out of how many.
       ...(isLineProposal(ctx, p)
-        ? { line: { approvals: p.approvals ?? [], required: requiredApprovers(ctx, p) } }
+        ? { line: {
+            approvals: p.approvals ?? [], required: requiredApprovers(ctx, p),
+            // ADR-165 D5 / D6 (PR4): what core/ said the change gives up, and who read it.
+            margin: p.margin ?? null, marginNeedsReading: marginNeedsReading(p),
+            marginSentence: marginSentence(p), offeringsReadBy: p.offeringsReadBy ?? [],
+          } }
         : {}),
     }))
 

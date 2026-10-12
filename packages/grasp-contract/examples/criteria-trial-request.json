@@ -1,0 +1,223 @@
+{
+  "contractVersion": 9,
+  "line": {
+    "endUsers": [
+      {
+        "ref": "tanaka",
+        "mix": {
+          "D": 60,
+          "Q": 15,
+          "C": 15,
+          "S": 10
+        },
+        "elements": [
+          {
+            "key": "positionAccuracy",
+            "op": "<=",
+            "value": 1.0,
+            "weight": 1.0
+          },
+          {
+            "key": "holdMargin",
+            "op": ">=",
+            "value": 1.0,
+            "weight": 1.0
+          },
+          {
+            "key": "equipmentCost",
+            "op": "<=",
+            "value": 50000000,
+            "weight": 1.0
+          },
+          {
+            "key": "maintainability",
+            "op": "<=",
+            "value": 600,
+            "weight": 1.0
+          },
+          {
+            "key": "stoppingDistance",
+            "op": "<=",
+            "value": 1000,
+            "weight": 1.0
+          },
+          {
+            "key": "takt",
+            "op": "<=",
+            "value": 6,
+            "weight": 1.0
+          },
+          {
+            "key": "humanClearance",
+            "op": ">=",
+            "value": 0,
+            "weight": 1.0
+          }
+        ]
+      },
+      {
+        "ref": "sato",
+        "mix": {
+          "D": 10,
+          "Q": 15,
+          "C": 15,
+          "S": 60
+        },
+        "elements": [
+          {
+            "key": "positionAccuracy",
+            "op": "<=",
+            "value": 1.0,
+            "weight": 1.0
+          },
+          {
+            "key": "holdMargin",
+            "op": ">=",
+            "value": 1.0,
+            "weight": 1.0
+          },
+          {
+            "key": "equipmentCost",
+            "op": "<=",
+            "value": 50000000,
+            "weight": 1.0
+          },
+          {
+            "key": "maintainability",
+            "op": "<=",
+            "value": 600,
+            "weight": 1.0
+          },
+          {
+            "key": "stoppingDistance",
+            "op": "<=",
+            "value": 1000,
+            "weight": 1.0
+          },
+          {
+            "key": "takt",
+            "op": "<=",
+            "value": 30,
+            "weight": 1.0
+          },
+          {
+            "key": "humanClearance",
+            "op": ">=",
+            "value": 300,
+            "weight": 0.1
+          }
+        ]
+      }
+    ]
+  },
+  "proposedLine": {
+    "endUsers": [
+      {
+        "ref": "tanaka",
+        "mix": {
+          "D": 60,
+          "Q": 15,
+          "C": 15,
+          "S": 10
+        },
+        "elements": [
+          {
+            "key": "positionAccuracy",
+            "op": "<=",
+            "value": 1.0,
+            "weight": 1.0
+          },
+          {
+            "key": "holdMargin",
+            "op": ">=",
+            "value": 1.0,
+            "weight": 1.0
+          },
+          {
+            "key": "equipmentCost",
+            "op": "<=",
+            "value": 50000000,
+            "weight": 1.0
+          },
+          {
+            "key": "maintainability",
+            "op": "<=",
+            "value": 600,
+            "weight": 1.0
+          },
+          {
+            "key": "stoppingDistance",
+            "op": "<=",
+            "value": 1000,
+            "weight": 1.0
+          },
+          {
+            "key": "takt",
+            "op": "<=",
+            "value": 4.5,
+            "weight": 1.0
+          },
+          {
+            "key": "humanClearance",
+            "op": ">=",
+            "value": 0,
+            "weight": 1.0
+          }
+        ]
+      },
+      {
+        "ref": "sato",
+        "mix": {
+          "D": 10,
+          "Q": 15,
+          "C": 15,
+          "S": 60
+        },
+        "elements": [
+          {
+            "key": "positionAccuracy",
+            "op": "<=",
+            "value": 1.0,
+            "weight": 1.0
+          },
+          {
+            "key": "holdMargin",
+            "op": ">=",
+            "value": 1.0,
+            "weight": 1.0
+          },
+          {
+            "key": "equipmentCost",
+            "op": "<=",
+            "value": 50000000,
+            "weight": 1.0
+          },
+          {
+            "key": "maintainability",
+            "op": "<=",
+            "value": 600,
+            "weight": 1.0
+          },
+          {
+            "key": "stoppingDistance",
+            "op": "<=",
+            "value": 1000,
+            "weight": 1.0
+          },
+          {
+            "key": "takt",
+            "op": "<=",
+            "value": 30,
+            "weight": 1.0
+          },
+          {
+            "key": "humanClearance",
+            "op": ">=",
+            "value": 300,
+            "weight": 0.1
+          }
+        ]
+      }
+    ]
+  }
+}

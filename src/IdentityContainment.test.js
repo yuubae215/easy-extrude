@@ -181,6 +181,18 @@ const IDENTITY_RULES = [
     why: '凍結の判定が散ると、合意済みの線を所有者の鍵で直接書き換えられる経路が呼び出し側の数だけ生まれる (ADR-165 D5)',
   },
   {
+    // ADR-165 D6 (PR4)。「この応答はいまの線についてのものか」は CriteriaTrialWire
+    // 1 箇所で決める。非同期の応答を受けた側で currentLine と比べ直す形が散ると、
+    // 古い線への答えを「見た案」として記録する経路がその数だけ生まれる。
+    name: '判定基準の応答の同一性 (応答はいまの線についてのものか)',
+    owners: ['src/context/CriteriaTrialWire.js'],
+    use: "isAnswerForLine(requestedLine, ctx)  — import from 'src/context/CriteriaTrialWire.js'",
+    // 合意の陳腐化 (CriteriaLine の pending と currentLine の比較) は別の問いなので、
+    // 「問うた線 / 答え」を名指す行だけに当てる。
+    all: [/sameClaimValue\s*\(|JSON\.stringify/, /currentLine\s*\(/, /\b(?:requested|asked|answer)/i],
+    why: '古い線への答えが記録されると、「安全を削る前に何を見たか」が別の線の案を指す (ADR-165 D4 / D6)',
+  },
+  {
     // ADR-104 U2。「この提案は古びているか」は *保存しない* と決めた導出値なので、
     // 導出規則そのものが唯一の住所になる。散ると「4 つ目の状態」が事実上復活する。
     name: '提案の陳腐化判定 (from === 現在値)',

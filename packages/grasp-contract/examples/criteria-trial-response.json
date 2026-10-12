@@ -1,0 +1,329 @@
+{
+  "contractVersion": 9,
+  "candidates": [
+    {
+      "id": "nominal:scara-fast",
+      "label": "High-speed SCARA",
+      "actuals": [
+        {
+          "key": "takt",
+          "value": 2.5,
+          "basis": "nominal",
+          "range": [
+            2.125,
+            2.875
+          ]
+        },
+        {
+          "key": "positionAccuracy",
+          "value": 0.02,
+          "basis": "nominal",
+          "range": [
+            0.015,
+            0.025
+          ]
+        },
+        {
+          "key": "holdMargin",
+          "value": 1.5,
+          "basis": "nominal",
+          "range": [
+            1.275,
+            1.7249999999999999
+          ]
+        },
+        {
+          "key": "equipmentCost",
+          "value": 6000000.0,
+          "basis": "nominal",
+          "range": [
+            4800000.0,
+            7200000.0
+          ]
+        },
+        {
+          "key": "maintainability",
+          "value": 60.0,
+          "basis": "nominal",
+          "range": [
+            45.0,
+            75.0
+          ]
+        },
+        {
+          "key": "humanClearance",
+          "value": 200.0,
+          "basis": "nominal",
+          "range": [
+            160.0,
+            240.0
+          ]
+        },
+        {
+          "key": "stoppingDistance",
+          "value": 150.0,
+          "basis": "nominal",
+          "range": [
+            120.0,
+            180.0
+          ]
+        }
+      ]
+    },
+    {
+      "id": "nominal:six-axis-fenced",
+      "label": "6-axis arm behind a fence",
+      "actuals": [
+        {
+          "key": "takt",
+          "value": 4.0,
+          "basis": "nominal",
+          "range": [
+            3.4,
+            4.6
+          ]
+        },
+        {
+          "key": "positionAccuracy",
+          "value": 0.05,
+          "basis": "nominal",
+          "range": [
+            0.037500000000000006,
+            0.0625
+          ]
+        },
+        {
+          "key": "holdMargin",
+          "value": 2.0,
+          "basis": "nominal",
+          "range": [
+            1.7,
+            2.3
+          ]
+        },
+        {
+          "key": "equipmentCost",
+          "value": 12000000.0,
+          "basis": "nominal",
+          "range": [
+            9600000.0,
+            14400000.0
+          ]
+        },
+        {
+          "key": "maintainability",
+          "value": 90.0,
+          "basis": "nominal",
+          "range": [
+            67.5,
+            112.5
+          ]
+        },
+        {
+          "key": "humanClearance",
+          "value": 800.0,
+          "basis": "nominal",
+          "range": [
+            720.0,
+            880.0000000000001
+          ]
+        },
+        {
+          "key": "stoppingDistance",
+          "value": 300.0,
+          "basis": "nominal",
+          "range": [
+            240.0,
+            360.0
+          ]
+        }
+      ]
+    },
+    {
+      "id": "nominal:cobot",
+      "label": "Collaborative arm (shared space)",
+      "actuals": [
+        {
+          "key": "takt",
+          "value": 8.0,
+          "basis": "nominal",
+          "range": [
+            6.8,
+            9.2
+          ]
+        },
+        {
+          "key": "positionAccuracy",
+          "value": 0.1,
+          "basis": "nominal",
+          "range": [
+            0.07500000000000001,
+            0.125
+          ]
+        },
+        {
+          "key": "holdMargin",
+          "value": 1.8,
+          "basis": "nominal",
+          "range": [
+            1.53,
+            2.07
+          ]
+        },
+        {
+          "key": "equipmentCost",
+          "value": 5000000.0,
+          "basis": "nominal",
+          "range": [
+            4000000.0,
+            6000000.0
+          ]
+        },
+        {
+          "key": "maintainability",
+          "value": 45.0,
+          "basis": "nominal",
+          "range": [
+            33.75,
+            56.25
+          ]
+        },
+        {
+          "key": "humanClearance",
+          "value": 50.0,
+          "basis": "nominal",
+          "range": [
+            40.0,
+            60.0
+          ]
+        },
+        {
+          "key": "stoppingDistance",
+          "value": 50.0,
+          "basis": "nominal",
+          "range": [
+            40.0,
+            60.0
+          ]
+        }
+      ]
+    },
+    {
+      "id": "nominal:gantry",
+      "label": "Gantry (Cartesian)",
+      "actuals": [
+        {
+          "key": "takt",
+          "value": 5.0,
+          "basis": "nominal",
+          "range": [
+            4.25,
+            5.75
+          ]
+        },
+        {
+          "key": "positionAccuracy",
+          "value": 0.05,
+          "basis": "nominal",
+          "range": [
+            0.037500000000000006,
+            0.0625
+          ]
+        },
+        {
+          "key": "holdMargin",
+          "value": 3.0,
+          "basis": "nominal",
+          "range": [
+            2.55,
+            3.4499999999999997
+          ]
+        },
+        {
+          "key": "equipmentCost",
+          "value": 9000000.0,
+          "basis": "nominal",
+          "range": [
+            7200000.0,
+            10800000.0
+          ]
+        },
+        {
+          "key": "maintainability",
+          "value": 120.0,
+          "basis": "nominal",
+          "range": [
+            90.0,
+            150.0
+          ]
+        },
+        {
+          "key": "humanClearance",
+          "value": 600.0,
+          "basis": "nominal",
+          "range": [
+            540.0,
+            660.0
+          ]
+        },
+        {
+          "key": "stoppingDistance",
+          "value": 100.0,
+          "basis": "nominal",
+          "range": [
+            80.0,
+            120.0
+          ]
+        }
+      ]
+    }
+  ],
+  "interest": [
+    {
+      "actor": "tanaka",
+      "category": "D",
+      "value": 0.0
+    },
+    {
+      "actor": "tanaka",
+      "category": "Q",
+      "value": 0.0
+    },
+    {
+      "actor": "tanaka",
+      "category": "C",
+      "value": 0.0
+    },
+    {
+      "actor": "tanaka",
+      "category": "S",
+      "value": 0.0
+    },
+    {
+      "actor": "sato",
+      "category": "D",
+      "value": 0.0
+    },
+    {
+      "actor": "sato",
+      "category": "Q",
+      "value": 0.0
+    },
+    {
+      "actor": "sato",
+      "category": "C",
+      "value": 0.0
+    },
+    {
+      "actor": "sato",
+      "category": "S",
+      "value": 1.0
+    }
+  ],
+  "proposal": {
+    "kind": "evaluated",
+    "baseline": "nominal:six-axis-fenced",
+    "proposed": "nominal:six-axis-fenced",
+    "offerings": []
+  }
+}

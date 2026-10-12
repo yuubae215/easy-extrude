@@ -341,6 +341,20 @@ export class BffClient {
   }
 
   /**
+   * The criteria hearing's solver (`POST /api/criteria/trial` — ADR-165 D6).
+   * Sends the end users' line (and, to assess a change, the proposed line);
+   * returns core/'s candidates, interest per end user × category and the
+   * proposal's margin. The client computes none of it; it must NOT set
+   * `contractVersion` (the BFF stamps the canonical value).
+   *
+   * @param {{ line: object, proposedLine?: object }} request
+   * @returns {Promise<{ contractVersion: number, candidates: object[], interest: object[], proposal: object }>}
+   */
+  criteriaTrial(request) {
+    return this._postContract('/criteria/trial', request)
+  }
+
+  /**
    * POST that surfaces the BFF's `{ error, details }` envelope and HTTP status
    * instead of collapsing 5xx into an opaque BffUnavailableError. The grasp /
    * layout walkthrough needs the *reason* to reach the UI (PHILOSOPHY #11):

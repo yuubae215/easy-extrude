@@ -7,6 +7,8 @@
 - POST /grasp-search: 段階0 判定エンジン (`engine.search`, ADR-075)。
 - POST /recommendation: 推薦/類似レーン (`recommendation.recommend`, ADR-077)。等価性
   *候補* を propose / rank する (decide はしない)。
+- POST /criteria-trial: 判定基準の聞き取りレーン (`criteria.trial`, ADR-165 D3/D6)。線から
+  案 (候補セルと実態値)・関心・提案の差し出すものを返す。
 - POST /pick-sequence: bin-picking シーン層 (`scene.pick_sequence`, ADR-078)。属性付き
   エンティティから per-pick の障害物を導出し、最上面順に反復ピックして把持ランキングを返す。
 
@@ -35,6 +37,7 @@ from fastapi.responses import JSONResponse
 from ..contract import (
     CONTRACT_VERSION,
     ContractVersionMismatch,
+    CriteriaTrialRequest,
     GraspSearchRequest,
     PickSequenceRequest,
     RecommendationRequest,
@@ -46,6 +49,8 @@ from ..engine import (
     IkSolver,
     search,
 )
+from ..criteria import CellSource, LineError
+from ..criteria import trial as criteria_trial
 from ..recommendation import SimilarityModel, recommend
 from ..scene import pick_sequence
 from .errors import (
@@ -88,6 +93,7 @@ def create_app(
     ik_solver: Optional[IkSolver] = None,
     collision_checker: Optional[CollisionChecker] = None,
     similarity_model: Optional[SimilarityModel] = None,
+    cell_source: Optional[CellSource] = None,
     authenticator: Optional[Authenticator] = None,
 ) -> FastAPI:
     """コアAPI の ASGI アプリを組む (factory)。
@@ -160,6 +166,15 @@ def create_app(
     async def _on_declaration_error(_: Request, exc: DeclarationError):
         # 400: 形は契約に合うが宣言が解けない (取付けと手の形の矛盾など — ADR-152 D3)。
         # 送り手が直せる誤りなので理由をそのまま返す (500 の中立 message とは違う)。
+        return JSONResponse(
+            status_code=400,
+            content=error_payload(ErrorCode.INVALID_DECLARATION, str(exc)),
+        )
+
+    @app.exception_handler(LineError)
+    async def _on_line_error(_: Request, exc: LineError):
+        # 400: 形は契約に合うが線が評価できない (要素の重複・欠け、全部 0 の比重 — ADR-165)。
+        # 送り手が直せる誤りなので理由をそのまま返す (DeclarationError と同じ扱い)。
         return JSONResponse(
             status_code=400,
             content=error_payload(ErrorCode.INVALID_DECLARATION, str(exc)),
@@ -260,6 +275,25 @@ def create_app(
 
         # wire 形 (camelCase) で返す。真偽値は含まない (壁の番人, ADR-077 §5)。
         return JSONResponse(content=response.model_dump(by_alias=True))
+
+    # --- 判定基準の聞き取りレーン (ADR-165 D3/D6): POST /criteria-trial -----
+    # 線 (エンドユーザ全員の比重・期待値・重み) から、案・関心・提案の差し出すものを返す。
+    # 評価はアイデアなので core/ にだけ在る (軸 1)。案の出どころは cell_source で差し替え可能
+    # (既定 = naive な名目セル表)。作法は他のエンドポイントと同じ。
+    @app.post("/criteria-trial", response_model=None)
+    async def criteria_trial_endpoint(
+        payload: CriteriaTrialRequest,
+        _auth: None = Depends(authenticate),
+    ) -> JSONResponse:
+        check_contract_version(payload.contract_version)
+        try:
+            response = await asyncio.wait_for(
+                run_in_threadpool(criteria_trial, payload, source=cell_source),
+                timeout=settings.request_timeout_seconds,
+            )
+        except asyncio.TimeoutError as exc:
+            raise RequestTimeoutError() from exc
+        return JSONResponse(content=response.model_dump(by_alias=True, exclude_none=True))
 
     # --- bin-picking シーン層 (ADR-078): POST /pick-sequence -----------------
     # 属性付きエンティティの宣言を受け取り、per-pick の障害物集合を導出して最上面順に
