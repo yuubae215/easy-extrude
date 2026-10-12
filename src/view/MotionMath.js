@@ -22,6 +22,18 @@ export function easeOutCubic(p) {
 }
 
 /**
+ * Cubic ease-in: leaves slowly, accelerates away — the `exit` role of the
+ * motion identity (CLAUDE.md「モーション・アイデンティティ」: 退場 = inCubic). An
+ * element that is leaving lingers for a beat, then goes; the mirror of
+ * `easeOutCubic`. f(0)=0, f(1)=1, zero velocity at the start. p ∈ [0,1] → [0,1].
+ * @param {number} p
+ */
+export function easeInCubic(p) {
+  const t = clamp01(p)
+  return t * t * t
+}
+
+/**
  * Exponential ease-out: a near-instant launch that coasts to rest — the
  * "snappy" curve for burst/convergence distance (a fragment shoots out, then
  * drifts). f(0)=0, f(1)=1, steeper than cubic at the start. p ∈ [0,1] → [0,1].

@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { clamp01, easeOutCubic, easeOutExpo, easeOutBack, breathe, springStep, staggerProgress } from './MotionMath.js'
+import { clamp01, easeOutCubic, easeInCubic, easeOutExpo, easeOutBack, breathe, springStep, staggerProgress } from './MotionMath.js'
 
 test('clamp01 clamps and absorbs NaN', () => {
   assert.equal(clamp01(-1), 0)
@@ -18,6 +18,21 @@ test('easeOutCubic hits endpoints and is monotonic', () => {
     assert.ok(v >= prev - 1e-12, `monotonic at p=${p}`)
     prev = v
   }
+})
+
+test('easeInCubic hits endpoints, is monotonic, and lingers before it leaves', () => {
+  assert.equal(easeInCubic(0), 0)
+  assert.equal(easeInCubic(1), 1)
+  let prev = -1
+  for (let i = 0; i <= 20; i++) {
+    const v = easeInCubic(i / 20)
+    assert.ok(v >= prev, 'monotonic')
+    prev = v
+  }
+  // The exit role: still mostly present at the midpoint (an outQuad/linear
+  // fade would already be half gone — the leaving element must linger).
+  assert.ok(easeInCubic(0.5) < 0.2)
+  assert.equal(easeInCubic(NaN), 0)
 })
 
 test('easeOutExpo hits endpoints, is monotonic, and launches faster than cubic', () => {

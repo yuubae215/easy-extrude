@@ -11,6 +11,9 @@ import {
   boundaryLightFrame,
   viewElevation, floorLightGains, FLOOR_LIGHT,
   EMPHASIS_BY_PLACE_TYPE, EMPHASIS_GAIN, emphasisFor, lightTint, LIGHT_WARMTH,
+  EXIT_FADE, EXIT_SHRINK, LIFECYCLE_PHASES, PHASE_TRAITS, phaseTraits, INITIAL_LIFECYCLE,
+  lifecycleShow, lifecycleHide, lifecycleStamp, lifecyclePhase, lifecycleEnvelope,
+  SELECT_LAND, SELECT_GROW, UNSELECTED, selectionLevel, retargetSelection, selectedEmphasis,
 } from './MapVisualMath.js'
 import { STAGE_LIGHT } from './StageMath.js'
 import { PLACE_TYPES } from '../domain/PlaceTypeRegistry.js'
@@ -43,6 +46,12 @@ const FRAME_FUNCTIONS = {
   zoneRimFrame:      (t, reduced) => zoneRimFrame(t, 0.3, 0, { reduced }),
   routeFlowFrame:    (t, reduced) => routeFlowFrame(t, 1, 1, 0.3, { reduced }),
   boundaryLightFrame: (t, reduced) => boundaryLightFrame(t, 0.4, 0.3, reduced),
+  // ADR-166 M3b — invoked on the PRESENT side / the selected target: the exit's
+  // static end is legitimately nothing (the annotation was deleted — "gone" is
+  // the information), so it is asked by its own tests below, not by the
+  // "still shows something" property.
+  lifecycleEnvelope: (t, reduced) => lifecycleEnvelope(t, { present: true, bornAt: 0, exitAt: null, exitPending: false }, reduced),
+  selectionLevel:    (t, reduced) => selectionLevel(t, { from: 0, at: 0, target: true }, reduced),
 }
 
 test('the reduced-motion table covers every exported frame function', () => {
@@ -53,6 +62,10 @@ test('the reduced-motion table covers every exported frame function', () => {
   const helpers = new Set([
     'phaseFor', 'livePulse',
     'viewElevation', 'floorLightGains', 'emphasisFor', 'lightTint',
+    // ADR-166 M3b: reducers and tables over the lifecycle record and the
+    // selection segment — they map state to state, not time to a frame.
+    'phaseTraits', 'lifecycleShow', 'lifecycleHide', 'lifecycleStamp', 'lifecyclePhase',
+    'retargetSelection', 'selectedEmphasis',
   ])
   const exported = Object.entries(MapVisualMath)
     .filter(([name, v]) => typeof v === 'function' && !helpers.has(name))
@@ -441,4 +454,190 @@ test('lightTint warms the type colour toward the ONE stage light, and keeps the 
     const hex = parseInt(e.color.slice(1), 16)
     assert.equal(dominant(lightTint(hex)), dominant(hex), `${e.name}: warming changed the dominant channel`)
   }
+})
+
+// ── Lifecycle — entering / idle / exiting / hidden (ADR-166 M3b) ─────────────
+//
+// The state machine of STATE_TRANSITIONS §Map annotation motion, asked here as
+// properties of the reducers the views actually call. The transitions are
+// enumerated from the declared phases, so a fifth phase must declare its
+// traits AND its transitions or this file fails.
+
+/** Drive a lifecycle record to a named phase using only the public reducers. */
+function reach(phase, t0 = 10) {
+  let life = lifecycleStamp(INITIAL_LIFECYCLE, t0)                  // entering @ t0
+  if (phase === 'entering') return { life, t: t0 + ENTRY_POP * 0.5 }
+  if (phase === 'idle')     return { life, t: t0 + ENTRY_POP + 1 }
+  life = lifecycleStamp(lifecycleHide(life), t0 + 2)               // exiting @ t0+2
+  if (phase === 'exiting')  return { life, t: t0 + 2 + EXIT_FADE * 0.5 }
+  return { life, t: t0 + 2 + EXIT_FADE + 1 }                        // hidden
+}
+
+test('every lifecycle phase declares its traits, and an undeclared phase throws', () => {
+  assert.deepEqual(Object.keys(PHASE_TRAITS).sort(), [...LIFECYCLE_PHASES].sort())
+  assert.throws(() => phaseTraits('vanishing'), /no traits declared/)
+  for (const ph of LIFECYCLE_PHASES) assert.equal(lifecyclePhase(reach(ph).t, reach(ph).life), ph, `reach(${ph})`)
+})
+
+test('an exiting annotation is drawn but NOT pickable — the two facts are split', () => {
+  // The completion condition of M3b: hit-testing must not return an annotation
+  // that is leaving. `present` is what the views expose as `visible`.
+  const { life, t } = reach('exiting')
+  assert.equal(lifecyclePhase(t, life), 'exiting')
+  assert.equal(life.present, false, 'the view\'s `visible` getter reads `present`')
+  assert.equal(phaseTraits('exiting').pickable, false)
+  assert.equal(phaseTraits('exiting').drawn, true)
+  for (const ph of LIFECYCLE_PHASES) {
+    const r = reach(ph)
+    assert.equal(r.life.present, phaseTraits(ph).pickable,
+      `${ph}: present must equal pickable (one fact, one field)`)
+  }
+})
+
+test('the declared transitions — and only those — happen', () => {
+  // show / hide / time, from every phase.
+  const expected = {
+    entering: { show: 'entering', hide: 'exiting', time: 'idle' },
+    idle:     { show: 'idle',     hide: 'exiting', time: 'idle' },
+    exiting:  { show: 'entering', hide: 'exiting', time: 'hidden' },
+    hidden:   { show: 'entering', hide: 'hidden',  time: 'hidden' },
+  }
+  assert.deepEqual(Object.keys(expected).sort(), [...LIFECYCLE_PHASES].sort())
+  for (const [from, to] of Object.entries(expected)) {
+    const { life, t } = reach(from)
+    const shown  = lifecycleStamp(lifecycleShow(life), t)
+    const hidden = lifecycleStamp(lifecycleHide(life), t)
+    assert.equal(lifecyclePhase(t + 0.01, shown),  to.show, `${from} --show-->`)
+    assert.equal(lifecyclePhase(t + 0.01, hidden), to.hide, `${from} --hide-->`)
+    assert.equal(lifecyclePhase(t + 30, life),     to.time, `${from} --time-->`)
+  }
+})
+
+test('exiting never returns to idle without a show (the forbidden transition)', () => {
+  const { life } = reach('exiting')
+  for (let dt = 0; dt < 3; dt += 0.01) {
+    assert.notEqual(lifecyclePhase(12 + dt, life), 'idle')
+    assert.notEqual(lifecyclePhase(12 + dt, life), 'entering')
+  }
+})
+
+test('re-showing a present annotation is not a boundary moment — no re-pop', () => {
+  const { life } = reach('idle')
+  assert.equal(lifecycleShow(life), life, 'same record back: the entry is not re-armed')
+})
+
+test('hiding an annotation that never reached a frame hides at once (no light to put out)', () => {
+  const life = lifecycleHide(INITIAL_LIFECYCLE)
+  assert.equal(life.exitPending, false)
+  assert.equal(lifecyclePhase(5, lifecycleStamp(life, 5)), 'hidden')
+})
+
+test('a second hide during the exit does not restart it', () => {
+  const { life, t } = reach('exiting')
+  assert.equal(lifecycleHide(life), life)
+  assert.equal(lifecyclePhase(t, lifecycleStamp(lifecycleHide(life), t)), 'exiting')
+})
+
+test('the exit is the light going out on the exit curve — lingers, then goes', () => {
+  const { life } = reach('hidden')        // exitAt = 12
+  const at = p => lifecycleEnvelope(12 + EXIT_FADE * p, life)
+  let prev = 2
+  for (let i = 0; i <= 20; i++) {
+    const f = at(i / 20 * 0.999)
+    assert.ok(f.opacity <= prev + 1e-12, 'opacity falls monotonically')
+    prev = f.opacity
+  }
+  assert.ok(at(0.5).opacity > 0.8, 'inCubic: still mostly lit at the midpoint (not a linear fade)')
+  assert.ok(Math.abs(at(0.5).opacity - 0.5) > 0.2, 'not linear')
+  assert.ok(at(0.999).scale < 1 && at(0.999).scale >= EXIT_SHRINK, 'contracts as it goes out')
+  assert.deepEqual(lifecycleEnvelope(12 + EXIT_FADE + 0.5, life), { scale: EXIT_SHRINK, opacity: 0 })
+})
+
+test('reduced motion: no in-between phases — entry is idle, exit is hidden at once', () => {
+  const ent = reach('entering')
+  assert.equal(lifecyclePhase(ent.t, ent.life, true), 'idle')
+  const ex = reach('exiting')
+  assert.equal(lifecyclePhase(ex.t, ex.life, true), 'hidden')
+  // Before the stamp, too: a reduced hide never draws an exit frame.
+  const armed = lifecycleHide(reach('idle').life)
+  assert.equal(lifecyclePhase(99, armed, true), 'hidden')
+})
+
+test('a malformed clock lands on the settled phase of the same side (#11)', () => {
+  const ent = reach('entering')
+  const ex = reach('exiting')
+  for (const bad of [NaN, Infinity, undefined]) {
+    assert.equal(lifecyclePhase(bad, ent.life), 'idle')
+    assert.equal(lifecyclePhase(bad, ex.life), 'hidden')
+    assert.equal(lifecycleStamp(INITIAL_LIFECYCLE, bad), INITIAL_LIFECYCLE, 'a bad clock stamps nothing')
+  }
+})
+
+// ── Selection — the light rises and lands (ADR-166 M3b) ──────────────────────
+
+test('selection lands on the land curve (outExpo) within SELECT_LAND', () => {
+  const seg = retargetSelection(5, UNSELECTED, true)
+  assert.equal(selectionLevel(5, seg), 0)
+  assert.ok(selectionLevel(5 + SELECT_LAND * 0.25, seg) > 0.75, 'outExpo: most of the way after a quarter')
+  assert.equal(selectionLevel(5 + SELECT_LAND, seg), 1)
+  assert.ok(SELECT_LAND <= 0.3, 'response band ≤ 300 ms (motion identity)')
+  let prev = -1
+  for (let i = 0; i <= 20; i++) {
+    const v = selectionLevel(5 + SELECT_LAND * i / 20, seg)
+    assert.ok(v >= prev, 'monotonic')
+    prev = v
+  }
+})
+
+test('the same selection request twice does not restart the landing', () => {
+  // The evidence shape ADR-098 → ADR-101 taught: pass the SAME request more
+  // than once. setObjectSelected(true) is called on every selection refresh;
+  // a restart would make the light stutter back to the segment start.
+  const seg = retargetSelection(5, UNSELECTED, true)
+  const again = retargetSelection(5 + SELECT_LAND * 0.5, seg, true)
+  assert.equal(again, seg)
+  assert.equal(selectionLevel(5 + SELECT_LAND * 0.5, again), selectionLevel(5 + SELECT_LAND * 0.5, seg))
+})
+
+test('a reversal mid-flight continues from the light on screen — no jump', () => {
+  const on = retargetSelection(5, UNSELECTED, true)
+  const tMid = 5 + SELECT_LAND * 0.1
+  const before = selectionLevel(tMid, on)
+  const off = retargetSelection(tMid, on, false)
+  assert.ok(Math.abs(selectionLevel(tMid, off) - before) < 1e-12, 'continuous at the reversal')
+  assert.equal(selectionLevel(tMid + SELECT_LAND, off), 0)
+  // And back again, twice: still continuous.
+  const t2 = tMid + SELECT_LAND * 0.05
+  const mid2 = selectionLevel(t2, off)
+  const on2 = retargetSelection(t2, off, true)
+  assert.ok(Math.abs(selectionLevel(t2, on2) - mid2) < 1e-12)
+})
+
+test('reduced motion and malformed clocks land the selection at once', () => {
+  const seg = retargetSelection(5, UNSELECTED, true, true)
+  assert.equal(selectionLevel(5, seg, true), 1)
+  assert.equal(selectionLevel(NaN, seg), 1)
+  assert.equal(selectionLevel(5, retargetSelection(NaN, UNSELECTED, true)), 1)
+})
+
+test('selected emphasis blends the role gain, and a violation outranks every level', () => {
+  for (const type of Object.keys(EMPHASIS_BY_PLACE_TYPE)) {
+    const key = type === 'unclassified' ? null : type
+    assert.equal(selectedEmphasis(key, 0), emphasisFor(key))
+    assert.equal(selectedEmphasis(key, 1), emphasisFor(key, { selected: true }))
+    for (const lvl of [0, 0.3, 1]) {
+      assert.equal(selectedEmphasis(key, lvl, { urgent: true }), EMPHASIS_GAIN.urgent)
+      assert.ok(selectedEmphasis(key, lvl) < EMPHASIS_GAIN.urgent)
+    }
+  }
+  assert.ok(SELECT_GROW > 1)
+})
+
+test('a clock that steps backward does not skip the exit', () => {
+  // Found recording the M3 clip: under Playwright's fake clock performance.now
+  // stepped back 2 ms between frames, and an exit stamped on the later frame
+  // read as "already over" — the annotation vanished with no exit at all.
+  const { life } = reach('hidden')          // exitAt = 12
+  assert.equal(lifecyclePhase(12 - 0.002, life), 'exiting')
+  assert.deepEqual(lifecycleEnvelope(12 - 0.002, life), { scale: 1, opacity: 1 })
 })

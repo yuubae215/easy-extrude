@@ -34,7 +34,7 @@
  * Malformed clocks collapse to the静 (static) frame rather than NaN geometry:
  * honest stillness over a corrupted transform (#11 / P12).
  */
-import { clamp01, easeOutCubic, easeOutBack, breathe } from './MotionMath.js'
+import { clamp01, easeOutCubic, easeOutBack, easeOutExpo, easeInCubic, breathe } from './MotionMath.js'
 import { STAGE_LIGHT } from './StageMath.js'
 
 // ── Floor light — the light, the view angle, the role (ADR-166 M3) ──────────
@@ -263,6 +263,226 @@ export function entryFrame(t, bornAt, reduced = false) {
     scale:   Math.max(easeOutBack(p), 0.001),
     opacity: easeOutCubic(p),
   }
+}
+
+// ── Lifecycle — entering / idle / exiting / hidden (ADR-166 M3b) ────────────
+//
+// Before M3b one field answered two questions. `visible` meant both "this
+// annotation exists for the user (pickable, counted)" and "its meshes are
+// drawn", so a soft delete could only blink the light off — there was no
+// frame in which the annotation was gone logically but still leaving visually
+// (P9: an entrance with no matching exit). The record below splits the two:
+// `present` is the logical fact (the view's `visible` getter, read by
+// hit-testing), and the DRAWN state is derived from the phase. The state
+// machine is drawn in STATE_TRANSITIONS §Map annotation motion; the reducers
+// here are the only writers, and the views hold the record.
+//
+// Clocks: the setters (`setVisible`) have no clock, so a hide ARMS the exit
+// (`exitPending`) and the view's next tick stamps it (`lifecycleStamp`) — the
+// same "first tick stamps the time" shape as the entry pop's `bornAt`.
+
+/** Exit length (seconds) — the light going out; inside the ≤ 300 ms band. */
+export const EXIT_FADE = 0.22
+/** How far the light contracts while it goes out (scale at the end of the exit). */
+export const EXIT_SHRINK = 0.85
+
+/** The four phases, in lifecycle order. */
+export const LIFECYCLE_PHASES = Object.freeze(['entering', 'idle', 'exiting', 'hidden'])
+
+/**
+ * What each phase means to the rest of the app — declared per phase, and an
+ * undeclared phase THROWS (PHILOSOPHY #31: the exit is exactly the phase a
+ * fall-through default would have quietly made pickable).
+ *   pickable — hit-testing may return it (the logical fact)
+ *   drawn    — its meshes are on screen
+ */
+export const PHASE_TRAITS = Object.freeze({
+  entering: Object.freeze({ pickable: true,  drawn: true }),
+  idle:     Object.freeze({ pickable: true,  drawn: true }),
+  exiting:  Object.freeze({ pickable: false, drawn: true }),
+  hidden:   Object.freeze({ pickable: false, drawn: false }),
+})
+
+/**
+ * @param {string} phase one of `LIFECYCLE_PHASES`
+ * @returns {{pickable: boolean, drawn: boolean}}
+ * @throws {Error} for an undeclared phase
+ */
+export function phaseTraits(phase) {
+  const tr = Object.hasOwn(PHASE_TRAITS, phase) ? PHASE_TRAITS[phase] : undefined
+  if (!tr) throw new Error(`MapVisualMath: no traits declared for lifecycle phase "${phase}"`)
+  return tr
+}
+
+/**
+ * @typedef {{present: boolean, bornAt: number|null, exitAt: number|null, exitPending: boolean}} Lifecycle
+ */
+
+/** A freshly constructed annotation: present, its entry not yet stamped. */
+export const INITIAL_LIFECYCLE = Object.freeze({ present: true, bornAt: null, exitAt: null, exitPending: false })
+
+/**
+ * `setVisible(true)`. Already present → unchanged: re-showing something that
+ * is on screen is not a boundary moment, so it must not re-pop (the context
+ * overlays call setVisible(true) on every entity on the way out). Hidden or
+ * exiting → a fresh entry (an undo mid-exit restarts the entry — one path,
+ * not a reversal; ADR-166 M3b).
+ * @param {Lifecycle} life
+ * @returns {Lifecycle}
+ */
+export function lifecycleShow(life) {
+  if (life?.present) return life
+  return { present: true, bornAt: null, exitAt: null, exitPending: false }
+}
+
+/**
+ * `setVisible(false)`. An annotation that was SEEN (its entry was stamped)
+ * arms its exit; one that never reached a frame hides at once — there is no
+ * light on screen to put out.
+ * @param {Lifecycle} life
+ * @returns {Lifecycle}
+ */
+export function lifecycleHide(life) {
+  if (!life?.present) return life
+  const seen = life.bornAt !== null
+  return { present: false, bornAt: life.bornAt, exitAt: null, exitPending: seen }
+}
+
+/**
+ * The tick's clock stamp: the first tick of a present annotation stamps its
+ * entry, the first tick after a hide stamps its exit. Unchanged otherwise (the
+ * same object comes back — no per-frame allocation).
+ * @param {Lifecycle} life
+ * @param {number} t loop clock (seconds)
+ * @returns {Lifecycle}
+ */
+export function lifecycleStamp(life, t) {
+  if (!Number.isFinite(t)) return life
+  if (life.present && life.bornAt === null) return { ...life, bornAt: t }
+  if (!life.present && life.exitPending) return { ...life, exitAt: t, exitPending: false }
+  return life
+}
+
+/**
+ * The phase at clock `t`. Reduced motion has no in-between phases: an entry
+ * is already idle, an exit is already hidden (the information — present or
+ * gone — is kept; only the movement between them is dropped, #30). A
+ * malformed clock lands on the settled phase of the same side (#11).
+ * @param {number} t loop clock (seconds)
+ * @param {Lifecycle} life
+ * @param {boolean} [reduced]
+ * @returns {'entering'|'idle'|'exiting'|'hidden'}
+ */
+export function lifecyclePhase(t, life, reduced = false) {
+  if (life.present) {
+    if (reduced) return 'idle'
+    if (life.bornAt === null) return 'entering'
+    if (badClock(t) || badClock(life.bornAt)) return 'idle'
+    const e = t - life.bornAt
+    return e >= 0 && e < ENTRY_POP ? 'entering' : 'idle'
+  }
+  if (life.exitPending) return reduced ? 'hidden' : 'exiting'
+  if (reduced || life.exitAt === null || badClock(t) || badClock(life.exitAt)) return 'hidden'
+  // A clock that steps BACK past the stamp is the start of the exit, not its
+  // end: treating e < 0 as "over" skipped the exit outright under Playwright's
+  // fake clock (found recording the M3 clip — performance.now went 8150 → 8148
+  // between two frames). The envelope clamps the progress to 0 to match.
+  return t - life.exitAt < EXIT_FADE ? 'exiting' : 'hidden'
+}
+
+/**
+ * The scale/opacity envelope every part of an annotation rides: the entry pop
+ * while entering, identity while idle, the light going out while exiting. The
+ * exit runs on the motion identity's `exit` curve (inCubic): the light lingers
+ * for a beat, then goes — and contracts slightly as it does, so it reads as a
+ * light being put out rather than a sticker being peeled.
+ *
+ * @param {number} t loop clock (seconds)
+ * @param {Lifecycle} life
+ * @param {boolean} [reduced]
+ * @returns {{scale: number, opacity: number}}
+ */
+export function lifecycleEnvelope(t, life, reduced = false) {
+  const phase = lifecyclePhase(t, life, reduced)
+  if (phase === 'entering') return life.bornAt === null ? { scale: 0.001, opacity: 0 } : entryFrame(t, life.bornAt, reduced)
+  if (phase === 'idle') return { scale: 1, opacity: 1 }
+  if (phase === 'hidden') return { scale: EXIT_SHRINK, opacity: 0 }
+  const p = life.exitAt === null ? 0 : clamp01((t - life.exitAt) / EXIT_FADE)
+  const k = easeInCubic(p)
+  return { scale: 1 - (1 - EXIT_SHRINK) * k, opacity: 1 - k }
+}
+
+// ── Selection — the light rises and lands (ADR-166 M3b) ─────────────────────
+//
+// The white BoxHelper was a second way of saying "selected" that belonged to
+// no visual language here (a wireframe box around light on the floor). M3b
+// retires it: selection is the role's light rising to `EMPHASIS_GAIN.selected`
+// and the pool growing to `SELECT_GROW`, on the motion identity's `land` curve
+// (outExpo). The level is a segment — where the light was when the request
+// changed, plus the target — so a reversal mid-flight continues from the light
+// on screen instead of jumping (#24: the segment start is a snapshot taken at
+// the change, never re-read from the frame it produced).
+
+/** Selection landing length (seconds) — the response band (≤ 300 ms). */
+export const SELECT_LAND = 0.24
+/** How much the floor light grows when selected (× its resting size). */
+export const SELECT_GROW = 1.15
+
+/**
+ * @typedef {{from: number, at: number|null, target: boolean}} SelectionSegment
+ */
+
+/** Not selected, settled. */
+export const UNSELECTED = Object.freeze({ from: 0, at: null, target: false })
+
+/**
+ * Selection level ∈ [0,1] at clock `t` (0 = resting, 1 = fully selected).
+ * Reduced motion and malformed clocks land on the target at once.
+ * @param {number} t loop clock (seconds)
+ * @param {SelectionSegment} seg
+ * @param {boolean} [reduced]
+ * @returns {number}
+ */
+export function selectionLevel(t, seg, reduced = false) {
+  if (!seg) return 0
+  const target = seg.target ? 1 : 0
+  if (reduced || seg.at === null || badClock(t) || badClock(seg.at)) return target
+  const e = t - seg.at
+  if (e >= SELECT_LAND) return target
+  if (e <= 0) return clamp01(seg.from)
+  return clamp01(seg.from) + (target - clamp01(seg.from)) * easeOutExpo(e / SELECT_LAND)
+}
+
+/**
+ * A selection request at clock `t`. The SAME request again returns the same
+ * segment (no restart — a re-selection must not replay the landing). A changed
+ * request starts a new segment from the level on screen right now.
+ * @param {number} t loop clock (seconds)
+ * @param {SelectionSegment} seg current segment
+ * @param {boolean} selected requested state
+ * @param {boolean} [reduced]
+ * @returns {SelectionSegment}
+ */
+export function retargetSelection(t, seg, selected, reduced = false) {
+  const target = !!selected
+  const cur = seg ?? UNSELECTED
+  if (cur.target === target) return cur
+  return { from: selectionLevel(t, cur, reduced), at: badClock(t) ? null : t, target }
+}
+
+/**
+ * The role's light gain at a selection level: the resting gain blended toward
+ * the selected gain. A violation is absolute at every level (Tier F outranks
+ * every role and every selection — `emphasisFor`).
+ * @param {string|null} placeType
+ * @param {number} level ∈ [0,1] from `selectionLevel`
+ * @param {{urgent?: boolean}} [mods]
+ * @returns {number}
+ */
+export function selectedEmphasis(placeType, level, { urgent = false } = {}) {
+  const lo = emphasisFor(placeType, { urgent })
+  const hi = emphasisFor(placeType, { selected: true, urgent })
+  return lo + (hi - lo) * clamp01(level)
 }
 
 // ── Hub — sonar ping (Tier A: "broadcasting junction") ───────────────────────

@@ -78,8 +78,13 @@ artifacts
         goal AnnotationsSelectAndLeaveAsLight
         uuid 8749034f-49a6-4c0c-8bef-e1990e179c1b
         summary "注釈の選択は光が強まって着地することで見え、消えるときは退場の曲線で消える (P9 — 出現と対)。退場中の注釈は論理的にはもう居ないので hit-test に拾われない。置く前のプレビューも置いた後と同じ光で描かれる (M3b)"
-        labels support-exploring
+        labels support-verified
 
-            assumption ExitingIsTwoColumnsNotOne
+            solution ExitingIsTwoColumnsAndAskedInBothLayers
             uuid dba088ef-f322-455d-96a7-5774cfc1fd3d
-            summary "証拠予定: M3b の PR でライフサイクルに exiting を足し、論理の可視性 (visible getter — hit-test が読む) と描画の可視性 (tick だけが書く) を 2 欄に分ける。純粋層テストで退場の着地と reduced での即時を、view の単体で『退場中に visible が false』を問う。満期=GREP:src/view/MapVisualMath.js::exitFrame で決着する"
+            summary "M3b 実施 (2026-10-12、当事者合意): ライフサイクル entering / idle / exiting / hidden を純粋 reducer (MapVisualMath の lifecycleShow / lifecycleHide / lifecycleStamp / lifecyclePhase / lifecycleEnvelope) にし、論理 present (visible getter — hit-test が読む) と描画 drawn (_setDrawn が唯一の書き手) を 2 欄に割った。src/view/MapVisualMath.test.js が全相の traits 宣言 (未宣言で throw)・present == pickable・宣言された遷移だけが起きること・exiting → idle の禁止・退場が inCubic で単調に消え縮むこと・reduced では中間相が無いこと・選択の着地 (outExpo) / 同じ要求 2 回で再開しない / 途中反転で跳ねないことを問い、src/view/AnnotationLifecycle.test.js が 3 つの view で visible が present を返し setVisible が mesh を書かず BoxHelper が 0 個であることを構文で数える (pnpm test 1780+ pass)。起票時の予定『view の単体テスト』は DOM を要するので構文の census に置き換えた。実機: conveyor テンプレで選択・削除 (退場中の静止画を時計 1/12 で確認)・undo — docs/motion/media/m3b-*.png。検証していないこと: Route / Boundary の実機撮影 (M3a と同じくテンプレに実例が無い)、動画 (仮想時間の録画では偽の時計の t が ±0.2 s 跳ね、220 ms の退場が飛ばされた — 嘘の画面になるので commit しない)"
+            artifacts
+            - "src/view/MapVisualMath.test.js"
+            - "src/view/AnnotationLifecycle.test.js"
+            - "src/view/EntityLabel.test.js"
+            - "docs/motion/media/m3b-exit-slowed-clock.png"

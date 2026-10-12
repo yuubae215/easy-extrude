@@ -247,9 +247,19 @@ export class AppController {
     // and every landing resets both slots so stale load/boot anchors cannot
     // leak past the first committed operation.
     this._lifecycleAnchors = { added: null, removed: null }
+    // Map annotations whose light is still going out after a soft delete
+    // (ADR-166 M3b). A detached entity has left `_scene.objects`, which is the
+    // only thing the render loop walks — without this set the exit would never
+    // be ticked and the annotation would freeze on screen. Filled by the event
+    // that fires the obligation (`objectRemoved` — 原則 #32), drained by the
+    // loop once the view reports it is no longer drawn, and by `objectAdded`
+    // (an undo mid-exit hands the entity back to the main walk).
+    /** @type {Set<AnnotatedPoint|AnnotatedLine|AnnotatedRegion>} */
+    this._exitingAnnotations = new Set()
 
     // ── Domain event subscriptions — keep View in sync with domain state ──
     this._service.on('objectAdded',   obj       => {
+      this._exitingAnnotations.delete(obj)
       const lifecycleBounds = boundsOf(obj.corners)
       if (lifecycleBounds) {
         // Carry the actual 8 OBB corners for a Solid so the materialize effect
@@ -339,6 +349,10 @@ export class AppController {
     this._service.on('objectRemoved', (id, obj) => {
       const lifecycleBounds = boundsOf(obj?.corners)
       if (lifecycleBounds) this._lifecycleAnchors.removed = lifecycleBounds
+      if ((obj instanceof AnnotatedPoint || obj instanceof AnnotatedLine || obj instanceof AnnotatedRegion)
+          && obj.meshView?.drawn) {
+        this._exitingAnnotations.add(obj)
+      }
       outlinerView?.removeObject(id)
       this._updateLinkNetwork()
       // A removed base frame drops a robot from the roster (ADR-090) — including
@@ -4701,6 +4715,16 @@ export class AppController {
           obj.meshView.updateScale(this._camera, this._sceneView.renderer, maxWS)
           obj.meshView.updateLabelPosition(this._sceneView.activeCamera)
         }
+      }
+      // Map annotations still going out after a soft delete (ADR-166 M3b). A
+      // view that is present again (re-shown elsewhere) or no longer drawn
+      // (exit finished, or disposed) leaves the set — the exit is never ticked
+      // twice and never outlives the light.
+      for (const obj of this._exitingAnnotations) {
+        const v = obj.meshView
+        if (!v || v.visible || !v.drawn) { this._exitingAnnotations.delete(obj); continue }
+        v.tick(t, elevation)
+        if (!v.drawn) this._exitingAnnotations.delete(obj)
       }
       // Ambient stage: dust drift + entry fade (ADR-067 — persistent view,
       // owned by SceneView; reduced motion freezes it to a static cue).

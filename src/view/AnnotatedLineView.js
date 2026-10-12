@@ -12,7 +12,11 @@
  *            The curtain is edge-on from straight above (the dashed line
  *            carries that view) and stands up into view as the camera drops —
  *            `MapVisualMath.floorLightGains`.
- *  - A BoxHelper for selection highlight
+ *
+ * Selection (ADR-166 M3b) is the light rising on the `land` curve — the line
+ * thickens, the beads / the wall brighten and grow — plus the label's
+ * highlight; the white BoxHelper is retired. A soft delete keeps the meshes
+ * drawn while the light goes out (`exit` curve); `visible` is the LOGICAL fact.
  *
  * Animations — curves live in `MapVisualMath` (pure, tested); ADR-093 replaces
  * the ADR-031 §8 parameters:
@@ -45,8 +49,10 @@ import { prefersReducedMotion, onReducedMotionChange } from '../theme/motion.js'
 import { EntityLabel } from './EntityLabel.js'
 import { lightCurtain } from './FloorLightGeometry.js'
 import {
-  phaseFor, entryFrame, routeFlowFrame, boundaryLightFrame,
-  emphasisFor, floorLightGains, lightTint,
+  phaseFor, routeFlowFrame, boundaryLightFrame, floorLightGains, lightTint,
+  INITIAL_LIFECYCLE, lifecycleShow, lifecycleHide, lifecycleStamp, lifecyclePhase,
+  lifecycleEnvelope, phaseTraits,
+  UNSELECTED, retargetSelection, selectionLevel, selectedEmphasis, SELECT_GROW,
   ROUTE_HEADS, ROUTE_TRAIL, ROUTE_INSTANCES,
 } from './MapVisualMath.js'
 
@@ -85,7 +91,11 @@ export class AnnotatedLineView {
     this._phase     = phaseFor(entityId)   // anti-lockstep seed (PHILOSOPHY #31)
     this._reduced   = prefersReducedMotion()
     this._unsubReduced = onReducedMotionChange(r => { this._reduced = r })
-    this._bornAt    = null                 // loop-clock seconds at the first tick
+    /** @type {import('./MapVisualMath.js').Lifecycle} logical presence + entry/exit clocks */
+    this._life      = INITIAL_LIFECYCLE
+    this._drawn     = true                 // derived from the phase — `_setDrawn` is its one writer
+    /** @type {import('./MapVisualMath.js').SelectionSegment} */
+    this._sel       = UNSELECTED
     this._isPending = false                // draw state, read by `_baseLineOpacity()`
 
     // ── Line2 geometry ─────────────────────────────────────────────────────
@@ -161,13 +171,6 @@ export class AnnotatedLineView {
     /** @type {THREE.Vector3[]} last known points (for setPlaceType particle rebuild) */
     this._points    = []
 
-    // ── BoxHelper ──────────────────────────────────────────────────────────
-    this._helperObj = new THREE.Object3D()
-    scene.add(this._helperObj)
-    this.boxHelper = new THREE.BoxHelper(this._helperObj, 0xffffff)
-    this.boxHelper.visible = false
-    scene.add(this.boxHelper)
-
     // ── Name label (the one label mechanism — EntityLabel, ADR-155 D1) ─────
     /** @type {EntityLabel|null} */
     this._label = (renderer && container) ? new EntityLabel(renderer, container) : null
@@ -212,11 +215,11 @@ export class AnnotatedLineView {
       const dot = new THREE.Mesh(this._dotGeo, this._dotMat)
       dot.position.copy(p)
       dot.renderOrder = 2
+      dot.visible = this._drawn
       this._scene.add(dot)
       this._dots.push(dot)
     }
 
-    this._updateBoxHelper(points)
     this._rebuildParticles(points)
     this._labelPos = this._computeLabelPos(points)
   }
@@ -247,6 +250,7 @@ export class AnnotatedLineView {
       this._beads = new THREE.InstancedMesh(this._partGeo, this._partMat, ROUTE_INSTANCES)
       this._beads.renderOrder = 4
       this._beads.frustumCulled = false   // beads roam the whole polyline
+      this._beads.visible = this._drawn
       this._scene.add(this._beads)
       this._writeBeads(0)                 // valid first frame before the loop ticks
     } else if (this._placeType === 'Boundary') {
@@ -270,7 +274,7 @@ export class AnnotatedLineView {
     this._wallArcs = c.arcs
     this._wall = new THREE.Mesh(geo, this._wallMat)
     this._wall.renderOrder = 3
-    this._wall.visible = this._line.visible
+    this._wall.visible = this._drawn
     this._scene.add(this._wall)
     this._writeWall(0)                     // valid first frame
   }
@@ -378,24 +382,6 @@ export class AnnotatedLineView {
     return points[points.length - 1].clone()
   }
 
-  /**
-   * Refreshes the BoxHelper bounding volume from current vertex positions.
-   * @param {THREE.Vector3[]} points
-   */
-  _updateBoxHelper(points) {
-    if (!points || points.length === 0) return
-    const bMin = new THREE.Vector3( Infinity,  Infinity,  Infinity)
-    const bMax = new THREE.Vector3(-Infinity, -Infinity, -Infinity)
-    for (const p of points) { bMin.min(p); bMax.max(p) }
-    const center = bMin.clone().add(bMax).multiplyScalar(0.5)
-    // Small Z padding so the BoxHelper is visible on the ground plane
-    bMin.z -= 0.05; bMax.z += 0.05
-    const size = bMax.clone().sub(bMin)
-    this._helperObj.position.copy(center)
-    this._helperObj.scale.set(size.x || 0.1, size.y || 0.1, size.z || 0.1)
-    if (this.boxHelper.visible) this.boxHelper.update()
-  }
-
   /** Returns hex color for the given place type (grey if null). */
   _colorForType(placeType) {
     const entry = getPlaceTypeEntry(placeType)
@@ -418,7 +404,6 @@ export class AnnotatedLineView {
     this._dotMat.color.setHex(fact)
     this._wallMat.color.setHex(lightTint(fact))
     this._partMat.color.setHex(lightTint(this._tactViolated ? VIOLATION_COLOR : fact))
-    this.boxHelper.material?.color.setHex(fact)
   }
 
   // ── Per-frame animation ────────────────────────────────────────────────────
@@ -443,18 +428,30 @@ export class AnnotatedLineView {
    *   (`MapVisualMath.viewElevation`); omitted → straight down.
    */
   tick(t, elevation = 1) {
-    if (!this._line.visible) return
-    if (this._bornAt === null) this._bornAt = t
+    // Lifecycle first (ADR-166 M3b): stamp, derive the phase, decide drawn.
+    this._life = lifecycleStamp(this._life, t)
+    this._setDrawn(phaseTraits(lifecyclePhase(t, this._life, this._reduced)).drawn)
+    if (!this._drawn) return
     if (this._segments.length === 0 || this._totalLen === 0) return
+    this._sel = retargetSelection(t, this._sel, this._isSelected, this._reduced)
+    const sel  = selectionLevel(t, this._sel, this._reduced)
+    const gain = selectedEmphasis(this._placeType, sel, { urgent: this._tactViolated })
+    const grow = 1 + (SELECT_GROW - 1) * sel
 
-    // Entry: the line's own opacity rises on an eased curve and its beads/wall
-    // grow in with it, so a newly drawn annotation ARRIVES instead of blinking.
-    const entry = entryFrame(t, this._bornAt, this._reduced)
+    // Entry/exit: the line's own opacity rises (or the light goes out) on an
+    // eased curve and its beads/wall ride the same envelope, so an annotation
+    // ARRIVES and LEAVES instead of blinking (P4/P9).
+    const entry = lifecycleEnvelope(t, this._life, this._reduced)
     this._lineMat.opacity = this._baseLineOpacity() * entry.opacity
+    // Selection thickens the line on the land curve (was an instant 3 → 4 px).
+    this._lineMat.linewidth = UNSELECTED_WIDTH + (SELECTED_WIDTH - UNSELECTED_WIDTH) * sel
     for (const d of this._dots) d.scale.setScalar(entry.scale)
 
     if (this._placeType === 'Route') {
-      this._writeBeads(t, entry.scale)
+      // One shared material: the beads' brightness is the role's gain, capped
+      // (additive opacity saturates at 1); the rest of the selection reads as growth.
+      this._partMat.opacity = Math.min(0.9 * gain, 1) * entry.opacity
+      this._writeBeads(t, entry.scale * grow)
     } else if (this._placeType === 'Boundary') {
       // Marching-ants: animate dashOffset for a slow "boundary tape" effect.
       // Reduced motion parks the dashes; the dash PATTERN (the information) stays.
@@ -462,7 +459,6 @@ export class AnnotatedLineView {
         const cycle = BOUNDARY_DASH_SIZE + BOUNDARY_GAP_SIZE
         this._lineMat.dashOffset = -((t * BOUNDARY_DASH_SPD) % cycle)
       }
-      const gain = emphasisFor(this._placeType, { selected: this._isSelected })
       this._wallMat.opacity = WALL_PEAK * floorLightGains(elevation).curtain * gain * entry.opacity
       this._writeWall(t)
     }
@@ -487,7 +483,7 @@ export class AnnotatedLineView {
   updateLabelPosition(camera) {
     if (!this._label || !this._labelPos) return
     const cam = camera ?? this._camera
-    if (!cam || !this._line.visible) return
+    if (!cam || !this._life.present) return
     this._label.updatePosition(cam, this._labelPos)
   }
 
@@ -508,10 +504,11 @@ export class AnnotatedLineView {
     this._setPoints(corners)
   }
 
-  /** Refreshes BoxHelper after confirm/cancel grab. */
-  updateBoxHelper() {
-    if (this.boxHelper.visible) this.boxHelper.update()
-  }
+  /**
+   * Kept for the polymorphic contract (PHILOSOPHY #17 — the commands call it
+   * on every entity view). There is no box to refresh: selection is the light.
+   */
+  updateBoxHelper() {}
 
   // ── Place type (color) update ──────────────────────────────────────────────
 
@@ -555,27 +552,52 @@ export class AnnotatedLineView {
 
   // ── Visual state ───────────────────────────────────────────────────────────
 
+  /**
+   * The logical show/hide (ADR-166 M3b): a hide arms the exit (the next ticks
+   * put the light out), a re-show replays the entry. Owned by the lifecycle
+   * reducers (#4), not by the undo call sites.
+   * @param {boolean} visible
+   */
   setVisible(visible) {
-    this._line.visible = visible
-    for (const d of this._dots) d.visible = visible
-    if (this._beads) this._beads.visible = visible
-    if (this._wall) this._wall.visible = visible
+    this._life = visible ? lifecycleShow(this._life) : lifecycleHide(this._life)
     this._label?.setWanted(visible)
-    if (!visible) this.boxHelper.visible = false
-    // Re-arm the entry pop: a re-shown annotation (undo of a soft delete) is a
-    // boundary moment too, owned here rather than at the undo call site (#4).
-    if (visible) this._bornAt = null
+    if (visible) this._setDrawn(true)
+    else if (!this._life.exitPending) this._setDrawn(false)   // never seen — nothing to put out
   }
 
+  /**
+   * Sole writer of mesh visibility — the DRAWN state (PHILOSOPHY #4). The
+   * rebuild paths (`_setPoints` / `_rebuildParticles`) read `_drawn` for the
+   * meshes they create, so a rebuild during an exit cannot resurrect them.
+   * @param {boolean} drawn
+   */
+  _setDrawn(drawn) {
+    if (this._drawn === drawn) return
+    this._drawn = drawn
+    this._line.visible = drawn
+    for (const d of this._dots) d.visible = drawn
+    if (this._beads) this._beads.visible = drawn
+    if (this._wall) this._wall.visible = drawn
+  }
+
+  /**
+   * Selection = the light rising on the land curve (the next tick starts the
+   * segment; width, gain and growth are written there) + the label's highlight.
+   * @param {boolean} sel
+   */
   setObjectSelected(sel) {
     this._isSelected = sel
-    this.boxHelper.visible = sel
-    this._lineMat.linewidth = sel ? SELECTED_WIDTH : UNSELECTED_WIDTH
-    if (sel) this.boxHelper.update()
+    this._label?.setHighlighted(sel)
   }
 
-  /** True when the line is shown in the scene (false when soft-deleted). */
-  get visible() { return this._line.visible }
+  /**
+   * The LOGICAL fact: the line exists for the user (pickable, counted). False
+   * from the moment of a soft delete, while the light is still going out.
+   */
+  get visible() { return this._life.present }
+
+  /** True while any part is on screen (present, or still exiting). */
+  get drawn() { return this._drawn }
 
   // ── Edit-mode no-ops ───────────────────────────────────────────────────────
 
@@ -601,9 +623,9 @@ export class AnnotatedLineView {
    */
   dispose(scene) {
     this._unsubReduced()
+    this._life  = { present: false, bornAt: null, exitAt: null, exitPending: false }
+    this._drawn = false
     scene.remove(this._line)
-    scene.remove(this._helperObj)
-    scene.remove(this.boxHelper)
     for (const d of this._dots) scene.remove(d)
     this._disposeBeads()
     this._disposeWall()

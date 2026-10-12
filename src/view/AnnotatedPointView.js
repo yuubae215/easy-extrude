@@ -6,7 +6,15 @@
  *  - An additive ground halo — a spot of light on the floor, warmed toward the
  *    one stage light (ADR-166 M3) and sharing the stage's sprite recipe
  *  - A name label (EntityLabel — the one label mechanism, ADR-155 D1)
- *  - A BoxHelper for selection highlight
+ *
+ * Selection is the floor light rising and growing on the `land` curve, plus
+ * the label's highlight — ADR-166 M3b retired the white BoxHelper (a wireframe
+ * box around light on the floor said "selected" in no language of its own).
+ *
+ * Lifecycle (ADR-166 M3b): `visible` is the LOGICAL fact (present — what
+ * hit-testing reads); the meshes stay drawn through a short exit after a soft
+ * delete, the light going out on the `exit` curve. The record and its reducers
+ * live in `MapVisualMath` (STATE_TRANSITIONS §Map annotation motion).
  *
  * Animations — all curves live in `MapVisualMath` (pure, tested); this view only
  * applies them (ADR-093 replaces the ADR-031 §8 parameters):
@@ -19,7 +27,8 @@
  *            asserted by stillness. ADR-166 M3 retired ADR-093 D3's graduation
  *            ticks and 45° datum square (drafting-table detail, illegible in
  *            perspective); the hold-and-kick rhythm stays.
- *  - Both:   an easeOutBack entry pop on the first frames of existence.
+ *  - Both:   an easeOutBack entry pop on the first frames of existence, and
+ *            the light going out (inCubic) on the way out.
  *
  * Reduced motion: every part stays visible at a held frame (a parked ring, a
  * still crosshair, a steady halo) — information preserved, movement dropped
@@ -40,8 +49,10 @@ import { prefersReducedMotion, onReducedMotionChange } from '../theme/motion.js'
 import { radialSprite } from './DecalTextures.js'
 import { EntityLabel } from './EntityLabel.js'
 import {
-  phaseFor, entryFrame, hubPingFrame, hubCoreFrame, anchorFrame, HUB_PING_RINGS,
-  emphasisFor, lightTint,
+  phaseFor, hubPingFrame, hubCoreFrame, anchorFrame, HUB_PING_RINGS, lightTint,
+  INITIAL_LIFECYCLE, lifecycleShow, lifecycleHide, lifecycleStamp, lifecyclePhase,
+  lifecycleEnvelope, phaseTraits,
+  UNSELECTED, retargetSelection, selectionLevel, selectedEmphasis, SELECT_GROW,
 } from './MapVisualMath.js'
 
 const DEFAULT_COLOR     = 0x888888
@@ -75,7 +86,11 @@ export class AnnotatedPointView {
     this._phase   = phaseFor(entityId)
     this._reduced = prefersReducedMotion()
     this._unsubReduced = onReducedMotionChange(r => { this._reduced = r })
-    this._bornAt  = null          // loop-clock seconds at the first tick
+    /** @type {import('./MapVisualMath.js').Lifecycle} logical presence + entry/exit clocks */
+    this._life    = INITIAL_LIFECYCLE
+    this._drawn   = true          // derived from the phase each tick — `_setDrawn` is its one writer
+    /** @type {import('./MapVisualMath.js').SelectionSegment} */
+    this._sel     = UNSELECTED
 
     // ── Circle marker mesh ─────────────────────────────────────────────────
     this._geo = new THREE.CylinderGeometry(MARKER_RADIUS, MARKER_RADIUS, MARKER_HEIGHT, 16)
@@ -204,11 +219,6 @@ export class AnnotatedPointView {
     this._crosshairs.visible = false   // shown only for Anchor
     scene.add(this._crosshairs)
 
-    // ── BoxHelper ──────────────────────────────────────────────────────────
-    this.boxHelper = new THREE.BoxHelper(this._mesh, 0xffffff)
-    this.boxHelper.visible = false
-    scene.add(this.boxHelper)
-
     // ── Name label (the one label mechanism — EntityLabel, ADR-155 D1) ─────
     this._label = new EntityLabel(renderer, container)
     this._label.setText(name)
@@ -264,7 +274,6 @@ export class AnnotatedPointView {
     this._halo.position.copy(point)
     for (const r of this._sonarRings) r.mesh.position.copy(point)
     this._applyLift()
-    if (this.boxHelper.visible) this.boxHelper.update()
   }
 
   /** Returns hex color for the given place type. */
@@ -292,7 +301,6 @@ export class AnnotatedPointView {
     this._haloMat.color.setHex(lightTint(fact))
     for (const r of this._sonarRings) r.mat.color.setHex(fact)
     this._crosshairMat.color.setHex(this._toleranceViolated ? VIOLATION_COLOR : 0xffffff)
-    this.boxHelper.material?.color.setHex(fact)
   }
 
   /**
@@ -302,7 +310,7 @@ export class AnnotatedPointView {
    */
   _applyPlaceTypeVisuals(placeType) {
     const isAnchor = placeType === 'Anchor'
-    this._crosshairs.visible = isAnchor && this._mesh.visible
+    this._crosshairs.visible = isAnchor && this._drawn
     if (isAnchor) {
       this._ringMat.opacity = 0.40   // subtle constant outline for Anchor
       for (const r of this._sonarRings) r.mat.opacity = 0
@@ -345,7 +353,6 @@ export class AnnotatedPointView {
     for (const r of this._sonarRings) r.mesh.scale.setScalar(s)
     if (this._placeType !== 'Anchor') this._crosshairs.scale.setScalar(s)
     this._applyLift()
-    if (this.boxHelper.visible) this.boxHelper.update()
   }
 
   // ── Per-frame animation ────────────────────────────────────────────────────
@@ -355,21 +362,27 @@ export class AnnotatedPointView {
    * @param {number} t  elapsed seconds (performance.now() / 1000)
    */
   tick(t) {
-    if (!this._mesh.visible) return
-    if (this._bornAt === null) this._bornAt = t
     const reduced = this._reduced
+    // Lifecycle first (ADR-166 M3b): stamp the entry/exit clock, derive the
+    // phase, and let it decide whether anything is drawn at all.
+    this._life = lifecycleStamp(this._life, t)
+    this._setDrawn(phaseTraits(lifecyclePhase(t, this._life, reduced)).drawn)
+    if (!this._drawn) return
+    this._sel = retargetSelection(t, this._sel, this._isSelected, reduced)
     const phase   = this._phase
     const vs      = this._viewScale
-    // Entry pop: the boundary moment "this annotation now exists" (P4). Rides
-    // every scale below, so the whole marker arrives as one object.
-    const entry = entryFrame(t, this._bornAt, reduced)
+    // The lifecycle envelope — the entry pop (the boundary moment "this now
+    // exists", P4) or the light going out (P9). Rides every scale below, so the
+    // whole marker arrives and leaves as one object.
+    const entry = lifecycleEnvelope(t, this._life, reduced)
     const base  = vs * entry.scale
-    // The role's loudness (ADR-166 M3): selection raises the floor light; a
-    // violation is absolute (Tier F outranks every role).
-    const gain = emphasisFor(this._placeType, {
-      selected: this._isSelected,
-      urgent:   this._tactViolated || this._toleranceViolated,
+    // The role's loudness (ADR-166 M3): selection raises and grows the floor
+    // light on the land curve; a violation is absolute (Tier F outranks every role).
+    const sel  = selectionLevel(t, this._sel, reduced)
+    const gain = selectedEmphasis(this._placeType, sel, {
+      urgent: this._tactViolated || this._toleranceViolated,
     })
+    const grow = 1 + (SELECT_GROW - 1) * sel
 
     this._mesh.scale.setScalar(base)
     this._ring.scale.setScalar(base)
@@ -381,7 +394,7 @@ export class AnnotatedPointView {
       // Core breathe + halo swell: the marker itself is never perfectly still.
       const core = hubCoreFrame(t, phase, { urgent, reduced })
       this._mesh.scale.setScalar(base * core.scale)
-      this._halo.scale.setScalar(base * core.haloScale)
+      this._halo.scale.setScalar(base * core.haloScale * grow)
       this._haloMat.opacity = core.haloOpacity * gain * entry.opacity
       // The ring train: eased distance, quadratic alpha tail, per-ring offset.
       for (let i = 0; i < this._sonarRings.length; i++) {
@@ -395,14 +408,14 @@ export class AnnotatedPointView {
       this._crosshairs.scale.setScalar(f.scale * base)
       this._crosshairMat.opacity = CROSSHAIR_OPACITY * entry.opacity
       // A tight spot that flares with the kick — a datum re-seated under its light.
-      this._halo.scale.setScalar(base * ANCHOR_SPOT * f.scale)
+      this._halo.scale.setScalar(base * ANCHOR_SPOT * f.scale * grow)
       this._haloMat.opacity = f.haloOpacity * gain * entry.opacity
       for (const r of this._sonarRings) r.mat.opacity = 0
     } else {
       // Unclassified: no type claim to assert, so no Tier A motion — but not a
       // dead frame either (品質ゲート5). A faint steady halo keeps it present,
       // and the entry pop still plays.
-      this._halo.scale.setScalar(base)
+      this._halo.scale.setScalar(base * grow)
       this._haloMat.opacity = 0.12 * gain * entry.opacity
       for (const r of this._sonarRings) r.mat.opacity = 0
     }
@@ -418,12 +431,19 @@ export class AnnotatedPointView {
    */
   updateLabelPosition(camera) {
     const cam = camera ?? this._camera
-    if (!cam || !this._mesh.visible) return
+    if (!cam || !this._life.present) return
     this._label.updatePosition(cam, this._point)
   }
 
-  /** True when the marker is shown in the scene (false when soft-deleted). */
-  get visible() { return this._mesh.visible }
+  /**
+   * The LOGICAL fact: the annotation exists for the user (pickable, counted).
+   * False from the moment of a soft delete, while the light is still going out
+   * — hit-testing reads this, so a leaving annotation is never picked (M3b).
+   */
+  get visible() { return this._life.present }
+
+  /** True while any part is on screen (present, or still exiting). */
+  get drawn() { return this._drawn }
 
   // ── Move support ───────────────────────────────────────────────────────────
 
@@ -437,10 +457,11 @@ export class AnnotatedPointView {
     this._setPoint(corners[0])
   }
 
-  /** Refreshes BoxHelper after confirm/cancel grab. */
-  updateBoxHelper() {
-    if (this.boxHelper.visible) this.boxHelper.update()
-  }
+  /**
+   * Kept for the polymorphic contract (PHILOSOPHY #17 — the commands call it
+   * on every entity view). There is no box to refresh: selection is the light.
+   */
+  updateBoxHelper() {}
 
   // ── Place type (color) update ──────────────────────────────────────────────
 
@@ -470,24 +491,44 @@ export class AnnotatedPointView {
 
   // ── Visual state ───────────────────────────────────────────────────────────
 
+  /**
+   * The logical show/hide (ADR-166 M3b). A hide arms the exit — the meshes
+   * stay drawn until the light has gone out (the next ticks own that); a
+   * re-show (undo of a soft delete) replays the entry pop. Both are owned by
+   * the lifecycle reducers (#4), not by the undo call sites.
+   * @param {boolean} visible
+   */
   setVisible(visible) {
-    this._mesh.visible = visible
-    this._ring.visible = visible
-    this._halo.visible = visible
-    for (const r of this._sonarRings) r.mesh.visible = visible
-    this._crosshairs.visible = visible && this._placeType === 'Anchor'
+    this._life = visible ? lifecycleShow(this._life) : lifecycleHide(this._life)
     this._label.setWanted(visible)
-    if (!visible) this.boxHelper.visible = false
-    // A re-shown annotation (undo of a soft delete) replays its entry pop: the
-    // reappearance is a boundary moment too, and re-arming here keeps the pop
-    // owned by one place (#4) instead of duplicated at the undo call site.
-    if (visible) this._bornAt = null
+    if (visible) this._setDrawn(true)
+    else if (!this._life.exitPending) this._setDrawn(false)   // never seen — nothing to put out
   }
 
+  /**
+   * Sole writer of mesh visibility (PHILOSOPHY #4) — the DRAWN state, derived
+   * from the lifecycle phase. Never call with the logical fact directly.
+   * @param {boolean} drawn
+   */
+  _setDrawn(drawn) {
+    if (this._drawn === drawn) return
+    this._drawn = drawn
+    this._mesh.visible = drawn
+    this._ring.visible = drawn
+    this._halo.visible = drawn
+    for (const r of this._sonarRings) r.mesh.visible = drawn
+    this._crosshairs.visible = drawn && this._placeType === 'Anchor'
+    if (this._bridgeLine) this._bridgeLine.visible = drawn
+  }
+
+  /**
+   * Selection = the floor light rising and growing on the `land` curve (the
+   * next tick starts the segment) + the label's highlight. Sole writer of both.
+   * @param {boolean} sel
+   */
   setObjectSelected(sel) {
     this._isSelected = sel
-    this.boxHelper.visible = sel
-    if (sel) this.boxHelper.update()
+    this._label.setHighlighted(sel)
   }
 
   /**
@@ -580,12 +621,15 @@ export class AnnotatedPointView {
    */
   dispose(scene) {
     this._unsubReduced()
+    // A disposed view is gone for good: no exit can play on released GPU
+    // resources, so the record lands on hidden and the drawn flag drops.
+    this._life  = { present: false, bornAt: null, exitAt: null, exitPending: false }
+    this._drawn = false
     scene.remove(this._mesh)
     scene.remove(this._ring)
     scene.remove(this._halo)
     for (const r of this._sonarRings) scene.remove(r.mesh)
     scene.remove(this._crosshairs)
-    scene.remove(this.boxHelper)
     if (this._bridgeLine) {
       scene.remove(this._bridgeLine)
       this._bridgeLine.geometry.dispose()
