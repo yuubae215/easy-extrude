@@ -22,9 +22,9 @@
 
 | ファイル | 演出 | Tier | G1 | G2 | G3 | G4 | G5 | 判定 | 今ならこう作る | 段 |
 |---|---|---|---|---|---|---|---|---|---|---|
-| `src/theme/motion.js`<br>`src/theme/tokens.js`<br>`src/view/MotionMath.js`<br>`src/view/MotionGovernor.js` | モーション基盤 (reduced-motion の境界・曲線・時間の語彙・一時演出の所有者) | — | — | — | — | — | — | 対象外 (基盤) | 演出ではなく基盤。ただし `tokens.js` の `DURATION` / 曲線の語彙は M2 のモーション・アイデンティティ (イージング族・時間尺度) で選び直す | M2 |
+| `src/theme/motion.js`<br>`src/theme/tokens.js`<br>`src/view/MotionMath.js`<br>`src/view/MotionGovernor.js` | モーション基盤 (reduced-motion の境界・曲線・時間の語彙・一時演出の所有者) | — | — | — | — | — | — | 対象外 (基盤) | 演出ではなく基盤。M2 (2026-10-12) で `EASING` を役割の名前 (land / fade / exit / loop / spring) の明示曲線に選び直した (CSS 既定キーワードは語彙から外し、基盤の外の残りは `MotionIdentity.test.js` の ratchet)。`DURATION` は帯の中にあったので値は据え置き | M2 ✓ |
 | `src/controller/AppController.js`<br>`src/controller/ContextController.js` | 時計の所有と配線 | — | — | — | — | — | — | 対象外 (配線) | 演出そのものではない (rAF の時計と、演出の起動の配線) | — |
-| `src/view/SceneStage.js`<br>`src/view/StageMath.js` | 背景 (グラデーション・フォグ・グリッド・ダスト・床のグロー) | D | ✓ | ✓ | — | △ | ✓ | **C** | 組み合わせが Void Grid 型のまま — スキルが v1.1 で「毎回フォグで単調」として退けた既定。実写のロボットと同じ空間に置ける光 (スタジオ型の床の光だまり) を M2 で選び、注釈の床の光 (M3) と光源を共有する | M2 |
+| `src/view/SceneStage.js`<br>`src/view/StageMath.js` | 背景 (グラデーション・フォグ・グリッド・ダスト・床のグロー) | D | ✓ | — | ✓ | ✓ | ✓ | **A** (M2 で作り直し 2026-10-12) | ~~C: Void Grid 型のまま~~ → Studio 型の作業セル。放射グラデの地、舞台の光の光だまり (呼吸 = G5)、起動フライトの着地で光が入る (G3)、光源は `STAGE_LIGHT` の 1 つ (G4 — M3 の注釈と共有)。フォグが隠していたグリッドの端はグリッド自身のフェードへ | M2 ✓ |
 | `src/view/BootReveal.js` | 起動時のカメラの飛び込み | D | ✓ | — | △ | △ | — | B | 曲線は良い。背景を替えたら、着地の瞬間に光が入る (境目の演出) を背景と一緒に作る | M2 |
 | `src/view/CameraFlight.js` | 選んだ物へのカメラ飛行 (割り込み可) | D | ✓ | — | △ | — | — | A | 割り込み可能な飛行として今の水準。着地のセトルは足してもよいが、操作の邪魔になるので足さない判断も正当 | — |
 | `src/view/LandingEffects.js`<br>`src/view/CommandFeedbackMath.js` | 実体の出現 (輪郭が組み上がる) と消滅 (ボクセルが散る) | F | ✓ | ✓ | ✓ | △ | — | B | 出現は今の水準。消滅も対で持つ (P9)。背景を替えたら、組み上がりの閃光の色と光を背景の光源へ揃える | M4 |
@@ -48,9 +48,9 @@
 
 | 判定 | 行 | ファイル |
 |---|---|---|
-| **C 作り直す** | 4 (背景 / リンクの波紋 / マップ注釈 / 起動ホーム) | 2 + 1 + 4 + 3 = 10 |
+| **C 作り直す** | 3 (リンクの波紋 / マップ注釈 / 起動ホーム) — 背景は M2 で A へ | 1 + 4 + 3 = 8 |
 | **B 部分的に古い** | 11 | 27 |
-| **A 今の水準** | 4 | 10 |
+| **A 今の水準** | 5 | 12 |
 | 対象外 (基盤・配線) | 2 | 6 |
 | 計 | 21 | **53** |
 

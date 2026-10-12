@@ -20,8 +20,8 @@
  *
  * SATURATION IS SPENT ON STATE (ADR-100 G1). `entityDefault` is neutral so that
  * "carries colour" and "carries meaning" are the same set on screen. The ground
- * (backdrop, grid) stays as ADR-067 tuned it; it is the FIGURE that moved to
- * neutral, not the ground.
+ * (backdrop, grid) is the work cell of the motion identity (ADR-166 M2 — the
+ * CLAUDE.md "モーション・アイデンティティ" section); it reports no state either.
  *
  * ONE MEANING, ONE COLOUR (ADR-100 G2/Decision 3). `accent` is the only colour
  * for "this is what you are operating on" — selection, active tool, focus. It
@@ -51,14 +51,16 @@ export const COLOR = Object.freeze({
   // and the contrast check added by this ADR is the thing that asked.
   textSecondary: '#9a9a9a',
 
-  // ── Scene ground (ADR-067 boot atmosphere — values unchanged, only named) ──
-  // Tokenised so the contrast check can ask "is the figure separable from the
-  // ground?" without re-typing the gradient stops as a second source (§1.1).
-  backdropTop:   '#262a4a',
-  backdropMid:   '#1a1a2e',
-  backdropDeep:  '#0e0e18',
-  gridMajor:     '#444466',
-  gridMinor:     '#222244',
+  // ── Scene ground (ADR-166 M2: the Studio work cell — graphite navy) ───────
+  // A radial backdrop, not a vertical sky: the light falls on the cell, so the
+  // ground is brightest where the work is and falls off to the edge. Replaced
+  // ADR-067's navy sky (top/mid/deep — words for a vertical gradient that no
+  // longer exists, so the names left with the values). Tokenised so the
+  // contrast check can ask "is the figure separable from the ground?" (§1.1).
+  backdropCenter: '#232833',
+  backdropEdge:   '#0b0d12',
+  gridMajor:     '#4a505e',
+  gridMinor:     '#2a2e38',
 
   // ── The figure: an entity with nothing to report is neutral (G1) ──────────
   entityDefault: '#b9bcc0',
@@ -86,11 +88,14 @@ export const COLOR = Object.freeze({
   axisY:         '#52e052',
   axisZ:         '#5252e0',
 
-  // ── Atmosphere, not state (ADR-067): the stage glow and rim light ─────────
-  // This is the half of the retired `accentActive` that was never saying
-  // "active" — it was saying "the stage is lit". Splitting it out is what let
-  // the other half collapse into `accent`.
-  stageGlow:     '#4fc3f7',
+  // ── Atmosphere, not state: the ONE stage light (ADR-166 M2) ───────────────
+  // The third colour of the motion identity: a warm near-white work light.
+  // Read ONLY through `StageMath.STAGE_LIGHT` (the light pool, the rim light,
+  // and — from M3 — the floor-light annotations), so there is one light source
+  // to match, never two (§1.1; `StageMath.test.js` counts the readers).
+  // Was `stageGlow` #4fc3f7 (ADR-067 — cyan, the Void Grid default the
+  // animation-fx skill retired); renamed because it is a light, not a glow.
+  stageLight:    '#ffe6c7',
 })
 
 /**
@@ -107,7 +112,7 @@ export const COLOR = Object.freeze({
  *   - `accentSoft` — the SAME meaning as `accent` at lower strength. It shares
  *     `accent`'s hue on purpose; that is the rule working, not breaking.
  *   - `axis*` — the source is an external convention (ROS REP-103), not us.
- *   - `stageGlow` — atmosphere, not state (see above).
+ *   - `stageLight` — atmosphere, not state (see above).
  */
 export const STATE_TOKENS = Object.freeze([
   'accent', 'measure',
@@ -157,7 +162,7 @@ export const CONTRAST_PAIRINGS = Object.freeze({
 
 /** Scene grounds the entity body must stay separable from (ADR-100 G1). */
 export const SCENE_GROUNDS = Object.freeze([
-  'backdropTop', 'backdropMid', 'backdropDeep', 'gridMajor', 'gridMinor',
+  'backdropCenter', 'backdropEdge', 'gridMajor', 'gridMinor',
 ])
 
 /** Motion durations in milliseconds (DOM) — 3D effects use seconds; convert at the view. */
@@ -184,12 +189,26 @@ export const DURATION = Object.freeze({
   menuStagger:    24, // ADR-080 Phase 1 per-item entry delay step (anti-lockstep)
 })
 
-/** CSS easing vocabulary for DOM animations. */
+/**
+ * CSS easing vocabulary for DOM animations — named by ROLE, never by the CSS
+ * keyword (ADR-166 M2, the "イージング族" axis of the motion identity in
+ * CLAUDE.md). The keywords `ease` / `ease-out` / `ease-in-out` are the
+ * browser's defaults, i.e. a curve nobody chose; every value here is an
+ * explicit cubic-bezier with a MotionMath twin, and `MotionIdentity.test.js`
+ * fails if a keyword comes back.
+ *
+ *   land   — position / size / transform arriving: outExpo (decisive, settles)
+ *   fade   — opacity / colour changing: outQuad (quiet — never louder than the move)
+ *   exit   — leaving: inCubic (accelerates away; an out-curve exit lingers)
+ *   loop   — idle breathing / ping-pong: inOutSine
+ *   spring — the ONE overshoot (Tier A press-release, popover entry):
+ *            outBack. A second spring on screen reads as a toy.
+ */
 export const EASING = Object.freeze({
-  out:   'ease-out',
-  inOut: 'ease-in-out',
-  // Overshoot-and-settle curve — the CSS form of MotionMath.easeOutBack,
-  // used for the Tier A press-release spring (ADR-065 Phase 3).
+  land:   'cubic-bezier(0.16, 1, 0.3, 1)',
+  fade:   'cubic-bezier(0.5, 1, 0.89, 1)',
+  exit:   'cubic-bezier(0.32, 0, 0.67, 0)',
+  loop:   'cubic-bezier(0.37, 0, 0.63, 1)',
   spring: 'cubic-bezier(0.34, 1.56, 0.64, 1)',
 })
 

@@ -9,7 +9,7 @@ import {
 test('tierAMotion: press scales down fast, release springs back, hover lifts', () => {
   const pressed = tierAMotion({ pressed: true })
   assert.equal(pressed.transform, 'scale(0.94)')
-  assert.match(pressed.transition, /ease-out/)
+  assert.match(pressed.transition, /cubic-bezier\(0\.16, 1, 0\.3, 1\)/, 'press lands on outExpo (EASING.land — ADR-166 M2)')
 
   const released = tierAMotion({ hovered: true })
   assert.equal(released.transform, 'translateY(-1px)')

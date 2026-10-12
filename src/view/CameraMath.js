@@ -36,11 +36,12 @@ export const EMPTY_SCENE_RADIUS = MM_PER_METER
  *
  * Expressed as a radius rather than as extra camera headroom because the framed
  * radius is what the rest of the stage derives from: `SceneView._updateGridScale`
- * sizes the ground grid from it and `SceneStage.setScale` thins the depth fog
- * from that same power-of-10 step. Pulling the camera back without telling those
- * two leaves the opening shot correctly framed and half-swallowed by fog tuned
+ * sizes the ground grid from it and `SceneStage.setScale` sizes the floor light
+ * pool from that same power-of-10 step. Pulling the camera back without telling
+ * those two leaves the opening shot correctly framed over a grid and pool sized
  * for a closer eye — one number for "how big is the view" keeps camera, grid and
- * fog on the same page (§1.1).
+ * stage on the same page (§1.1). (Until ADR-166 M2 the stage step also thinned a
+ * depth fog; the fog left with the Void Grid atmosphere.)
  *
  * 300mm reproduces the opening shot this app shipped with: the old hand-authored
  * pose sat 7.81 units from the 1m starter cube's 0.866 half-diagonal, putting the

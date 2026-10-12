@@ -201,6 +201,21 @@ repo に焼かない (ADR-076)。
 **ROS world frame** (+X forward, +Y left, +Z up). Right-handed. Matches ROS REP-103.
 Three.js `camera.up = (0,0,1)`. XY plane (Z=0) is the ground plane.
 
+## モーション・アイデンティティ
+
+演出の方向性の正本 (ADR-166 M2、2026-10-12 当事者合意)。新しい演出・作り直す演出はすべてこの 5 軸に
+従う — 演出ごとに方向を選び直さない (ADR-166 §力学: 古く見えた原因はここが一度も決まらなかったこと)。
+品質ゲート 5 条件と原則 #30 の Tier は `.claude/skills/animation-fx` のまま。採点表は `docs/motion/inventory.md`。
+機械が問う所 = `src/MotionIdentity.test.js` (節と 5 軸の存在・曲線の語彙・CSS 既定曲線の ratchet)。
+
+| 軸 | 決定 | 正本 (値) |
+|---|---|---|
+| **アトモスフィア** | **Studio 型の作業セル** — フォグ・ダスト無し。背景は作業のある所が明るい放射グラデ、セルの床に**舞台の光**の光だまり (ゆっくり呼吸)、同じ光を背後からリムに。グリッドは事実なので残す。光源は**ちょうど 1 つ** (M3 の床の光の注釈も同じ光を読む) | `StageMath.STAGE_LIGHT` / `BACKDROP` |
+| **イージング族** | 役割で引く: 位置・大きさ = `land` (outExpo)、不透明度・色 = `fade` (outQuad)、退場 = `exit` (inCubic)、待機の往復 = `loop` (inOutSine)、オーバーシュートは `spring` (outBack) の **1 か所だけ** (押下の戻り・ポップオーバーの出現)。CSS 既定の `ease` 系は使わない | `tokens.js` `EASING` (DOM) / `MotionMath` (3D) |
+| **時間スケール** | **きびきび** — 操作への応答は 300ms 以内、マクロ演出は起動の 1 回 (1.8s) だけ、待機ループは 2〜6s 周期。頻度が高い操作ほど短く | `tokens.js` `DURATION` |
+| **振付パターン** | 位相は**同一性から**導く (ADR-093 D1 — N 個が lockstep しない)。スタッガーは**触った点からの距離順** (放射状 — 原因の場所を順序で言う) | `MapVisualMath.phaseFor` ほか |
+| **3色システム** | 地 = グラファイト寄りの紺 (`backdropCenter`→`backdropEdge`, `grid*`)、強調 = `accent` #ff7d2e の 1 色だけ (ADR-100 — 新しい強調色を足さない)、光 = 舞台の光 (暖色寄りの白 `stageLight`) | `tokens.js` `COLOR` |
+
 **コード変更前に `docs/CODE_CONTRACTS.md` の該当セクションを読むこと**（自動ロードしない —
 index 表で該当領域を特定し、detail ファイル `docs/code_contracts/*.md` を必要分だけ読む）。
 

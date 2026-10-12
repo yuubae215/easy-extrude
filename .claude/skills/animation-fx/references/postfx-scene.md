@@ -41,6 +41,11 @@ scene.add(gridHelper(20, 40, '#1e293b', '#0f172a'));   // y = -1.5
 PlaneGeometry (CanvasTexture)。照明はソフトな三点+天面の面光源風
 (DirectionalLight を弱く複数)。清潔で高級。
 
+**フォグを外すときは、フォグが黙って担っていた機能を数える。** Void Grid から乗り換えると、
+グリッド床の遠い端が地平線まで鋭く走る (フォグが隠していた)。端は床側で畳む —
+グリッドの線マテリアルに `alpha *= 1 - smoothstep(inner, outer, length(localXZ))` を足すと、
+ローカル座標なのでスケール変更に自動で追従し、正方形の角が消えて光だまりのような円盤になる。
+
 ### C. Horizon — 地平線と鏡面 (synthwave/夕景/エモーショナル)
 
 背景は上下2色グラデの空 (背景板シェーダー: `mix(topColor, horizonColor, pow(1.0-vUv.y, 2.0))`)。

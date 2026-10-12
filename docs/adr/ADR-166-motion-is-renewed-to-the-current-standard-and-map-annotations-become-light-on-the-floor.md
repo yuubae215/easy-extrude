@@ -68,7 +68,7 @@ Tier (Fact / Affordance / Delight) は従来どおり守る。棚卸しで出た
 | 段 | 中身 | 完了条件 |
 |---|---|---|
 | **M1 棚卸し** (**実施 2026-10-11**) | モーション基盤 (`src/theme/motion.js`・`MotionGovernor`・`MotionMath`) か reduced-motion の境界を参照する演出を、品質ゲート・Tier・「今ならこう作る」との差で採点した表を作る。各演出の撮影 (screencast DSL — ADR-160) は、作り直す PR の直前に刷新前の動画として撮る | 表のファイル = 母集団 (構文から導出)。**結果は `docs/motion/inventory.md`** — 53 ファイル・21 行、C 4 行 (背景 / リンクの波紋 / マップ注釈 / 起動ホーム)、census は `src/MotionInventoryCoverage.test.js` |
-| **M2 方向性を決める** | モーション・アイデンティティ 5 軸を当事者と決め、CLAUDE.md に「モーション・アイデンティティ」節として固定する。背景 (SceneStage) のアトモスフィアを Void Grid 型から選び直す | CLAUDE.md に節があり、5 軸が埋まっている |
+| **M2 方向性を決める** (**実施 2026-10-12**) | モーション・アイデンティティ 5 軸を当事者と決め、CLAUDE.md に「モーション・アイデンティティ」節として固定する。背景 (SceneStage) のアトモスフィアを Void Grid 型から選び直す | CLAUDE.md に節があり、5 軸が埋まっている。**結果**: 節は CLAUDE.md、軸の母集団は animation-fx Step 1.5 から導出して `src/MotionIdentity.test.js` が問う |
 | **M3 マップ注釈 = 床の光** | 案 B。注釈の名札を EntityLabel に揃える (名札の仕組みを 1 つに — ADR-155 D1 の続き)。投影・角度に依らず読める (見る角度を `MapVisualMath` の入力にする)。Zone の強さを役割で決める。消滅演出 (P9) と選択時の見せ方を入れる | 純粋層テスト (位相の同一性・linear 禁止・reduced motion のフレーム一致を継承 + 角度の入力) と、刷新前後の動画 |
 | **M4 残りの演出** | M1 の採点が低い順に作り直す | M1 の表の全行が「今の水準」になるか、残す理由が書かれている |
 
@@ -79,6 +79,26 @@ M3 は M2 の後に置く — 床の光は M2 で決める背景の光源を共�
 読む React 部品が 20 本あった。採点では B の 11 行のうち 4 行が「背景を替えたら光と色を揃える」で終わり、
 M2 (背景の選び直し) がいちばん効く 1 手であることが表からも支持された。M4 の最初の候補は、線形の補間が
 残っている唯一の行 (リンクの波紋) と、第一印象の起動ホーム。
+
+**M2 で決めたこと (2026-10-12、当事者合意 — 「提案通りで良い」):**
+
+| 軸 | 決定 |
+|---|---|
+| アトモスフィア | **Studio 型の作業セル**。フォグ・ダストを退役。背景は作業のある所が明るい放射グラデ、床に舞台の光の光だまり (6 秒周期の浅い呼吸)、同じ光をリムに。光は起動フライトの着地で入る (`lightOn` は `DURATION.bootReveal` から導出)。グリッドは事実なので残し、光の外で床に溶ける (`GRID_FADE` — フォグが隠していた端を自分で畳む) |
+| イージング族 | 役割で引く `EASING.land / fade / exit / loop / spring`。CSS 既定の `ease` 系は語彙から外し、基盤の外に残る 16 箇所は ratchet で数える |
+| 時間スケール | きびきび (応答 ≤ 300ms、マクロは起動の 1 回、待機 2〜6s) — 既存の `DURATION` は帯の中にあったので値は変えない |
+| 振付パターン | 位相は同一性から (ADR-093 D1)、スタッガーは触った点からの距離順 |
+| 3色システム | 地 = グラファイト紺 (`backdropCenter` / `backdropEdge` / `grid*`)、強調 = `accent` の 1 色、光 = `stageLight` |
+
+**語彙 (原則 #33):** 「床の光は背景と同じ光源」を言える語が無かった (光は `stageGlow`・リム・床のグローに散っていた)。
+**舞台の光** (`StageMath.STAGE_LIGHT`) を 1 語として起こし、`COLOR.stageLight` を読むのは StageMath だけであることを
+`StageMath.test.js` が数える — M3 の床の光はここを読む。`stageGlow` は光であってグローではないので改名した。
+`backdropTop / Mid / Deep` は縦グラデの語だったので、放射グラデの `backdropCenter / Edge` へ割り直した。
+
+**M2 で分かったこと (原則 #19):** フォグは雰囲気であると同時に、グリッドの遠い端を隠す**機能**を持っていた。
+フォグだけを消すとグリッドの端が地平線まで鋭く走る (刷新後の初回撮影で発見)。機能の側を名指しして
+グリッド自身のフェードに移した — 装置を退役させるときは、その装置が黙って担っていた機能を数える。
+**残し:** 実体ごとの接地影 (Studio 型の定石) は実体の view に触るので M4 へ。
 
 ## Consequences — Evidence と tradeoff (§1.2 Evidence)
 
@@ -104,7 +124,7 @@ M2 (背景の選び直し) がいちばん効く 1 手であることが表か�
 | 触るもの | 中身 |
 |---|---|
 | `src/view/Annotated*View.js` / `MapVisualMath.js` / `DecalTextures.js` | M3 — 床の光、角度の入力、名札の統一 |
-| `src/view/SceneStage.js` / `StageMath.js` | M2 — 背景のアトモスフィア |
+| `src/view/SceneStage.js` / `StageMath.js` / `SceneView.js` (グリッドのフェード) / `src/theme/tokens.js` (地の色・舞台の光・`EASING`) | M2 — 背景のアトモスフィアと曲線の語彙 (**実施**) |
 | `CLAUDE.md` | M2 — モーション・アイデンティティ節 |
 | `.claude/skills/animation-fx/` | M1〜M4 で得た再利用できる知見の書き戻し |
 | `docs/STATE_LEDGER.md` | 「Map 注釈ビュー (motion)」行 — 基数 `0..N` の位相の扱いは継承、角度の入力を追記 (M3 の PR) |

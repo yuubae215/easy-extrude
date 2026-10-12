@@ -342,11 +342,10 @@ personas, node types, IFC classes) are declared out of scope in
 | Border | `border` | `#4a4a4a` |
 | Text (primary) | `textPrimary` | `#e0e0e0` |
 | Text (secondary — lifted from `#888888` for WCAG AA, ADR-100) | `textSecondary` | `#9a9a9a` |
-| Scene backdrop, top stop (ADR-067) | `backdropTop` | `#262a4a` |
-| Scene backdrop, mid stop / flat pre-stage | `backdropMid` | `#1a1a2e` |
-| Scene backdrop, deep stop | `backdropDeep` | `#0e0e18` |
-| Ground grid, major lines | `gridMajor` | `#444466` |
-| Ground grid, minor lines | `gridMinor` | `#222244` |
+| Scene backdrop, radial centre — the lit work cell (ADR-166 M2) / flat pre-stage | `backdropCenter` | `#232833` |
+| Scene backdrop, radial edge (ADR-166 M2) | `backdropEdge` | `#0b0d12` |
+| Ground grid, major lines (graphite — ADR-166 M2) | `gridMajor` | `#4a505e` |
+| Ground grid, minor lines (graphite — ADR-166 M2) | `gridMinor` | `#2a2e38` |
 | **Entity default body — neutral, no state to report (ADR-100 G1)** | `entityDefault` | `#b9bcc0` |
 | **Selection / active / focus — the only colour for it (ADR-100 G2)** | `accent` | `#ff7d2e` |
 | Selected-row ground (same meaning, lower strength) | `accentSoft` | `#4a2c18` |
@@ -361,7 +360,7 @@ personas, node types, IFC classes) are declared out of scope in
 | CoordinateFrame axis X (ROS REP-103 — never re-tuned here) | `axisX` | `#e05252` |
 | CoordinateFrame axis Y (ROS REP-103) | `axisY` | `#52e052` |
 | CoordinateFrame axis Z (ROS REP-103) | `axisZ` | `#5252e0` |
-| Stage glow / rim light — atmosphere, not state (ADR-067) | `stageGlow` | `#4fc3f7` |
+| The one stage light — light pool / rim light, atmosphere, not state (ADR-166 M2) | `stageLight` | `#ffe6c7` |
 | 3D face highlight | — | Yellow (Three.js material) |
 
 ### Why `snapTone` and `measure` moved hue

@@ -131,7 +131,7 @@ export function ModeDropdown({ compact = false }) {
                 display:        'flex',
                 justifyContent: 'space-between',
                 alignItems:     'center',
-                transition:     `background ${DURATION.hover}ms ${EASING.out}`,
+                transition:     `background ${DURATION.hover}ms ${EASING.fade}`,
                 ...itemEnterMotion(i, reduced),
               }}
               onMouseEnter={e => { e.currentTarget.style.background = '#4a4a4a' }}

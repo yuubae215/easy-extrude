@@ -3,7 +3,7 @@
 - Status: Accepted
 - Date: 2026-07-13
 - Deciders: yuubae215, Claude
-- Supersedes / Superseded by: なし(ADR-066 Tier D の最初の適用実績; ADR-065 の統治を無改変で継承)
+- Supersedes / Superseded by: ステージのアトモスフィア (縦グラデの背景・FogExp2・ダスト 2 層・シアンの `stageGlow`) は **ADR-166 M2 (2026-10-12) で置換** — Studio 型の作業セルへ。起動リビール (`BootReveal` / `flightFrame`)・所有の規律 (SceneView 所有・`scene.background` の単独書き手)・reduced motion の静的代替・#27 のスケール連動は継承。(ADR-066 Tier D の最初の適用実績; ADR-065 の統治を無改変で継承)
 
 ## Context — Goal と力学(§1.2 Goal)
 

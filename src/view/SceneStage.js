@@ -2,35 +2,36 @@
 import * as THREE from 'three'
 import { COLOR, hexNumber } from '../theme/tokens.js'
 import { prefersReducedMotion, onReducedMotionChange } from '../theme/motion.js'
-import { STAGE, dustField, dustDrift, entryEnvelope, fogDensityFor } from './StageMath.js'
+import { STAGE_LIGHT, BACKDROP, stageLightFrame } from './StageMath.js'
 import { radialSprite } from './DecalTextures.js'
 
 /**
- * SceneStage — the viewport's ambient stage dressing (ADR-067; Tier D
- * "delight" under PHILOSOPHY #30 as revised by ADR-066): a vertical-gradient
- * backdrop, exponential depth fog, an additive floor glow under the grid, two
- * drifting dust layers, and a cool rim light. Non-propositional by design —
- * it gives the surface life; it never sits where fact/affordance feedback is
- * read and never implies a judgment.
+ * SceneStage — the viewport's ambient stage dressing: the Studio work cell of
+ * the motion identity (ADR-166 M2; CLAUDE.md "モーション・アイデンティティ").
+ * A radial backdrop lit where the work is, a soft pool of the ONE stage light
+ * on the cell floor under the grid, and the same light as a rim from behind.
+ * Tier D "delight" under PHILOSOPHY #30: non-propositional by design — it
+ * gives the surface a room to sit in; it never sits where fact/affordance
+ * feedback is read and never implies a judgment.
+ *
+ * WHAT LEFT (ADR-166 M2): ADR-067's Void Grid — vertical navy sky, FogExp2,
+ * two drifting dust layers. Fog left with it, so `scene.fog` is null and
+ * distant geometry no longer sinks into the backdrop at any grid scale.
  *
  * OWNERSHIP: a PERSISTENT animated view owned by `SceneView` (constructed and
  * disposed there), NOT a MotionGovernor transient — same rule as
  * GraspGhostView/UncertaintyGhostView (the governor owns only effects whose
- * lifetime nobody else tracks). `scene.background` and `scene.fog` are owned
- * here exclusively (PHILOSOPHY #4) — SceneView's constructor delegates them.
+ * lifetime nobody else tracks). `scene.background` is owned here exclusively
+ * (PHILOSOPHY #4) — SceneView's constructor delegates it.
  *
- * REDUCED MOTION: degrades to the STATIC stage — gradient, fog, glow, and a
- * frozen dust field stay visible (a static styled cue, never nothing — #30) —
- * via `onReducedMotionChange` from the single boundary (`src/theme/motion.js`),
- * so a mid-session OS toggle freezes/resumes the drift without a reload.
+ * MOTION: the light comes on as the boot flight lands, then the pool breathes
+ * slowly (StageMath `stageLightFrame`). REDUCED MOTION: the light is simply on
+ * — via `onReducedMotionChange` from the single boundary (`src/theme/motion.js`),
+ * so a mid-session OS toggle settles it without a reload.
  *
  * SCALE: `setScale(scale)` rides `SceneView._updateGridScale`'s power-of-10
- * grid scale so dust/glow/fog stay proportionate in mm-scale scenes
- * (PHILOSOPHY #27 — a world-unit-constant stage would vanish there).
- *
- * All motion arithmetic is the pure `StageMath` (deterministic — a reloaded
- * stage looks identical). Per frame the CPU cost is ~130 sin() calls and two
- * Points draw calls; the gradient/glow textures are generated once.
+ * grid scale so the pool stays proportionate in mm-scale scenes
+ * (PHILOSOPHY #27 — a world-unit-constant pool would vanish there).
  */
 export class SceneStage {
   /**
@@ -43,78 +44,45 @@ export class SceneStage {
     this._reduced = prefersReducedMotion()
     this._unsubReduced = onReducedMotionChange(r => { this._reduced = r })
 
-    // ① Backdrop: vertical gradient (deep navy → the classic 0x1a1a2e → near
-    //    black) replaces the flat colour — depth without touching entities.
-    this._bgTexture = this._makeGradientTexture(
-      [[0, COLOR.backdropTop], [0.45, COLOR.backdropMid], [1, COLOR.backdropDeep]],
-    )
+    // ① Backdrop: radial, brightest at the cell (generated once).
+    this._bgTexture = this._makeRadialTexture(BACKDROP)
     scene.background = this._bgTexture
+    scene.fog = null
 
-    // ② Depth fog: matches the backdrop's midtone so distant geometry and
-    //    grid edges sink into the backdrop instead of clipping.
-    this._fog = new THREE.FogExp2(0x15152a, fogDensityFor(1))
-    scene.fog = this._fog
-
-    // Scaled stage furniture (glow + dust) lives under one group.
+    // Scaled stage furniture (the pool) lives under one group.
     this._group = new THREE.Group()
     this._group.renderOrder = -1
 
-    // ③ Floor glow: an additive radial pool under the grid, tinted with the
-    //    chrome's active accent so the stage and the UI share one glow hue.
-    // The radial sprite recipe is shared with the Map annotation halos so the
-    // stage glow and the annotation glows cannot drift apart (ADR-093 —
-    // `DecalTextures` owns and caches it; never disposed from here).
-    this._glowTexture = radialSprite(COLOR.stageGlow)
-    const glowMat = new THREE.MeshBasicMaterial({
-      map: this._glowTexture,
+    // ② The light pool on the cell floor: an additive radial disc under the
+    //    grid, in the one stage light's colour. The radial sprite recipe is
+    //    shared with the Map annotation halos (`DecalTextures` owns and
+    //    caches it; never disposed from here).
+    this._poolTexture = radialSprite(STAGE_LIGHT.color)
+    const poolMat = new THREE.MeshBasicMaterial({
+      map: this._poolTexture,
       transparent: true,
-      opacity: 0.20,
+      opacity: 0,                 // the light comes on in tick()
       blending: THREE.AdditiveBlending,
       depthWrite: false,
-      fog: false,
     })
-    this._glow = new THREE.Mesh(new THREE.CircleGeometry(10.5, 48), glowMat)
-    this._glow.position.z = -0.02 // flat, below the Z=0 decal plane — never straddles it
-    this._glow.renderOrder = -2
-    this._group.add(this._glow)
+    this._pool = new THREE.Mesh(new THREE.CircleGeometry(STAGE_LIGHT.pool.radius, 48), poolMat)
+    this._pool.position.z = -0.02 // flat, below the Z=0 decal plane — never straddles it
+    this._pool.renderOrder = -2
+    this._group.add(this._pool)
 
-    // ④ Dust: two deterministic drifting layers (near/far parallax).
-    this._spriteTexture = radialSprite('#ffffff')
-    this._layers = STAGE.dust.map((layer) => {
-      const field = dustField(layer)
-      const positions = new Float32Array(field.length * 3)
-      const geo = new THREE.BufferGeometry()
-      geo.setAttribute('position', new THREE.BufferAttribute(positions, 3))
-      const mat = new THREE.PointsMaterial({
-        map: this._spriteTexture,
-        color: hexNumber(COLOR.stageGlow),
-        size: layer.size,
-        sizeAttenuation: true,
-        transparent: true,
-        opacity: 0,               // entry envelope fades it in
-        blending: THREE.AdditiveBlending,
-        depthWrite: false,
-      })
-      const points = new THREE.Points(geo, mat)
-      points.frustumCulled = false // the drift stays inside the layer bounds; skip per-frame sphere upkeep
-      this._group.add(points)
-      return { def: layer, field, positions, geo, mat, points }
-    })
-
-    // ⑤ Rim light: a cool fill opposite the key light so MeshStandardMaterial
-    //    entities get a game-like edge separation from the dark backdrop.
-    this._rimLight = new THREE.DirectionalLight(hexNumber(COLOR.stageGlow), 0.45)
-    this._rimLight.position.set(-6, 5, 3)
+    // ③ Rim light: the same light from behind-left, so MeshStandardMaterial
+    //    bodies separate from the dark ground.
+    this._rimLight = new THREE.DirectionalLight(hexNumber(STAGE_LIGHT.color), 0)
+    this._rimLight.position.set(...STAGE_LIGHT.rimFrom)
     scene.add(this._rimLight)
 
     scene.add(this._group)
-    this._writeDust(0) // valid first frame even before the loop starts
+    this._apply(stageLightFrame(0, this._reduced)) // valid first frame before the loop starts
   }
 
   /**
    * Rescale the stage for the current ground-grid scale (power-of-10 from
-   * `SceneView._updateGridScale` — PHILOSOPHY #27). Fog thins inversely so
-   * the relative depth fade is scene-scale-invariant.
+   * `SceneView._updateGridScale` — PHILOSOPHY #27).
    * @param {number} scale ≥ 1
    */
   setScale(scale) {
@@ -122,61 +90,38 @@ export class SceneStage {
     if (s === this._scale) return
     this._scale = s
     this._group.scale.setScalar(s)
-    this._fog.density = fogDensityFor(s)
   }
 
-  // `setFogSuspended()` was retired by ADR-103. It existed because the old Map
-  // Mode ortho camera sat at a FIXED ~100 units above the map plane, where the
-  // perspective-tuned FogExp2 attenuated ~99.7% and rendered everything
-  // near-black. The projection axis derives the ortho camera from the
-  // perspective camera's own eye point, so the fogged depth is identical in both
-  // projections and there is nothing left to suspend. A retired method kept
-  // "just in case" is the same debt as a retired value left in an enum
-  // (STATE_LEDGER §既知の負債 3).
-
   /**
-   * Advance the ambient drift + entry fade. Called once per frame from
-   * `AppController._animate`. Under reduced motion the drift clock holds at 0
-   * (frozen field) and the entry fade lands instantly — the stage stays a
-   * static styled cue (#30), never disappears.
+   * Advance the light (coming on, then the idle breath). Called once per frame
+   * from `AppController._animate`.
    * @param {number} t loop-clock seconds (performance.now()/1000)
    */
   tick(t) {
     if (this._start === null) this._start = t
-    const since = t - this._start
-    for (const layer of this._layers) {
-      layer.mat.opacity = this._reduced
-        ? layer.def.opacity
-        : layer.def.opacity * entryEnvelope(since, layer.def.entryDelay)
-    }
-    if (!this._reduced) this._writeDust(since)
+    this._apply(stageLightFrame(t - this._start, this._reduced))
   }
 
-  /** Write one drift frame into both layers' position buffers. */
-  _writeDust(t) {
-    for (const layer of this._layers) {
-      const arr = layer.positions
-      for (let i = 0; i < layer.field.length; i++) {
-        const p = layer.field[i]
-        const d = dustDrift(t, p)
-        arr[i * 3]     = p.x + d.dx
-        arr[i * 3 + 1] = p.y + d.dy
-        arr[i * 3 + 2] = p.z + d.dz
-      }
-      layer.geo.attributes.position.needsUpdate = true
-    }
+  /** Write one light frame. */
+  _apply({ poolOpacity, rimIntensity }) {
+    this._pool.material.opacity = poolOpacity
+    this._rimLight.intensity = rimIntensity
   }
 
-  /** Vertical-gradient backdrop texture (generated once, 2×256). */
-  _makeGradientTexture(stops) {
+  /** Radial backdrop texture (generated once, 256×256; stretched to the viewport). */
+  _makeRadialTexture({ center, stops }) {
+    const size = 256
     const canvas = document.createElement('canvas')
-    canvas.width = 2
-    canvas.height = 256
+    canvas.width = size
+    canvas.height = size
     const ctx = canvas.getContext('2d')
-    const grad = ctx.createLinearGradient(0, 0, 0, canvas.height)
+    const cx = center[0] * size
+    const cy = center[1] * size
+    const r = Math.hypot(Math.max(cx, size - cx), Math.max(cy, size - cy))
+    const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, r)
     for (const [at, color] of stops) grad.addColorStop(at, color)
     ctx.fillStyle = grad
-    ctx.fillRect(0, 0, canvas.width, canvas.height)
+    ctx.fillRect(0, 0, size, size)
     const tex = new THREE.CanvasTexture(canvas)
     tex.colorSpace = THREE.SRGBColorSpace
     return tex
@@ -184,24 +129,18 @@ export class SceneStage {
 
   /**
    * Symmetric teardown (#9): every scene.add above has its remove+dispose here.
-   * EXCEPT the two radial sprites — they are module-owned cached constants from
+   * EXCEPT the radial sprite — a module-owned cached constant from
    * `DecalTextures.radialSprite()`, shared with the Map annotation halos, so
-   * disposing them here would blank another view's glow (see that module's
+   * disposing it here would blank another view's glow (see that module's
    * ownership note).
    */
   dispose() {
     this._unsubReduced()
     this._scene.remove(this._group)
     this._scene.remove(this._rimLight)
-    for (const layer of this._layers) {
-      layer.geo.dispose()
-      layer.mat.dispose()
-    }
-    this._glow.geometry.dispose()
-    this._glow.material.dispose()
-    this._scene.fog = null
-    this._scene.background = new THREE.Color(hexNumber(COLOR.backdropMid)) // the pre-stage flat backdrop
+    this._pool.geometry.dispose()
+    this._pool.material.dispose()
+    this._scene.background = new THREE.Color(hexNumber(COLOR.backdropCenter)) // the pre-stage flat backdrop
     this._bgTexture.dispose()
-    this._layers = []
   }
 }

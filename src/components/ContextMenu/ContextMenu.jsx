@@ -78,7 +78,7 @@ export function ContextMenu() {
             fontSize: '14px',
             cursor: 'pointer',
             borderTop: i > 0 ? '1px solid rgba(255,255,255,0.06)' : 'none',
-            transition: `background ${DURATION.hover}ms ${EASING.out}`,
+            transition: `background ${DURATION.hover}ms ${EASING.fade}`,
             ...itemEnterMotion(i, reduced),
           }}
           onPointerEnter={e => { e.currentTarget.style.background = '#3a3a3a' }}
