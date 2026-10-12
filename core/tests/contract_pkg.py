@@ -32,3 +32,8 @@ def load_response_schema() -> dict:
 def load_request_schema() -> dict:
     """GraspSearchRequest の中立 JSON Schema。"""
     return load_contract_json("schema/grasp-search-request.schema.json")
+
+
+def load_schema(endpoint: str) -> dict:
+    """任意のエンドポイントの中立 JSON Schema (`<endpoint>.schema.json`)。"""
+    return load_contract_json(f"schema/{endpoint}.schema.json")

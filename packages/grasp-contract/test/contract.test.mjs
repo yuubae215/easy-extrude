@@ -33,7 +33,7 @@
 //      fields and the recommendation proposal rejects smuggled verdicts.
 
 import { strict as assert } from "node:assert";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import Ajv2020 from "ajv/dist/2020.js";
@@ -45,12 +45,13 @@ const readJson = (...parts) =>
 
 const { contractVersion } = readJson("contract-version.json");
 
-const endpoints = [
-  "grasp-search-request",
-  "grasp-search-response",
-  "recommendation-request",
-  "recommendation-response",
-];
+// The population is the schema directory itself, not a hand-written list
+// (PHILOSOPHY #31): a new endpoint's schema is checked — and must ship an
+// example — the moment it exists. A list here once had to be remembered.
+const endpoints = readdirSync(join(root, "schema"))
+  .filter((f) => f.endsWith(".schema.json"))
+  .map((f) => f.replace(/\.schema\.json$/, ""))
+  .sort();
 
 const ajv = new Ajv2020({ strict: true, allErrors: true, discriminator: true });
 const validators = {};
@@ -552,6 +553,47 @@ test("recommendation request without requirement.text is rejected", () => {
     ...example,
     requirement: { signature: example.requirement.signature },
   });
+});
+
+// --- criteria-trial (ADR-165 D6, contractVersion 9) --------------------------
+// Only facts the solver decided ride the wire: no total score, no faces, no
+// "best" flag on a candidate, and the proposal assessment is a closed union.
+
+test("criteria-trial response: every proposal kind conforms and an unknown kind is rejected", () => {
+  const example = examples["criteria-trial-response"];
+  for (const proposal of [
+    { kind: "notAsked" },
+    { kind: "unsatisfiable" },
+    { kind: "noBaseline" },
+    { kind: "evaluated", baseline: "a", proposed: "b", offerings: [{ actor: "x", key: "takt", from: 4, to: 2.5 }] },
+  ]) accepts("criteria-trial-response", { ...example, proposal });
+  rejects("criteria-trial-response", { ...example, proposal: { kind: "maybe" } });
+  rejects("criteria-trial-response", { ...example, proposal: { kind: "evaluated", offerings: [] } });
+});
+
+test("criteria-trial response: closed layers reject a total score, a face and a best flag", () => {
+  const example = examples["criteria-trial-response"];
+  const [c] = example.candidates;
+  rejects("criteria-trial-response", { ...example, totalScore: 0.7 });
+  rejects("criteria-trial-response", { ...example, candidates: [{ ...c, face: "smile" }] });
+  rejects("criteria-trial-response", { ...example, candidates: [{ ...c, best: true }] });
+  rejects("criteria-trial-response", { ...example, candidates: [{ ...c, actuals: c.actuals.slice(1) }] });
+  rejects("criteria-trial-response", { ...example, interest: [{ ...example.interest[0], value: 1.5 }] });
+});
+
+test("criteria-trial: the element vocabulary is one enum shared by request and response", () => {
+  const req = readJson("schema", "criteria-trial-request.schema.json").$defs.elementKey.enum;
+  const res = readJson("schema", "criteria-trial-response.schema.json").$defs.elementKey.enum;
+  assert.deepEqual(res, req);
+  assert.equal(req.length, 7);
+});
+
+test("criteria-trial request: a line needs at least one end user with all seven answers", () => {
+  const example = examples["criteria-trial-request"];
+  rejects("criteria-trial-request", { ...example, line: { endUsers: [] } });
+  const [u] = example.line.endUsers;
+  rejects("criteria-trial-request", { ...example, line: { endUsers: [{ ...u, elements: u.elements.slice(1) }] } });
+  rejects("criteria-trial-request", { ...example, line: { endUsers: [{ ...u, mix: { D: 1, Q: 1, C: 1 } }] } });
 });
 
 console.log(

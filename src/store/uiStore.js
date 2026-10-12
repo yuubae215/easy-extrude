@@ -275,6 +275,14 @@ export const useUIStore = create((set, get) => ({
     // controller asks on the canonical doc (one predicate, two projections).
     // `null` = no document. Sole writer `_refreshDocReadModels`.
     criteriaDoc: null,
+    // ADR-165 D6 (PR4): core/'s answer about the line that is NOT stored in the
+    // document — the interest per end user × category (the candidates seen are
+    // stored on the trial; this slot never holds a second copy of them).
+    // `{status: 'loading'|'results'|'unavailable'|'error', respondent, interest?,
+    //   omitted, message?}` | null (never asked). Sole writer
+    // `ContextController._openTrial`; an answer to a line the document no longer
+    // states is dropped there (`isAnswerForLine`), never written here.
+    criteriaIndicator: null,
     // A gesture on someone else's claim, captured and waiting for its reason.
     // NOT a proposal yet — a proposal must carry a rationale (D3), and there is
     // no honest default for "why do you want this?", so the draft exists rather
@@ -613,6 +621,9 @@ export const useUIStore = create((set, get) => ({
     })),
     contextSetCriteriaDoc: (criteriaDoc) => set(state => ({
       context: { ...state.context, criteriaDoc },
+    })),
+    contextSetCriteriaIndicator: (criteriaIndicator) => set(state => ({
+      context: { ...state.context, criteriaIndicator },
     })),
     contextSetProposalDraft: (proposalDraft) => set(state => ({
       context: { ...state.context, proposalDraft },

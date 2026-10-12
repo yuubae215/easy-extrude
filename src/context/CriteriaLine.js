@@ -35,12 +35,20 @@
  * version is kept, and the rows already agreed stay frozen meanwhile: losing
  * the agreement does not hand the old lines back to direct edits.
  *
- * ## What is not here (後続 PR — DEF-062)
+ ## The margin (ADR-165 D5 / D6 — PR4)
  *
  * Whether a change is inside the margin, and what it gives up (差し出すもの),
- * are core/'s values (ADR-165 D6 — PR4). The gate that makes approvers read
- * them is in place (`lineApprovalGuards` G3) and fires once a proposal carries
- * `offerings`; until core/ returns them nothing sets the field (DEF-062).
+ * are core/'s values. A line proposal carries them as `margin` (the wire's
+ * assessment, stored when the proposal is raised — `CriteriaTrialWire.marginOf`),
+ * or `{kind: 'unassessed', reason}` when the solver could not be asked. Only
+ * `evaluated` with no offerings is inside the margin; every other kind makes
+ * each approver read it first (G3) — an unknown margin is never treated as
+ * inside (PHILOSOPHY #31). A proposal without `margin` predates PR4.
+ *
+ * The margin is assessed against the line **as it stood when the proposal was
+ * raised**. If another change to the line is approved while this one is open,
+ * the record still describes the older line; re-assessing it is 後続 PR
+ * (DEF-068) — until then the approver reads a margin that may be one version old.
  *
  * The history before agreement — changes made after seeing a trial — is
  * `CriteriaHearing.hearingHistory` (PR3). What this module records is the
@@ -62,6 +70,49 @@ export const LINE_STATUS = Object.freeze({
   AGREED:          'agreed',
   CHANGE_PROPOSED: 'changeProposed',
 })
+
+/**
+ * The kinds of `proposal.margin` — the wire's assessment (`criteria-trial`
+ * response `proposal`, minus `notAsked`) plus `unassessed`, the one state the
+ * wire cannot say (the solver was not reachable when the proposal was raised).
+ */
+export const MARGIN_KIND = Object.freeze({
+  EVALUATED:     'evaluated',
+  UNSATISFIABLE: 'unsatisfiable',
+  NO_BASELINE:   'noBaseline',
+  UNASSESSED:    'unassessed',
+})
+
+/**
+ * **Must approvers read this proposal's margin before approving?** True for
+ * every recorded margin except "evaluated, gives up nothing" (inside the
+ * margin). Throws on an undeclared kind. A proposal with no `margin` predates
+ * PR4 and is not gated.
+ */
+export function marginNeedsReading(proposal) {
+  const m = proposal?.margin
+  if (!m) return false
+  switch (m.kind) {
+    case MARGIN_KIND.EVALUATED:     return (m.offerings ?? []).length > 0
+    case MARGIN_KIND.UNSATISFIABLE:
+    case MARGIN_KIND.NO_BASELINE:
+    case MARGIN_KIND.UNASSESSED:    return true
+    default: throw new Error(`[CriteriaLine] no reading rule declared for margin kind "${m.kind}"`)
+  }
+}
+
+/** Why the margin must be read — one sentence per kind (the G3 reason and the row text share it). */
+export function marginSentence(proposal) {
+  const m = proposal?.margin
+  switch (m?.kind) {
+    case MARGIN_KIND.EVALUATED:
+      return m.offerings.length ? 'This change is outside the margin' : 'This change is inside the margin — it gives up nothing'
+    case MARGIN_KIND.UNSATISFIABLE: return 'No candidate meets the line this change would leave'
+    case MARGIN_KIND.NO_BASELINE:   return 'No candidate meets even the current line, so what this change gives up cannot be said'
+    case MARGIN_KIND.UNASSESSED:    return `The margin of this change was not assessed (${m.reason})`
+    default: return null
+  }
+}
 
 /** The direction a proposal moves a line field (derived — never stored). */
 export const LINE_CHANGE = Object.freeze({
@@ -320,9 +371,9 @@ export function agreeToLine(ctx, actorRef) {
  *     least one who has not approved yet. With no approvers required (one end
  *     user) the change passes as "no approvers — recorded only".
  * G2  optimistic lock — `from === current value` (ADR-104 U2), unchanged.
- * G3  offerings — when the proposal carries what it gives up (core/, D6), each
- *     approver must have read it. Same weight for everyone; only the reading is
- *     added outside the margin.
+ * G3  margin — unless the change is inside the margin (core/, D6), each
+ *     approver must have read the margin first (`marginNeedsReading`). Same
+ *     weight for everyone; only the reading is added outside the margin.
  *
  * @returns {{ok: boolean, reasons: string[], approvers: string[], outstanding: string[], required: string[]}}
  */
@@ -345,13 +396,47 @@ export function lineApprovalGuards(ctx, proposal, keyring) {
   if (isStale(ctx, proposal)) {
     reasons.push(`"${proposal.target.ref}" has moved since this proposal was written, so approving it would overwrite a change nobody agreed to. Withdraw and re-draw the diff.`)
   }
-  if ((proposal.offerings ?? []).length > 0) {
+  if (marginNeedsReading(proposal)) {
     const unread = approvers.filter(r => !(proposal.offeringsReadBy ?? []).includes(r))
     if (unread.length) {
-      reasons.push(`This change is outside the margin — ${unread.join(', ')} must read what it gives up before approving (ADR-165 D5).`)
+      reasons.push(`${marginSentence(proposal)} — ${unread.join(', ')} must read what it gives up before approving (ADR-165 D5).`)
     }
   }
   return { ok: reasons.length === 0, reasons, approvers, outstanding, required }
+}
+
+/**
+ * Every reason the held keys cannot mark a line proposal's margin as read.
+ * Reading is each approver's own act: only an outstanding approver whose key
+ * is held, and only while there is something to read.
+ *
+ * @returns {{ok: boolean, reasons: string[], readers: string[]}}
+ */
+export function marginReadGuards(ctx, proposal, keyring) {
+  const keys = keyring instanceof Set ? keyring : new Set(keyring ?? [])
+  const reasons = []
+  if (proposal.state !== PROPOSAL_STATE.PROPOSED) reasons.push(`This proposal is already ${proposal.state}.`)
+  if (!marginNeedsReading(proposal)) reasons.push('There is nothing to read — the change is inside the margin.')
+  const readers = outstandingApprovers(ctx, proposal)
+    .filter(r => hasKey(keys, r) && !(proposal.offeringsReadBy ?? []).includes(r))
+  if (readers.length === 0) {
+    reasons.push(`Only an approver who has not read it yet can mark it read — waiting on ${outstandingApprovers(ctx, proposal).join(', ') || 'nobody'}.`)
+  }
+  return { ok: reasons.length === 0, reasons, readers }
+}
+
+/** Record that `readers` read the margin. Throws when the gate refuses (never a silent no-op). */
+export function readMargin(ctx, ref, keyring) {
+  const proposal = (ctx?.proposals ?? []).find(p => p.ref === ref)
+  if (!proposal) throw new Error(`[CriteriaLine] no proposal "${ref}"`)
+  const g = marginReadGuards(ctx, proposal, keyring)
+  if (!g.ok) throw new Error(g.reasons.join(' '))
+  return {
+    ...ctx,
+    proposals: ctx.proposals.map(p => p.ref === ref
+      ? { ...p, offeringsReadBy: [...(p.offeringsReadBy ?? []), ...g.readers] }
+      : p),
+  }
 }
 
 /**
@@ -481,6 +566,9 @@ export function lineHistory(ctx) {
         rejectedBy: p.rejectedBy ?? [],
         version: p.lineVersion ?? null,
         rationale: p.rationale,
+        margin: p.margin ?? null,
+        marginNeedsReading: marginNeedsReading(p),
+        offeringsReadBy: p.offeringsReadBy ?? [],
       }
     })
 }

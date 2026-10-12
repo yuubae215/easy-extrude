@@ -1,6 +1,6 @@
 # 165. 判定基準は設計の前に聞き切る — 期待値と重みで聞き、合意した線は提案でしか動かない
 
-- Status: Accepted (2026-10-11 — 当事者が俯瞰で合意。段階実装: D1・D2 の語彙と未聴取の census (PR1 — 済)、D4・D5 の履歴と線の版・合意・変更提案 (PR2 — 済)、D3 の聞き取りフローと D4 の合意前の半分 (PR3 — 済。案の値は PR4 へ — DEF-064)、D6 の関心と差し出すもの・案 — 契約の版上げ + core/ (PR4)。`docs/ia-redesign/03-implementation-order.md` Phase 8)
+- Status: Accepted (2026-10-11 — 当事者が俯瞰で合意。段階実装: D1・D2 の語彙と未聴取の census (PR1 — 済)、D4・D5 の履歴と線の版・合意・変更提案 (PR2 — 済)、D3 の聞き取りフローと D4 の合意前の半分 (PR3 — 済)、D6 の関心と差し出すもの・案 — 契約 v9 + core/ (PR4 — 済。案は名目セル表の naive 既定、シーン由来・見積由来の値は DEF-066)。`docs/ia-redesign/03-implementation-order.md` Phase 8)
 - Date: 2026-10-11
 - Deciders: yuubae215, Claude
 - 段: IA 再設計 Phase 8 (`docs/ia-redesign/03-implementation-order.md`)
@@ -316,7 +316,78 @@ response 契約に値を足すので、実装の PR で `contractVersion` を上
   図の表 `FIGURE_BY_ELEMENT` は母集団 = カタログに対して数え、未宣言の要素で throw し、空欄は何も描かず
   「not answered yet」と言う (数を発明しない)。図の縮尺は箱への写像で、良し悪しの判断ではない (原則 #29)。
 
-## 残し (PR3 時点 — 後続 PR)
+### PR4 の俯瞰 (2026-10-12、当事者が 4 点を決定)
 
-- マージン外の提案で差し出すものを読ませる gate は置いたが、値 (`offerings`) と読んだ記録の押下は PR4 — DEF-062。
-- やってみるの案 (core/ が返す実態値) と、期待値との差の ☺ ○ ☹、見た案の記録 (`seen`) の書き手は PR4 — DEF-064。
+`/whiteboard` で語彙を引き直すと、足りない語は 4 つだった: **案**と**実態値** (語が指す先 — 原則 #33 (4))、
+**関心**が「誰の・どの大項目の・誰が保証する」を運ぶ語、提案と他人の線の**関係** (差し出すもの)、
+「見せた」と別の「選んだ」(1 語 1 事実)。
+
+1. **案の出どころ → core/ の名目セル表 + 値ごとの `basis`。** 当事者: 「シーンは 3D 情報の入力用。精緻な情報は
+   シーンからは入力不可能なので、UIUX の手を打つ必要がある」。そこで実態値 1 つ 1 つに出どころを持たせる語
+   `basis` (`nominal` = core/ のセルの型の名目値・幅つき / `derived` = シーンの幾何から / `declared` = 人の
+   見積・実測) を契約に先に置き、PR4 は `nominal` だけで案を出す。まず名目値で見せて選ばせ、幅の中で ☺ ☹ が
+   ひっくり返る要素だけを後から確かめる (DEF-066)。
+2. **重みの推し量り → 選択の記録だけ** (`trial.chosen`)。推し量りは core/ の提案で後続 (DEF-067)。
+3. **見た案の形 → id + 実態値の写し。** core/ のモデルが変わっても「何を見て緩めたか」が読み返せる
+   (履歴の写しであって第二の源ではない — 現在値として読む者は居ない)。
+4. **関心の意味 → 線の張りつめ具合 (感度)。** 当事者の問い「後から最適化問題のコスト関数として扱いやすいのは
+   どっち?」への答え: 式の部品は**満たされ具合** (案 x の関数 — 期待値がしきい値、重みが超えた分の傾き)、
+   関心はその**感度** (「この人のこの線を少し緩めたら全体がどれだけ良くなるか」= シャドウプライス)。
+   1 つのコスト関数 J から関心も差し出すものも出るので、源は 1 つ。ワイヤに載せるのは関心 (目的 =
+   ゼロサムの相手が誰か、に合う)。
+
+$$
+J(x)=\sum_{u}\sum_{c}\frac{\text{比重}_{uc}}{\sum\text{比重}_u}\;\underset{e\in c}{\text{平均}}\Big(\text{重み}_{ue}\cdot\text{clip}\big(\tfrac{\text{余裕}_{ue}(x)}{\text{scale}_e},-1,1\big)\Big),
+\qquad
+\text{関心}_{uc}\propto J'(x^{*\prime})-J'(x^{*})
+$$
+
+$x^{*}$ = 期待値をすべて満たす案のうち J 最大。$J'$ / $x^{*\prime}$ = 人 u の大項目 c の期待値を probe だけ
+緩めた線での J と最良。**両方の案を同じ緩めた線で比べる**ので、緩めたことで全案の超過が一律に増える分は
+打ち消し、x*' = x* なら厳密に 0 (実装の途中で、元の線で比べる版は「佐藤さん自身が C の余分な距離を喜ぶ」
+ときにも決め手と出ないことが分かり、この形に直した — 関心は重みに依存する、を test が焼いている)。
+
+### PR4 — D6 (関心・差し出すもの・案) + D3 の残り (2026-10-12)
+
+- **契約 v9** (`packages/grasp-contract`): 新エンドポイント `criteria-trial` の request (`line` = エンドユーザ全員の
+  比重と 7 要素の期待値・重み、任意の `proposedLine`) と response (`candidates[] {id, label, actuals[] {key, value,
+  basis, range?}}` / `interest[] {actor, category, value 0..1}` — 送ったエンドユーザ × 4 大項目ちょうど /
+  `proposal` = 閉じた kind 判別 union `notAsked | evaluated {baseline, proposed, offerings[]} | unsatisfiable |
+  noBaseline`)。**総合点・顔・「最良」の印はワイヤに無い** (閉じた層が拒否することを契約テストが焼く)。
+  要素の集合は契約の `elementKey` enum が正本で、フロントの `CriteriaCatalog` と core/ の catalog は
+  どちらもそれに縛られる (導出であって第二の源ではない)。`proposal` を optional にせず `notAsked` を枝にした
+  (欄の省略で示さない — 原則 #31 / 閉層に optional 兄弟を生やさない — ADR-060)。
+- **core/** (`easy_extrude_core/criteria/`): `assessment.py` (純粋 — J・可行・最良・関心の有限差分・差し出すもの)、
+  `cells.py` (`CellSource` の継ぎ目と naive 既定 `NominalCellCatalog` — 4 つのセルの型)、`catalog.py`
+  (要素ごとの scale / probe / `==` の許容差 — アイデアの係数)、`lane.py` (wire ⇄ ドメイン)。`POST /criteria-trial`
+  (評価できない線 — 要素の重複・全部 0 の比重・提案が別の人を名指す — は 400 + 理由)。
+- **BFF**: `POST /api/criteria/trial` (両端の版検査・スキーマ検査は `/api/grasp/search` と同じ。core API の URL は
+  `GRASP_SEARCH_URL` から導く — 同じサービス)。core の 4xx の理由を捨てずに返すようにした。
+- **front**: 「やってみる」の段を開くと線を core/ に問い、**答えが届いた時点で**回を記録する (楽観 — 原則 #7)。
+  答えが届く前に線が動けば、その答えは捨てる (`isAnswerForLine` — `IDENTITY_RULES`)。ソルバに届かなければ
+  `seen: []` で記録し、理由を画面が言う。案の表は回答者の期待値に対する ☺ ○ ☹ ? (`view/CriteriaGapMath.js` —
+  閉形式、重みを読まない。`?` は名目値の幅が期待値をまたぐ)、「choose」で `chosen`、全員の関心を棒で描く。
+  線の変更提案は出す時点で `margin` を core/ に問い、届かなければ `unassessed {reason}` を記録する — **わからない
+  マージンを「内」として扱わない**。G3 は「evaluated で何も差し出さない」以外のすべての kind で読むことを求め、
+  読んだ記録の押下 (`readMargin` — 承認者ごとの自分の行為) を場に置いた。PR2 の仮の欄 `offerings: string[]` は
+  `margin` に置き換えて退役。
+- **問い所**: `src/CriteriaIndicatorCensus.test.js` (DEF-062/064 の満期) — 語彙は契約の enum と一致 / src/ で
+  `interest` `offerings` と margin 記録を書くのは宣言した運び手 2 ファイルだけ (増えても減っても赤) / ☺ ○ ☹ は
+  重みも比重も読まない / core/ の私的な語彙 (probe・総合点・満たされ具合関数) が src/ に無い。
+- **表に出た既存欠陥**: CI の `contract-wall` は response スキーマを**ファイル名で 2 つ並べて**いた (place-list)。
+  新しい `*-response.schema.json` はその日から壁の外になる。glob に直した。契約パッケージのテストと
+  `validate.mjs` のエンドポイント一覧も手書きだったので、`schema/` ディレクトリから導くようにした (原則 #31)。
+- **Stub レーン (GitHub Pages)** は `criteria/trial` に答えない (501 — 理由が画面に出る)。缶詰の関心を返せば、
+  どのコスト関数も計算していない数字を見せることになる (原則 #29 / #11)。これは残しではなく決定。
+- **naive の限界**: 案が飛び飛び (4 つのセルの型) なので関心も飛び飛びになる — probe の幅では次の案に届かない線は
+  0 と出て、幅を越えた途端に大きくなる (test が焼く)。係数を差し替えるのは `catalog.py` 1 箇所、案の出どころは
+  `CellSource` の DI で、契約も画面も変わらない。
+- **本文から動いた点**: (a) D6 の「差し出すもの」は承認者だけでなく**提案者を含む全エンドユーザ**の要素ごとに返す
+  (提案者が自分の何を削るかも、読む者には事実)。(b) 関心の正規化は「その線集合の中で最も決め手の線 = 1」の
+  相対値 (絶対値は J の単位に依存し、人が読めない)。
+
+## 残し (PR4 時点 — 後続 PR)
+
+- 案の実態値をシーンから導く (`derived`)、人の見積・実測で上書きする (`declared`) 画面 — DEF-066。
+- 選ばれた案から重みを推し量って提案する (core/ — propose-only) — DEF-067。
+- 開いている提案のマージンが、別の変更の承認で 1 版古くなったときの再評価 — DEF-068。

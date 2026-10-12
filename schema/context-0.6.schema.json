@@ -157,10 +157,15 @@
                 "$ref": "#/$defs/criteriaLineSlice"
               },
               "seen": {
+                "description": "The candidates shown on this look, each as it was shown (core/'s answer copied — id, label, actual values with their basis and range), so the look stays readable after core/'s model changes. An empty list is a declared zero (the solver was not reachable, or had nothing to show). ADR-165 PR4.",
                 "type": "array",
                 "items": {
-                  "type": "string"
+                  "$ref": "#/$defs/seenCandidate"
                 }
+              },
+              "chosen": {
+                "description": "The candidate id the person picked on this look (one of `seen`). A human act, stored; inferring weights from it is core/'s (DEF-067).",
+                "type": "string"
               }
             }
           }
@@ -732,15 +737,12 @@
             "type": "string"
           }
         },
-        "offerings": {
-          "description": "ADR-165 D5 / D6. What a change outside the margin gives up, as returned by core/ (PR4). While present, each approver must have read it before approving.",
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
+        "margin": {
+          "description": "ADR-165 D5 / D6 (PR4). The margin of a change to the agreed line, as core/ assessed it when the proposal was raised: `evaluated` with what it gives up (`offerings` — empty = inside the margin), `unsatisfiable` (no candidate meets the proposed line), `noBaseline` (none meets the current line), or `unassessed` with the reason the solver could not be asked. Every kind but \"evaluated, gives up nothing\" makes each approver read it before approving.",
+          "$ref": "#/$defs/proposalMargin"
         },
         "offeringsReadBy": {
-          "description": "ADR-165 D5. The approvers who have read `offerings`.",
+          "description": "ADR-165 D5. The approvers who have read the margin (what the change gives up).",
           "type": "array",
           "items": {
             "type": "string"
@@ -1716,6 +1718,150 @@
           }
         }
       }
+    },
+    "seenCandidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "label",
+        "actuals"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "actuals": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "key",
+              "value",
+              "basis"
+            ],
+            "properties": {
+              "key": {
+                "type": "string"
+              },
+              "value": {
+                "type": "number"
+              },
+              "basis": {
+                "enum": [
+                  "nominal",
+                  "derived",
+                  "declared"
+                ]
+              },
+              "range": {
+                "type": "array",
+                "minItems": 2,
+                "maxItems": 2,
+                "items": {
+                  "type": "number"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "proposalMargin": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "baseline",
+            "proposed",
+            "offerings"
+          ],
+          "properties": {
+            "kind": {
+              "const": "evaluated"
+            },
+            "baseline": {
+              "type": "string"
+            },
+            "proposed": {
+              "type": "string"
+            },
+            "offerings": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "actor",
+                  "key",
+                  "from",
+                  "to"
+                ],
+                "properties": {
+                  "actor": {
+                    "type": "string"
+                  },
+                  "key": {
+                    "type": "string"
+                  },
+                  "from": {
+                    "type": "number"
+                  },
+                  "to": {
+                    "type": "number"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "const": "unsatisfiable"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "const": "noBaseline"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "reason"
+          ],
+          "properties": {
+            "kind": {
+              "const": "unassessed"
+            },
+            "reason": {
+              "type": "string"
+            }
+          }
+        }
+      ]
     }
   }
 }

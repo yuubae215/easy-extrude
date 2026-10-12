@@ -11,7 +11,7 @@ artifacts
 
     context Adr165Scope
     uuid be95b5b1-5ae1-45b7-b328-92e53b9f9f7f
-    summary "ADR-165 (Accepted 2026-10-11 段階実装 — PR1 D1/D2・PR2 D4(合意後)/D5・PR3 D3/D4(合意前) 済、IA 再設計 Phase 8): 職能と立場を分け、エンドユーザ 1..N (D1)、価値木は QCD + S でどの要素も期待値と重みの同じ形 (D2)、キャラメイク型の聞き取りフロー (D3)、見た後の変更を履歴に残す (D4)、全員の合意で v1、以後の線の変更は他のエンドユーザ全員の承認を要する提案 (D5)、関心と差し出すものは core/ が返し持ち主が保証する (D6)"
+    summary "ADR-165 (Accepted 2026-10-11 段階実装 — PR1 D1/D2・PR2 D4(合意後)/D5・PR3 D3/D4(合意前)・PR4 D6 (契約 v9) 済、IA 再設計 Phase 8): 職能と立場を分け、エンドユーザ 1..N (D1)、価値木は QCD + S でどの要素も期待値と重みの同じ形 (D2)、キャラメイク型の聞き取りフロー (D3)、見た後の変更を履歴に残す (D4)、全員の合意で v1、以後の線の変更は他のエンドユーザ全員の承認を要する提案 (D5)、関心と差し出すものは core/ が返し持ち主が保証する (D6)"
 
     context RequirementCameFromTheOwner
     uuid bcde7e9b-ecce-4994-ba6b-66c1f83cb112
@@ -90,9 +90,16 @@ artifacts
 
         goal IndicatorValuesComeOnlyFromCore
         uuid b32930ce-f76c-4884-82a7-fe0144964c84
-        summary "関心インジケータと差し出すものの値は core/ が返し、front はそれを描くだけで重みからも計算しない。response 契約の版が上がっている"
-        labels support-exploring
+        summary "関心インジケータと差し出すもの (と案の実態値) の値は core/ が返し、front はそれを描くだけで重みからも計算しない。response 契約の版が上がっている"
+        labels support-verified
 
-            assumption IndicatorContractWillSettleIt
-            uuid 1ac45a56-bbd3-4a9a-82c1-b201c13cc910
-            summary "証拠予定: 実装 PR で response スキーマに関心と差し出すものを足して contractVersion を上げ、src/ に関心を計算する関数が 0 個であることを census で数える。満期=PATH:src/CriteriaIndicatorCensus.test.js で決着する (2026-10-11 PR1 で ADR-165 が段階実装の Accepted になったので、ADR の Status を満期にしたままだと D6 を実装する前に発火する — 満期を D6 の census の住所へ張り替えた)"
+            solution IndicatorLaneIsExecuted
+            uuid d45c94f6-b697-4134-9df8-8d225a0ef2d3
+            summary "2026-10-12 PR4 (契約 v9)。core/tests/test_criteria.py (16 pass): 当事者に説明した例 (田中さん タクト 10 秒以下・佐藤さん 300mm 以上、案 A 8s/200mm・B 12s/500mm・C 9s/400mm) で A・B はそれぞれ誰かの線で外れ C が残る / 佐藤さんの S の関心 = 1 (緩めれば A が選べる)・田中さんの D = 0 (緩めても C のまま) / 佐藤さんが余分な距離を大いに喜ぶ (重み 1) なら関心 0 (関心は重みに依存) / probe が次の案に届かなければ 0 (naive の限界) / タクトを締める提案は満たせない (unsatisfiable)、佐藤さんも緩めれば A に移り差し出すのは距離 400→200 / 同じ案に留まる提案は何も差し出さない (マージン内) / 同じ線は同じ案と id / 評価できない線は推測せず拒否。core/tests/test_criteria_contract.py (12 pass): 応答の 4 枝すべてと実インスタンスがスキーマに準拠、総合点・顔・最良の印・式・未知の basis / kind を閉層が拒否、core の要素集合 = 契約の enum。core/tests/test_criteria_api.py (6 pass): 400/422/401、DI で案の出どころを差し替え。packages/grasp-contract (contractVersion=9 all green、エンドポイント一覧は schema/ から導出)。server/test/criteria.contract.test.js: 両端の版検査・502・core の理由の素通し。src/CriteriaIndicatorCensus.test.js (4 pass): front の語彙 = 契約の enum / src/ で interest・offerings・margin 記録を書くのは宣言した運び手 2 ファイルだけ (変異を入れて赤になることを確認) / ☺○☹ は重みも比重も読まない / core/ の私的語彙が src/ に無い。src/controller/ContextController.test.js: 答えが届いた時点で見た案を写しで記録、線が動いた後の答えは捨てる、届かなければ seen=[] と理由、提案のマージンを core/ に問い届かなければ unassessed。e2e/criteria-hearing.spec.js: 実アプリで案の表の ☺/☹ と選択、2 回目のやってみるの履歴に「picked」"
+            artifacts
+            - "core/easy_extrude_core/criteria/assessment.py"
+            - "core/tests/test_criteria.py"
+            - "core/tests/test_criteria_contract.py"
+            - "packages/grasp-contract/schema/criteria-trial-response.schema.json"
+            - "src/CriteriaIndicatorCensus.test.js"
+            - "e2e/criteria-hearing.spec.js"

@@ -266,6 +266,24 @@ test('a context/0.6 doc with an agreed criteria line and an approved line change
   }), true, JSON.stringify(validate.errors))
 })
 
+test('a line proposal carries its margin as a closed union; the PR2 placeholder `offerings` is gone (ADR-165 PR4)', () => {
+  const base = {
+    ref: 'prop_1', by: 'a', target: { kind: 'requirement.criterion', ref: 'crit_a_takt' },
+    from: { op: '<=', value: 10 }, to: { op: '<=', value: 8 }, rationale: 'takt', state: 'proposed',
+  }
+  const doc = (p) => ({ version: 'context/0.6', proposals: [{ ...base, ...p }] })
+  for (const margin of [
+    { kind: 'evaluated', baseline: 'x', proposed: 'y', offerings: [{ actor: 'b', key: 'humanClearance', from: 400, to: 200 }] },
+    { kind: 'evaluated', baseline: 'x', proposed: 'x', offerings: [] },
+    { kind: 'unsatisfiable' },
+    { kind: 'noBaseline' },
+    { kind: 'unassessed', reason: 'BFF unavailable' },
+  ]) assert.equal(validate(doc({ margin, offeringsReadBy: ['b'] })), true, `${margin.kind}: ${JSON.stringify(validate.errors)}`)
+  assert.equal(validate(doc({ margin: { kind: 'unassessed' } })), false, 'an unassessed margin says why')
+  assert.equal(validate(doc({ margin: { kind: 'maybe' } })), false, 'closed union')
+  assert.equal(validate(doc({ offerings: ['b: 2 mm'] })), false, 'the free-text placeholder of PR2 is retired')
+})
+
 test('a stored line status is rejected — the status is derived (ADR-165 D5)', () => {
   assert.equal(validate({
     version: 'context/0.6',
@@ -275,11 +293,22 @@ test('a stored line status is rejected — the status is derived (ADR-165 D5)', 
 
 test('a context/0.6 doc with hearing trials conforms; a stored "afterTrial" is rejected — rounds are derived (ADR-165 D4)', () => {
   const line = { mix: { D: 1, Q: 1, C: 1, S: 1 }, elements: { takt: { criterion: { op: '<=', value: 10 }, weight: 1 } } }
+  const cand = { id: 'cand_b', label: 'Gantry', actuals: [{ key: 'takt', value: 5, basis: 'nominal', range: [4.25, 5.75] }] }
   assert.equal(validate({
     version: 'context/0.6',
     actors: [{ ref: 'a', role: 'ehs', endUser: true }],
-    criteriaHearing: { trials: [{ actor: 'a', line, seen: [] }, { actor: 'a', line, seen: ['cand_b'] }] },
+    criteriaHearing: { trials: [{ actor: 'a', line, seen: [] }, { actor: 'a', line, seen: [cand], chosen: 'cand_b' }] },
   }), true, JSON.stringify(validate.errors))
+  // PR4: what was seen is a snapshot of the candidate as shown, not a bare id —
+  // an id alone stops saying anything the day core/'s model changes.
+  assert.equal(validate({
+    version: 'context/0.6',
+    criteriaHearing: { trials: [{ actor: 'a', line, seen: ['cand_b'] }] },
+  }), false, 'a bare id is not what was seen')
+  assert.equal(validate({
+    version: 'context/0.6',
+    criteriaHearing: { trials: [{ actor: 'a', line, seen: [{ ...cand, actuals: [{ key: 'takt', value: 1, basis: 'guessed' }] }] }] },
+  }), false, 'the basis is one of nominal / derived / declared')
   assert.equal(validate({
     version: 'context/0.6',
     criteriaHearing: { trials: [{ actor: 'a', line, seen: [], afterTrial: 1 }] },

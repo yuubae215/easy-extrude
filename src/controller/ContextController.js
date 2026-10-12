@@ -55,7 +55,11 @@ import { validateContext } from '../context/ContextValidator.js'
 import { applyAdmissibleEdit } from '../context/ContextEditModel.js'
 import { applyQuestionAnswer } from '../context/FormApplication.js'
 import { withEndUserStance, endUsersOf } from '../context/ActorStance.js'
-import { criteriaSliceOf, recordTrial, trialGuards, HEARING_STEP } from '../context/CriteriaHearing.js'
+import { criteriaSliceOf, recordTrial, trialGuards, chooseCandidate, HEARING_STEP } from '../context/CriteriaHearing.js'
+import { currentLine, isFrozenLineTarget, readMargin, marginReadGuards, MARGIN_KIND } from '../context/CriteriaLine.js'
+import {
+  wireLineOf, isAnswerForLine, lineWithChange, seenSnapshotOf, marginOf,
+} from '../context/CriteriaTrialWire.js'
 import {
   createBlankDoc, addActor, addFact, addVariable, addRequirement,
   updateActor, updateVariable, updateRequirement, removeDocEntry,
@@ -237,6 +241,9 @@ export class ContextController {
     registerCallback('onHearingStandAsEndUser',  (ref)        => this.hearingStandAsEndUser(ref))
     registerCallback('onHearingAnswer',          (answer)     => this.hearingAnswer(answer))
     registerCallback('onHearingAgree',           (ref)        => this.hearingAgree(ref))
+    registerCallback('onHearingChoose',          (id)         => this.hearingChoose(id))
+    registerCallback('onProposalMarginRead',     (ref)        => this.readProposalMargin(ref))
+    registerCallback('onProposalMarginReadGuards', (ref)      => this.marginReadGuardsFor(ref))
     registerCallback('onAssetViewerOpen',        (assetId)    => this.openAssetViewer(assetId))
     registerCallback('onAssetParam',             (key, value) => this.setAssetParam(key, value))
     registerCallback('onAssetViewerCommit',      ()           => this.commitAsset())
@@ -941,7 +948,7 @@ export class ContextController {
     // Opening "Try it" is the act D4 anchors on: what the respondent held when
     // they looked is recorded as they arrive (ADR-165 §PR3 の俯瞰 Q2).
     if (next.status === 'step' && def.steps[next.index]?.kind === HEARING_STEP.TRIAL) {
-      this._recordTrial(next.respondent)
+      return this._openTrial(next.respondent)
     }
   }
 
@@ -1024,7 +1031,7 @@ export class ContextController {
     }
     useUIStore.getState().actions.contextSetWizard({ ...state, respondent: ref })
     if (state.status === 'step' && CRITERIA_HEARING_WIZARD.steps[state.index]?.kind === HEARING_STEP.TRIAL) {
-      this._recordTrial(ref)
+      return this._openTrial(ref)
     }
   }
 
@@ -1074,19 +1081,84 @@ export class ContextController {
   }
 
   /**
-   * Record that `respondent` opened "Try it". An agreed respondent has nothing
-   * to record (their changes are proposals); any other refusal is shown.
+   * `respondent` opens "Try it" (ADR-165 D3 / D4): ask core/ for the candidates
+   * and everyone's interest, then record the look with what was shown.
+   *
+   * Optimistic (PHILOSOPHY #7): nothing blocks while the solver answers. The
+   * look is recorded when the answer ARRIVES — and only if the document still
+   * states the line that was asked about (`isAnswerForLine`); an answer to an
+   * older line is dropped, never recorded as what someone saw. When the solver
+   * cannot be asked, the look is still recorded with `seen: []` (a declared
+   * zero) and the reason is on screen (PHILOSOPHY #11).
+   *
+   * An agreed respondent has nothing to record (their changes are proposals);
+   * any other refusal is shown.
+   *
+   * @returns {Promise<void>}
    */
-  _recordTrial(respondent) {
+  async _openTrial(respondent) {
     if (!respondent) return
-    const g = trialGuards(this._ctxService.getDoc(), respondent)
+    const ui = useUIStore.getState().actions
+    const doc = this._ctxService.getDoc()
+    const g = trialGuards(doc, respondent)
     if (!g.ok) {
       // The step gate already refused blanks; reaching here means an agreed
       // respondent revisiting — say why nothing was recorded (PHILOSOPHY #11).
       this._ctrl._uiView.showToast(g.reasons.join(' '), { type: 'info' })
       return
     }
-    this._commitHearing(`Try it (${respondent})`, doc => recordTrial(doc, respondent))
+    const requested = currentLine(doc)
+    const { line, omitted } = wireLineOf(requested)
+    ui.contextSetCriteriaIndicator({ status: 'loading', respondent, omitted })
+
+    const answer = await this._askCriteriaSolver({ line })
+    if (!isAnswerForLine(requested, this._ctxService.getDoc())) return   // the line moved meanwhile — dropped
+    if (answer.ok) {
+      ui.contextSetCriteriaIndicator({ status: 'results', respondent, omitted, interest: answer.body.interest ?? [] })
+      this._commitHearing(`Try it (${respondent})`, d => recordTrial(d, respondent, seenSnapshotOf(answer.body.candidates)))
+    } else {
+      ui.contextSetCriteriaIndicator({ status: answer.kind, respondent, omitted, message: answer.message })
+      this._commitHearing(`Try it (${respondent})`, d => recordTrial(d, respondent, []))
+    }
+  }
+
+  /**
+   * One call to the criteria solver through the BFF. Never throws: the result
+   * says whether it answered, or why not — `unavailable` (no BFF) and `error`
+   * (the BFF or core/ refused) are different facts with different remedies.
+   *
+   * @param {{line: object|null, proposedLine?: object}} request
+   * @returns {Promise<{ok: true, body: object} | {ok: false, kind: 'unavailable'|'error', message: string}>}
+   */
+  async _askCriteriaSolver(request) {
+    if (!request.line) {
+      return { ok: false, kind: 'error', message: 'No end user has a complete line yet — there is nothing to ask the solver.' }
+    }
+    const svc = this._ctrl._service
+    let bff = svc?.bff ?? null
+    if (!bff && svc?.connectBff) {
+      try { await svc.connectBff() } catch { /* reported below as unavailable */ }
+      bff = svc.bff ?? null
+    }
+    if (!bff) {
+      return { ok: false, kind: 'unavailable', message: 'The solver is not reachable (BFF unavailable — start the stack with `pnpm dev:stack`).' }
+    }
+    try {
+      return { ok: true, body: await bff.criteriaTrial(request) }
+    } catch (err) {
+      const details = Array.isArray(err?.details) && err.details.length ? ` — ${err.details.join('; ')}` : ''
+      return { ok: false, kind: 'error', message: `${err?.message ?? String(err)}${details}` }
+    }
+  }
+
+  /** The respondent picks a candidate on their latest look (ADR-165 D3). */
+  hearingChoose(candidateId) {
+    const respondent = useUIStore.getState().context.wizard?.respondent
+    if (!respondent) {
+      this._ctrl._uiView.showToast('Pick who is answering first (Step 1).', { type: 'warn' })
+      return
+    }
+    this._commitHearing(`Choose ${candidateId} (${respondent})`, doc => chooseCandidate(doc, respondent, candidateId))
   }
 
   // ── Parametric asset viewer (ADR-063 Phase 4) ────────────────────────────────
@@ -1708,7 +1780,7 @@ export class ContextController {
    * @param {string} rationale
    * @param {string} by — the proposing actor
    */
-  proposeChange(target, from, to, rationale, by) {
+  async proposeChange(target, from, to, rationale, by) {
     const ctrl = this._ctrl
     let proposal
     try {
@@ -1723,6 +1795,14 @@ export class ContextController {
       return null
     }
 
+    // A change to the agreed line carries its margin (ADR-165 D5 / D6): core/
+    // says what it gives up. If the solver cannot be asked, the proposal says
+    // so (`unassessed`) — an unknown margin is never recorded as "inside".
+    const doc = this._ctxService.getDoc()
+    if (doc && isFrozenLineTarget(doc, target)) {
+      proposal = { ...proposal, margin: await this._assessLineChange(doc, target, to) }
+    }
+
     const cmd = createProposeChangeCommand(this._ctxService, proposal, this._viewContext())
     return Promise.resolve(cmd.execute()).then(() => {
       ctrl._commandStack.push(cmd)
@@ -1731,6 +1811,40 @@ export class ContextController {
         `Proposed a change to ${target.ref} — it is on the floor for its owner to approve`, { type: 'info' })
       return proposal.ref
     })
+  }
+
+  /**
+   * The margin of a change to the agreed line, from core/ (ADR-165 D6).
+   * @returns {Promise<object>} a `proposal.margin` record
+   */
+  async _assessLineChange(doc, target, to) {
+    const { line } = wireLineOf(currentLine(doc))
+    const { line: proposedLine } = wireLineOf(lineWithChange(doc, target, to))
+    if (!line || !proposedLine) {
+      return { kind: MARGIN_KIND.UNASSESSED, reason: 'the line or the proposed line has blanks' }
+    }
+    const answer = await this._askCriteriaSolver({ line, proposedLine })
+    if (!answer.ok) return { kind: MARGIN_KIND.UNASSESSED, reason: answer.message }
+    try {
+      return marginOf(answer.body.proposal)
+    } catch (err) {
+      return { kind: MARGIN_KIND.UNASSESSED, reason: err.message }
+    }
+  }
+
+  /**
+   * The held approver keys read a line proposal's margin (ADR-165 D5 G3) —
+   * each approver's own act, one undoable command.
+   */
+  marginReadGuardsFor(proposalRef) {
+    const doc = this._ctxService.getDoc()
+    const proposal = (doc?.proposals ?? []).find(p => p.ref === proposalRef)
+    if (!proposal) return { ok: false, reasons: [`no proposal "${proposalRef}"`], readers: [] }
+    return marginReadGuards(doc, proposal, this._keyring)
+  }
+
+  readProposalMargin(proposalRef) {
+    this._commitHearing(`Read what ${proposalRef} gives up`, doc => readMargin(doc, proposalRef, this._keyring))
   }
 
   /**

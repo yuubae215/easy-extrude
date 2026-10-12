@@ -16,7 +16,7 @@ import assert from 'node:assert/strict'
 import {
   LINE_STATUS, LINE_CHANGE, currentLine, lineStatus, lineVersion, agreeToLine,
   agreementGuards, isFrozenLineTarget, isLineProposal, lineDrift, lineHistory,
-  lineTargets, requiredApprovers, lineFieldOf,
+  lineTargets, requiredApprovers, lineFieldOf, marginNeedsReading, marginSentence, readMargin,
 } from './CriteriaLine.js'
 import {
   makeProposal, addProposal, approveProposal, unapproveProposal, approvalGuards,
@@ -212,13 +212,36 @@ test('undo of the completing approval unwinds claim, state, receipt and its appr
   assert.deepEqual(unapproveProposal(partial, 'prop_1', sig(['b'])).proposals[0].approvals, [])
 })
 
-test('the outside-margin gate makes each approver read the offerings first (G3)', () => {
+const withMargin = (doc, margin) => ({ ...doc, proposals: doc.proposals.map(p => ({ ...p, margin })) })
+const OUTSIDE = { kind: 'evaluated', baseline: 'x', proposed: 'y', offerings: [{ actor: 'b', key: 'positionAccuracy', from: 0.05, to: 0.1 }] }
+
+test('the outside-margin gate makes each approver read the margin first (G3)', () => {
   let doc = agreedBy(heard(['a', 'b']), ['a', 'b'])
   doc = propose(doc, { by: 'a', target: takt('a'), to: { op: '<=', value: 12 } })
-  const withOfferings = { ...doc, proposals: doc.proposals.map(p => ({ ...p, offerings: ['b: 2 mm of position accuracy'] })) }
-  assert.match(approvalGuards(withOfferings, withOfferings.proposals[0], ['b']).reasons.join(' '), /must read what it gives up/)
-  const read = { ...withOfferings, proposals: withOfferings.proposals.map(p => ({ ...p, offeringsReadBy: ['b'] })) }
+  const outside = withMargin(doc, OUTSIDE)
+  assert.match(approvalGuards(outside, outside.proposals[0], ['b']).reasons.join(' '), /outside the margin — b must read what it gives up/)
+  const read = readMargin(outside, 'prop_1', ['b'])
+  assert.deepEqual(read.proposals[0].offeringsReadBy, ['b'])
   assert.equal(approvalGuards(read, read.proposals[0], ['b']).ok, true)
+  assert.throws(() => readMargin(read, 'prop_1', ['b']), /who has not read it yet/, '2 度読んだことにはならない')
+  assert.throws(() => readMargin(outside, 'prop_1', ['a']), /who has not read it yet/, '提案者は承認者ではない')
+})
+
+test('inside the margin needs no reading; every kind that is not "gives up nothing" does (#31)', () => {
+  let doc = agreedBy(heard(['a', 'b']), ['a', 'b'])
+  doc = propose(doc, { by: 'a', target: takt('a'), to: { op: '<=', value: 12 } })
+  const inside = withMargin(doc, { kind: 'evaluated', baseline: 'x', proposed: 'x', offerings: [] })
+  assert.equal(marginNeedsReading(inside.proposals[0]), false)
+  assert.equal(approvalGuards(inside, inside.proposals[0], ['b']).ok, true)
+  assert.throws(() => readMargin(inside, 'prop_1', ['b']), /nothing to read/)
+  for (const m of [{ kind: 'unsatisfiable' }, { kind: 'noBaseline' }, { kind: 'unassessed', reason: 'solver unreachable' }]) {
+    const d = withMargin(doc, m)
+    assert.equal(marginNeedsReading(d.proposals[0]), true, m.kind)
+    assert.equal(approvalGuards(d, d.proposals[0], ['b']).ok, false, m.kind)
+  }
+  assert.match(marginSentence(withMargin(doc, { kind: 'unassessed', reason: 'solver unreachable' }).proposals[0]), /not assessed \(solver unreachable\)/)
+  assert.throws(() => marginNeedsReading({ margin: { kind: 'maybe' } }), /no reading rule declared/)
+  assert.equal(marginNeedsReading(doc.proposals[0]), false, 'pre-PR4 proposal without a margin is not gated')
 })
 
 // ── rejection / withdrawal keep the version ───────────────────────────────────

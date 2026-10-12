@@ -35,6 +35,16 @@ export function graspSearchUrl() {
 }
 
 /**
+ * The core API's criteria-trial endpoint (ADR-165 D6). Same service as
+ * grasp-search, so it is derived from `GRASP_SEARCH_URL` — one env var names the
+ * core API (ADR-076: URLs are injected, never baked in).
+ * @returns {string}
+ */
+export function criteriaTrialUrl() {
+  return new URL('/criteria-trial', graspSearchUrl()).toString()
+}
+
+/**
  * Forward a (schema-valid) request to the external grasp-search service and
  * return the parsed JSON response. Conformance of both ends is checked by the
  * caller against the contract schema.
@@ -45,7 +55,23 @@ export function graspSearchUrl() {
  * @returns {Promise<unknown>} parsed JSON (validated by the caller)
  */
 export async function callGraspSearch(request, { timeoutMs = 20000 } = {}) {
-  const url = graspSearchUrl()
+  return postToCore(graspSearchUrl(), 'grasp-search', request, { timeoutMs })
+}
+
+/**
+ * Forward a (schema-valid) criteria-trial request to the core API (ADR-165 D6).
+ * Conformance of both ends is checked by the caller.
+ *
+ * @param {object} request  Schema-valid CriteriaTrialRequest (wire/camelCase)
+ * @param {object} [opts]
+ * @param {number} [opts.timeoutMs=20000]
+ * @returns {Promise<unknown>}
+ */
+export async function callCriteriaTrial(request, { timeoutMs = 20000 } = {}) {
+  return postToCore(criteriaTrialUrl(), 'criteria-trial', request, { timeoutMs })
+}
+
+async function postToCore(url, name, request, { timeoutMs }) {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
 
@@ -59,14 +85,21 @@ export async function callGraspSearch(request, { timeoutMs = 20000 } = {}) {
     })
   } catch (err) {
     const reason = err?.name === 'AbortError' ? 'timed out' : `unreachable (${err?.message})`
-    throw new GraspServiceError(`grasp-search service ${reason}`, 503)
+    throw new GraspServiceError(`${name} service ${reason}`, 503)
   } finally {
     clearTimeout(timer)
   }
 
   if (!res.ok) {
+    // A 4xx from the core API carries a reason the sender can act on (e.g. a
+    // line that cannot be judged — ADR-165); keep it instead of a bare status.
+    let reason = ''
+    try {
+      const body = await res.json()
+      if (typeof body?.error?.message === 'string') reason = ` — ${body.error.message}`
+    } catch { /* no JSON envelope: the status is all there is */ }
     throw new GraspServiceError(
-      `grasp-search service returned ${res.status}`,
+      `${name} service returned ${res.status}${reason}`,
       res.status >= 500 ? 502 : res.status,
     )
   }
@@ -74,6 +107,6 @@ export async function callGraspSearch(request, { timeoutMs = 20000 } = {}) {
   try {
     return await res.json()
   } catch {
-    throw new GraspServiceError('grasp-search service returned non-JSON body', 502)
+    throw new GraspServiceError(`${name} service returned non-JSON body`, 502)
   }
 }

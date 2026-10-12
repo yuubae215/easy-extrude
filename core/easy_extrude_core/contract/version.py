@@ -47,7 +47,12 @@ contractVersion は public スキーマの `version: "layout/x.y"` とは別系�
 # 「判定していない相」と「当たらなかった相」は 1 つの数 (rejectedByInterference) では
 # 区別できなかった — 閉じた層への必須追加なので版上げ。request 側の `target.lift` と
 # `interferenceAnalysis` は optional 追加 (ADR-083/084)。
-CONTRACT_VERSION = 8
+# v9: 判定基準の聞き取りレーン (ADR-165 D3 / D6)。新しいエンドポイント
+# `/criteria-trial` の request / response を追加 — 案 (候補セルと実態値 + その出どころ
+# `basis`)、エンドユーザ × 大項目の関心、提案の評価 (kind 判別 union: notAsked /
+# evaluated{offerings} / unsatisfiable / noBaseline)。既存エンドポイントの形は変わらないが、
+# contractVersion は全エンドポイント共通の 1 整数なので版を上げる (新しい response 契約)。
+CONTRACT_VERSION = 9
 
 
 class ContractVersionMismatch(ValueError):

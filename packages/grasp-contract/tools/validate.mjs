@@ -3,8 +3,8 @@
 //
 //   npm run validate -- <endpoint> <instance.json | ->
 //
-//   endpoint: grasp-search-request | grasp-search-response |
-//             recommendation-request | recommendation-response
+//   endpoint: any `<name>` with a schema/<name>.schema.json (grasp-search-*,
+//             recommendation-*, criteria-trial-*)
 //   instance: path to a JSON file, or "-" to read stdin.
 //
 // Exit 0 = the instance conforms AND its contractVersion (if present) matches
@@ -12,7 +12,7 @@
 // wire; the reasons are printed. This is the same judgement the envelope +
 // schema make at runtime, so consumers can check payloads before sending them.
 
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import Ajv2020 from "ajv/dist/2020.js";
@@ -20,12 +20,11 @@ import Ajv2020 from "ajv/dist/2020.js";
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "..");
 
-const endpoints = [
-  "grasp-search-request",
-  "grasp-search-response",
-  "recommendation-request",
-  "recommendation-response",
-];
+// Every schema in schema/ is an endpoint (no hand-written list to forget).
+const endpoints = readdirSync(join(root, "schema"))
+  .filter((f) => f.endsWith(".schema.json"))
+  .map((f) => f.replace(/\.schema\.json$/, ""))
+  .sort();
 
 const [endpoint, instancePath] = process.argv.slice(2);
 

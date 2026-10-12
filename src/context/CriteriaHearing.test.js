@@ -18,8 +18,9 @@ import assert from 'node:assert/strict'
 
 import {
   HEARING_STEP, hearingStepGaps, recordTrial, trialGuards, trialsOfActor,
-  hearingHistory, criteriaSliceOf,
+  hearingHistory, criteriaSliceOf, chooseCandidate, chooseGuards,
 } from './CriteriaHearing.js'
+import { seenSnapshotOf } from './CriteriaTrialWire.js'
 import { agreeToLine, lineHistory, LINE_CHANGE } from './CriteriaLine.js'
 import { applyQuestionAnswer } from './FormApplication.js'
 import { CRITERIA_ELEMENTS } from './CriteriaCatalog.js'
@@ -114,6 +115,45 @@ test('a trial is refused with blanks, for a non-end-user, and after agreement �
   assert.match(trialGuards(heard(['a']), 'zz').reasons.join(' '), /does not stand as an end user/)
   const agreed = agreeToLine(heard(['a']), 'a')
   assert.match(trialGuards(agreed, 'a').reasons.join(' '), /agreed to the line/)
+})
+
+// ── PR4: what was seen is kept as it was shown, and the pick is the person's ─
+
+const WIRE_CANDIDATES = [
+  { id: 'nominal:scara-fast', label: 'High-speed SCARA', actuals: CRITERIA_ELEMENTS.map(e => ({ key: e.key, value: 1, basis: 'nominal', range: [0.8, 1.2] })) },
+  { id: 'nominal:cobot', label: 'Collaborative arm', actuals: CRITERIA_ELEMENTS.map(e => ({ key: e.key, value: 2, basis: 'nominal' })) },
+]
+
+test('a trial keeps each candidate as it was shown (id, label, actuals with basis and range)', () => {
+  const seen = seenSnapshotOf(WIRE_CANDIDATES)
+  const doc = recordTrial(heard(['a']), 'a', seen)
+  const [t] = trialsOfActor(doc, 'a')
+  assert.deepEqual(t.seen.map(c => c.id), ['nominal:scara-fast', 'nominal:cobot'])
+  assert.deepEqual(t.seen[0].actuals[0], { key: 'takt', value: 1, basis: 'nominal', range: [0.8, 1.2] })
+  assert.equal('range' in t.seen[1].actuals[0], false, 'an exact value carries no range')
+  assert.equal(validateContext(doc).errors.length, 0, JSON.stringify(validateContext(doc).errors))
+  // The same line with a different answer from core/ is a new look (what was seen changed).
+  const again = recordTrial(doc, 'a', seen.slice(0, 1))
+  assert.equal(trialsOfActor(again, 'a').length, 2)
+})
+
+test('the pick belongs to the latest look and only to a candidate it showed', () => {
+  let doc = recordTrial(heard(['a']), 'a', seenSnapshotOf(WIRE_CANDIDATES))
+  assert.match(chooseGuards(doc, 'a', 'nominal:gantry').reasons.join(' '), /was not among the candidates of a's trial 1/)
+  assert.match(chooseGuards(heard(['a']), 'a', 'nominal:cobot').reasons.join(' '), /has not tried the line yet/)
+  doc = chooseCandidate(doc, 'a', 'nominal:cobot')
+  assert.equal(trialsOfActor(doc, 'a')[0].chosen, 'nominal:cobot')
+  assert.equal(chooseCandidate(doc, 'a', 'nominal:cobot'), doc, 'the same pick twice changes nothing')
+  // A change after the pick: the round says what was seen AND what was picked.
+  doc = say(doc, 'a', { humanClearance: { criterion: { op: '<=', value: 4 } } })
+  const [r] = hearingHistory(doc)
+  assert.equal(r.chosen, 'nominal:cobot')
+  assert.equal(r.seen.length, 2)
+  // A second look: the pick of look 1 stays on look 1.
+  doc = recordTrial(doc, 'a', seenSnapshotOf(WIRE_CANDIDATES))
+  doc = chooseCandidate(doc, 'a', 'nominal:scara-fast')
+  assert.deepEqual(trialsOfActor(doc, 'a').map(t => t.chosen), ['nominal:cobot', 'nominal:scara-fast'])
+  assert.throws(() => chooseCandidate(agreeToLine(heard(['a']), 'a'), 'a', 'x'), /not tried|agreed/)
 })
 
 test('walking back and forth without changing anything is not a new trial', () => {

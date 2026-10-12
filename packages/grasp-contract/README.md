@@ -34,7 +34,15 @@ contract. Rigor on the Wire, Play in the Client. (ADR-0006)
 - `schema/recommendation-request.schema.json` — input (camelCase wire form).
 - `schema/recommendation-response.schema.json` — output (ranking of equivalence
   *candidates*; never a boolean equivalence verdict).
-- `examples/` — one canonical, known-good instance per endpoint. Start here:
+- `schema/criteria-trial-request.schema.json` / `criteria-trial-response.schema.json`
+  — the criteria hearing (contractVersion 9, ADR-165 D6): the end users' line in;
+  candidate cells with actual values (each with its `basis` — nominal / derived /
+  declared), every end user's interest per category, and the assessment of a
+  proposed line out (`proposal` — a closed kind union: notAsked / evaluated
+  {offerings} / unsatisfiable / noBaseline). No total score, no faces, no "best"
+  flag: the solver decides facts, the client presents and the person chooses.
+- `examples/` — one canonical, known-good instance per endpoint (the test suite
+  derives the endpoint list from `schema/`, so a new schema without an example is red). Start here:
   copy one, edit it, validate it. The test suite validates every example against
   its schema, so they cannot drift.
 

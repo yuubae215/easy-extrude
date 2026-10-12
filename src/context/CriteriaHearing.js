@@ -9,12 +9,15 @@
  *
  * Opening "Try it" is a human act: *this person looked at results while
  * holding these expectations*. It cannot be recomputed, so it is stored —
- * `criteriaHearing.trials[] = {actor, line, seen}`, where `line` is that end
- * user's slice of the line at the moment of looking (the same slice
- * `CriteriaLine.currentLine` states) and `seen` is the candidates shown.
- * `seen: []` is a declared zero, not a blank (PHILOSOPHY #31): until core/
- * returns candidates the trial is honest about having shown none. The writer
- * of a non-empty `seen` is 後続 PR (ADR-165 PR4, DEF-064).
+ * `criteriaHearing.trials[] = {actor, line, seen, chosen?}`, where `line` is
+ * that end user's slice of the line at the moment of looking (the same slice
+ * `CriteriaLine.currentLine` states) and `seen` is the candidates shown —
+ * each as it was shown (`{id, label, actuals}` — core/'s answer, copied, so
+ * the look stays readable after core/'s model changes: ADR-165 §PR4 の俯瞰 3).
+ * `seen: []` is a declared zero, not a blank (PHILOSOPHY #31): the solver was
+ * not reachable, or had nothing to show, and the trial says so. `chosen` is the
+ * candidate the person picked on that look (a human act — stored; inferring
+ * weights from it is core/'s — 後続 PR, DEF-067).
  *
  * Everything else is derived on every read (ADR-165 §PR3 の俯瞰 Q2):
  *
@@ -105,7 +108,8 @@ export function trialGuards(ctx, actorRef) {
  *
  * @param {object} ctx
  * @param {string} actorRef
- * @param {string[]} [seen] — ids of the candidates shown (core/'s; `[]` until PR4)
+ * @param {object[]} [seen] — the candidates shown, as snapshots
+ *        (`CriteriaTrialWire.seenSnapshotOf`); `[]` = none were shown
  * @returns {object} a new context object (or `ctx` itself when nothing changed)
  */
 export function recordTrial(ctx, actorRef, seen = []) {
@@ -117,6 +121,37 @@ export function recordTrial(ctx, actorRef, seen = []) {
   if (last && sameClaimValue(last.line, line) && sameClaimValue(last.seen, seen)) return ctx
   const trial = { actor: actorRef, line, seen: [...seen] }
   return { ...ctx, criteriaHearing: { ...(ctx.criteriaHearing ?? {}), trials: [...trialsOf(ctx), trial] } }
+}
+
+/**
+ * Every reason `actorRef` cannot pick `candidateId` now. The pick belongs to
+ * the person's latest look, and only to a candidate that look showed.
+ */
+export function chooseGuards(ctx, actorRef, candidateId) {
+  const mine = trialsOfActor(ctx, actorRef)
+  const last = mine[mine.length - 1]
+  if (!last) return { ok: false, reasons: [`"${actorRef}" has not tried the line yet — there is nothing to choose from.`] }
+  if (isRespondentFrozen(ctx, actorRef)) return { ok: false, reasons: [`"${actorRef}" has agreed to the line — the hearing's looks are closed.`] }
+  if (!(last.seen ?? []).some(c => c.id === candidateId)) {
+    return { ok: false, reasons: [`"${candidateId}" was not among the candidates of ${actorRef}'s trial ${mine.length}.`] }
+  }
+  return { ok: true, reasons: [] }
+}
+
+/**
+ * **Pick a candidate on the latest look** (ADR-165 D3 — "let the person
+ * choose"). Writes `chosen` on that end user's last trial; picking again
+ * replaces the pick of the same look. Throws when the gate refuses.
+ */
+export function chooseCandidate(ctx, actorRef, candidateId) {
+  const g = chooseGuards(ctx, actorRef, candidateId)
+  if (!g.ok) throw new Error(`[CriteriaHearing] ${g.reasons.join(' ')}`)
+  const trials = trialsOf(ctx)
+  let lastIndex = -1
+  trials.forEach((t, i) => { if (t.actor === actorRef) lastIndex = i })
+  if (trials[lastIndex].chosen === candidateId) return ctx
+  const next = trials.map((t, i) => i === lastIndex ? { ...t, chosen: candidateId } : t)
+  return { ...ctx, criteriaHearing: { ...ctx.criteriaHearing, trials: next } }
 }
 
 /** The line an end user's last round ends at: the agreed snapshot once frozen, else the line now. */
@@ -158,7 +193,7 @@ function sliceChanges(from, to) {
  * cut safety says so — derived, never typed.
  *
  * @param {object} ctx
- * @returns {Array<{actor: string, afterTrial: number, seen: string[], changes: object[], safetyCut: boolean}>}
+ * @returns {Array<{actor: string, afterTrial: number, seen: object[], chosen: string|null, changes: object[], safetyCut: boolean}>}
  */
 export function hearingHistory(ctx) {
   const rounds = []
@@ -168,7 +203,7 @@ export function hearingHistory(ctx) {
       const to = i + 1 < mine.length ? mine[i + 1].line : lineAtEndOf(ctx, u.ref)
       const changes = sliceChanges(t.line, to)
       if (changes.length === 0) return
-      rounds.push({ actor: u.ref, afterTrial: i + 1, seen: t.seen ?? [], changes, safetyCut: changes.some(c => c.safetyCut) })
+      rounds.push({ actor: u.ref, afterTrial: i + 1, seen: t.seen ?? [], chosen: t.chosen ?? null, changes, safetyCut: changes.some(c => c.safetyCut) })
     })
   }
   return rounds

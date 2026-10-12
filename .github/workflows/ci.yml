@@ -47,8 +47,11 @@ jobs:
         run: |
           BASE="origin/${{ github.base_ref }}"
           git fetch origin "${{ github.base_ref }}" --quiet
-          RESPONSE_SCHEMAS="packages/grasp-contract/schema/grasp-search-response.schema.json packages/grasp-contract/schema/recommendation-response.schema.json"
-          if git diff --quiet "$BASE"...HEAD -- $RESPONSE_SCHEMAS; then
+          # The population is every *-response schema (a git pathspec glob), not a
+          # hand-written list: a list here once left a new response schema outside
+          # the wall the day it was added (ADR-165 PR4 — PHILOSOPHY #31).
+          RESPONSE_SCHEMAS='packages/grasp-contract/schema/*-response.schema.json'
+          if git diff --quiet "$BASE"...HEAD -- "$RESPONSE_SCHEMAS"; then
             echo "response schemas unchanged — wall not engaged (request-side edits are open payload / layoutVersion-governed, ADR-074/084)"
           elif git diff --quiet "$BASE"...HEAD -- packages/grasp-contract/contract-version.json; then
             echo "::error::a *-response schema changed without a contractVersion bump (packages/grasp-contract/contract-version.json). Response contract changes are deliberate versioned acts (ADR-082/074)."
