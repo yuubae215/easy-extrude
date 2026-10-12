@@ -68,3 +68,33 @@ test('unknown id: toasts a warning through either canUndo branch, never asks to 
     assert.equal(ctrl._uiView.toasts.length, 1)
   }
 })
+
+// ── ADR-165 PR2: the floor's read models are projected on entry ──────────────
+//
+// The browser run found the agreement question asked with no button to press:
+// `criteriaLine` was projected only on a later re-projection, never when the
+// floor opened over a freshly imported document (原則 #11). The agenda shared
+// the gap. Asserted on the store the panels read, not on the service.
+
+test('entering negotiation projects the criteria line and the agenda (not only on the next edit)', async () => {
+  const { ContextService } = await import('../service/ContextService.js')
+  const { useUIStore } = await import('../store/uiStore.js')
+  const elements = ['takt', 'positionAccuracy', 'holdMargin', 'equipmentCost', 'maintainability', 'humanClearance', 'stoppingDistance']
+  const svc = new ContextService({ async importFromJson() { return { imported: 0, skipped: 0 } } })
+  await svc.loadContext({
+    version: 'context/0.6',
+    actors: ['a', 'b'].map(ref => ({ ref, role: 'maintainer', endUser: true, mix: { D: 1, Q: 1, C: 1, S: 1 } })),
+    requirements: ['a', 'b'].flatMap(o => elements.map(k => ({ ref: `crit_${o}_${k}`, by: o, owner: o, kpi: { name: k }, criterion: { op: '<=', value: 1 }, weight: 1 }))),
+    specification: { layout: { version: 'layout/0.1', entities: [] } },
+  }, { camera: null, renderer: null, container: null })
+
+  const ctrl = makeCtrl()
+  ctrl._ctxService = svc
+  const cc = new ContextController(ctrl)
+  cc._startNegotiation()
+
+  const { context } = useUIStore.getState()
+  assert.deepEqual(context.criteriaLine?.awaiting, ['a', 'b'], 'the agreement widget has its buttons on entry')
+  assert.ok(Array.isArray(context.agendaRows))
+  assert.ok(context.form.some(q => q.raisedBy === 'R12:unagreed-criteria'))
+})

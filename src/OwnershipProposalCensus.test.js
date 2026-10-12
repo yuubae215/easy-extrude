@@ -39,7 +39,7 @@ import {
 } from './context/Ownership.js'
 import {
   PROPOSAL_STATE, makeProposal, addProposal, approveProposal, withdrawProposal,
-  unapproveProposal, findProposal, approvalGuards, isStale,
+  unapproveProposal, findProposal, approvalGuards, isStale, rejectProposal,
 } from './context/Proposal.js'
 import {
   AGENDA_STATE, tableConflict, settleAgendaItem, closeAgendaItemUndecided,
@@ -118,9 +118,11 @@ test('保存が禁じられた導出値の形は src/** に 0 個 (ADR-104 D4 / 
 const LEGAL_PROPOSAL_TRANSITIONS = [
   `${PROPOSAL_STATE.PROPOSED}→${PROPOSAL_STATE.APPROVED}`,
   `${PROPOSAL_STATE.PROPOSED}→${PROPOSAL_STATE.WITHDRAWN}`,
+  // ADR-165 §PR2 の俯瞰 C / D: rejection is the approver's terminal, one state set for both kinds.
+  `${PROPOSAL_STATE.PROPOSED}→${PROPOSAL_STATE.REJECTED}`,
 ]
 
-test('提案の遷移は宣言された 2 本だけ — 終端からの復帰は表現不能 (ADR-104 D3)', () => {
+test('提案の遷移は宣言された 3 本だけ — 終端からの復帰は表現不能 (ADR-104 D3)', () => {
   const states = Object.values(PROPOSAL_STATE)
   const population = []
   const passed = []
@@ -136,6 +138,8 @@ test('提案の遷移は宣言された 2 本だけ — 終端からの復帰は
         doc = approveProposal(doc, 'prop_1', { decidedBy: ['vision'], keyCardinality: 1 })
       } else if (from === PROPOSAL_STATE.WITHDRAWN) {
         doc = withdrawProposal(doc, 'prop_1')
+      } else if (from === PROPOSAL_STATE.REJECTED) {
+        doc = rejectProposal(doc, 'prop_1', ['vision'])
       }
 
       try {
@@ -143,6 +147,8 @@ test('提案の遷移は宣言された 2 本だけ — 終端からの復帰は
           approveProposal(doc, 'prop_1', { decidedBy: ['vision'], keyCardinality: 1 })
         } else if (to === PROPOSAL_STATE.WITHDRAWN) {
           withdrawProposal(doc, 'prop_1')
+        } else if (to === PROPOSAL_STATE.REJECTED) {
+          rejectProposal(doc, 'prop_1', ['vision'])
         } else {
           // proposed へ「戻す」正規の道は存在しない。存在しないことがこの検査。
           continue

@@ -49,8 +49,11 @@ import {
   unapproveProposal,
   findProposal,
   approvalGuards,
+  rejectionGuards,
+  rejectProposal,
   PROPOSAL_STATE,
 } from '../context/Proposal.js'
+import { projectCriteriaLine, agreementGuards } from '../context/CriteriaLine.js'
 import {
   tableConflict,
   removeAgendaItem,
@@ -502,9 +505,30 @@ export class ContextService extends EventEmitter {
     return p
   }
 
-  /** Undo of `approveProposal` — unwinds claim, state and receipt together. */
-  unapproveProposal(ref, viewContext) {
-    return this.applyContextDoc(unapproveProposal(this._doc, ref), viewContext, { regenerate: true })
+  /**
+   * Undo of `approveProposal` — unwinds claim, state and receipt together. A
+   * line proposal also needs the approvers that approval added (ADR-165 D5),
+   * so the command hands its signature back.
+   */
+  unapproveProposal(ref, viewContext, signature) {
+    return this.applyContextDoc(unapproveProposal(this._doc, ref, signature), viewContext, { regenerate: true })
+  }
+
+  /**
+   * Reject a proposal — terminal and kept. The claim does not move, so no
+   * regeneration (ADR-165 §PR2 の俯瞰 C / D).
+   * @param {string} ref @param {string[]} rejectedBy — from `rejectionGuards().by`
+   */
+  rejectProposal(ref, rejectedBy, viewContext) {
+    const p = this.applyContextDoc(rejectProposal(this._doc, ref, rejectedBy), viewContext)
+    this.emit('proposalRejected', { ref })
+    return p
+  }
+
+  /** Undo of `rejectProposal`. */
+  unrejectProposal(ref, viewContext) {
+    return this.applyContextDoc(
+      restoreProposalState(this._doc, ref, PROPOSAL_STATE.PROPOSED), viewContext)
   }
 
   /** Table a conflict — the human act that starts the record (D4). */
@@ -566,10 +590,36 @@ export class ContextService extends EventEmitter {
   signatureForProposal(ref, keyring) {
     const guards = this.approvalGuards(ref, keyring)
     if (!guards.ok) return null
+    if (guards.line) {
+      // ADR-165 D5: the approvers are the held keys among the end users still
+      // missing; none required at all is "no approvers — recorded only".
+      return {
+        decidedBy: guards.approvers,
+        keyCardinality: keyCardinality(keyring),
+        noApproversRequired: guards.required.length === 0,
+      }
+    }
     return {
       decidedBy: signatureFor(keyring, [guards.owner]),
       keyCardinality: keyCardinality(keyring),
     }
+  }
+
+  /** Every reason rejecting this proposal would be refused, and who would reject. */
+  rejectionGuards(ref, keyring) {
+    const proposal = findProposal(this._doc, ref)
+    if (!proposal) return { ok: false, reasons: [`No proposal "${ref}".`], by: [] }
+    return rejectionGuards(this._doc, proposal, keyring)
+  }
+
+  /** Every reason `actorRef` cannot agree to the criteria line now (ADR-165 D5). */
+  agreementGuards(actorRef, keyring) {
+    return agreementGuards(this._doc ?? {}, actorRef, keyring)
+  }
+
+  /** The criteria line as the floor reads it: status, version, history, menu (ADR-165 D4 / D5). */
+  criteriaLine() {
+    return projectCriteriaLine(this._doc ?? {})
   }
 
   /** Every reason settling this agenda item would be refused. */

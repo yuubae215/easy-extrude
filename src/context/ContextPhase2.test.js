@@ -209,6 +209,8 @@ test('form projection: answering every question empties the form (machine-checka
     mix: { D: 3, Q: 2, C: 1, S: 4 },
     elements: Object.fromEntries(CRITERIA_ELEMENTS.map(e => [e.key, { criterion: { op: e.op, value: 1 }, weight: 1 }])),
   }))
+  // ADR-165 PR2: heard in full is half the gate — the end user agrees to the line.
+  answerOne(ANSWER_KIND.AGREEMENT, () => ({ actorRef: ctx.actors[0].ref }))
 
   const result = validateContext(doc)
   assert.deepStrictEqual(projectForm(result), [], '全問に答えるとフォームが空になること')

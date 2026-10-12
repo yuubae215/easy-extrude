@@ -78,6 +78,62 @@
         "$ref": "#/$defs/proposal"
       }
     },
+    "criteriaAgreement": {
+      "description": "ADR-165 D5. The end users' agreement to the criteria line (every end user × {mix, expectation, weight per element}). `agreed` is the snapshot every end user agreed to (version 1 the first time, the current version on a re-hearing); `pending` gathers agreements toward the next completion. Status, current version and drift are derived (CriteriaLine.js) — never stored.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "agreed": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "line",
+            "version",
+            "by"
+          ],
+          "properties": {
+            "line": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/criteriaLineSlice"
+              }
+            },
+            "version": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "by": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "pending": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "line",
+            "by"
+          ],
+          "properties": {
+            "line": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/criteriaLineSlice"
+              }
+            },
+            "by": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
     "agenda": {
       "description": "ADR-104 D4. TABLED CONFLICTS ONLY. Conflicts are re-derived by R6 on every validate and are never stored; proposals are agenda items by existing. The agenda a person reads is the union, assembled on demand by Agenda.projectAgenda() so neither side is stored twice.",
       "type": "array",
@@ -602,7 +658,8 @@
           "enum": [
             "proposed",
             "approved",
-            "withdrawn"
+            "withdrawn",
+            "rejected"
           ]
         },
         "decidedBy": {
@@ -615,11 +672,51 @@
         "keyCardinalityAtDecision": {
           "type": "integer",
           "minimum": 0
+        },
+        "approvals": {
+          "description": "ADR-165 D5. For a change to the agreed criteria line: the other end users who have approved so far (a set). The approval that completes the set applies the change.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "approversRequired": {
+          "description": "ADR-165 D5. Stamped on approval of a line change: the end users whose approval was required then (every end user except the proposer). [] = no other end user — the change was recorded, not approved. Kept because end users may come and go afterwards.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "lineVersion": {
+          "description": "ADR-165 D5. Stamped on approval of a line change: the version of the criteria line it produced (agreed v1 → this change v2 …).",
+          "type": "integer",
+          "minimum": 2
+        },
+        "rejectedBy": {
+          "description": "Who rejected the proposal (state rejected). A human act, kept.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "offerings": {
+          "description": "ADR-165 D5 / D6. What a change outside the margin gives up, as returned by core/ (PR4). While present, each approver must have read it before approving.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "offeringsReadBy": {
+          "description": "ADR-165 D5. The approvers who have read `offerings`.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         }
       }
     },
     "claimTarget": {
-      "description": "What a proposal is about. `kind` is bound to TARGET_KIND in Ownership.js, where an undeclared kind throws rather than falling through to a default (PHILOSOPHY #31).",
+      "description": "What a proposal is about. `kind` is bound to TARGET_KIND in Ownership.js, where an undeclared kind throws rather than falling through to a default (PHILOSOPHY #31). `actor.mix` names an actor ref (the end user's QCD + S ratio — ADR-165 D5).",
       "type": "object",
       "additionalProperties": false,
       "required": [
@@ -631,6 +728,8 @@
           "enum": [
             "requirement.admissible",
             "requirement.criterion",
+            "requirement.weight",
+            "actor.mix",
             "conflict"
           ]
         },
@@ -1555,6 +1654,33 @@
         },
         "w": {
           "$ref": "#/$defs/numOrRef"
+        }
+      }
+    },
+    "criteriaLineSlice": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "mix": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "number"
+          }
+        },
+        "elements": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "criterion": {
+                "$ref": "#/$defs/criterion"
+              },
+              "weight": {
+                "type": "number"
+              }
+            }
+          }
         }
       }
     }

@@ -25,6 +25,7 @@ import { ContextService } from '../service/ContextService.js'
 import { createProposeChangeCommand } from './ProposeChangeCommand.js'
 import { createApproveProposalCommand } from './ApproveProposalCommand.js'
 import { createWithdrawProposalCommand } from './WithdrawProposalCommand.js'
+import { createRejectProposalCommand } from './RejectProposalCommand.js'
 import { createTableConflictCommand } from './TableConflictCommand.js'
 import { createSettleAgendaCommand, createCloseUndecidedCommand } from './CloseAgendaCommand.js'
 import { makeProposal, PROPOSAL_STATE } from '../context/Proposal.js'
@@ -288,4 +289,66 @@ test('まだ開いている議題を supersede しようとすると拒否され
 
   assert.ok(svc.getValidatorResult().errors.some(e => /still open/.test(e)),
     '同じ問いが場に 2 つ在る状態が通ってしまう')
+})
+
+// ── ADR-165 §PR2: rejection, and a line approval through the service ─────────
+
+test('却下は記録に残り、undo で提案へ戻る — 主張は動かない (ADR-165 §PR2 C / D)', async () => {
+  const svc = await loaded()
+  await createProposeChangeCommand(svc, proposal(), VC).execute()
+  // 所有者 (vision_engineer) の鍵だけが却下できる
+  assert.equal(svc.rejectionGuards('prop_wd', keyringOf(['robot_engineer'])).ok, false)
+  const g = svc.rejectionGuards('prop_wd', keyringOf(['vision_engineer']))
+  assert.deepEqual(g.by, ['vision_engineer'])
+  const cmd = createRejectProposalCommand(svc, 'prop_wd', g.by, VC)
+  await cmd.execute()
+  assert.equal(svc.getDoc().proposals[0].state, PROPOSAL_STATE.REJECTED)
+  assert.deepEqual(svc.getDoc().proposals[0].rejectedBy, ['vision_engineer'])
+  assert.equal(svc.projectAgenda().filter(r => r.source === AGENDA_SOURCE.PROPOSAL).length, 0, '却下された提案は場を降りる')
+  await cmd.undo()
+  assert.equal(svc.getDoc().proposals[0].state, PROPOSAL_STATE.PROPOSED)
+  assert.equal(svc.getDoc().proposals[0].rejectedBy, undefined)
+  assert.throws(() => createRejectProposalCommand(svc, 'prop_wd', [], VC), /without naming who/)
+})
+
+test('線の変更: 署名は他のエンドユーザの鍵だけで作られ、1 人目では線が動かない (ADR-165 D5)', async () => {
+  const svc = new ContextService(fakeScene())
+  const elements = ['takt', 'positionAccuracy', 'holdMargin', 'equipmentCost', 'maintainability', 'humanClearance', 'stoppingDistance']
+  const reqs = (o) => elements.map(k => ({ ref: `crit_${o}_${k}`, by: o, owner: o, kpi: { name: k }, criterion: { op: '<=', value: 10 }, weight: 1 }))
+  const actors = ['a', 'b', 'c'].map(ref => ({ ref, role: 'maintainer', endUser: true, mix: { D: 1, Q: 1, C: 1, S: 1 } }))
+  const line = Object.fromEntries(['a', 'b', 'c'].map(o => [o, {
+    mix: { D: 1, Q: 1, C: 1, S: 1 },
+    elements: Object.fromEntries(elements.map(k => [k, { criterion: { op: '<=', value: 10 }, weight: 1 }])),
+  }]))
+  await svc.loadContext({
+    version: 'context/0.6', actors, requirements: ['a', 'b', 'c'].flatMap(reqs),
+    specification: { layout: { version: 'layout/0.1', entities: [] } },
+    criteriaAgreement: { agreed: { line, version: 1, by: ['a', 'b', 'c'] } },
+  }, VC)
+  const target = { kind: TARGET_KIND.REQUIREMENT_CRITERION, ref: 'crit_a_takt' }
+  assert.equal(svc.editPermission(keyringOf(['a']), target).permission, EDIT_PERMISSION.PROPOSE_ONLY)
+  await createProposeChangeCommand(svc, makeProposal({
+    ref: 'prop_line', by: 'a', target, from: { op: '<=', value: 10 }, to: { op: '<=', value: 12 }, rationale: 'takt',
+  }), VC).execute()
+  assert.equal(svc.criteriaLine().status, 'changeProposed')
+  assert.equal(svc.signatureForProposal('prop_line', keyringOf(['a'])), null, '提案者の鍵では署名できない')
+
+  const sigB = svc.signatureForProposal('prop_line', keyringOf(['a', 'b']))
+  assert.deepEqual(sigB.decidedBy, ['b'])
+  const first = createApproveProposalCommand(svc, 'prop_line', sigB, VC)
+  await first.execute()
+  assert.equal(svc.getDoc().requirements.find(r => r.ref === 'crit_a_takt').criterion.value, 10)
+  assert.deepEqual(svc.projectAgenda().find(r => r.ref === 'prop_line').line, { approvals: ['b'], required: ['b', 'c'] })
+
+  const sigC = svc.signatureForProposal('prop_line', keyringOf(['c']))
+  const second = createApproveProposalCommand(svc, 'prop_line', sigC, VC)
+  await second.execute()
+  assert.equal(svc.getDoc().requirements.find(r => r.ref === 'crit_a_takt').criterion.value, 12)
+  assert.equal(svc.criteriaLine().version, 2)
+  assert.equal(svc.criteriaLine().history[0].version, 2)
+
+  await second.undo()
+  assert.equal(svc.getDoc().requirements.find(r => r.ref === 'crit_a_takt').criterion.value, 10)
+  assert.deepEqual(svc.getDoc().proposals[0].approvals, ['b'])
+  assert.equal(svc.criteriaLine().version, 1)
 })

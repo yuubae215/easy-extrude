@@ -11,7 +11,7 @@ artifacts
 
     context Adr165Scope
     uuid be95b5b1-5ae1-45b7-b328-92e53b9f9f7f
-    summary "ADR-165 (Proposed 2026-10-11、IA 再設計 Phase 8): 職能と立場を分け、エンドユーザ 1..N (D1)、価値木は QCD + S でどの要素も期待値と重みの同じ形 (D2)、キャラメイク型の聞き取りフロー (D3)、見た後の変更を履歴に残す (D4)、全員の合意で v1、以後の線の変更は他のエンドユーザ全員の承認を要する提案 (D5)、関心と差し出すものは core/ が返し持ち主が保証する (D6)"
+    summary "ADR-165 (Accepted 2026-10-11 段階実装 — PR1 D1/D2・PR2 D4(合意後)/D5 済、IA 再設計 Phase 8): 職能と立場を分け、エンドユーザ 1..N (D1)、価値木は QCD + S でどの要素も期待値と重みの同じ形 (D2)、キャラメイク型の聞き取りフロー (D3)、見た後の変更を履歴に残す (D4)、全員の合意で v1、以後の線の変更は他のエンドユーザ全員の承認を要する提案 (D5)、関心と差し出すものは core/ が返し持ち主が保証する (D6)"
 
     context RequirementCameFromTheOwner
     uuid bcde7e9b-ecce-4994-ba6b-66c1f83cb112
@@ -59,11 +59,18 @@ artifacts
         goal TheAgreedLineMovesOnlyByApprovedProposal
         uuid 0af88cd6-c44c-4aa4-b408-09b1235cdae3
         summary "合意済みの線は、他のエンドユーザ全員の承認でしか動かない (緩め・締めとも)。マージン外の提案は承認者ごとに差し出すものを読むまで承認できない。動いた線には誰が・何を見て・誰の承認でが残る"
-        labels support-exploring
+        labels support-verified
 
-            assumption LineProposalTestWillSettleIt
+            solution LineStateMachineIsExecuted
             uuid 0c2fe4c7-1b7b-4f76-982f-aee612000f07
-            summary "証拠予定: 実装 PR で、線の状態機械 (聞き取り中 / 合意済み / 変更提案中) の遷移表テストと、承認者の欠けた承認・読まずに押した承認が拒否されるテストを置く。満期=PATH:src/context/CriteriaLine.test.js で決着する"
+            summary "src/context/CriteriaLine.test.js (2026-10-12, PR2, 21 pass): 未聴取が残ると合意できない (理由つき) / 本人の鍵が要る / N=2 で 1 人目は聞き取り中・2 人目で合意済み v1 / 古い線への合意は数えず集め直す / 合意後は所有者の鍵でも PROPOSE_ONLY / ファイルの直接書き換えは R14 の drift error / N=3 で 1 人の承認では線が動かず 2 人目で v2 / 同じ鍵の 2 度押しは数えない / N=1 は承認者なしで記録のみ / 承認者の欠けた approved は error / undo が承認者・主張・証憑を一緒に戻す / 差し出すもの (offerings) を読むまで承認できない (G3 — 値は PR4、DEF-062) / 1 人の却下で終端・版はそのまま / 新しいエンドユーザで再聴取・版は保つ / 履歴が緩めた・締めた・安全を削ったを導出する。src/command/ProposalCommands.test.js: service とコマンドを通した線の承認と却下 (+ undo)。src/OwnershipProposalCensus.test.js: 提案の遷移は宣言された 3 本だけ。src/controller/ContextController.test.js: 入場直後に合意のボタンが出る (ブラウザで見つけた欠陥の回帰)。『何を見て』の半分 (合意前のやってみるの後の変更) は PR3 — DEF-063"
+            artifacts
+            - "src/context/CriteriaLine.js"
+            - "src/context/CriteriaLine.test.js"
+            - "src/context/Proposal.js"
+            - "src/context/Ownership.js"
+            - "src/context/ContextValidator.js"
+            - "src/command/ProposalCommands.test.js"
 
         goal IndicatorValuesComeOnlyFromCore
         uuid b32930ce-f76c-4884-82a7-fe0144964c84

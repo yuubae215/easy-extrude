@@ -37,6 +37,7 @@
  */
 
 import { hasKey } from './Keyring.js'
+import { isFrozenLineTarget, lineVersion } from './CriteriaLine.js'
 
 /**
  * The **declared** absence of an owner — "we looked, and this belongs to nobody".
@@ -67,6 +68,10 @@ export const EDIT_PERMISSION = Object.freeze({
 export const TARGET_KIND = Object.freeze({
   REQUIREMENT_ADMISSIBLE: 'requirement.admissible',
   REQUIREMENT_CRITERION:  'requirement.criterion',
+  /** An end user's weight on one criteria element (ADR-165 D2 / D5 — a line field). */
+  REQUIREMENT_WEIGHT:     'requirement.weight',
+  /** An end user's QCD + S ratio; `ref` is the actor (ADR-165 D2 / D5 — a line field). */
+  ACTOR_MIX:              'actor.mix',
   CONFLICT:               'conflict',
 })
 
@@ -82,22 +87,46 @@ const CLAIM_ACCESS_BY_KIND = Object.freeze({
   [TARGET_KIND.REQUIREMENT_ADMISSIBLE]: {
     writable: true,
     read: (ctx, target) => requirementOf(ctx, target)?.admissible ?? null,
+    owner: (ctx, target) => requirementOf(ctx, target)?.owner,
+    exists: (ctx, target) => requirementOf(ctx, target) !== null,
   },
   [TARGET_KIND.REQUIREMENT_CRITERION]: {
     writable: true,
     read: (ctx, target) => requirementOf(ctx, target)?.criterion ?? null,
+    owner: (ctx, target) => requirementOf(ctx, target)?.owner,
+    exists: (ctx, target) => requirementOf(ctx, target) !== null,
+  },
+  [TARGET_KIND.REQUIREMENT_WEIGHT]: {
+    writable: true,
+    read: (ctx, target) => requirementOf(ctx, target)?.weight ?? null,
+    owner: (ctx, target) => requirementOf(ctx, target)?.owner,
+    exists: (ctx, target) => requirementOf(ctx, target) !== null,
+  },
+  [TARGET_KIND.ACTOR_MIX]: {
+    // The ratio is the end user's own answer, so the actor owns it — there is
+    // no separate owner field to leave undeclared (ADR-165 D2).
+    writable: true,
+    read: (ctx, target) => actorOf(ctx, target)?.mix ?? null,
+    owner: (ctx, target) => actorOf(ctx, target)?.ref,
+    exists: (ctx, target) => actorOf(ctx, target) !== null,
   },
   [TARGET_KIND.CONFLICT]: {
     // R6 recomputes conflicts from the requirement graph on every validate, so a
     // stored conflict would be a second source (§1.1 / ADR-104 D4).
     writable: false,
     read: () => null,
+    owner: () => undefined,
+    exists: () => true,
   },
 })
 
 /** @param {object} ctx @param {{ref: string}} target */
 const requirementOf = (ctx, target) =>
   (ctx?.requirements ?? []).find(r => r.ref === target.ref) ?? null
+
+/** @param {object} ctx @param {{ref: string}} target */
+const actorOf = (ctx, target) =>
+  (ctx?.actors ?? []).find(a => a.ref === target.ref) ?? null
 
 /**
  * Look up a target kind's access rules, throwing on an undeclared kind.
@@ -141,8 +170,12 @@ export function readClaim(ctx, target) {
  *   `undefined` when nobody has declared one (the counted case — D2)
  */
 export function ownerOf(ctx, target) {
-  accessFor(target)   // reject undeclared kinds here too — one gate, not two
-  return requirementOf(ctx, target)?.owner
+  return accessFor(target).owner(ctx, target)   // undeclared kinds throw here too — one gate, not two
+}
+
+/** True when the claim a target names is present in the document. */
+export function claimExists(ctx, target) {
+  return accessFor(target).exists(ctx, target)
 }
 
 /**
@@ -191,6 +224,17 @@ export function editPermission(keyring, ctx, target) {
     return {
       permission: EDIT_PERMISSION.READ_ONLY,
       reason: 'This is derived from the document on every validate — it is not a claim anyone owns (ADR-104 D4).',
+    }
+  }
+
+  // ADR-165 D5: once the end users have agreed, a line field moves only by a
+  // proposal every *other* end user approves — and that includes its owner.
+  // The key says who you may write as; the agreement says that nobody writes
+  // this one alone. Checked before the key so the owner's key cannot win.
+  if (isFrozenLineTarget(ctx, target)) {
+    return {
+      permission: EDIT_PERMISSION.PROPOSE_ONLY,
+      reason: `"${target.ref}" is part of the agreed criteria line (v${lineVersion(ctx)}) — it moves only by a proposal the other end users approve, even for its owner (ADR-165 D5).`,
     }
   }
 

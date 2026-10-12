@@ -247,3 +247,28 @@ test('a smuggled proposal field is rejected', () => {
     }],
   }), false, 'a `stale` field must not be storable — staleness is derived (ADR-104 U2)')
 })
+
+test('a context/0.6 doc with an agreed criteria line and an approved line change conforms (ADR-165 D5)', () => {
+  const line = { a: { mix: { D: 1, Q: 1, C: 1, S: 1 }, elements: { takt: { criterion: { op: '<=', value: 10 }, weight: 1 } } } }
+  assert.equal(validate({
+    version: 'context/0.6',
+    actors: [{ ref: 'a', role: 'maintainer', endUser: true }, { ref: 'b', role: 'ehs', endUser: true }],
+    requirements: [{ ref: 'crit_a_takt', by: 'a', owner: 'a', kpi: { name: 'takt' }, criterion: { op: '<=', value: 12 }, weight: 1 }],
+    proposals: [{
+      ref: 'prop_1', by: 'a', target: { kind: 'requirement.criterion', ref: 'crit_a_takt' },
+      from: { op: '<=', value: 10 }, to: { op: '<=', value: 12 }, rationale: 'takt', state: 'approved',
+      approvals: ['b'], decidedBy: ['b'], approversRequired: ['b'], lineVersion: 2,
+    }, {
+      ref: 'prop_2', by: 'b', target: { kind: 'actor.mix', ref: 'b' },
+      from: { D: 1 }, to: { D: 2 }, rationale: 'mix', state: 'rejected', rejectedBy: ['a'],
+    }],
+    criteriaAgreement: { agreed: { line, version: 1, by: ['a', 'b'] }, pending: { line, by: ['a'] } },
+  }), true, JSON.stringify(validate.errors))
+})
+
+test('a stored line status is rejected — the status is derived (ADR-165 D5)', () => {
+  assert.equal(validate({
+    version: 'context/0.6',
+    criteriaAgreement: { agreed: { line: {}, version: 1, by: [] }, status: 'agreed' },
+  }), false)
+})

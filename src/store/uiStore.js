@@ -255,6 +255,7 @@ export const useUIStore = create((set, get) => ({
     // `proposals` / `agenda`: those names belong to the document's arrays, and
     // a same-named mirror here is how a view copy grows into a second source.
     agendaRows: [],          // ContextService.projectAgenda() — tabled conflicts ∪ live proposals
+    criteriaLine: null,      // ContextService.criteriaLine() — the line's status, version, history (ADR-165 D4/D5)
     // ── ADR-105: the discovery aggregate, which lives OUTSIDE the floor ───────
     // A `kind`-discriminated union, not three numbers (ADR-105 D2): the reader
     // has to say which of the three zeroes they are looking at before they can
@@ -583,6 +584,9 @@ export const useUIStore = create((set, get) => ({
     contextRevokeKey: (actorRef) => set(state => ({
       context: { ...state.context, keyring: state.context.keyring.filter(k => k !== actorRef) },
     })),
+    contextSetCriteriaLine: (criteriaLine) => set(state => ({
+      context: { ...state.context, criteriaLine },
+    })),
     contextSetAgenda: (agendaRows) => set(state => ({
       context: { ...state.context, agendaRows },
     })),
@@ -729,7 +733,7 @@ export const useUIStore = create((set, get) => ({
       // closing the floor emptied the semantic side, which is the exact shape
       // ADR-105 D4 named: a lifecycle reducer writing a derived fact it does not
       // own. The e2e ("場を閉じたまま意味側から変数を選べる") is what caught it.
-      context: { ...state.context, active: false, mode: null, personaFilter: null, form: [], checks: [], requirements: [], provenance: null, whyTree: null, grasp: null, graspAnalysis: null, authorSeed: null, agendaRows: [] },
+      context: { ...state.context, active: false, mode: null, personaFilter: null, form: [], checks: [], requirements: [], provenance: null, whyTree: null, grasp: null, graspAnalysis: null, authorSeed: null, agendaRows: [], criteriaLine: null },
     })),
   },
 }))

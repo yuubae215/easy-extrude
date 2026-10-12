@@ -96,7 +96,9 @@ test('N=2: both answered → complete, and no R12 question remains', () => {
   assert.equal(c.count, 0)
   assert.equal(c.complete, true)
   const result = validateContext(ctx)
-  assert.deepEqual(result.openQuestions.filter(q => q.raisedBy.startsWith('R12')), [])
+  assert.deepEqual(result.openQuestions.filter(q => q.raisedBy.startsWith('R12') && q.raisedBy !== 'R12:unagreed-criteria'), [])
+  // Heard in full is half the gate: the agreement is asked next (ADR-165 PR2).
+  assert.ok(result.openQuestions.some(q => q.raisedBy === 'R12:unagreed-criteria'))
   // An expectation names no design variable (the mapping is core/'s) — R0'
   // must not demand `constrains` of it.
   assert.deepEqual(result.errors, [])

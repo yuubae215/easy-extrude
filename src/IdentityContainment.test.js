@@ -170,6 +170,17 @@ const IDENTITY_RULES = [
     why: '2 つの住所の片方だけを読む判定が増えると、旧文書のエンドユーザが別の経路では居ないことになり、聞き取りの空欄が数えられない (ADR-165 D1 / 原則 #31)',
   },
   {
+    // ADR-165 D5。「この主張は判定基準の線か / 合意で凍っているか」は
+    // CriteriaLine 1 箇所で決める。所有者の鍵より先に効く規則なので、
+    // 呼び出し側で kpi.name と endUser を並べ直すと鍵が勝つ経路が 1 本生まれる。
+    name: '判定基準の線の同一性 (線の欄か・合意で凍っているか)',
+    owners: ['src/context/CriteriaLine.js'],
+    use: "lineFieldOf(ctx, target) / isFrozenLineTarget(ctx, target) / isLineProposal(ctx, proposal)  — import from 'src/context/CriteriaLine.js'",
+    scope: 'all',
+    all: [/criteriaAgreement|\.agreed\b/, /\.line\b/],
+    why: '凍結の判定が散ると、合意済みの線を所有者の鍵で直接書き換えられる経路が呼び出し側の数だけ生まれる (ADR-165 D5)',
+  },
+  {
     // ADR-104 U2。「この提案は古びているか」は *保存しない* と決めた導出値なので、
     // 導出規則そのものが唯一の住所になる。散ると「4 つ目の状態」が事実上復活する。
     name: '提案の陳腐化判定 (from === 現在値)',
