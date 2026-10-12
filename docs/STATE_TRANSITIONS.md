@@ -1084,6 +1084,12 @@ Map 注釈ビュー (`AnnotatedPointView` / `AnnotatedLineView` / `AnnotatedRegi
      urgent  ← ドメインの違反アラーム (setTactTimeViolated / setToleranceViolated /
                setTactViolated / setContainsViolated) — 周期を詰め、色を danger に
      reduced ← OS 設定 (単一境界 src/theme/motion.js の購読)
+     selected ← setObjectSelected (ADR-166 M3a — 光の強さを ×1.4。urgent はこれより上)
+
+  状態ではない入力 (ADR-166 M3a)
+
+     elevation ← AppController が毎フレーム viewElevation(camera) で導出し tick に渡す
+                 (床の光と光の幕の受け渡し。記憶しないので閉路は無い — 原則 #24)
 ```
 
 - **権威**: 各 view の `tick(t)` が**唯一の書き手**。位相・曲線は純粋

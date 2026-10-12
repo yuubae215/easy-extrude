@@ -1,6 +1,6 @@
 /**
- * MapVisualMath — pure per-frame derivation for the Map Mode annotation visual
- * language (ADR-093). Consumed by AnnotatedPointView / AnnotatedLineView /
+ * MapVisualMath — pure per-frame derivation for the map annotation visual
+ * language (ADR-093 motion, ADR-166 M3 floor light). Consumed by AnnotatedPointView / AnnotatedLineView /
  * AnnotatedRegionView; those views only apply the returned numbers to
  * scale/opacity/colour.
  *
@@ -16,13 +16,13 @@
  * permanently and deterministically.
  *
  * TIER ROUTING (PHILOSOPHY #30 / ADR-066):
- *   - Tier A affordance — Hub ping, Route flow, Boundary tick wave, Zone rim:
+ *   - Tier A affordance — Hub ping, Route flow, Boundary light crest, Zone rim:
  *     each asserts the place type's semantics (broadcasting junction / flow
  *     channel / barrier / bounded area). Reading the animation IS reading the
  *     classification, which is why they must never all animate identically.
- *   - Tier D delight — the entry pop, the additive halo breathe, and the Zone
- *     hatch drift: non-propositional life. They carry no fact, so reduced motion
- *     drops them to a static styled cue.
+ *   - Tier D delight — the entry pop and the additive halo breathe:
+ *     non-propositional life. They carry no fact, so reduced motion drops them
+ *     to a static styled cue.
  *   - Tier F fact — the violation-urgent variants (`urgent: true`) narrow the
  *     period and are the ONLY thing here that changes meaning; they stay
  *     perceivable (colour + a held cue) under reduced motion.
@@ -35,6 +35,139 @@
  * honest stillness over a corrupted transform (#11 / P12).
  */
 import { clamp01, easeOutCubic, easeOutBack, breathe } from './MotionMath.js'
+import { STAGE_LIGHT } from './StageMath.js'
+
+// ── Floor light — the light, the view angle, the role (ADR-166 M3) ──────────
+//
+// ADR-093 D3 dressed the annotations as a drafting table (diagonal hatch,
+// corner registration marks, graduated survey crosshair, perpendicular wall
+// ticks). That device assumed a camera looking straight down; ADR-103 made Map
+// a viewpoint, so the annotations live in perspective 3D next to photographed
+// robots, where a hatch collapses to stripes at a glancing angle. ADR-166 M3
+// retires the device: an annotation is LIGHT ON THE FLOOR, lit by the one
+// stage light (`StageMath.STAGE_LIGHT`), and three numbers decide how it reads:
+//   - the TINT  — the place-type colour (the fact) warmed toward the stage light
+//   - the ANGLE — how far the camera looks down (`viewElevation`)
+//   - the ROLE  — how loud this kind of place may be (`EMPHASIS_BY_PLACE_TYPE`)
+// None of these is a function of time, so they have no reduced-motion branch:
+// they are helpers, not frames (the census in `MapVisualMath.test.js` lists
+// them as such).
+
+/**
+ * How far the camera looks down at the floor: |forward · +Z| ∈ [0,1]. 1 =
+ * straight down (the Map viewpoint), → 0 = skimming the floor. Takes the
+ * forward vector's Z only, so the caller can read it from the camera's world
+ * matrix without allocating (`Math.abs(camera.matrixWorld.elements[10])` — the
+ * camera's local +Z axis is −forward, and the sign is discarded here).
+ * Non-finite → 1: a broken camera must not hide the floor light (#11).
+ *
+ * @param {number} forwardZ world-Z component of the camera's view direction
+ * @returns {number} elevation ∈ [0,1]
+ */
+export function viewElevation(forwardZ) {
+  if (!Number.isFinite(forwardZ)) return 1
+  return clamp01(Math.abs(forwardZ))
+}
+
+/** Floor-light gains at the two extremes of the view angle. */
+export const FLOOR_LIGHT = Object.freeze({
+  floorMin:   0.35,   // the floor pool seen edge-on — dimmed, never gone
+  curtainMin: 0.15,   // the light curtain seen from straight above (edge-on)
+})
+
+/**
+ * How much of the reading the floor pool and the light curtain each carry at
+ * this view angle. They are complementary by construction: the floor pool
+ * compresses as the camera drops (a decal seen edge-on), the curtain stands up
+ * into view; their sum never falls below 1, so the CLASSIFICATION is legible
+ * from every angle — the property the Blueprint hatch lacked (ADR-166 Goal).
+ *
+ * @param {number} elevation ∈ [0,1] from `viewElevation` (non-finite → 1)
+ * @returns {{floor: number, curtain: number}} both ∈ (0,1]
+ */
+export function floorLightGains(elevation) {
+  const e = Number.isFinite(elevation) ? clamp01(elevation) : 1
+  return {
+    floor:   FLOOR_LIGHT.floorMin   + (1 - FLOOR_LIGHT.floorMin)   * e,
+    curtain: FLOOR_LIGHT.curtainMin + (1 - FLOOR_LIGHT.curtainMin) * (1 - e),
+  }
+}
+
+/**
+ * How loud each kind of place may be — the ROLE, not the area. A Zone is used
+ * as "the floor of the cell" (templates), so it is the biggest thing on screen
+ * and must be the quietest: it is GROUND. Every other kind is a MARK.
+ *
+ * Undeclared kinds THROW (PHILOSOPHY #31 — a fall-through default would make
+ * "a declared emphasis" and "a kind nobody thought about" indistinguishable;
+ * same shape as `PLACEMENT_BY_KIND`). Unclassified annotations are a declared
+ * row, keyed `unclassified`.
+ */
+export const EMPHASIS_BY_PLACE_TYPE = Object.freeze({
+  Zone:         'ground',
+  Route:        'mark',
+  Boundary:     'mark',
+  Hub:          'mark',
+  Anchor:       'mark',
+  unclassified: 'mark',
+})
+
+/** Gain per emphasis tier, and the two modifiers that override it. */
+export const EMPHASIS_GAIN = Object.freeze({
+  ground:   0.5,
+  mark:     1.0,
+  selected: 1.4,    // × the tier gain
+  urgent:   1.6,    // absolute — a violation outranks every role (Tier F)
+})
+
+/**
+ * Light gain for one annotation: its role, raised by selection, overridden by
+ * a violation. Urgent is ABSOLUTE and above every non-urgent value, so a
+ * violated Zone (ground) still outshines a selected Hub (mark) — the fact
+ * outranks the role.
+ *
+ * @param {string|null} placeType registry name, or null for unclassified
+ * @param {{selected?: boolean, urgent?: boolean}} [mods]
+ * @returns {number}
+ * @throws {Error} for a place type with no declared emphasis
+ */
+export function emphasisFor(placeType, { selected = false, urgent = false } = {}) {
+  const key = placeType ?? 'unclassified'
+  const tier = Object.hasOwn(EMPHASIS_BY_PLACE_TYPE, key) ? EMPHASIS_BY_PLACE_TYPE[key] : undefined
+  if (!tier) {
+    throw new Error(`MapVisualMath: no emphasis declared for place type "${key}" — add a row to EMPHASIS_BY_PLACE_TYPE`)
+  }
+  if (urgent) return EMPHASIS_GAIN.urgent
+  const g = EMPHASIS_GAIN[tier]
+  return selected ? g * EMPHASIS_GAIN.selected : g
+}
+
+/** How far the light's core is warmed from the type colour toward the stage light. */
+export const LIGHT_WARMTH = 0.3
+
+/**
+ * The colour of an annotation's light: the place-type colour (the fact — the
+ * hue must still say Zone / Route / …) mixed `LIGHT_WARMTH` of the way toward
+ * the ONE stage light. This is what makes the annotations lit by the same
+ * light as the cell floor instead of glowing in their own private colour
+ * (ADR-166 M2 — "光源はちょうど 1 つ").
+ *
+ * @param {number} typeHex 0xRRGGBB
+ * @param {number} [k] mix ∈ [0,1] (0 = the type colour, 1 = the stage light)
+ * @returns {number} 0xRRGGBB
+ */
+export function lightTint(typeHex, k = LIGHT_WARMTH) {
+  const light = parseInt(STAGE_LIGHT.color.slice(1), 16)
+  const w = Number.isFinite(k) ? clamp01(k) : LIGHT_WARMTH
+  const h = Number.isFinite(typeHex) ? typeHex : 0
+  let out = 0
+  for (const shift of [16, 8, 0]) {
+    const a = (h >> shift) & 0xff
+    const b = (light >> shift) & 0xff
+    out |= Math.round(a + (b - a) * w) << shift
+  }
+  return out
+}
 
 // ── Identity → phase ────────────────────────────────────────────────────────
 
@@ -212,24 +345,25 @@ export const ANCHOR_PERIOD_URGENT = 1.0
  * The Anchor's crosshair frame. Deliberately NOT a sine: a datum marker that
  * glides up and down reads as floating, the opposite of what it asserts. The
  * cycle is a long HOLD followed by a short `easeOutBack` kick that settles back
- * — a survey mark being re-seated. `tickOpacity` fades the graduation ticks in
- * with the kick so the arms appear to be re-measured (P4: the interesting moment
- * gets the detail).
+ * — a datum being re-seated, its tight spot of light flaring with the kick
+ * (P4: the interesting moment gets the detail). ADR-166 M3 retired the
+ * graduation ticks and the 45° datum square this kick used to fade in; the
+ * hold-and-kick rhythm, which is what says "pinned", stays.
  *
  * @param {number} t loop clock (seconds)
  * @param {number} phase ∈ [0,1)
  * @param {{urgent?: boolean, reduced?: boolean}} [opts]
- * @returns {{scale: number, tickOpacity: number, haloOpacity: number}}
+ * @returns {{scale: number, haloOpacity: number}}
  */
 export function anchorFrame(t, phase, { urgent = false, reduced = false } = {}) {
-  if (reduced || badClock(t)) return { scale: 1, tickOpacity: 0.75, haloOpacity: urgent ? 0.4 : 0.22 }
+  if (reduced || badClock(t)) return { scale: 1, haloOpacity: urgent ? 0.4 : 0.22 }
   const period = urgent ? ANCHOR_PERIOD_URGENT : ANCHOR_PERIOD
   const p = cycle(t, period, phase)
   const KICK = 0.42                        // fraction of the cycle spent moving
   const amp  = urgent ? 0.30 : 0.18
   if (p >= KICK) {
-    // The hold: dead still at rest size, ticks at full contrast.
-    return { scale: 1, tickOpacity: 0.9, haloOpacity: urgent ? 0.4 : 0.22 }
+    // The hold: dead still at rest size.
+    return { scale: 1, haloOpacity: urgent ? 0.4 : 0.22 }
   }
   const k = clamp01(p / KICK)
   // Out and back within the kick: a bell built from the overshoot curve, so the
@@ -237,12 +371,11 @@ export function anchorFrame(t, phase, { urgent = false, reduced = false } = {}) 
   const bell = k < 0.5 ? easeOutBack(k * 2) : easeOutCubic(1 - (k - 0.5) * 2)
   return {
     scale:       1 + amp * bell,
-    tickOpacity: 0.55 + 0.35 * bell,
     haloOpacity: (urgent ? 0.4 : 0.22) * (1 + 0.5 * bell),
   }
 }
 
-// ── Zone — bounded area (Tier A rim + Tier D fill/hatch) ─────────────────────
+// ── Zone — bounded area (Tier A rim + Tier D floor light) ─────────────────────
 
 export const ZONE_FILL_MIN     = 0.16
 export const ZONE_FILL_MAX     = 0.46
@@ -256,8 +389,9 @@ const ZONE_RIM_REACH  = 0.11               // rim grows 1.0 → 1.11 ×
  * Zone fill opacity. Built on `breathe()` (sin², zero velocity at both ends) so
  * the loop has no seam, and offset per entity so two adjacent Zones are never
  * bright at the same instant. The upper bound is lower than ADR-031 §8's 0.65:
- * with the hatch layer and the eased rim now carrying the "area" reading, a wash
- * that heavy only hid the geometry underneath (P11 抑制).
+ * a wash that heavy only hid the geometry underneath (P11 抑制). Since ADR-166
+ * M3 this is the BREATH of the floor light — the view scales it by the role
+ * (`emphasisFor`) and the view angle (`floorLightGains`).
  *
  * @param {number} t loop clock (seconds)
  * @param {number} phase ∈ [0,1)
@@ -294,26 +428,6 @@ export function zoneRimFrame(t, phase, index, { period = ZONE_RIM_PERIOD, reduce
     scale:   1 + ZONE_RIM_REACH * easeOutCubic(p),
     opacity: ZONE_RIM_PEAK * Math.pow(1 - p, 2),
   }
-}
-
-/** Hatch drift speed (texture units/second) — a slow crawl, never a scroll. */
-const HATCH_DRIFT = 0.014
-
-/**
- * Texture offset for the Zone's drafting hatch (Tier D). The drift is what makes
- * a filled area feel authored instead of poured, and being an offset (not an
- * opacity) it never competes with the fill's breathe for the same channel
- * (原則 #4 — one owner per visual channel).
- *
- * @param {number} t loop clock (seconds)
- * @param {number} phase ∈ [0,1)
- * @param {boolean} [reduced]
- * @returns {{u: number, v: number}} both 0 under reduced motion (static hatch —
- *   the drafting texture stays, only the crawl stops).
- */
-export function hatchOffset(t, phase, reduced = false) {
-  if (reduced || badClock(t)) return { u: phase, v: phase * 0.5 }
-  return { u: phase + t * HATCH_DRIFT, v: phase * 0.5 + t * HATCH_DRIFT * 0.6 }
 }
 
 // ── Route — flow channel (Tier A) ────────────────────────────────────────────
@@ -373,26 +487,27 @@ export function routeFlowFrame(t, head, seg, phase, { direction = 1, reduced = f
 
 // ── Boundary — barrier (Tier A) ──────────────────────────────────────────────
 
-export const BOUNDARY_TICK_SPACING = 0.055  // arc-fraction between hatch ticks
 const BOUNDARY_WAVE_PERIOD = 5.2            // seconds for one pass along the wall
 const BOUNDARY_WAVE_WIDTH  = 0.22           // arc-fraction lit at once
 
 /**
- * Brightness of one perpendicular hatch tick on a Boundary. A soft crest travels
- * along the wall and lifts each tick as it passes — a spatial stagger (P3) that
- * costs one number per tick and turns ADR-031 §8's explicitly static "barrier"
- * into something present without making it shout (P11). The line itself keeps
- * its slow marching dashes; the ticks are the new layer.
+ * Brightness of the Boundary's light wall at one point along it. A soft crest
+ * travels along the wall and lifts the light as it passes — a spatial stagger
+ * (P3) that turns ADR-031 §8's explicitly static "barrier" into something
+ * present without making it shout (P11). ADR-093 D4 drew this on perpendicular
+ * hatch ticks; ADR-166 M3 retired the ticks (a drafting device) and the crest
+ * now runs along the light curtain standing on the wall. The line itself keeps
+ * its slow marching dashes.
  *
  * @param {number} t loop clock (seconds)
- * @param {number} arcFrac tick position along the polyline ∈ [0,1]
+ * @param {number} arcFrac position along the polyline ∈ [0,1]
  * @param {number} phase ∈ [0,1)
  * @param {boolean} [reduced]
- * @returns {number} intensity ∈ [0.25, 1] — never 0, so the hatch pattern (the
+ * @returns {number} intensity ∈ [0.25, 1] — never 0, so the wall (the
  *   information: "this is a barrier") is legible in every frame, including
  *   under reduced motion.
  */
-export function boundaryTickFrame(t, arcFrac, phase, reduced = false) {
+export function boundaryLightFrame(t, arcFrac, phase, reduced = false) {
   const a = Number.isFinite(arcFrac) ? arcFrac : 0
   if (reduced || badClock(t)) return 0.55
   const crest = cycle(t, BOUNDARY_WAVE_PERIOD, phase)

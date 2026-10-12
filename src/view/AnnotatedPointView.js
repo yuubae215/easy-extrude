@@ -3,8 +3,9 @@
  *
  * Renders:
  *  - A flat circle mesh (CylinderGeometry, low height) in place-type color; grey when unclassified
- *  - An additive ground halo (glow pool) sharing the stage's sprite recipe
- *  - An HTML label showing the point name, positioned above the mesh
+ *  - An additive ground halo — a spot of light on the floor, warmed toward the
+ *    one stage light (ADR-166 M3) and sharing the stage's sprite recipe
+ *  - A name label (EntityLabel — the one label mechanism, ADR-155 D1)
  *  - A BoxHelper for selection highlight
  *
  * Animations — all curves live in `MapVisualMath` (pure, tested); this view only
@@ -13,9 +14,11 @@
  *            against a cubic alpha tail — brightest while small) on a per-entity
  *            phase, over a breathing core and halo: a broadcasting junction,
  *            not a metronome.
- *  - Anchor: a graduated survey crosshair (arms + tick marks + a 45° datum
- *            square) that HOLDS still and is periodically re-seated with a short
- *            overshoot — "pinned in place" asserted by stillness.
+ *  - Anchor: a crosshair over a TIGHT spot of light that HOLDS still and is
+ *            periodically re-seated with a short overshoot — "pinned in place"
+ *            asserted by stillness. ADR-166 M3 retired ADR-093 D3's graduation
+ *            ticks and 45° datum square (drafting-table detail, illegible in
+ *            perspective); the hold-and-kick rhythm stays.
  *  - Both:   an easeOutBack entry pop on the first frames of existence.
  *
  * Reduced motion: every part stays visible at a held frame (a parked ring, a
@@ -29,14 +32,16 @@
  * Note: no `cuboid` property — AnnotatedPoint is excluded from raycasting.
  * Move support: updateGeometry([position]) refreshes point position.
  *
- * @see ADR-029, ADR-031, ADR-093
+ * @see ADR-029, ADR-031, ADR-093, ADR-166
  */
 import * as THREE from 'three'
 import { getPlaceTypeEntry } from '../domain/PlaceTypeRegistry.js'
 import { prefersReducedMotion, onReducedMotionChange } from '../theme/motion.js'
 import { radialSprite } from './DecalTextures.js'
+import { EntityLabel } from './EntityLabel.js'
 import {
   phaseFor, entryFrame, hubPingFrame, hubCoreFrame, anchorFrame, HUB_PING_RINGS,
+  emphasisFor, lightTint,
 } from './MapVisualMath.js'
 
 const DEFAULT_COLOR     = 0x888888
@@ -44,10 +49,9 @@ const MARKER_RADIUS     = 0.25
 const MARKER_HEIGHT     = 0.04
 const CROSSHAIR_LEN     = 0.45   // half-length; extends beyond MARKER_RADIUS so arms are visible outside the dot
 const CROSSHAIR_OPACITY = 0.90   // high opacity for contrast against colored marker
-const TICK_AT           = 0.62   // graduation tick position along each crosshair arm (fraction of CROSSHAIR_LEN)
-const TICK_HALF         = 0.11   // graduation tick half-width (world units at scale 1)
-const DATUM_HALF        = 0.17   // half-diagonal of the 45° datum square around the dot
 const HALO_RADIUS       = MARKER_RADIUS * 2.0
+const ANCHOR_SPOT       = 0.65   // the Anchor's spot is TIGHTER than a Hub's pool (× halo size)
+const VIOLATION_COLOR   = 0xEF4444
 
 export class AnnotatedPointView {
   /**
@@ -127,7 +131,7 @@ export class AnnotatedPointView {
     // place-type colour (DecalTextures ownership note).
     this._haloMat = new THREE.MeshBasicMaterial({
       map:                radialSprite('#ffffff'),
-      color:              this._colorForType(placeType),
+      color:              lightTint(this._colorForType(placeType)),
       transparent:        true,
       opacity:            0,
       depthTest:          true,
@@ -200,70 +204,21 @@ export class AnnotatedPointView {
     this._crosshairs.visible = false   // shown only for Anchor
     scene.add(this._crosshairs)
 
-    // ── Anchor graduation (ADR-093) ─────────────────────────────────────────
-    // What turns four bare arms into a SURVEY MARK: a graduation tick across
-    // each arm plus a 45° datum square around the dot. Drafting detail is the
-    // cheapest richness available at this size — it costs 8 line segments and
-    // survives reduced motion untouched (it is information, not movement).
-    // Separate object from the arms because its opacity animates independently
-    // (one material = one opacity — the same constraint LandingEffects works
-    // around with per-instance scale).
-    const tx = TICK_AT * L
-    const datumPositions = new Float32Array([
-      // graduation ticks, perpendicular to each arm
-       tx, -TICK_HALF, 0,   tx,  TICK_HALF, 0,
-      -tx, -TICK_HALF, 0,  -tx,  TICK_HALF, 0,
-      -TICK_HALF,  tx, 0,   TICK_HALF,  tx, 0,
-      -TICK_HALF, -tx, 0,   TICK_HALF, -tx, 0,
-      // 45° datum square (diamond) around the centre dot
-       DATUM_HALF, 0, 0,  0,  DATUM_HALF, 0,
-       0,  DATUM_HALF, 0, -DATUM_HALF, 0, 0,
-      -DATUM_HALF, 0, 0,  0, -DATUM_HALF, 0,
-       0, -DATUM_HALF, 0,  DATUM_HALF, 0, 0,
-    ])
-    const datumGeo = new THREE.BufferGeometry()
-    datumGeo.setAttribute('position', new THREE.Float32BufferAttribute(datumPositions, 3))
-    this._datumMat = new THREE.LineBasicMaterial({
-      color:       0xffffff,
-      depthTest:   true,
-      depthWrite:  false,
-      transparent: true,
-      opacity:     0.75,
-    })
-    this._datum = new THREE.LineSegments(datumGeo, this._datumMat)
-    this._datum.position.copy(point)
-    this._datum.renderOrder = 4
-    this._datum.visible = false        // shown only for Anchor
-    scene.add(this._datum)
-
     // ── BoxHelper ──────────────────────────────────────────────────────────
     this.boxHelper = new THREE.BoxHelper(this._mesh, 0xffffff)
     this.boxHelper.visible = false
     scene.add(this.boxHelper)
 
-    // ── HTML name label ────────────────────────────────────────────────────
-    this._label = document.createElement('div')
-    Object.assign(this._label.style, {
-      position:      'fixed',
-      pointerEvents: 'none',
-      userSelect:    'none',
-      background:    'rgba(20, 20, 20, 0.80)',
-      color:         '#e0e0e0',
-      fontSize:      '11px',
-      fontFamily:    'sans-serif',
-      padding:       '1px 5px',
-      borderRadius:  '3px',
-      whiteSpace:    'nowrap',
-      display:       'none',
-      zIndex:        '50',
-      borderLeft:    `3px solid #${this._colorForType(placeType).toString(16).padStart(6, '0')}`,
-    })
-    this._label.textContent = name
-    container.appendChild(this._label)
+    // ── Name label (the one label mechanism — EntityLabel, ADR-155 D1) ─────
+    this._label = new EntityLabel(renderer, container)
+    this._label.setText(name)
+    this._label.setAccent(this._cssColor(placeType))
+    this._label.setWanted(true)
 
     this._point = point.clone()
     this._name  = name
     this._tactViolated      = false
+    this._isSelected        = false
     this._toleranceViolated = false
     this._bridgeLine = null
     this._bridgeCfId = null
@@ -289,7 +244,6 @@ export class AnnotatedPointView {
     const z = (this._point?.z ?? 0) + lift
     this._ring.position.z       = z
     this._crosshairs.position.z = z
-    this._datum.position.z      = z
     for (const r of this._sonarRings) r.mesh.position.z = z
     // The halo sits just BELOW the overlay parts (it is a floor pool, not a
     // decal on the disc) but still above z=0 so it never fights the grid.
@@ -307,7 +261,6 @@ export class AnnotatedPointView {
     this._mesh.position.copy(point)
     this._ring.position.copy(point)
     this._crosshairs.position.copy(point)
-    this._datum.position.copy(point)
     this._halo.position.copy(point)
     for (const r of this._sonarRings) r.mesh.position.copy(point)
     this._applyLift()
@@ -320,6 +273,28 @@ export class AnnotatedPointView {
     return entry ? parseInt(entry.color.slice(1), 16) : DEFAULT_COLOR
   }
 
+  /** CSS form of the place-type colour, for the label's accent bar. */
+  _cssColor(placeType) {
+    return `#${this._colorForType(placeType).toString(16).padStart(6, '0')}`
+  }
+
+  /**
+   * Sole writer of every material colour (PHILOSOPHY #4): the disc and rings
+   * carry the fact colour, the floor spot carries it warmed toward the stage
+   * light, and either violation overrides both with danger. The crosshair is
+   * white for contrast unless the Anchor is out of tolerance.
+   */
+  _applyColors() {
+    const urgent = this._tactViolated || this._toleranceViolated
+    const fact = urgent ? VIOLATION_COLOR : this._colorForType(this._placeType)
+    this._mat.color.setHex(fact)
+    this._ringMat.color.setHex(fact)
+    this._haloMat.color.setHex(lightTint(fact))
+    for (const r of this._sonarRings) r.mat.color.setHex(fact)
+    this._crosshairMat.color.setHex(this._toleranceViolated ? VIOLATION_COLOR : 0xffffff)
+    this.boxHelper.material?.color.setHex(fact)
+  }
+
   /**
    * Applies place-type-specific visibility / opacity rules.
    * Called from constructor and setPlaceType().
@@ -327,8 +302,7 @@ export class AnnotatedPointView {
    */
   _applyPlaceTypeVisuals(placeType) {
     const isAnchor = placeType === 'Anchor'
-    this._crosshairs.visible = isAnchor
-    this._datum.visible      = isAnchor
+    this._crosshairs.visible = isAnchor && this._mesh.visible
     if (isAnchor) {
       this._ringMat.opacity = 0.40   // subtle constant outline for Anchor
       for (const r of this._sonarRings) r.mat.opacity = 0
@@ -338,7 +312,6 @@ export class AnnotatedPointView {
     // Reset crosshair scale so pulse starts from 1.0× (in view-scale units)
     const s = this._viewScale ?? 1
     this._crosshairs.scale.setScalar(s)
-    this._datum.scale.setScalar(s)
   }
 
   /**
@@ -370,10 +343,7 @@ export class AnnotatedPointView {
     this._ring.scale.setScalar(s)
     this._mesh.scale.setScalar(s)
     for (const r of this._sonarRings) r.mesh.scale.setScalar(s)
-    if (this._placeType !== 'Anchor') {
-      this._crosshairs.scale.setScalar(s)
-      this._datum.scale.setScalar(s)
-    }
+    if (this._placeType !== 'Anchor') this._crosshairs.scale.setScalar(s)
     this._applyLift()
     if (this.boxHelper.visible) this.boxHelper.update()
   }
@@ -394,6 +364,12 @@ export class AnnotatedPointView {
     // every scale below, so the whole marker arrives as one object.
     const entry = entryFrame(t, this._bornAt, reduced)
     const base  = vs * entry.scale
+    // The role's loudness (ADR-166 M3): selection raises the floor light; a
+    // violation is absolute (Tier F outranks every role).
+    const gain = emphasisFor(this._placeType, {
+      selected: this._isSelected,
+      urgent:   this._tactViolated || this._toleranceViolated,
+    })
 
     this._mesh.scale.setScalar(base)
     this._ring.scale.setScalar(base)
@@ -406,7 +382,7 @@ export class AnnotatedPointView {
       const core = hubCoreFrame(t, phase, { urgent, reduced })
       this._mesh.scale.setScalar(base * core.scale)
       this._halo.scale.setScalar(base * core.haloScale)
-      this._haloMat.opacity = core.haloOpacity * entry.opacity
+      this._haloMat.opacity = core.haloOpacity * gain * entry.opacity
       // The ring train: eased distance, quadratic alpha tail, per-ring offset.
       for (let i = 0; i < this._sonarRings.length; i++) {
         const f = hubPingFrame(t, phase, i, { urgent, reduced })
@@ -417,18 +393,17 @@ export class AnnotatedPointView {
       const urgent = this._toleranceViolated
       const f = anchorFrame(t, phase, { urgent, reduced })
       this._crosshairs.scale.setScalar(f.scale * base)
-      this._datum.scale.setScalar(f.scale * base)
       this._crosshairMat.opacity = CROSSHAIR_OPACITY * entry.opacity
-      this._datumMat.opacity     = f.tickOpacity * entry.opacity
-      this._halo.scale.setScalar(base)
-      this._haloMat.opacity = f.haloOpacity * entry.opacity
+      // A tight spot that flares with the kick — a datum re-seated under its light.
+      this._halo.scale.setScalar(base * ANCHOR_SPOT * f.scale)
+      this._haloMat.opacity = f.haloOpacity * gain * entry.opacity
       for (const r of this._sonarRings) r.mat.opacity = 0
     } else {
       // Unclassified: no type claim to assert, so no Tier A motion — but not a
       // dead frame either (品質ゲート5). A faint steady halo keeps it present,
       // and the entry pop still plays.
       this._halo.scale.setScalar(base)
-      this._haloMat.opacity = 0.12 * entry.opacity
+      this._haloMat.opacity = 0.12 * gain * entry.opacity
       for (const r of this._sonarRings) r.mat.opacity = 0
     }
   }
@@ -436,27 +411,15 @@ export class AnnotatedPointView {
   // ── Label update (call once per frame while visible) ───────────────────────
 
   /**
-   * Projects anchor position to screen and updates label position.
+   * Anchors the name label at the marker.
    * Must be called from the animation loop (AppController._animate) while visible.
-   * @param {import('three').Camera} [camera]  Active camera to use for projection.
-   *   When Map mode uses an orthographic camera, pass that camera here so the
-   *   label tracks the rendered position correctly.  Falls back to the stored
-   *   perspective camera if omitted.
+   * @param {import('three').Camera} [camera]  Active camera to use for projection
+   *   (orthographic in the Map viewpoint). Falls back to the stored camera.
    */
   updateLabelPosition(camera) {
     const cam = camera ?? this._camera
-    if (!this._mesh.visible) return
-    const ndc    = this._point.clone().project(cam)
-    const canvas = this._renderer.domElement
-    const rect   = canvas.getBoundingClientRect()
-    const sx = (ndc.x  + 1) / 2 * rect.width  + rect.left
-    const sy = (-ndc.y + 1) / 2 * rect.height + rect.top
-
-    if (ndc.z > 1) { this._label.style.display = 'none'; return }
-
-    this._label.style.display = 'block'
-    this._label.style.left    = `${Math.round(sx + MARKER_RADIUS * 20 + 4)}px`
-    this._label.style.top     = `${Math.round(sy - 10)}px`
+    if (!cam || !this._mesh.visible) return
+    this._label.updatePosition(cam, this._point)
   }
 
   /** True when the marker is shown in the scene (false when soft-deleted). */
@@ -488,20 +451,13 @@ export class AnnotatedPointView {
    */
   setPlaceType(placeType, name) {
     this._placeType = placeType
-    const hex = this._colorForType(placeType)
-    this._mat.color.setHex(hex)
-    this._ringMat.color.setHex(hex)
-    this._haloMat.color.setHex(hex)
-    for (const r of this._sonarRings) r.mat.color.setHex(hex)
-    // Crosshair stays white for contrast — do not tint with place-type color
-    this.boxHelper.material?.color.setHex(hex)
-    const hexStr = hex.toString(16).padStart(6, '0')
-    this._label.style.borderLeft = `3px solid #${hexStr}`
+    this._applyColors()
+    this._label.setAccent(this._cssColor(placeType))
     // Reset sonar scale so the ping animation restarts cleanly from the new type
     for (const r of this._sonarRings) r.mesh.scale.setScalar(this._viewScale)
     if (name) {
       this._name = name
-      this._label.textContent = name
+      this._label.setText(name)
     }
     this._applyPlaceTypeVisuals(placeType)
   }
@@ -509,7 +465,7 @@ export class AnnotatedPointView {
   /** Updates the label text (e.g. after rename). */
   setName(name) {
     this._name = name
-    this._label.textContent = name
+    this._label.setText(name)
   }
 
   // ── Visual state ───────────────────────────────────────────────────────────
@@ -520,8 +476,7 @@ export class AnnotatedPointView {
     this._halo.visible = visible
     for (const r of this._sonarRings) r.mesh.visible = visible
     this._crosshairs.visible = visible && this._placeType === 'Anchor'
-    this._datum.visible      = visible && this._placeType === 'Anchor'
-    this._label.style.display = visible ? 'block' : 'none'
+    this._label.setWanted(visible)
     if (!visible) this.boxHelper.visible = false
     // A re-shown annotation (undo of a soft delete) replays its entry pop: the
     // reappearance is a boundary moment too, and re-arming here keeps the pop
@@ -530,6 +485,7 @@ export class AnnotatedPointView {
   }
 
   setObjectSelected(sel) {
+    this._isSelected = sel
     this.boxHelper.visible = sel
     if (sel) this.boxHelper.update()
   }
@@ -543,12 +499,7 @@ export class AnnotatedPointView {
   setTactTimeViolated(violated) {
     if (this._tactViolated === violated) return
     this._tactViolated = violated
-    const hex = violated ? 0xEF4444 : this._colorForType(this._placeType)
-    this._mat.color.setHex(hex)
-    this._ringMat.color.setHex(hex)
-    this._haloMat.color.setHex(hex)
-    for (const r of this._sonarRings) r.mat.color.setHex(hex)
-    this.boxHelper.material?.color.setHex(hex)
+    this._applyColors()
   }
 
   /**
@@ -565,13 +516,7 @@ export class AnnotatedPointView {
     if (this._toleranceViolated === violated && this._bridgeCfId === cfId) return
     this._toleranceViolated = violated
     this._bridgeCfId = violated ? cfId : null
-    const hex = violated ? 0xEF4444 : this._colorForType(this._placeType)
-    this._mat.color.setHex(hex)
-    this._ringMat.color.setHex(hex)
-    this._haloMat.color.setHex(hex)
-    this._crosshairMat.color.setHex(violated ? 0xEF4444 : 0xffffff)
-    this._datumMat.color.setHex(violated ? 0xEF4444 : 0xffffff)
-    this.boxHelper.material?.color.setHex(violated ? 0xEF4444 : 0xffffff)
+    this._applyColors()
     // Dispose bridge line when clearing violation.
     if (!violated && this._bridgeLine) {
       this._scene.remove(this._bridgeLine)
@@ -640,7 +585,6 @@ export class AnnotatedPointView {
     scene.remove(this._halo)
     for (const r of this._sonarRings) scene.remove(r.mesh)
     scene.remove(this._crosshairs)
-    scene.remove(this._datum)
     scene.remove(this.boxHelper)
     if (this._bridgeLine) {
       scene.remove(this._bridgeLine)
@@ -659,8 +603,6 @@ export class AnnotatedPointView {
     this._haloMat.dispose()                  // the sprite map is module-owned (DecalTextures)
     this._crosshairs.geometry.dispose()
     this._crosshairMat.dispose()
-    this._datum.geometry.dispose()
-    this._datumMat.dispose()
-    this._label.remove()
+    this._label.dispose()
   }
 }

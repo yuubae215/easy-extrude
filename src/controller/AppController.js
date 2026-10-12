@@ -34,6 +34,7 @@ import { ICONS }           from '../view/UIView.js'
 import { NodeEditorView }  from '../view/NodeEditorView.js'
 import { LinkNetworkView } from '../view/LinkNetworkView.js'
 import { floorIsOpen }     from '../view/FloorTabs.js'
+import { viewElevation }   from '../view/MapVisualMath.js'
 import { CommandStack }              from '../service/CommandStack.js'
 import { createExtrudeSketchCommand } from '../command/ExtrudeSketchCommand.js'
 import { createAddSolidCommand }      from '../command/AddSolidCommand.js'
@@ -4643,6 +4644,11 @@ export class AppController {
       this._sceneView.render()
       this._sceneView.robotStages?.updateLabelPositions(this._sceneView.activeCamera)
       if (this._gizmoView) this._gizmoView.update()
+      // How far the active camera looks down at the floor (ADR-166 M3) — read
+      // once per frame from the world matrix just rendered (its local +Z is the
+      // reversed view direction; the sign is discarded). Map annotations use it
+      // to hand the reading between the floor light and the light curtain.
+      const elevation = viewElevation(this._sceneView.activeCamera.matrixWorld.elements[10])
       for (const obj of this._scene.objects.values()) {
         if (obj instanceof MeasureLine)     obj.meshView.updateLabelPosition()
         // Entity identity labels (ADR-070): Solid/Profile/ImportedMesh carry a
@@ -4663,8 +4669,8 @@ export class AppController {
             if (pose) obj.meshView.updateBridgeLine(this._sceneView.scene, pose.position)
           }
         }
-        if (obj instanceof AnnotatedLine)   { obj.meshView.updateLabelPosition(this._sceneView.activeCamera); obj.meshView.tick(t) }
-        if (obj instanceof AnnotatedRegion) { obj.meshView.updateLabelPosition(this._sceneView.activeCamera); obj.meshView.tick(t) }
+        if (obj instanceof AnnotatedLine)   { obj.meshView.updateLabelPosition(this._sceneView.activeCamera); obj.meshView.tick(t, elevation) }
+        if (obj instanceof AnnotatedRegion) { obj.meshView.updateLabelPosition(this._sceneView.activeCamera); obj.meshView.tick(t, elevation) }
         if (obj instanceof CoordinateFrame) {
           // Cap the frame's world size so it never visually dwarfs its parent.
           // Compute the parent object's bounding radius (max distance from centroid
