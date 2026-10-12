@@ -41,6 +41,14 @@
  *   R13 undeclared-function— an end user whose job function is not declared
  *                            (incl. the legacy role "endUser")      → OpenQuestion
  *
+ * ADR-165 PR2 rules:
+ *   R12 unagreed-criteria  — everything is heard but not every end user has
+ *                            agreed to the line                     → OpenQuestion
+ *   R14 line integrity     — the agreement names end users; the document's
+ *                            line equals agreed ⊕ approved proposals (drift is
+ *                            a frozen field rewritten without a proposal)
+ *                                                                   → error
+ *
  * @module context/ContextValidator
  */
 
@@ -64,7 +72,7 @@ import {
 } from './ContextDslSchema.js'
 import { PROPOSAL_REF_PREFIX, PROPOSAL_STATE, sameClaimValue } from './Proposal.js'
 import { AGENDA_REF_PREFIX, AGENDA_STATE } from './Agenda.js'
-import { OWNER_NONE_DECLARED, TARGET_KIND, isOwnerUndeclared } from './Ownership.js'
+import { OWNER_NONE_DECLARED, TARGET_KIND, isOwnerUndeclared, claimExists } from './Ownership.js'
 import { detectConflicts, detectNegotiationClusters } from './RequirementGraph.js'
 import { promoteAdmissible } from './AdmissiblePromotion.js'
 import { requiredKpis } from './RoleKpiCatalog.js'
@@ -72,6 +80,7 @@ import { evaluatePredicate, MalformedPredicate } from './PredicateEngine.js'
 import { CRITERIA_CATEGORIES, CRITERIA_ELEMENTS, criteriaElementOf } from './CriteriaCatalog.js'
 import { countUnheard, BLANK_FIELD } from './CriteriaElicitation.js'
 import { isEndUser, jobFunctionOf, writesLegacyStanceRole } from './ActorStance.js'
+import { lineStatus, lineDrift, LINE_STATUS, agreementOf } from './CriteriaLine.js'
 
 /**
  * @param {object} ctx — Context DSL object
@@ -361,8 +370,8 @@ export function validateContext(ctx) {
     }
     if (!Object.values(TARGET_KIND).includes(proposal.target?.kind)) {
       errors.push(`proposal "${proposal.ref}": target.kind "${proposal.target?.kind}" is not a declared claim kind (${Object.values(TARGET_KIND).join(', ')})`)
-    } else if (proposal.target.kind !== TARGET_KIND.CONFLICT && !liveRequirements.has(proposal.target.ref)) {
-      errors.push(`proposal "${proposal.ref}": target "${proposal.target.ref}" does not reference any requirement in requirements[]`)
+    } else if (!claimExists(ctx, proposal.target)) {
+      errors.push(`proposal "${proposal.ref}": target "${proposal.target.ref}" does not reference any ${proposal.target.kind === TARGET_KIND.ACTOR_MIX ? 'actor in actors[]' : 'requirement in requirements[]'}`)
     }
     // Staleness is NOT checked here. Whether `from` still matches is derived at
     // the moment approval is attempted (U2) — recording it as a document error
@@ -373,9 +382,21 @@ export function validateContext(ctx) {
       if (!receipt) {
         errors.push(`proposal "${proposal.ref}": approved but no Decision resolves it — approval writes the claim and the receipt in one command (ADR-104 U1), so a missing receipt means the two came apart`)
       }
-      if (!proposal.decidedBy?.length) {
+      // ADR-165 D5: a line change approved with no other end user present is
+      // legitimate and says so (`approversRequired: []`); otherwise every
+      // required approver must be in decidedBy.
+      const required = proposal.approversRequired
+      if (Array.isArray(required)) {
+        const missing = required.filter(r => !(proposal.decidedBy ?? []).includes(r))
+        if (missing.length) {
+          errors.push(`proposal "${proposal.ref}": approved without ${missing.join(', ')} — a change to the agreed line needs every other end user's approval (ADR-165 D5)`)
+        }
+      } else if (!proposal.decidedBy?.length) {
         errors.push(`proposal "${proposal.ref}": approved without decidedBy — the receipt exists to record that the owner agreed (ADR-104 D5)`)
       }
+    }
+    if (proposal.state === PROPOSAL_STATE.REJECTED && !proposal.rejectedBy?.length) {
+      errors.push(`proposal "${proposal.ref}": rejected without rejectedBy — a rejection is a human act and names who made it`)
     }
   }
 
@@ -451,6 +472,37 @@ export function validateContext(ctx) {
   }
   for (const d of census.duplicates) {
     errors.push(`end user "${d.actor}": ${d.refs.length} requirements (${d.refs.join(', ')}) answer the criteria element "${d.element}" — one expectation per person per element, otherwise which one counts is a guess (ADR-165 D2)`)
+  }
+
+  // ── R12 (agreement): heard in full but not yet agreed → OpenQuestion ────────
+  // The gate to design has two halves (ADR-165 力学 1): unheard = 0, and every
+  // end user agreed. The second half is asked only once the first is met —
+  // there is nothing to agree to while blanks remain.
+  const line = lineStatus(ctx)
+  if (census.complete && line.status === LINE_STATUS.HEARING) {
+    openQuestions.push({
+      ref:      'oq_criteria_agreement',
+      raisedBy: 'R12:unagreed-criteria',
+      about:    'criteria',
+      summary:  line.rehearing
+        ? `The end users changed since the line was agreed (v${line.version}) — everyone re-agrees with the newcomer. Still to agree: ${line.awaiting.join(', ')}`
+        : `Every criterion is heard — the line becomes v1 when every end user agrees. Still to agree: ${line.awaiting.join(', ')}${line.pendingStale ? ' (earlier agreements were to a line that has since changed)' : ''}`,
+    })
+  }
+
+  // ── R14: line integrity (ADR-165 D5) ────────────────────────────────────────
+  const agreement = agreementOf(ctx)
+  for (const [part, rec] of [['agreed', agreement?.agreed], ['pending', agreement?.pending]]) {
+    if (!rec) continue
+    for (const ref of rec.by ?? []) {
+      if (!(ctx.actors ?? []).some(a => a.ref === ref)) {
+        errors.push(`criteriaAgreement.${part}: "${ref}" does not reference any actor`)
+      }
+    }
+  }
+  for (const d of lineDrift(ctx)) {
+    const where = d.element ? `${d.element}.${d.field}` : d.field
+    errors.push(`criteria line: "${d.actor}" ${where} is ${JSON.stringify(d.actual)} but the agreed line and its approved proposals say ${JSON.stringify(d.expected)} — the agreed line moves only by a proposal the other end users approve (ADR-165 D5)`)
   }
 
   // ── R13: an end user with no declared job function → OpenQuestion ──────────

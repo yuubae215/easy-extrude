@@ -17,6 +17,7 @@
  *   criteria:     { mix?: {D?,Q?,C?,S?}, elements?: { [key]: {criterion?, weight?} } }
  *                                                          — R12 unheard criteria (partial answers fine)
  *   jobFunction:  { role: string }                         — R13 undeclared function
+ *   agreement:    { actorRef: string }                     — R12 unagreed (ADR-165 D5)
  *
  * @module context/FormApplication
  */
@@ -24,6 +25,19 @@
 import { CRITERIA_CATEGORIES, CRITERIA_ELEMENTS } from './CriteriaCatalog.js'
 import { answersOf } from './CriteriaElicitation.js'
 import { withEndUserStance, withJobFunction } from './ActorStance.js'
+import { agreeToLine, isFrozenLineTarget } from './CriteriaLine.js'
+import { TARGET_KIND } from './Ownership.js'
+
+/**
+ * Refuse to write a field the agreement froze (ADR-165 D5). The form only
+ * asks blanks, so this fires only on a hand-built answer — loudly, because a
+ * silent skip would consume the input and do nothing (PHILOSOPHY #11).
+ */
+function assertNotFrozen(doc, target) {
+  if (isFrozenLineTarget(doc, target)) {
+    throw new Error(`[FormApplication] "${target.ref}" is part of the agreed criteria line — propose the change instead (ADR-165 D5)`)
+  }
+}
 
 /** Replace the actor `ref` in a (cloned) doc by `next(actor)`; throws when absent. */
 function replaceActor(doc, ref, next, what) {
@@ -110,6 +124,9 @@ export function applyQuestionAnswer(doc, question, answer) {
       const actorRef = question.target
       const actor = (newDoc.actors ?? []).find(a => a.ref === actorRef)
       if (!actor) throw new Error(`[FormApplication] no end user "${actorRef}" to record criteria for`)
+      if (CRITERIA_CATEGORIES.some(c => answer.mix?.[c] !== undefined)) {
+        assertNotFrozen(doc, { kind: TARGET_KIND.ACTOR_MIX, ref: actorRef })
+      }
       for (const c of CRITERIA_CATEGORIES) {
         const v = answer.mix?.[c]
         if (v !== undefined) actor.mix = { ...(actor.mix ?? {}), [c]: Number(v) }
@@ -122,6 +139,8 @@ export function applyQuestionAnswer(doc, question, answer) {
           throw new Error(`[FormApplication] "${actorRef}" already has ${existing.length} answers for "${e.key}" — resolve the duplicate first`)
         }
         let req = existing[0]
+        if (req && a.criterion !== undefined) assertNotFrozen(doc, { kind: TARGET_KIND.REQUIREMENT_CRITERION, ref: req.ref })
+        if (req && a.weight !== undefined) assertNotFrozen(doc, { kind: TARGET_KIND.REQUIREMENT_WEIGHT, ref: req.ref })
         if (!req) {
           req = { ref: criteriaRequirementRef(actorRef, e.key), by: actorRef, owner: actorRef, kpi: { name: e.key, unit: e.unit } }
           newDoc.requirements = [...(newDoc.requirements ?? []), req]
@@ -137,6 +156,13 @@ export function applyQuestionAnswer(doc, question, answer) {
       // stance-in-role, so the stance moves to its own field (ADR-165 D1).
       replaceActor(newDoc, question.target, a => withJobFunction(a, answer.role), 'declare a job function for')
       break
+    }
+
+    case 'agreement': {
+      // R12 (unagreed): one end user agrees to the line as it stands. The
+      // transform refuses when the census is not complete or the person has
+      // already agreed — the same guard the widget shows (ADR-165 D5).
+      return agreeToLine(newDoc, answer.actorRef)
     }
 
     default:

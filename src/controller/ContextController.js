@@ -45,6 +45,7 @@ import { createDocEditCommand } from '../command/DocEditCommand.js'
 import { createProposeChangeCommand } from '../command/ProposeChangeCommand.js'
 import { createApproveProposalCommand } from '../command/ApproveProposalCommand.js'
 import { createWithdrawProposalCommand } from '../command/WithdrawProposalCommand.js'
+import { createRejectProposalCommand } from '../command/RejectProposalCommand.js'
 import { createTableConflictCommand } from '../command/TableConflictCommand.js'
 import { createSettleAgendaCommand, createCloseUndecidedCommand } from '../command/CloseAgendaCommand.js'
 import { EDIT_PERMISSION, TARGET_KIND } from '../context/Ownership.js'
@@ -236,6 +237,10 @@ export class ContextController {
     registerCallback('onProposalDiscardDraft',   ()           => this.discardProposalDraft())
     registerCallback('onProposalApprove',        (ref)        => this.approveProposal(ref))
     registerCallback('onProposalWithdraw',       (ref)        => this.withdrawProposal(ref))
+    registerCallback('onProposalReject',         (ref)        => this.rejectProposal(ref))
+    // ── ADR-165 D5 the criteria line ──────────────────────────────────────────
+    registerCallback('onCriteriaAgreementGuards', (actorRef)  => this._ctxService.agreementGuards(actorRef, this._keyring))
+    registerCallback('onLineChangePropose',      ({ target, from, to, rationale, by }) => this.proposeChange(target, from, to, rationale, by))
     registerCallback('onConflictTable',          (ref, by)    => this.tableConflict(ref, by))
     registerCallback('onAgendaSettle',           (ref)        => this.settleAgendaItem(ref))
     registerCallback('onAgendaClose',            (ref, by)    => this.closeAgendaItemUndecided(ref, by))
@@ -1142,6 +1147,14 @@ export class ContextController {
       resolutionOrder:     this._ctxService.projectOrder(),
       form,
       checks:              this._ctxService.projectChecks(),
+      // The floor's read models are projected on the way in, not on the first
+      // later edit: the agreement question (R12 unagreed) renders its buttons
+      // from `criteriaLine`, and a browser run of ADR-165 PR2 found it empty on
+      // import — the question asked with nothing to press (原則 #11). The
+      // agenda had the same gap (proposals in a loaded file stayed off the
+      // floor until something re-projected).
+      agendaRows:          this._ctxService.projectAgenda(),
+      criteriaLine:        this._ctxService.criteriaLine(),
     })
     // The whole Why-rooted 5W1H tree overview (ADR-052 Phase 3 — bird's-eye
     // complement to the selection-driven Why breadcrumb).
@@ -1603,8 +1616,17 @@ export class ContextController {
     return Promise.resolve(cmd.execute()).then(() => {
       ctrl._commandStack.push(cmd)
       ctrl._refreshUndoRedoState()
+      // A line approval may be one of several (ADR-165 D5): say whether the
+      // line moved, or who it is still waiting on — never a bare "approved".
+      const after = this._ctxService.approvalGuards(proposalRef, this._keyring)
+      const moved = !after.line || after.outstanding?.length === 0
       ctrl._uiView.showToast(
-        `Approved ${proposalRef} — the claim moved and the receipt is in the Why trail`, { type: 'info' })
+        !moved
+          ? `Approved ${proposalRef} as ${signature.decidedBy.join(', ')} — still waiting on ${after.outstanding.join(', ')}`
+          : signature.noApproversRequired
+            ? `Recorded ${proposalRef} — no other end user to approve, so the line moved with the change on record`
+            : `Approved ${proposalRef} — the claim moved and the receipt is in the Why trail`,
+        { type: 'info' })
     }).catch(err => {
       ctrl._uiView.showToast(`Could not approve: ${err.message}`, { type: 'error' })
       console.error('[ContextController]', err)
@@ -1648,6 +1670,25 @@ export class ContextController {
   /** Drop the pending draft — the gesture is abandoned, nothing is recorded. */
   discardProposalDraft() {
     useUIStore.getState().actions.contextSetProposalDraft(null)
+  }
+
+  /**
+   * Reject a proposal (ADR-165 §PR2 の俯瞰 C / D) — terminal and kept. Who
+   * rejects comes from the guard, never from the caller; a refusal is shown.
+   */
+  rejectProposal(proposalRef) {
+    const ctrl = this._ctrl
+    const guards = this._ctxService.rejectionGuards(proposalRef, this._keyring)
+    if (!guards.ok) {
+      ctrl._uiView.showToast(guards.reasons.join(' '), { type: 'error' })
+      return null
+    }
+    const cmd = createRejectProposalCommand(this._ctxService, proposalRef, guards.by, this._viewContext())
+    return Promise.resolve(cmd.execute()).then(() => {
+      ctrl._commandStack.push(cmd)
+      ctrl._refreshUndoRedoState()
+      ctrl._uiView.showToast(`Rejected ${proposalRef} as ${guards.by.join(', ')} — kept in the record`, { type: 'info' })
+    })
   }
 
   /** Withdraw one's own proposal — terminal, and kept in the record (D4). */
@@ -1813,6 +1854,7 @@ export class ContextController {
       // conflicts ∪ live proposals, and the three counters ride along. Conflicts
       // themselves are never stored — `result.conflicts` is re-derived output.
       ui.contextSetAgenda(this._ctxService.projectAgenda())
+      ui.contextSetCriteriaLine(this._ctxService.criteriaLine())
       // Update the form so answered questions disappear immediately (PHILOSOPHY #5).
       // Also refresh actors and variables so IntakePanel dropdowns stay current.
       if (this._mode === 'negotiate') {
@@ -1852,6 +1894,7 @@ export class ContextController {
       // own), so the agenda has to be live here too — otherwise a proposal
       // would exist with nowhere on screen showing it (PHILOSOPHY #11).
       useUIStore.getState().actions.contextSetAgenda(this._ctxService.projectAgenda())
+      useUIStore.getState().actions.contextSetCriteriaLine(this._ctxService.criteriaLine())
     }
   }
 

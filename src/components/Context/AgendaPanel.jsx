@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useUIStore } from '../../store/uiStore.js'
 import { AGENDA_SOURCE, AGENDA_STATE } from '../../context/Agenda.js'
+import { CriteriaLineSection } from './CriteriaLineSection.jsx'
 import { COLOR } from '../../theme/tokens.js'
 
 // Roles, not literals (ADR-100): a settled item and a passing check are the same
@@ -162,6 +163,13 @@ function AgendaRow({ row, guards, actors, callbacks }) {
         {/* A tabled conflict R6 no longer derives stays on the floor: tabling it
             was a human act. What changed is that there is nothing left to settle. */}
         {!isProposal && !row.live && <> · <span style={{ color: TONE.pending }}>no longer derived</span></>}
+        {row.line && (
+          <> · <span data-testid={`line-approvals-${row.ref}`} style={{ color: TONE.pending }}>
+            {row.line.required.length === 0
+              ? 'criteria line · no other end user — recorded only'
+              : `criteria line · approved ${row.line.approvals.length} of ${row.line.required.length}`}
+          </span></>
+        )}
       </div>
 
       {open && (
@@ -189,6 +197,15 @@ function AgendaRow({ row, guards, actors, callbacks }) {
           >
             {isProposal ? 'Withdraw' : 'Close undecided'}
           </button>
+          {isProposal && (
+            <button
+              onClick={() => callbacks.onProposalReject?.(row.ref)}
+              title="Reject — kept in the record; the claim stays where it is"
+              style={{ background: 'transparent', border: `1px solid ${TONE.border}`, color: TONE.muted, borderRadius: '3px', padding: '2px 8px', fontSize: '11px', cursor: 'pointer' }}
+            >
+              Reject
+            </button>
+          )}
         </div>
       )}
 
@@ -213,6 +230,15 @@ export function AgendaPanel() {
   return (
     <div>
       <Keyring actors={actors} keyring={keyring} onGrant={grantKey} onRevoke={revokeKey} />
+
+      {ctx.criteriaLine && (
+        <CriteriaLineSection
+          line={ctx.criteriaLine}
+          actors={actors}
+          keyring={keyring}
+          onPropose={(spec) => callbacks.onLineChangePropose?.(spec)}
+        />
+      )}
 
       {ctx.proposalDraft && (
         <DraftForm

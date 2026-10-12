@@ -27,7 +27,9 @@
  * @returns {{label: string, execute(): Promise<object>, undo(): Promise<object>}}
  */
 export function createApproveProposalCommand(ctxService, ref, signature, viewContext) {
-  if (!signature?.decidedBy?.length) {
+  // A line change with no other end user carries no approver by design
+  // (ADR-165 D5 — "no approvers, recorded only"); the signature says so.
+  if (!signature?.decidedBy?.length && !signature?.noApproversRequired) {
     throw new Error(
       `[ApproveProposalCommand] refusing to build an approval of "${ref}" without a signature. ` +
       'Call ContextService.signatureForProposal(ref, keyring) and show its guard reasons ' +
@@ -36,6 +38,6 @@ export function createApproveProposalCommand(ctxService, ref, signature, viewCon
   return {
     label: `Approve proposal ${ref}`,
     execute() { return ctxService.approveProposal(ref, signature, viewContext) },
-    undo()    { return ctxService.unapproveProposal(ref, viewContext) },
+    undo()    { return ctxService.unapproveProposal(ref, viewContext, signature) },
   }
 }

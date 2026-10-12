@@ -378,7 +378,9 @@ const SUPPORT_LABELS = new Map([
 // UnaskedCriteriaAreCountedUntilZero が support-verified に上がった (CriteriaElicitation.test.js の
 // node --test)。D6 の goal の満期は ADR-165 の Accepted で発火してしまうので PATH へ張り替えた —
 // 機械可読のままなので分子 (G3) は動かない。
-const DEBT_BASELINE = 54
+// 2026-10-12: 54 → 53。ADR-165 PR2 (D4 の合意後 + D5) で TheAgreedLineMovesOnlyByApprovedProposal が
+// support-verified に上がった (CriteriaLine.test.js の node --test)。
+const DEBT_BASELINE = 53
 
 /**
  * G3 — 満期 trigger を持たない exploring goal の個数 (実測値)。

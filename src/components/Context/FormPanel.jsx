@@ -24,6 +24,7 @@ import { listDelta, settledRefs } from '../../view/FeedbackMath.js'
  *   - endUserStance:dropdown of doc actors      (R12 no end user — ADR-165 D1)
  *   - criteria:     QCD + S mix + expectation/weight per element (R12 unheard — ADR-165 D2)
  *   - jobFunction:  dropdown of job functions    (R13 — ADR-165 D1)
+ *   - agreement:    "Agree as …" per end user still to agree (R12 unagreed — ADR-165 D5)
  *
  * Every ANSWER_KIND has exactly one widget here (FormAnswerKinds.test.js) —
  * a question shown with no input is consumed attention with nothing to do
@@ -141,6 +142,9 @@ function QuestionItem({ question, actors, onAnswer }) {
       )}
       {question.answerKind === ANSWER_KIND.JOB_FUNCTION && (
         <JobFunctionWidget onAnswer={onAnswer} />
+      )}
+      {question.answerKind === ANSWER_KIND.AGREEMENT && (
+        <AgreementWidget onAnswer={onAnswer} />
       )}
     </div>
   )
@@ -318,6 +322,48 @@ function JobFunctionWidget({ onAnswer }) {
         {VALID_ROLES.map(r => <option key={r} value={r}>{r}</option>)}
       </select>
       <AnswerButton disabled={!role} onClick={() => onAnswer({ role })} />
+    </div>
+  )
+}
+
+/**
+ * ADR-165 D5 — agreeing to the heard line. One button per end user still to
+ * agree; agreeing is that person's own act, so the button is live only while
+ * their key is held. The disabled state and its reason come from the same
+ * predicate (`agreementGuards`, via the controller) — never re-derived here
+ * (PHILOSOPHY #11).
+ */
+function AgreementWidget({ onAnswer }) {
+  const line      = useUIStore(s => s.context.criteriaLine)
+  const callbacks = useUIStore(s => s.callbacks)
+  useUIStore(s => s.context.keyring)   // re-render when keys change — the verdict depends on them
+  const awaiting = line?.awaiting ?? []
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }} data-testid="agreement-widget">
+      {line?.agreedBy?.length > 0 && (
+        <div style={{ fontSize: '10px', color: COLOR.textSecondary }}>Agreed: {line.agreedBy.join(', ')}</div>
+      )}
+      {awaiting.map(ref => {
+        const g = callbacks.onCriteriaAgreementGuards?.(ref) ?? { ok: false, reasons: [] }
+        return (
+          <div key={ref} style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+            <button
+              disabled={!g.ok}
+              onClick={() => onAnswer({ actorRef: ref })}
+              title={g.ok ? `Agree to the line as ${ref}` : g.reasons.join(' ')}
+              data-testid={`agree-${ref}`}
+              style={{
+                padding: '4px 10px', fontSize: '11px', borderRadius: '3px',
+                background: g.ok ? `${COLOR.factTone}26` : 'transparent', color: g.ok ? COLOR.factTone : COLOR.textSecondary,
+                border: `1px solid ${g.ok ? `${COLOR.factTone}77` : COLOR.border}`, cursor: g.ok ? 'pointer' : 'not-allowed',
+              }}
+            >
+              Agree as {ref}
+            </button>
+            {!g.ok && <span style={{ fontSize: '10px', color: COLOR.cautionTone }}>{g.reasons.join(' ')}</span>}
+          </div>
+        )
+      })}
     </div>
   )
 }

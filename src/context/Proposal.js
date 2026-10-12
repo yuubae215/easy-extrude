@@ -31,8 +31,9 @@
  * @module context/Proposal
  */
 
-import { readClaim, ownerOf, isOwnerUndeclared, isOwnerlessDeclared } from './Ownership.js'
+import { readClaim, ownerOf, isOwnerUndeclared, isOwnerlessDeclared, TARGET_KIND } from './Ownership.js'
 import { hasKey } from './Keyring.js'
+import { isLineProposal, lineApprovalGuards, lineRejectionGuards, lineVersion } from './CriteriaLine.js'
 
 /** Ref prefix for proposals (parallel to `conflict_` / `nc_`). */
 export const PROPOSAL_REF_PREFIX = 'prop_'
@@ -45,6 +46,12 @@ export const PROPOSAL_STATE = Object.freeze({
   APPROVED: 'approved',
   /** The proposer took it back. Terminal. */
   WITHDRAWN: 'withdrawn',
+  /**
+   * Someone with the right to approve said no. Terminal (ADR-165 §PR2 の俯瞰
+   * C / D — added for the line's zero-sum veto, open to ADR-104 owners too:
+   * one state set, not one per kind of proposal).
+   */
+  REJECTED: 'rejected',
 })
 
 /**
@@ -53,9 +60,10 @@ export const PROPOSAL_STATE = Object.freeze({
  * **a new proposal** (same discipline as U3's superseding agenda items).
  */
 const PROPOSAL_TRANSITIONS = Object.freeze({
-  [PROPOSAL_STATE.PROPOSED]:  [PROPOSAL_STATE.APPROVED, PROPOSAL_STATE.WITHDRAWN],
+  [PROPOSAL_STATE.PROPOSED]:  [PROPOSAL_STATE.APPROVED, PROPOSAL_STATE.WITHDRAWN, PROPOSAL_STATE.REJECTED],
   [PROPOSAL_STATE.APPROVED]:  [],
   [PROPOSAL_STATE.WITHDRAWN]: [],
+  [PROPOSAL_STATE.REJECTED]:  [],
 })
 
 /** Structural equality over claim values (intervals, regions, criteria). */
@@ -137,6 +145,11 @@ export function isStale(ctx, proposal) {
  * @returns {{ok: boolean, reasons: string[], owner: string|undefined}}
  */
 export function approvalGuards(ctx, proposal, keyring) {
+  // ADR-165 D5: a proposal against the agreed line is approved by the other
+  // end users, not by the owner's key — a different authority, same gate shape.
+  if (isLineProposal(ctx, proposal)) {
+    return { ...lineApprovalGuards(ctx, proposal, keyring), owner: undefined, line: true }
+  }
   const keys = keyring instanceof Set ? keyring : new Set(keyring ?? [])
   const reasons = []
   const owner = ownerOf(ctx, proposal.target)
@@ -220,6 +233,7 @@ export function withdrawProposal(ctx, ref) {
 export function approveProposal(ctx, ref, { decidedBy, keyCardinality }) {
   const proposal = findProposal(ctx, ref)
   if (!proposal) throw new Error(`[Proposal] no proposal "${ref}"`)
+  if (isLineProposal(ctx, proposal)) return approveLineProposal(ctx, proposal, { decidedBy, keyCardinality })
   if (!decidedBy?.length) {
     throw new Error(
       `[Proposal] approving "${ref}" needs at least one held key — ` +
@@ -255,9 +269,10 @@ export function approveProposal(ctx, ref, { decidedBy, keyCardinality }) {
  * @param {string} ref
  * @returns {object} a new context object
  */
-export function unapproveProposal(ctx, ref) {
+export function unapproveProposal(ctx, ref, signature) {
   const proposal = findProposal(ctx, ref)
   if (!proposal) throw new Error(`[Proposal] no proposal "${ref}"`)
+  if (Array.isArray(proposal.approvals)) return unapproveLineProposal(ctx, proposal, signature)
   const withClaim = writeClaim(ctx, proposal.target, proposal.from)
   return {
     ...restoreProposalState(withClaim, ref, PROPOSAL_STATE.PROPOSED),
@@ -277,6 +292,9 @@ export function restoreProposalState(ctx, ref, state) {
     const next = { ...p, state }
     delete next.decidedBy
     delete next.keyCardinalityAtDecision
+    delete next.rejectedBy
+    delete next.lineVersion
+    delete next.approversRequired
     return next
   })
   return { ...ctx, proposals }
@@ -293,8 +311,115 @@ export function restoreProposalState(ctx, ref, state) {
  * @returns {object} a new context object
  */
 export function writeClaim(ctx, target, value) {
+  if (target.kind === TARGET_KIND.ACTOR_MIX) {
+    const actors = (ctx.actors ?? []).map(a => (a.ref === target.ref ? { ...a, mix: value } : a))
+    return { ...ctx, actors }
+  }
   const field = target.kind.split('.')[1]
   const requirements = (ctx.requirements ?? []).map(req =>
     req.ref === target.ref ? { ...req, [field]: value } : req)
   return { ...ctx, requirements }
+}
+
+// ── The agreed line (ADR-165 D5) ──────────────────────────────────────────────
+//
+// A line proposal is an ordinary proposal whose authority is different: not
+// the owner's key but **every other end user's** approval. Approvals gather on
+// the proposal (`approvals[]`, a set — the same key twice counts once); the one
+// that completes the set applies the change, exactly like an ADR-104 approval
+// (claim + state + receipt in one transform, U1), and stamps the version it
+// produced. With no other end user the set is empty from the start, and the
+// change passes recorded as "no approvers" (`approversRequired: []`).
+
+/**
+ * Add approvals to a line proposal; apply it when the set is complete.
+ * @param {object} ctx
+ * @param {object} proposal
+ * @param {{decidedBy: string[], keyCardinality: number}} signature — the approvers being added now
+ */
+function approveLineProposal(ctx, proposal, { decidedBy, keyCardinality }) {
+  const guards = lineApprovalGuards(ctx, proposal, decidedBy ?? [])
+  if (!guards.ok) {
+    throw new Error(`[Proposal] cannot approve line proposal "${proposal.ref}": ${guards.reasons.join(' ')}`)
+  }
+  const approvals = [...new Set([...(proposal.approvals ?? []), ...guards.approvers])]
+  const complete = guards.required.every(r => approvals.includes(r))
+  if (!complete) {
+    const proposals = ctx.proposals.map(p => (p.ref === proposal.ref ? { ...p, approvals } : p))
+    return { ...ctx, proposals }
+  }
+
+  const version = (lineVersion(ctx) ?? 0) + 1
+  const withClaim = writeClaim(ctx, proposal.target, proposal.to)
+  const withState = withProposalState(withClaim, proposal.ref, PROPOSAL_STATE.APPROVED, {
+    approvals,
+    decidedBy: approvals,
+    approversRequired: guards.required,
+    lineVersion: version,
+    keyCardinalityAtDecision: keyCardinality,
+  })
+  const receipt = {
+    ref: `d_${proposal.ref}`,
+    resolves: proposal.ref,
+    decidedBy: approvals,
+    status: 'agreed',
+    rationale: guards.required.length === 0
+      ? `${proposal.rationale} (no other end user — recorded only)`
+      : proposal.rationale,
+    keyCardinalityAtDecision: keyCardinality,
+  }
+  return { ...withState, decisions: [...(withState.decisions ?? []), receipt] }
+}
+
+/**
+ * Undo of one line approval: remove the approvers that approval added, and,
+ * if it was the completing one, unwind claim + state + receipt together (U1).
+ */
+function unapproveLineProposal(ctx, proposal, signature) {
+  const added = new Set(signature?.decidedBy ?? [])
+  let next = ctx
+  if (proposal.state === PROPOSAL_STATE.APPROVED) {
+    const withClaim = writeClaim(ctx, proposal.target, proposal.from)
+    next = {
+      ...restoreProposalState(withClaim, proposal.ref, PROPOSAL_STATE.PROPOSED),
+      decisions: (withClaim.decisions ?? []).filter(d => d.resolves !== proposal.ref),
+    }
+  }
+  const proposals = next.proposals.map(p => (p.ref === proposal.ref
+    ? { ...p, approvals: (p.approvals ?? []).filter(r => !added.has(r)) }
+    : p))
+  return { ...next, proposals }
+}
+
+/**
+ * **The rejection gate.** A line proposal may be rejected by any other end
+ * user (the zero-sum veto); an ordinary proposal by a holder of the owner's
+ * key — the same authority that could have approved it.
+ *
+ * @returns {{ok: boolean, reasons: string[], by: string[]}}
+ */
+export function rejectionGuards(ctx, proposal, keyring) {
+  if (isLineProposal(ctx, proposal)) return lineRejectionGuards(ctx, proposal, keyring)
+  const keys = keyring instanceof Set ? keyring : new Set(keyring ?? [])
+  const reasons = []
+  const owner = ownerOf(ctx, proposal.target)
+  if (proposal.state !== PROPOSAL_STATE.PROPOSED) reasons.push(`This proposal is already ${proposal.state}.`)
+  if (isOwnerUndeclared(owner) || isOwnerlessDeclared(owner)) {
+    reasons.push(`"${proposal.target.ref}" has no owner who could reject this.`)
+  } else if (!hasKey(keys, owner)) {
+    reasons.push(`Only a holder of "${owner}"'s key may reject this.`)
+  }
+  return { ok: reasons.length === 0, reasons, by: !isOwnerUndeclared(owner) && hasKey(keys, owner) ? [owner] : [] }
+}
+
+/**
+ * Reject a proposal. Terminal and kept (a human act — ADR-104 D4). The claim
+ * does not move and no receipt is written: a receipt records what was agreed.
+ * @param {object} ctx @param {string} ref @param {string[]} rejectedBy
+ */
+export function rejectProposal(ctx, ref, rejectedBy) {
+  if (!rejectedBy?.length) {
+    throw new Error(`[Proposal] rejecting "${ref}" must name who rejected it`)
+  }
+  return withProposalState(ctx, ref, PROPOSAL_STATE.REJECTED, { rejectedBy })
 }

@@ -30,6 +30,7 @@ export const ANSWER_KIND = {
   END_USER:      'endUserStance', // which actor stands as an end user (R12 no end user — ADR-165 D1)
   CRITERIA:      'criteria',      // an end user's mix and element answers (R12 unheard — ADR-165 D2)
   JOB_FUNCTION:  'jobFunction',   // an end user's job function (R13 — ADR-165 D1)
+  AGREEMENT:     'agreement',     // an end user agrees to the heard line (R12 unagreed — ADR-165 D5)
 }
 
 /**
@@ -53,6 +54,7 @@ const KIND_BY_RULE = {
   'R12:no-end-user':      ANSWER_KIND.END_USER,
   'R12:unheard-criteria': ANSWER_KIND.CRITERIA,
   'R13:undeclared-function': ANSWER_KIND.JOB_FUNCTION,
+  'R12:unagreed-criteria':  ANSWER_KIND.AGREEMENT,
 }
 
 /**
