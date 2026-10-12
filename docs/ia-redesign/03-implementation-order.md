@@ -18,7 +18,7 @@
   **ADR-112** (文書の入口の住所を恒久に — Phase 5.2、**Accepted・実装済み**) /
   **ADR-109** (残しに母集団と満期を — Phase 6、**Proposed**) /
   **ADR-164** (宣言は事実の持ち主の画面に住む — Phase 7、**Accepted・実装済み**) /
-  **ADR-165** (判定基準は設計の前に聞き切る — Phase 8、**Proposed**)
+  **ADR-165** (判定基準は設計の前に聞き切る — Phase 8、**Accepted・段階実装中 (PR1)**)
 - **状態と基数** → `docs/STATE_LEDGER.md` §提案中の実体
 
 **この表は段の全数である。** 起票済みの ADR で段を持たないものは 0 本でなければならない
@@ -408,12 +408,15 @@ Outliner の意味側 (v8 注釈②) は**未着手**。「Phase 3 と同時に�
 
 ## Phase 8 — 判定基準を設計の前に聞き切り、合意する (ADR-165)
 
-**設計判断は ADR-165** (Proposed — 2026-10-11 起票)。フローの正本は `criteria-charamake-flow-v4.html`。
+**設計判断は ADR-165** (Accepted — 2026-10-11、段階実装 PR1〜PR4)。フローの正本は `criteria-charamake-flow-v4.html`。
 **Phase 7 の「ユーザ」ドメイン (場の判定基準と答え) の中身がこの段**。
 
-- [ ] 状態機械を先に: `docs/STATE_TRANSITIONS.md` §判定基準の線 (起票と同じコミットで節を起こした)。
-- [ ] Context DSL の版上げ (`context/0.6`) — 職能と立場の分離、価値木 (比重・期待値・重み)、線の版と履歴。
-- [ ] 聞き取りフロー (ADR-063 の `context.wizard` FSM の上) と、空欄の個数の census。
+- [x] 状態機械を先に: `docs/STATE_TRANSITIONS.md` §判定基準の線 (起票と同じコミットで節を起こした)。
+- [x] Context DSL の版上げ (`context/0.6`) — 職能と立場の分離、価値木 (比重・期待値・重み)。(PR1 —
+      期待値は既存の `requirement` の行、足したのは `endUser` / `mix` / `weight` — ADR-165 §PR1 の俯瞰)
+- [ ] 線の版と履歴 (見た後の変更 — D4)。(PR2)
+- [x] 空欄の個数の census (`countUnheard` — 1 人 18 欄、R12 / R13 が名指し)。(PR1)
+- [ ] 聞き取りフロー (ADR-063 の `context.wizard` FSM の上)。(PR3)
 - [ ] 合意と線の変更提案 (ADR-104 の提案 → 承認 / 却下を使う)。マージン外は差し出すものを読ませる。
 - [ ] response 契約に関心と差し出すもの (contractVersion 版上げ) — 値は core/ が出す。
 

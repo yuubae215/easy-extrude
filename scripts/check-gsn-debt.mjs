@@ -374,7 +374,11 @@ const SUPPORT_LABELS = new Map([
 // (把持の関係の行 — D2) は PR2 で上がる。
 // 2026-10-11 (同日): 56 → 55。ADR-164 PR2 (D2) で AGraspIsARelationRowAndABrokenOneIsVisible が
 // support-verified に上がった (graspRelation.test.js の node --test と grasp-stub e2e S17)。
-const DEBT_BASELINE = 55
+// 2026-10-11 (同日): 55 → 54。ADR-165 PR1 (D1 + D2 の語彙と未聴取の census) で
+// UnaskedCriteriaAreCountedUntilZero が support-verified に上がった (CriteriaElicitation.test.js の
+// node --test)。D6 の goal の満期は ADR-165 の Accepted で発火してしまうので PATH へ張り替えた —
+// 機械可読のままなので分子 (G3) は動かない。
+const DEBT_BASELINE = 54
 
 /**
  * G3 — 満期 trigger を持たない exploring goal の個数 (実測値)。

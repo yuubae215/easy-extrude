@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://easy-extrude.dev/schema/context-0.5.json",
+  "$id": "https://easy-extrude.dev/schema/context-0.6.json",
   "title": "ContextDSL",
-  "description": "Public schema for Context DSL up to context/0.5 (ADR-046, ADR-049, ADR-053, ADR-104). This is the SHAPE contract: closed field sets + enum vocabularies. The MEANING contract (R1-R11: orphan-spec, conflicts, negotiation clusters, blocked acceptance, stated->derived promotion, role-KPI obligations, undeclared ownership, proposal/agenda integrity) stays in ContextValidator.js (ADR-064 Phase 2). Each context/0.x is a strict additive superset of the prior, so 0.1-0.5 docs all conform here; `version` is bound to SUPPORTED_VERSIONS by the drift test. Domain-open bags (Fact.attrs, constraint.properties, meta.baseline) are kept open on purpose, mirroring the grasp-contract discipline (PHILOSOPHY #29).",
+  "description": "Public schema for Context DSL up to context/0.6 (ADR-046, ADR-049, ADR-053, ADR-104, ADR-165). This is the SHAPE contract: closed field sets + enum vocabularies. The MEANING contract (R1-R13: orphan-spec, conflicts, negotiation clusters, blocked acceptance, stated->derived promotion, role-KPI obligations, undeclared ownership, proposal/agenda integrity, unheard criteria, undeclared job function) stays in ContextValidator.js (ADR-064 Phase 2). Each context/0.x is an additive superset of the prior, so 0.1-0.6 docs all conform here (0.6 stops writing the legacy role value `endUser`, which is still accepted on input and rejected by the validator in a 0.6 doc — ADR-165 D1); `version` is bound to SUPPORTED_VERSIONS by the drift test. Domain-open bags (Fact.attrs, constraint.properties, meta.baseline) are kept open on purpose, mirroring the grasp-contract discipline (PHILOSOPHY #29).",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -16,7 +16,8 @@
         "context/0.2",
         "context/0.3",
         "context/0.4",
-        "context/0.5"
+        "context/0.5",
+        "context/0.6"
       ]
     },
     "meta": {
@@ -154,17 +155,49 @@
           "type": "string"
         },
         "role": {
-          "description": "Actor role. Bound to VALID_ROLES.",
+          "description": "Job function (職能). Bound to VALID_ROLES plus LEGACY_END_USER_ROLE (\"endUser\"), which 0.1-0.5 docs wrote for what is a stance; ActorStance.js reads it as endUser: true with the job undeclared (ADR-165 D1).",
           "enum": [
             "developer",
             "maintainer",
-            "endUser",
             "agent",
-            "customer"
+            "customer",
+            "approver",
+            "productionEng",
+            "manufacturingEng",
+            "ehs",
+            "integrator",
+            "endUser"
           ]
         },
         "discipline": {
           "type": "string"
+        },
+        "endUser": {
+          "description": "ADR-165 D1. True when this actor stands as an end user of the project (立場) — a separate fact from the job function in `role`. End users are 1..N.",
+          "type": "boolean"
+        },
+        "mix": {
+          "description": "ADR-165 D2. The end user's QCD + S ratio — the upper tier of the value tree. Relative non-negative numbers; a declared 0 is an answer, an absent key is a blank the census counts. Keys bound to CRITERIA_CATEGORIES.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "D": {
+              "type": "number",
+              "minimum": 0
+            },
+            "Q": {
+              "type": "number",
+              "minimum": 0
+            },
+            "C": {
+              "type": "number",
+              "minimum": 0
+            },
+            "S": {
+              "type": "number",
+              "minimum": 0
+            }
+          }
         }
       }
     },
@@ -386,6 +419,11 @@
         },
         "criterion": {
           "$ref": "#/$defs/criterion"
+        },
+        "weight": {
+          "description": "ADR-165 D2. How much exceeding the expectation (`criterion`) is worth to the owner. Non-negative; a declared 0 is an answer. Which criteria element it weighs is `kpi.name` against CriteriaCatalog.js.",
+          "type": "number",
+          "minimum": 0
         },
         "constrains": {
           "type": "array",

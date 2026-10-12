@@ -1190,9 +1190,11 @@ Map 注釈ビュー (`AnnotatedPointView` / `AnnotatedLineView` / `AnnotatedRegi
 
 ---
 
-## 判定基準の線 — 聞き取り中 / 合意済み vN / 変更提案中 (ADR-165 D5 — Proposed)
+## 判定基準の線 — 聞き取り中 / 合意済み vN / 変更提案中 (ADR-165 D5)
 
-**まだコードは無い** (ADR-165 は Proposed)。核 §1.4 の閾値 (3 状態) を跨いだので、クラスを書く前に
+**線の状態機械のコードはまだ無い** (ADR-165 は段階実装の Accepted — この図は PR2 で実装する)。
+PR1 で実装したのは guard (合意) の前半 = 未聴取の個数 (`CriteriaElicitation.countUnheard`) と、
+エンドユーザの基数 (`ActorStance.endUsersOf`)。核 §1.4 の閾値 (3 状態) を跨いだので、クラスを書く前に
 ここへ起こす。線 = エンドユーザ全員 × 全要素の `{期待値, 重み}` の組。合意後の変更は上の **提案**
 (ADR-104 D3) をそのまま使い、新しい状態機械を足さない — 増えるのは「線の版」だけ。
 

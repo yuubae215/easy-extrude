@@ -1,7 +1,7 @@
 /**
  * Context DSL schema conformance + drift binding (ADR-064 Phase 2).
  *
- * The schema (schema/context-0.5.schema.json) is the SHAPE contract for the
+ * The schema (schema/context-0.6.schema.json) is the SHAPE contract for the
  * Context DSL — a closed, versioned JSON Schema artifact (PHILOSOPHY #29).
  * This suite proves:
  *
@@ -25,6 +25,8 @@ import Ajv2020 from 'ajv/dist/2020.js'
 import {
   SUPPORTED_VERSIONS,
   VALID_ROLES,
+  ACCEPTED_ROLE_VALUES,
+  LEGACY_END_USER_ROLE,
   VALID_FACT_STATUS,
   VALID_CHECK_MODES,
   VALID_TRACE_KINDS,
@@ -37,12 +39,13 @@ import {
   VALID_AGENDA_STATE,
 } from '../context/ContextDslSchema.js'
 import { TARGET_KIND } from '../context/Ownership.js'
+import { CRITERIA_CATEGORIES } from '../context/CriteriaCatalog.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const root = join(here, '..', '..')
 const readJson = (p) => JSON.parse(readFileSync(join(root, p), 'utf8'))
 
-const schema = readJson('schema/context-0.5.schema.json')
+const schema = readJson('schema/context-0.6.schema.json')
 const ajv = new Ajv2020({ allErrors: true, strict: false })
 const validate = ajv.compile(schema)
 
@@ -57,7 +60,7 @@ const EXAMPLES = [
 // ── 1. Conformance: every bundled context example passes ─────────────────────
 
 for (const f of EXAMPLES) {
-  test(`${f} conforms to context-0.5 schema`, () => {
+  test(`${f} conforms to context-0.6 schema`, () => {
     const valid = validate(readJson(`examples/${f}`))
     assert.equal(valid, true, JSON.stringify(validate.errors, null, 2))
   })
@@ -136,8 +139,30 @@ test('schema version enum matches SUPPORTED_VERSIONS', () => {
   assert.deepEqual(schema.properties.version.enum, SUPPORTED_VERSIONS)
 })
 
-test('schema role enum matches VALID_ROLES', () => {
-  assert.deepEqual(schema.$defs.actor.properties.role.enum, VALID_ROLES)
+test('schema role enum matches VALID_ROLES plus the legacy stance value it still reads', () => {
+  assert.deepEqual(schema.$defs.actor.properties.role.enum, [...ACCEPTED_ROLE_VALUES])
+  assert.deepEqual(ACCEPTED_ROLE_VALUES, [...VALID_ROLES, LEGACY_END_USER_ROLE])
+  assert.ok(!VALID_ROLES.includes(LEGACY_END_USER_ROLE), '立場は職能の列挙に居ない (ADR-165 D1)')
+})
+
+// ── ADR-165 PR1: stance, mix and weight (context/0.6) ────────────────────────
+
+test('schema mix keys match CRITERIA_CATEGORIES', () => {
+  assert.deepEqual(Object.keys(schema.$defs.actor.properties.mix.properties), [...CRITERIA_CATEGORIES])
+})
+
+test('a context/0.6 end user with a mix and a weighted expectation conforms', () => {
+  assert.equal(validate({
+    version: 'context/0.6',
+    actors: [{ ref: 'm', role: 'maintainer', endUser: true, mix: { D: 3, Q: 2, C: 1, S: 4 } }],
+    requirements: [{ ref: 'crit_m_takt', by: 'm', owner: 'm', kpi: { name: 'takt', unit: 's' },
+      criterion: { op: '<=', value: 6 }, weight: 2 }],
+  }), true, JSON.stringify(validate.errors))
+})
+
+test('a mix key outside QCD + S, or a negative weight, is rejected', () => {
+  assert.equal(validate({ version: 'context/0.6', actors: [{ ref: 'm', endUser: true, mix: { E: 1 } }] }), false)
+  assert.equal(validate({ version: 'context/0.6', requirements: [{ ref: 'r', weight: -1 }] }), false)
 })
 
 test('schema fact status enum matches VALID_FACT_STATUS', () => {

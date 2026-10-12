@@ -10,7 +10,7 @@ shape contract with `additionalProperties:false` and a version field
 | Schema | Wire form | Source of vocabulary |
 |--------|-----------|----------------------|
 | `layout-1.0.schema.json`  | `layout/1.0` (ADR-045, ADR-055) | `src/layout/LayoutDslSchema.js` |
-| `context-0.5.schema.json` | `context/0.1`–`context/0.5` (ADR-046, ADR-049, ADR-053, ADR-104) | `src/context/ContextDslSchema.js` |
+| `context-0.6.schema.json` | `context/0.1`–`context/0.6` (ADR-046, ADR-049, ADR-053, ADR-104, ADR-165) | `src/context/ContextDslSchema.js` |
 
 ## Shape vs. meaning
 
@@ -19,9 +19,9 @@ enum vocabularies. The **meaning** contract stays in the JS validators and is
 not duplicated here:
 
 - `LayoutValidator.js` — ref resolution, ref uniqueness, `<ref>_origin` targets.
-- `ContextValidator.js` — R1–R11 (orphan-spec, conflicts, negotiation clusters,
+- `ContextValidator.js` — R1–R13 (orphan-spec, conflicts, negotiation clusters,
   blocked acceptance, stated→derived promotion, role-KPI obligations, undeclared
-  ownership, proposal / agenda integrity). A schema cannot express "every spec
+  ownership, proposal / agenda integrity, unheard criteria, undeclared job function). A schema cannot express "every spec
   element has a trace link"; that is meaning, not shape. Nor can it express
   "a proposal's `from` must still match the current value" — that one is not even
   a document property, it is derived at the moment approval is attempted
@@ -43,8 +43,8 @@ no second definition that can silently drift.
 
 ```bash
 node schema/tools/validate.mjs layout-1.0  examples/factory_layout.json
-node schema/tools/validate.mjs context-0.5 examples/cell_robotics_context.json
-cat my-doc.json | node schema/tools/validate.mjs context-0.5 -
+node schema/tools/validate.mjs context-0.6 examples/cell_robotics_context.json
+cat my-doc.json | node schema/tools/validate.mjs context-0.6 -
 ```
 
 `pnpm test` (the CI gate) runs the conformance + drift tests automatically —
@@ -54,7 +54,8 @@ every `examples/*.json` must conform, and a smuggled field must be rejected.
 
 Each `context/0.x` is a strict additive superset of the prior, so **one** file
 covers the whole range and the older file is deleted in the same commit that
-adds the newer one (`context-0.4.schema.json` → `context-0.5.schema.json`,
+adds the newer one (`context-0.4.schema.json` → `context-0.5.schema.json` →
+`context-0.6.schema.json`,
 ADR-104). Keeping both would leave two artifacts answering the same question
 for the same document — and the older one would keep passing, quietly, for
 documents it no longer describes fully.

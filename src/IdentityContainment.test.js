@@ -157,6 +157,19 @@ const IDENTITY_RULES = [
     why: '2 つの住所の片方だけを読む解釈が増えると、旧文書の引き上げが別の経路では未宣言に見える (ADR-164 D4)',
   },
   {
+    // ADR-165 D1。「この actor はエンドユーザか」は 2 つの住所から読む — 新しい欄
+    // (`endUser: true`) と、0.1〜0.5 の文書が職能の欄に書いた旧値 (`role: "endUser"`)。
+    // 呼び出し側で `role === 'endUser'` や `.endUser` を直接読むと、片方の住所だけを
+    // 見た判定が生まれ、旧文書のエンドユーザが聞き取りの母集団から黙って落ちる。
+    // 表示層 (actor の入力欄) も読むので `.jsx` を走査する。
+    name: 'エンドユーザの立場 (endUser 欄 / 旧 role 値の解釈)',
+    owners: ['src/context/ActorStance.js', 'src/context/ContextDslSchema.js'],
+    use: "isEndUser(actor) / jobFunctionOf(actor) / endUsersOf(ctx)  — import from 'src/context/ActorStance.js'",
+    scope: 'all',
+    all: [/\.endUser\b|['"`]endUser['"`]|LEGACY_END_USER_ROLE/],
+    why: '2 つの住所の片方だけを読む判定が増えると、旧文書のエンドユーザが別の経路では居ないことになり、聞き取りの空欄が数えられない (ADR-165 D1 / 原則 #31)',
+  },
+  {
     // ADR-104 U2。「この提案は古びているか」は *保存しない* と決めた導出値なので、
     // 導出規則そのものが唯一の住所になる。散ると「4 つ目の状態」が事実上復活する。
     name: '提案の陳腐化判定 (from === 現在値)',

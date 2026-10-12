@@ -21,6 +21,8 @@ import {
   seedCardLines,
 } from '../../context/IntakeAssist.js'
 import { instantiateKpiExpr } from '../../context/RoleKpiCatalog.js'
+import { COLOR } from '../../theme/tokens.js'
+import { isEndUser, jobFunctionOf, withEndUserStance, withoutEndUserStance } from '../../context/ActorStance.js'
 import {
   ROLES,
   DISCIPLINES,
@@ -507,7 +509,8 @@ export function ActorSummary({ a }) {
   return (
     <>
       <span style={{ color: '#5a9bf5' }}>{a.ref}</span>
-      {' · '}<span style={{ color: '#aaa' }}>{a.role}</span>
+      {' · '}<span style={{ color: '#aaa' }}>{jobFunctionOf(a) ?? 'job not declared'}</span>
+      {isEndUser(a) && <span style={{ color: COLOR.cautionTone }}> · end user</span>}
       {a.discipline && <span style={{ color: '#777' }}> · {a.discipline}</span>}
     </>
   )
@@ -544,7 +547,10 @@ function isEditingKind(editing, kind) {
 export function ActorForm({ mode = 'create', initial = null, actors, seedActors = [], seedEntry = null, onAdd, onSave, onRemove, onCancel }) {
   const isEdit = mode === 'edit'
   const [ref, setRef]    = useState(initial?.ref ?? '')
-  const [role, setRole]  = useState(initial?.role ?? 'developer')
+  // ADR-165 D1: the job function and the end-user stance are two fields. A
+  // legacy `role: "endUser"` reads as the stance with the job undeclared ('').
+  const [role, setRole]  = useState(initial ? (jobFunctionOf(initial) ?? '') : 'developer')
+  const [endUser, setEndUser] = useState(initial ? isEndUser(initial) : false)
   const [disc, setDisc]  = useState(initial?.discipline ?? '')
   // §A-2: snapshot of what the last-picked seed chip flooded in (null = no seed
   // picked); drives the per-field tint. flashTick remounts the field block so
@@ -558,21 +564,27 @@ export function ActorForm({ mode = 'create', initial = null, actors, seedActors 
   // ADR-058 Phase 2: copy a filled example actor, then tweak it. The ref is
   // suffixed `_copy` because the forked working doc already contains the seed ref.
   function fillFromSeed(a) {
-    const fill = { ref: (a.ref ?? '') + '_copy', role: a.role ?? 'developer', disc: a.discipline ?? '' }
-    setRef(fill.ref); setRole(fill.role); setDisc(fill.disc)
+    const fill = { ref: (a.ref ?? '') + '_copy', role: jobFunctionOf(a) ?? '', disc: a.discipline ?? '' }
+    setRef(fill.ref); setRole(fill.role); setEndUser(isEndUser(a)); setDisc(fill.disc)
     setSeedFill(fill); setFlashTick(t => t + 1)
   }
 
   function submit() {
     if (gaps.length > 0) return
-    if (isEdit) {
-      const next = { ...initial, ref: ref.trim(), role }
+    // The stance goes through its one writer; an undeclared job is left absent,
+    // never defaulted (R13 asks for it).
+    const build = (base) => {
+      const { role: _old, ...rest } = withoutEndUserStance(base)
+      const next = { ...rest, ref: ref.trim(), ...(role ? { role } : {}) }
       if (disc) next.discipline = disc; else delete next.discipline
-      onSave(next)
+      return endUser ? withEndUserStance(next) : next
+    }
+    if (isEdit) {
+      onSave(build(initial))
       return
     }
-    onAdd({ ref: ref.trim(), role, ...(disc ? { discipline: disc } : {}) })
-    setRef(''); setDisc(''); setSeedFill(null)
+    onAdd(build({}))
+    setRef(''); setEndUser(false); setDisc(''); setSeedFill(null)
   }
 
   return (
@@ -594,9 +606,16 @@ export function ActorForm({ mode = 'create', initial = null, actors, seedActors 
               placeholder="a_robot" existingRefs={existingRefs}
               tint={matchesSeed(seedFill?.ref, ref)} onEnter={submit} />
         }
-        <Field label="role">
-          <Select value={role} onChange={setRole} options={ROLES}
+        <Field label="job function">
+          <Select value={role} onChange={setRole} options={['', ...ROLES]}
             style={matchesSeed(seedFill?.role, role) ? seedTint : undefined} />
+        </Field>
+        <Field label="stance">
+          <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: COLOR.textPrimary }}>
+            <input type="checkbox" checked={endUser} onChange={e => setEndUser(e.target.checked)}
+              data-testid="actor-end-user" />
+            stands as an end user (their criteria are heard before design)
+          </label>
         </Field>
         <Field label="discipline (optional)">
           <Select value={disc} onChange={setDisc} options={DISCIPLINE_OPTIONS}

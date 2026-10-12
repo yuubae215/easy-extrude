@@ -1,6 +1,6 @@
 # 165. 判定基準は設計の前に聞き切る — 期待値と重みで聞き、合意した線は提案でしか動かない
 
-- Status: Proposed
+- Status: Accepted (2026-10-11 — 当事者が俯瞰で合意。段階実装: D1・D2 の語彙と未聴取の census (PR1)、D4・D5 の履歴と線の版・合意・変更提案 (PR2)、D3 の聞き取りフロー (PR3)、D6 の関心と差し出すもの — 契約の版上げ + core/ (PR4)。`docs/ia-redesign/03-implementation-order.md` Phase 8)
 - Date: 2026-10-11
 - Deciders: yuubae215, Claude
 - 段: IA 再設計 Phase 8 (`docs/ia-redesign/03-implementation-order.md`)
@@ -171,3 +171,50 @@ response 契約に値を足すので、実装の PR で `contractVersion` を上
 - 動詞境界 (ADR-056/077): 関心・差し出すもの・重みの推し量りは**提案・ランキング**の側 (core/) で、
   線と合意は**決定**の側 (文書)。front は決定を書き、提案を描く。
 - 原則 #31: 数えるのは答えた数ではなく、必要な欄の中の空欄。
+
+## 俯瞰で決まったこと
+
+### PR1 の俯瞰 (2026-10-11、当事者が 4 点とも推奨で決定)
+
+`/whiteboard` で語彙を引き直すと、ADR が「足す」と書いた語の半分は**既に在った**。
+持ち主つきのしきい値は `requirement {by, owner, kpi, criterion}` そのもので、受領証の形
+(`decision {oldCriterion, newCriterion}`) も提案の状態機械 (ADR-104) も在る。足りないのは
+「立場」「重み」「比重」「要素の母集団」だけだった。
+
+1. **職能の語彙は閉じた列挙にする。** `role` は職能だけの欄に戻し、ADR の職能を足す:
+   `developer / maintainer / agent / customer` + `approver` (決裁者) / `productionEng` (生産技術) /
+   `manufacturingEng` (製造技術) / `ehs` (環境安全) / `integrator` (SIer)。立場は別の欄 `endUser: true`。
+2. **旧文書の `role: "endUser"` は「立場 = エンドユーザ、職能 = 未宣言」と読む。** 既定の職能で
+   埋めない — R13 が職能の空欄を OpenQuestion として数える。読み替えは `ActorStance.js` 1 箇所
+   (`IDENTITY_RULES` に登録)。`context/0.6` の文書がこの値を書けば error。
+3. **期待値は `requirement` の行に置く (新しい節を作らない)。** kpi.name = 要素のキー、
+   criterion = しきい値、owner = エンドユーザ、`weight` を足す。別の `criteria` 節を作れば
+   requirement と第二の源になる (§1.1)。答えは `by` (誰が打ったか) ではなく `owner` のもの。
+4. **価値木の葉は起票時の 7 つで固める** (「落とさない」= `holdMargin`、「止めたら止まる」=
+   `stoppingDistance` を含む)。`CriteriaCatalog.js` が母集団で、未聴取はこの表に対して数える。
+
+### PR1 — D1 + D2 の語彙と、未聴取の census (2026-10-11)
+
+- **語と欄** (`context/0.6`): `actor.endUser` (立場)、`actor.mix {D,Q,C,S}` (比重)、
+  `requirement.weight` (重み)。`role` の列挙から `endUser` が抜けた (Retires の GREP)。スキーマは
+  `context-0.5.schema.json` → `context-0.6.schema.json` (1 ファイルが全版を覆う慣例どおり旧ファイルは消した)。
+  旧値は入力として受け付け続ける (`ACCEPTED_ROLE_VALUES` — ドリフト検査が `VALID_ROLES` + 旧値に縛る)。
+- **census**: `countUnheard(ctx)` (`CriteriaElicitation.js`) — 1 人 18 欄 (比重 4 + 7 要素 × 2)。
+  0 人は `started: false` で、空の 0 にしない。宣言された 0 は答え (比重がすべて 0 だけは error — 比が無い)。
+  同じ要素に 2 行は空欄扱い + error (どちらを数えるかを推測しない)。
+- **validator**: R12 (`R12:no-end-user` / `R12:unheard-criteria` — 1 人 1 問に空欄を列挙) と
+  R13 (`R13:undeclared-function`)。フォームの答えの種を 3 つ足し (`endUserStance` / `criteria` /
+  `jobFunction`)、フォームの適用だけで R12・R13 が消えることをテストで焼いた。
+- **表に出た既存欠陥**: R10 の答えの種 `owner` には FormPanel の入力欄が無く、問いが出るのに押すものが
+  無かった (原則 #11)。適用の側は未宣言の種で throw するのに、**入力欄の側は数えていなかった**。
+  `FormAnswerKinds.test.js` が `ANSWER_KIND` を母集団に、入力欄と適用がちょうど 1 つずつあることを数える。
+- **本文から動いた点**: (a) 要素のラベルは英語 (UI の文言 — ADR-161。日本語の語は ADR とカタログの
+  コメントに残す)。(b) 簡易の入力欄 (`CriteriaWidget` — 比重 + 要素ごとの期待値と重み) を先に置いた。
+  キャラメイク型のフロー (D3) は PR3 で、これはその前の素の形 — 聞けない問いを出さないため。
+  (c) GSN の D6 の goal は満期が `ADR-165` (Accepted で発火) だったので、D6 の census の住所へ張り替えた。
+  (d) **期待値の行は `constrains` を持たなくてよい** (R0' の例外)。俯瞰 3 で期待値を `requirement` に置いたが、
+  R0' は「requirement は設計変数を 1 つ以上縛る」を要求していた。タクトの期待値がどの設計変数に効くかは
+  ソルバの写像 (core/ — 軸 1) で、エンドユーザが答えることではない。単体テストは「フォームが空になる」だけを
+  見ていて error を見ていなかったので通り、**ブラウザで答えを押して初めて** ContextService の拒否が出た。
+  `ContextPhase2.test.js` の完了テストに「答えた文書が error を持たない」を足した (修正を外すと 2 本落ちる)。
+- **まだ無いもの**: 合意 (設計へ進む gate の後半) と線の版・履歴 (PR2)、フロー (PR3)、関心 (PR4)。
