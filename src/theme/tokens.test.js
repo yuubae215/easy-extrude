@@ -402,8 +402,14 @@ const DECLARED_VOCABULARIES = {
 // `snapTone` (the colour SnapFlash continues), and the white literals of the
 // approach and of the frame sphere became one shared constant per view.
 // Distinct 199 → 198: the amber was the only use of its hue.
-const UNDECLARED_OCCURRENCE_BASELINE = 751
-const UNDECLARED_DISTINCT_BASELINE   = 198
+// 751 → 743 (ADR-166 M4b): the link line's five off-token colours (tension
+// orange, severity amber and red, the pulse pink, the unknown-type grey) became
+// `cautionTone` / `dangerTone` / the breach lit by the stage light /
+// `entityDefault` (LinkMotionMath.LINK_TONES), and the binding handler's grey
+// fallback left with them. Distinct 198 → 195: three of those hues had no
+// other user.
+const UNDECLARED_OCCURRENCE_BASELINE = 743
+const UNDECLARED_DISTINCT_BASELINE   = 195
 
 const HEX_LITERAL = /#[0-9a-fA-F]{6}\b|\b0x[0-9a-fA-F]{6}\b/g
 
