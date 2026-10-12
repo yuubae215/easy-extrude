@@ -108,8 +108,8 @@ function OutlinerRow({ item, depth, active, hasChildren, callbacks, draggingId, 
   const reduced = useReducedMotion()
   // ADR-068 polish: colour/opacity glide on hover & active, gated by reduced motion.
   const rowTransition = reduced ? undefined
-    : `background ${DURATION.hover}ms ${EASING.out}, opacity ${DURATION.hover}ms ${EASING.out}`
-  const iconTransition = reduced ? undefined : `opacity ${DURATION.hover}ms ${EASING.out}`
+    : `background ${DURATION.hover}ms ${EASING.fade}, opacity ${DURATION.hover}ms ${EASING.fade}`
+  const iconTransition = reduced ? undefined : `opacity ${DURATION.hover}ms ${EASING.fade}`
 
   const { id, name, type, visible, locked, ifcClass, placeType, linked, unreferenced, robotRole, isCamera } = item
 
@@ -236,7 +236,7 @@ function OutlinerRow({ item, depth, active, hasChildren, callbacks, draggingId, 
             if (e.key === 'Escape') { e.preventDefault(); inputRef.current?.removeEventListener('blur', commitEdit); cancelEdit() }
           }}
           style={{
-            flex: 1, background: COLOR.backdropMid, border: `1px solid ${COLOR.accent}`,
+            flex: 1, background: COLOR.backdropCenter, border: `1px solid ${COLOR.accent}`,
             borderRadius: 2, color: '#e8e8e8', fontSize: 12,
             fontFamily: 'sans-serif', padding: '0 3px', outline: 'none', minWidth: 0,
           }}

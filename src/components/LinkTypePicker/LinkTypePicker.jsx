@@ -90,7 +90,7 @@ export function LinkTypePicker() {
               gap: '8px',
               padding: '7px 10px',
               cursor: 'pointer',
-              transition: `background ${DURATION.hover}ms ${EASING.out}`,
+              transition: `background ${DURATION.hover}ms ${EASING.fade}`,
               ...itemEnterMotion(i, reduced),
             }}
             onPointerEnter={e => { e.currentTarget.style.background = '#333' }}

@@ -39,7 +39,7 @@ export function tierAMotion({ hovered = false, pressed = false, reduced = false 
   if (reduced) return {}
   const transform = pressed ? 'scale(0.94)' : hovered ? 'translateY(-1px)' : 'none'
   const transition = pressed
-    ? `transform ${DURATION.press}ms ${EASING.out}`
+    ? `transform ${DURATION.press}ms ${EASING.land}`
     : `transform ${DURATION.pressRelease}ms ${EASING.spring}`
   return { transform, transition }
 }
@@ -57,7 +57,7 @@ export function tierAMotion({ hovered = false, pressed = false, reduced = false 
 export function activeGlow(active, reduced = false) {
   if (!active) return {}
   if (reduced) return { boxShadow: breatheShadow(0.5) }
-  return { animation: `eaBreatheGlow ${DURATION.breathe}ms ${EASING.inOut} infinite` }
+  return { animation: `eaBreatheGlow ${DURATION.breathe}ms ${EASING.loop} infinite` }
 }
 
 /**
@@ -85,7 +85,7 @@ export function lockedStyle() {
  */
 export function enterMotion(reduced, duration = DURATION.chromeEnter) {
   if (reduced) return {}
-  return { animation: `eaChromeEnter ${duration}ms ${EASING.out}` }
+  return { animation: `eaChromeEnter ${duration}ms ${EASING.land}` }
 }
 
 /**
@@ -101,7 +101,7 @@ export function enterMotion(reduced, duration = DURATION.chromeEnter) {
  */
 export function exitMotion(reduced, duration = DURATION.toastOut) {
   if (reduced) return { opacity: 0 }
-  return { animation: `eaChromeExit ${duration}ms ${EASING.out} both` }
+  return { animation: `eaChromeExit ${duration}ms ${EASING.exit} both` }
 }
 
 /**
@@ -140,7 +140,7 @@ export function itemEnterMotion(index, reduced) {
   if (reduced) return {}
   const i = Number.isFinite(index) && index > 0 ? Math.floor(index) : 0
   return {
-    animation: `eaChromeEnter ${DURATION.chromeEnter}ms ${EASING.out} both`,
+    animation: `eaChromeEnter ${DURATION.chromeEnter}ms ${EASING.land} both`,
     animationDelay: `${i * DURATION.menuStagger}ms`,
   }
 }

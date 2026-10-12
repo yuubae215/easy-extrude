@@ -141,7 +141,7 @@ function Item({ item, index, reduced, onPick }) {
         cursor: 'pointer',
         color: '#e8e8e8',
         fontSize: '13px',
-        transition: `background ${DURATION.hover}ms ${EASING.out}`,
+        transition: `background ${DURATION.hover}ms ${EASING.fade}`,
         // Staggered cascade — items never appear in lockstep (ADR-080)
         ...itemEnterMotion(index, reduced),
       }}

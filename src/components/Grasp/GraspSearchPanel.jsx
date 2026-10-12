@@ -24,7 +24,7 @@ import { COLOR, DURATION, EASING } from '../../theme/tokens.js'
  * only; the fraction still comes verbatim from the contract diagnostics (#29).
  */
 function barTransition(reduced) {
-  return reduced ? undefined : `width ${DURATION.drawer}ms ${EASING.out}`
+  return reduced ? undefined : `width ${DURATION.drawer}ms ${EASING.land}`
 }
 
 /**

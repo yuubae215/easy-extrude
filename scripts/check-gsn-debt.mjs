@@ -382,7 +382,9 @@ const SUPPORT_LABELS = new Map([
 // support-verified に上がった (CriteriaLine.test.js の node --test)。
 // 2026-10-12: 53 → 52。ADR-165 PR4 (D6 — 契約 v9 + core/ の criteria レーン) で
 // IndicatorValuesComeOnlyFromCore が support-verified へ (満期 = src/CriteriaIndicatorCensus.test.js)。
-const DEBT_BASELINE = 52
+// 2026-10-12: 52 → 51。ADR-166 M2 (モーション・アイデンティティと作業セルの背景) で
+// MotionIdentityIsFixedInOnePlace が support-verified へ (src/MotionIdentity.test.js の node --test)。
+const DEBT_BASELINE = 51
 
 /**
  * G3 — 満期 trigger を持たない exploring goal の個数 (実測値)。

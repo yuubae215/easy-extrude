@@ -50,12 +50,17 @@ artifacts
 
         goal MotionIdentityIsFixedInOnePlace
         uuid 523a1058-7838-40c1-bd8b-b68423d686db
-        summary "モーション・アイデンティティ 5 軸 (イージング族・時間尺度・振付・アトモスフィア・3 色) が CLAUDE.md の 1 節に固定され、背景のアトモスフィアが Void Grid 型から選び直されている"
-        labels support-exploring
+        summary "モーション・アイデンティティ 5 軸 (イージング族・時間スケール・振付パターン・アトモスフィア・3色システム) が CLAUDE.md の 1 節に固定され、背景のアトモスフィアが Void Grid 型から選び直されている"
+        labels support-verified
 
-            assumption IdentitySectionWillSettleIt
-            uuid 0bb70a49-0fc5-47c7-aebc-928e3f3e551d
-            summary "証拠予定: M2 の PR で CLAUDE.md に節を起こす。満期=GREP:CLAUDE.md::モーション・アイデンティティ で決着する"
+            solution MotionIdentityIsFixedAndAsked
+            uuid 1510dce7-3174-4dae-bca6-95d0a2cb9cb2
+            summary "M2 実施 (2026-10-12、当事者合意): CLAUDE.md「モーション・アイデンティティ」節に 5 軸 (アトモスフィア = Studio 型の作業セル / イージング族 = EASING.land・fade・exit・loop・spring / 時間スケール = きびきび / 振付パターン = 位相は同一性から・スタッガーは触った点から / 3色システム = グラファイト紺・accent・舞台の光)。src/MotionIdentity.test.js が節の唯一性と、animation-fx Step 1.5 から導出した軸の母集団との一致・EASING が明示曲線だけであること・CSS 既定曲線の ratchet (16) を問う。背景は Void Grid から作業セルへ (フォグ・ダスト退役、光源は StageMath.STAGE_LIGHT の 1 つ — StageMath.test.js が読み手を数える)。pnpm test 1700+ pass"
+            artifacts
+            - "CLAUDE.md"
+            - "src/MotionIdentity.test.js"
+            - "src/view/StageMath.test.js"
+            - "src/view/SceneStage.js"
 
         goal AnnotationsAreLightOnTheFloorAndReadFromAnyAngle
         uuid b5a0a592-0956-4f77-82c4-e93fd8b4aee2

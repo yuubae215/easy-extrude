@@ -22,6 +22,7 @@ const GRID_BASE_SPAN = mm(20)
 const GRID_DIVISIONS = 20
 import { orbitControlsTouches } from './CameraGestures.js'
 import { COLOR, hexNumber } from '../theme/tokens.js'
+import { GRID_FADE } from './StageMath.js'
 
 /**
  * The projection axis (ADR-103). Two values, cardinality exactly 1 — there is no
@@ -46,8 +47,8 @@ export class SceneView {
     canvasContainer.appendChild(this.renderer.domElement)
 
     this.scene = new THREE.Scene()
-    // Backdrop/fog ownership is delegated to the ambient stage (ADR-067):
-    // SceneStage sets `scene.background` (gradient) and `scene.fog` itself.
+    // Backdrop ownership is delegated to the ambient stage (ADR-166 M2):
+    // SceneStage sets `scene.background` (radial work cell) itself; no fog.
 
     // Only the DIRECTION is authored here. Distance and clip planes belong to
     // framing (`fitCameraToSphere`, driven by AppController._frameScene at boot
@@ -102,8 +103,9 @@ export class SceneView {
 
     this._setupLighting()
     this._setupGrid()
-    // Ambient stage dressing: gradient backdrop, depth fog, floor glow,
-    // drifting dust, rim light (ADR-067 — Tier D; persistent view owned here).
+    // Ambient stage dressing: the Studio work cell — radial backdrop, the one
+    // stage light as a floor pool + rim (ADR-166 M2 — Tier D; persistent view
+    // owned here).
     this.stage = new SceneStage(this.scene)
     // grasp-search verification aid: one fixed-pose robot skeleton PER ROBOT in
     // the scene (0 / 1 / N — ADR-090). The set owns each stage's lifecycle and is
@@ -137,6 +139,19 @@ export class SceneView {
     this._grid.rotation.x = Math.PI / 2
     this._grid.material.transparent = true
     this._grid.material.opacity = 0.4
+    // The grid fades into the floor away from the light (ADR-166 M2 — the
+    // fog that used to swallow its edge left with the Void Grid). Radii come
+    // from StageMath.GRID_FADE; `gridFade()` is the tested twin of this GLSL.
+    const half = GRID_BASE_SPAN / 2
+    this._grid.material.onBeforeCompile = (shader) => {
+      shader.uniforms.uGridFade = { value: new THREE.Vector2(GRID_FADE.inner * half, GRID_FADE.outer * half) }
+      shader.vertexShader = shader.vertexShader
+        .replace('void main() {', 'varying vec2 vGridXY;\nvoid main() {\n\tvGridXY = position.xz;')
+      shader.fragmentShader = shader.fragmentShader
+        .replace('void main() {', 'uniform vec2 uGridFade;\nvarying vec2 vGridXY;\nvoid main() {')
+        .replace('vec4 diffuseColor = vec4( diffuse, opacity );',
+          'vec4 diffuseColor = vec4( diffuse, opacity );\n\tdiffuseColor.a *= 1.0 - smoothstep( uGridFade.x, uGridFade.y, length( vGridXY ) );')
+    }
     this.scene.add(this._grid)
   }
 
@@ -153,7 +168,7 @@ export class SceneView {
     // 20·scale total span ≥ 2·radius  →  scale ≥ radius/10, rounded up to 10^n
     const scale = Math.pow(10, Math.max(0, Math.ceil(Math.log10(radius / 10))))
     this._grid.scale.setScalar(scale)
-    // The ambient stage (dust field, floor glow, fog density) rides the same
+    // The ambient stage (the light pool) rides the same
     // power-of-10 scale so it stays proportionate in mm-scale scenes (#27).
     this.stage.setScale(scale)
   }

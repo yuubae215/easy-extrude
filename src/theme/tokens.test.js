@@ -184,17 +184,16 @@ test('STATE_TOKENS names real tokens, and every non-listed token has a stated re
     border:        'chrome ground — reports no state',
     textPrimary:   'neutral — no hue to separate',
     textSecondary: 'neutral — no hue to separate',
-    backdropTop:   'the ground (ADR-067) — G1 says the ground reports no state',
-    backdropMid:   'the ground (ADR-067)',
-    backdropDeep:  'the ground (ADR-067)',
-    gridMajor:     'the ground (ADR-067)',
-    gridMinor:     'the ground (ADR-067)',
+    backdropCenter: 'the ground (ADR-166 M2 work cell) — G1 says the ground reports no state',
+    backdropEdge:   'the ground (ADR-166 M2)',
+    gridMajor:     'the ground (ADR-166 M2)',
+    gridMinor:     'the ground (ADR-166 M2)',
     entityDefault: 'neutral by construction (G1)',
     accentSoft:    'the SAME meaning as accent at lower strength — shares its hue on purpose',
     axisX:         'reserved by external convention (ROS REP-103)',
     axisY:         'reserved by external convention (ROS REP-103)',
     axisZ:         'reserved by external convention (ROS REP-103)',
-    stageGlow:     'atmosphere, not state (ADR-067 boot stage)',
+    stageLight:    'atmosphere, not state (ADR-166 M2 — the one stage light)',
   }
   for (const t of STATE_TOKENS) {
     assert.ok(t in COLOR, `STATE_TOKENS lists ${t}, which is not a COLOR token`)
@@ -390,8 +389,10 @@ const DECLARED_VOCABULARIES = {
 // 2026-10-11: 774 → 769. ADR-164 D3 removed the grasp panel's vision card
 // (`CaptureButton`'s green `#3a6a5d`/`#1d3a33`/`#9dc8b8` and two more); the
 // camera's own panel is written in tokens.
-const UNDECLARED_OCCURRENCE_BASELINE = 769
-const UNDECLARED_DISTINCT_BASELINE   = 200  // 2026-10-11: 203 → 200 (ADR-164 D3 — the vision card's three greens left with it)
+// 2026-10-12: 769 → 767, distinct 200 → 199. ADR-166 M2 retired the Void Grid
+// atmosphere: the fog colour `0x15152a` and the white dust sprite left with it.
+const UNDECLARED_OCCURRENCE_BASELINE = 767
+const UNDECLARED_DISTINCT_BASELINE   = 199
 
 const HEX_LITERAL = /#[0-9a-fA-F]{6}\b|\b0x[0-9a-fA-F]{6}\b/g
 
