@@ -178,3 +178,20 @@ test('a trial by nobody is an error (R14)', () => {
   const doc = { ...heard(['a']), criteriaHearing: { trials: [{ actor: 'ghost', line: { mix: {}, elements: {} }, seen: [] }] } }
   assert.match(validateContext(doc).errors.join(' '), /criteriaHearing\.trials\[0\]: "ghost"/)
 })
+
+// ── archetypes are a starting point, never an answer (DEF-065, stakeholder 2026-10-12) ──
+
+test('every archetype states all four categories, safety included, and none is all zero', async () => {
+  const { MIX_ARCHETYPES, CRITERIA_CATEGORIES } = await import('./CriteriaCatalog.js')
+  assert.ok(MIX_ARCHETYPES.length > 0)
+  for (const a of MIX_ARCHETYPES) {
+    assert.deepEqual(Object.keys(a.mix).sort(), [...CRITERIA_CATEGORIES].sort(), a.key)
+    assert.ok(a.mix.S > 0, `${a.key} leaves safety at 0`)
+  }
+})
+
+test('an archetype is not an answer: the census still counts the ratio blank until it is saved', () => {
+  const doc = heard(['a'])
+  doc.actors[0].mix = undefined
+  assert.match(hearingStepGaps(HEARING_STEP.MIX, doc, 'a').join(' '), /still blank: D, Q, C, S/)
+})

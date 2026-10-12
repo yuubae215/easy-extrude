@@ -1,8 +1,9 @@
 import { useState } from 'react'
 import { VALID_ROLES } from '../../context/ContextDslSchema.js'
 import {
-  CRITERIA_CATEGORIES, CRITERIA_CATEGORY_LABELS, CRITERIA_ELEMENTS,
+  CRITERIA_CATEGORIES, CRITERIA_CATEGORY_LABELS, CRITERIA_ELEMENTS, MIX_ARCHETYPES,
 } from '../../context/CriteriaCatalog.js'
+import { CriteriaFigure } from './CriteriaFigure.jsx'
 import { CRITERION_OPS } from '../../context/IntakeVocabulary.js'
 import { endUsersOf, isEndUser, jobFunctionOf } from '../../context/ActorStance.js'
 import { answersOf, countUnheard } from '../../context/CriteriaElicitation.js'
@@ -127,6 +128,18 @@ export function MixStep({ doc, respondent, callbacks }) {
       <RespondentBar doc={doc} respondent={respondent} callbacks={callbacks} />
       {frozen ? <FrozenNote who={actor.name ?? actor.ref} /> : (
         <>
+          {/* Start from a type (flow v4 Step 2). Picking one only fills the
+              draft — the ratio is the person's answer once they save it. */}
+          <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', alignItems: 'center', marginBottom: '6px' }} data-testid="mix-archetypes">
+            <span style={text('9px')}>start from a type:</span>
+            {MIX_ARCHETYPES.map(a => (
+              <button key={a.key} style={chip(CRITERIA_CATEGORIES.every(c => Number(value(c)) === a.mix[c]))}
+                title={CRITERIA_CATEGORIES.map(c => `${c} ${a.mix[c]}`).join(' · ')}
+                onClick={() => setDraft(Object.fromEntries(CRITERIA_CATEGORIES.map(c => [c, String(a.mix[c])])))}>
+                {a.label}
+              </button>
+            ))}
+          </div>
           {CRITERIA_CATEGORIES.map(c => (
             <div key={c} style={{ display: 'flex', gap: '6px', alignItems: 'center', marginBottom: '3px' }}>
               <span style={{ ...text('10px', value(c) === '' ? COLOR.cautionTone : COLOR.textPrimary), flex: 1 }}>
@@ -149,6 +162,8 @@ export function MixStep({ doc, respondent, callbacks }) {
 /** Step 3 — every element as the same pair: expectation (= criterion) and weight. */
 export function ExpectationsStep({ doc, respondent, callbacks }) {
   const [draft, setDraft] = useState({})
+  // The row whose picture is shown (flow v4: tap a row, the figure follows).
+  const [focus, setFocus] = useState(CRITERIA_ELEMENTS[0].key)
   const actor = (doc.actors ?? []).find(a => a.ref === respondent)
   if (!actor) return <RespondentBar doc={doc} respondent={respondent} callbacks={callbacks} />
   const frozen = isRespondentFrozen(doc, respondent)
@@ -187,7 +202,8 @@ export function ExpectationsStep({ doc, respondent, callbacks }) {
           {CRITERIA_ELEMENTS.map(e => {
             const blank = field(e, 'value') === '' || field(e, 'weight') === ''
             return (
-              <div key={e.key} style={{ border: `1px ${blank ? 'dashed' : 'solid'} ${blank ? COLOR.cautionTone : COLOR.border}`, borderRadius: '4px', padding: '4px 6px', marginBottom: '4px' }}>
+              <div key={e.key} onClick={() => setFocus(e.key)} data-testid={`criteria-row-${e.key}`}
+                style={{ border: `1px ${blank ? 'dashed' : 'solid'} ${focus === e.key ? COLOR.accent : blank ? COLOR.cautionTone : COLOR.border}`, borderRadius: '4px', padding: '4px 6px', marginBottom: '4px', cursor: 'pointer' }}>
                 <div style={text('10px', COLOR.textPrimary)}>{e.category} · {e.label} <span style={text('9px')}>({e.unit}, {e.op === '<=' ? 'lower is better' : 'higher is better'})</span></div>
                 <div style={{ display: 'flex', gap: '4px', marginTop: '2px', alignItems: 'center' }}>
                   <span style={text('9px')}>expect</span>
@@ -198,6 +214,11 @@ export function ExpectationsStep({ doc, respondent, callbacks }) {
                   <span style={text('9px')}>weight</span>
                   <input type="number" min="0" value={field(e, 'weight')} onChange={ev => set(e.key, 'weight', ev.target.value)} style={{ ...input, width: '52px' }} aria-label={`${e.key} weight`} />
                 </div>
+                {focus === e.key && (
+                  <div style={{ marginTop: '4px' }}>
+                    <CriteriaFigure elementKey={e.key} value={num(field(e, 'value')) ? Number(field(e, 'value')) : null} />
+                  </div>
+                )}
               </div>
             )
           })}

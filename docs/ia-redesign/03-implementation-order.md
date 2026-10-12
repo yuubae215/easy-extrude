@@ -417,7 +417,7 @@ Outliner の意味側 (v8 注釈②) は**未着手**。「Phase 3 と同時に�
 - [x] 線の版と履歴 (D4)。(PR2 — 合意**後**の履歴 `lineHistory`。合意前の「見た後の変更」はやってみると一緒に PR3 — DEF-063)
 - [x] 空欄の個数の census (`countUnheard` — 1 人 18 欄、R12 / R13 が名指し)。(PR1)
 - [x] 聞き取りフロー (ADR-063 の `context.wizard` FSM の上)。(PR3 — `CRITERIA_HEARING_WIZARD`、回答者 `respondent`、
-      段の gate は回答者の空欄。合意前の履歴 = やってみた回の写しの差。案は PR4 — DEF-064、比重の型と図は DEF-065)
+      段の gate は回答者の空欄。合意前の履歴 = やってみた回の写しの差。案は PR4 — DEF-064。比重の型と語の確かめの図も置いた)
 - [x] 合意と線の変更提案 (ADR-104 の提案 → 承認 / 却下を使う)。(PR2 — `CriteriaLine.js`、提案の終端に `却下` を足した。マージン外の gate は置いたが値は PR4 — DEF-062)
 - [ ] response 契約に関心と差し出すもの・やってみるの案 (contractVersion 版上げ) — 値は core/ が出す。
 

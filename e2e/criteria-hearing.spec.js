@@ -48,7 +48,11 @@ test('the hearing is walked step by step and a change after a trial is kept', as
 
   // Step 2 — all four, safety included; the gate names what is blank.
   await expect(page.getByText(/still blank: D, Q, C, S/)).toBeVisible()
-  for (const [c, v] of [['D', '40'], ['Q', '25'], ['C', '15'], ['S', '20']]) await page.getByLabel(`ratio ${c}`).fill(v)
+  // Start from a type, then adjust — picking it only fills the draft (DEF-065).
+  await page.getByTestId('mix-archetypes').getByRole('button', { name: 'Never stop the line' }).click()
+  await expect(page.getByLabel('ratio S')).toHaveValue('20')
+  await expect(page.getByText(/still blank: D, Q, C, S/)).toBeVisible()   // not saved yet = not an answer
+  await page.getByLabel('ratio S').fill('30')
   await page.getByRole('button', { name: 'Save ratio' }).click()
   await expect(page.getByText(/still blank: D, Q, C, S/)).toHaveCount(0)
   await page.getByRole('button', { name: 'Next →' }).click()
@@ -72,7 +76,10 @@ test('the hearing is walked step by step and a change after a trial is kept', as
 
   // Back, loosen "never touch a person", look again.
   await page.getByRole('button', { name: '← Back' }).click()
+  // The word is checked against its picture (#33 (4)): the ring follows the number.
+  await page.getByTestId('criteria-row-humanClearance').click()
   await page.getByLabel('humanClearance expectation').fill('300')
+  await expect(page.getByTestId('criteria-figure')).toContainText('kept 300 mm away from a person')
   await page.getByRole('button', { name: 'Save expectations' }).click()
   await page.getByRole('button', { name: 'Next →' }).click()
   await expect(page.getByTestId('trial-candidates')).toContainText('recorded as trial 2')
