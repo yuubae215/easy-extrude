@@ -1057,34 +1057,70 @@ world ──▶ base (robotRole:'base', parentId=null) ──▶ tcp (robotRole:
 
 ---
 
-## Map annotation motion — entering / idle × urgent × reduced (ADR-093)
+## Map annotation motion — entering / idle / exiting / hidden × urgent × reduced (ADR-093 · ADR-166 M3b)
 
 Map 注釈ビュー (`AnnotatedPointView` / `AnnotatedLineView` / `AnnotatedRegionView`) の
 **運動**の状態。台帳の閾値 (3 状態以上) を跨いだので図を起こす。重要なのは
-**1 本の軸に潰さないこと**: ライフサイクル軸 2 状態 × 直交する修飾子 2 つであり、
-4 状態の平坦な集合ではない (平坦化すると `entering` かつ `urgent` のような正当な
-組み合わせが表現不能になる — 不正状態ではなく*正当*状態を消してしまう)。
+**1 本の軸に潰さないこと**: ライフサイクル軸 × 直交する修飾子であり、平坦な集合ではない
+(平坦化すると `entering` かつ `urgent` のような正当な組み合わせが表現不能になる —
+不正状態ではなく*正当*状態を消してしまう)。
+
+**ADR-166 M3b でライフサイクル軸が 2 → 4 相になった。** それまで `mesh.visible` 1 欄が
+「ユーザーにとってまだ在る (選べる・数えられる)」と「描かれている」の 2 事実を兼ねていたので、
+soft delete は光を瞬時に消すことしかできず、退場 (P9 — 出現の対) を描ける相が無かった。
+欄を 2 つに割った: **`present`** (論理 — view の `visible` getter、hit-test が読む) と
+**drawn** (描画 — 相から導出し `_setDrawn` だけが mesh に書く)。
+
+```mermaid
+stateDiagram-v2
+    [*] --> entering : construct (present, bornAt 未刻)
+    entering --> idle : t − bornAt ≥ ENTRY_POP (0.28 s)
+    entering --> exiting : setVisible(false) [刻印済 = 見られた]
+    idle --> exiting : setVisible(false)
+    exiting --> hidden : t − exitAt ≥ EXIT_FADE (0.22 s)
+    exiting --> entering : setVisible(true) (退場中の undo — 入場をやり直す)
+    hidden --> entering : setVisible(true) (soft delete の undo)
+    entering --> hidden : setVisible(false) [bornAt 未刻 = 一度も描かれていない]
+```
+
+| 相 | `present` (pickable) | drawn | 包絡 (`lifecycleEnvelope`) |
+|---|---|---|---|
+| `entering` | ✅ | ✅ | 入場の pop (outBack の scale × outCubic の opacity) |
+| `idle` | ✅ | ✅ | 恒等 (1, 1) |
+| `exiting` | ❌ | ✅ | 光が消える — `exit` 曲線 (inCubic) で opacity 1→0、scale 1→`EXIT_SHRINK` (0.85) |
+| `hidden` | ❌ | ❌ | (描かない) |
+
+- **不変条件**: `present ⇔ 相 ∈ {entering, idle}`。`PHASE_TRAITS` が相ごとに宣言し、
+  未宣言の相は throw (原則 #31)。`exiting` は**描かれているが選べない**唯一の相。
+- **禁止遷移**: `exiting → idle` (退場中の注釈が show なしに戻る)、表示中の注釈への
+  `setVisible(true)` による再入場 (在るものを再表示するのは境界の瞬間ではない — 文脈オーバーレイは
+  全実体に setVisible(true) を呼ぶ)。
+- **時計**: setter は時計を持たないので、hide は退場を**武装** (`exitPending`) するだけで、次の
+  tick が `exitAt` を刻む (`lifecycleStamp`)。入場の `bornAt` と同じ「最初の tick が刻む」形。
+- **reduced**: 中間相を持たない — `entering` は即 `idle`、`exiting` は即 `hidden`
+  (在る/無いという情報は残り、間の動きだけが落ちる — 原則 #30)。
+- **誰が退場を tick するか**: soft delete は `detachObject` で実体を `_scene.objects` から外す。
+  描画ループはそこしか歩かないので、外された view は誰にも tick されず、光が凍る。
+  AppController の `_exitingAnnotations` が受け持つ — **`objectRemoved` で入れ** (義務を発火する
+  事象の側に書く — 原則 #32)、`objectAdded` (undo) と `drawn === false` (退場完了・dispose) で出す。
+  MotionGovernor には預けない (予算超過で間引かれると、描かれたまま止まる)。
+- **基数**: 退場中も `0..N`。複数選択の削除は N 個が同時に退場する — 1 つの削除は 1 つの事実なので
+  スタッガーしない (振付の「触った点からの距離順」は、削除には触った点が無い)。
 
 ```
-  ライフサイクル軸 (実体 1 個につき 1)
-
-     construct / setVisible(true)
-            │  _bornAt = null
-            ▼
-     ┌──────────────┐   t - _bornAt ≥ ENTRY_POP (0.28 s)   ┌──────────┐
-     │   entering   │ ────────────────────────────────────▶│   idle   │
-     │ (entry pop)  │                                      │ (loop)   │
-     └──────────────┘                                      └──────────┘
-            ▲                                                   │
-            └───────────────────────────────────────────────────┘
-                       setVisible(true) が再武装 (soft-delete の undo)
-
   直交する修飾子 (どちらもライフサイクル軸と独立に立つ)
 
-     urgent  ← ドメインの違反アラーム (setTactTimeViolated / setToleranceViolated /
-               setTactViolated / setContainsViolated) — 周期を詰め、色を danger に
-     reduced ← OS 設定 (単一境界 src/theme/motion.js の購読)
-     selected ← setObjectSelected (ADR-166 M3a — 光の強さを ×1.4。urgent はこれより上)
+     urgent   ← ドメインの違反アラーム (setTactTimeViolated / setToleranceViolated /
+                setTactViolated / setContainsViolated) — 周期を詰め、色を danger に
+     reduced  ← OS 設定 (単一境界 src/theme/motion.js の購読)
+     selected ← setObjectSelected。ADR-166 M3b で 0↔1 の**途中を持つ**ようになった:
+                選択の度合い `selectionLevel` が `land` 曲線 (outExpo, SELECT_LAND 0.24 s) で
+                動き、光の強さ (×1.4) と床の光の大きさ (×1.15) と線幅を運ぶ。区間 =
+                {要求が変わった時点の度合い, 時刻, 目標} の写しなので、途中で反転しても画面上の
+                光から続き跳ねない (原則 #24 — 区間の始点は変化の時点の写しで、出した
+                フレームから読み戻さない)。同じ要求 2 回では区間を作り直さない。
+                白い BoxHelper は退役 (選択を言う第二の表現だった)。名札の強調は
+                setObjectSelected が唯一の書き手。urgent は全ての度合いより上。
 
   状態ではない入力 (ADR-166 M3a)
 

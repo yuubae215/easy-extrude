@@ -33,8 +33,8 @@
 | `src/view/RippleEffect.js` | リンク成立の波紋 (球が広がって消える) | F | ✕ | — | ✕ | ✕ | — | **C** | 拡大 `1 + p·3` と α `0.8·(1−p)` がどちらも線形 — いちばん古い世代の演出。成立したリンクの 2 端から中点へ光が走って結ぶ (境目 = 結ばれた瞬間に閃光、余韻で線に沿って減衰) | M4 |
 | `src/view/CelebrationField.js`<br>`src/view/CelebrationMath.js`<br>`src/components/Feedback/Celebration.jsx` | 達成の祝賀 (粒子の破裂と帯) | D | ✓ | ✓ | ✓ | △ | — | B | 事実の遷移だけで鳴る規律は今の水準。粒子の色と光を背景に揃える | M4 |
 | `src/view/ExtrudeFrontView.js`<br>`src/view/ExtrudeFrontMath.js`<br>`src/controller/handler/FaceExtrudeHandler.js` | 押し出しの成長前線 (伸びている面の縁が光る) | A | ✓ | — | ✓ | ✓ | ✓ | A | アプリの名前の操作の境目として今の水準 (ADR-080) | — |
-| `src/view/AnnotatedPointView.js`<br>`src/view/AnnotatedLineView.js`<br>`src/view/AnnotatedRegionView.js`<br>`src/view/MapVisualMath.js` | マップ注釈 (Zone / Route / Boundary / Hub / Anchor) | A | ✓ | ✓ | ✓ | ✓ | ✓ | **B** (M3a で作り直し 2026-10-12) | ~~C: Blueprint のハッチが斜めで縞に潰れ、Zone が画面でいちばん目立つ~~ → 床の光 (縁の光 + 光の幕を視角で受け渡す)、強さは役割 (Zone = 地)、光は舞台の光に寄せる (G4)、名札は EntityLabel。残り: 選択の見せ方・消滅 (P9)・置く前のプレビュー = M3b | M3a ✓ / M3b |
-| `src/view/MapPreviewMath.js`<br>`src/controller/place/PlaceToolController.js` | 配置ツールのプレビュー (カーソルの呼吸・スナップの輪) | A | ✓ | — | ✓ | △ | ✓ | B | 注釈を床の光にしたら、置く前のプレビューも同じ光で描く (置く前と置いた後で語彙を変えない) | M3 |
+| `src/view/AnnotatedPointView.js`<br>`src/view/AnnotatedLineView.js`<br>`src/view/AnnotatedRegionView.js`<br>`src/view/MapVisualMath.js` | マップ注釈 (Zone / Route / Boundary / Hub / Anchor) | A | ✓ | ✓ | ✓ | ✓ | ✓ | **A** (M3a + M3b で作り直し 2026-10-12) | ~~C: Blueprint のハッチが斜めで縞に潰れ、Zone が画面でいちばん目立つ~~ → 床の光 (縁の光 + 光の幕を視角で受け渡す)、強さは役割 (Zone = 地)、光は舞台の光に寄せる (G4)、名札は EntityLabel (M3a)。選択は白い BoxHelper → 光が `land` で強まり床の光が育つ + 名札の強調、削除は光が `exit` で消える (P9 — 出現と対、退場中は選べない) (M3b)。残る未検証: Route / Boundary の実機撮影 (テンプレに実例が無い)。動画 `docs/motion/media/m3-map-annotations*.mp4` | M3a ✓ / M3b ✓ |
+| `src/view/MapPreviewMath.js`<br>`src/controller/place/PlaceToolController.js` | 配置ツールのプレビュー (カーソルの呼吸・スナップの輪) | A | ✓ | — | ✓ | ✓ | ✓ | **A** (M3b 2026-10-12) | ~~B: 平坦な無照明の点と線~~ → 置く前も置いた後と同じ光: カーソルは事実色の芯 + 床の光だまり (Hub の halo と同じ白スプライトを `lightTint` で着色・加算)、線とスナップの輪は `lightTint`。曲線 (`MapPreviewMath`) は不変 | M3b ✓ |
 | `src/view/GraspGhostView.js` | 把持候補のゴースト (手の形・進入の矢印) | F | △ | — | △ | △ | — | B | 候補の切り替えに境目が無い。ADR-158 の再生 (判定した標本を描く) と同じ段で、進入スライドの演出を見直す | M4 |
 | `src/view/UncertaintyGhostView.js`<br>`src/view/RegionResolveEffect.js` | 不確定な区間の帯と、衝突が解けた瞬間の色替え | F | △ | — | ✓ | △ | △ | B | 解けた瞬間の赤 → 緑は良い。帯の待機は静止に近い — 「まだ決まっていない」を呼吸で言う | M4 |
 | `src/view/RobotStage.js` | ロボットの描画 (骨格 / 実写の切替、近似の半透明) | F | — | — | ✕ | △ | — | B | 骨格から実写への切替に境目が無い (ADR-150 で一瞬の入れ替わりは消したが、読み込み中の状態に語りが無い)。ADR-164 D5 のフォールバックと一緒に、読み込み中・落ちた時の見せ方を作る | M4 |
@@ -56,9 +56,9 @@
 
 | 判定 | 行 | ファイル |
 |---|---|---|
-| **C 作り直す** | 4 (リンクの波紋 / 起動ホーム / **キューブの状態の手掛かり** / **リンク線**) — 背景は M2 で A へ、マップ注釈は M3a で B へ | 1 + 3 + 1 + 1 = 6 |
-| **B 部分的に古い** | 17 | 37 |
-| **A 今の水準** | 5 | 12 |
+| **C 作り直す** | 4 (リンクの波紋 / 起動ホーム / **キューブの状態の手掛かり** / **リンク線**) — 背景は M2 で A へ、マップ注釈は M3a で B → M3b で A へ | 1 + 3 + 1 + 1 = 6 |
+| **B 部分的に古い** | 15 | 31 |
+| **A 今の水準** | 7 | 18 |
 | 対象外 (基盤・配線・静的) | 3 | 7 |
 | 計 | 29 | **62** |
 

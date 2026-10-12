@@ -16,12 +16,16 @@
  *    compresses (the two are complementary in the view angle —
  *    `MapVisualMath.floorLightGains`)
  *  - Vertex dot markers (small spheres) at each vertex
- *  - A BoxHelper for selection highlight
  *  - Two rim rings (Zone only) that pulse outward in 180°-offset phases
  *
  * ADR-093 D3's Blueprint dressing (drifting diagonal hatch + L-shaped corner
  * registration marks) was retired by ADR-166 M3: it assumed a camera looking
  * straight down, and in perspective it collapsed to stripes.
+ *
+ * Selection (ADR-166 M3b) is the light rising on the `land` curve — the ring
+ * thickens and the floor light brightens — plus the label's highlight. The
+ * white BoxHelper is retired. A soft delete keeps the meshes drawn while the
+ * light goes out (`exit` curve); `visible` is the LOGICAL fact hit-testing reads.
  *
  * Loudness is the ROLE, not the area (`emphasisFor`): a Zone is ground — the
  * quietest light on screen even though it is usually the biggest thing.
@@ -48,8 +52,10 @@ import { prefersReducedMotion, onReducedMotionChange } from '../theme/motion.js'
 import { EntityLabel } from './EntityLabel.js'
 import { edgeBand, lightCurtain } from './FloorLightGeometry.js'
 import {
-  phaseFor, entryFrame, zoneFillFrame, zoneRimFrame,
-  emphasisFor, floorLightGains, lightTint,
+  phaseFor, zoneFillFrame, zoneRimFrame, floorLightGains, lightTint,
+  INITIAL_LIFECYCLE, lifecycleShow, lifecycleHide, lifecycleStamp, lifecyclePhase,
+  lifecycleEnvelope, phaseTraits,
+  UNSELECTED, retargetSelection, selectionLevel, selectedEmphasis,
   ZONE_RIM_RINGS, ZONE_RIM_PERIOD, ZONE_FILL_MIN, ZONE_FILL_MAX,
 } from './MapVisualMath.js'
 
@@ -89,7 +95,11 @@ export class AnnotatedRegionView {
     this._phase      = phaseFor(entityId)   // anti-lockstep seed (PHILOSOPHY #31)
     this._reduced    = prefersReducedMotion()
     this._unsubReduced = onReducedMotionChange(r => { this._reduced = r })
-    this._bornAt     = null                 // loop-clock seconds at the first tick
+    /** @type {import('./MapVisualMath.js').Lifecycle} logical presence + entry/exit clocks */
+    this._life       = INITIAL_LIFECYCLE
+    this._drawn      = true                 // derived from the phase — `_setDrawn` is its one writer
+    /** @type {import('./MapVisualMath.js').SelectionSegment} */
+    this._sel        = UNSELECTED
 
     // Parent group — its world position = polygon centroid.  Every child uses
     // centroid-relative local coordinates so group.position is the single
@@ -200,15 +210,6 @@ export class AnnotatedRegionView {
       this._rims.push({ mesh, mat })
     }
 
-    // ── BoxHelper ──────────────────────────────────────────────────────────
-    // _helperObj is a child of the group (inherits centroid transform).
-    // BoxHelper itself is added to the root scene so it always renders.
-    this._helperObj = new THREE.Object3D()
-    this._group.add(this._helperObj)
-    this.boxHelper = new THREE.BoxHelper(this._helperObj, 0xffffff)
-    this.boxHelper.visible = false
-    scene.add(this.boxHelper)
-
     // ── Name label (the one label mechanism — EntityLabel, ADR-155 D1) ─────
     /** @type {EntityLabel|null} */
     this._label = (renderer && container) ? new EntityLabel(renderer, container) : null
@@ -291,8 +292,6 @@ export class AnnotatedRegionView {
       r.mesh.position.set(0, 0, 0)
       r.mesh.scale.setScalar(1)
     }
-
-    this._updateBoxHelper(localPts)
   }
 
   /**
@@ -324,24 +323,6 @@ export class AnnotatedRegionView {
     this._curtain.geometry = this._curtainGeo
   }
 
-  /**
-   * Refreshes BoxHelper bounding volume from centroid-local vertex positions.
-   * @param {THREE.Vector3[]} localPts  centroid-relative positions
-   */
-  _updateBoxHelper(localPts) {
-    if (!localPts || localPts.length === 0) return
-    const bMin = new THREE.Vector3( Infinity,  Infinity,  Infinity)
-    const bMax = new THREE.Vector3(-Infinity, -Infinity, -Infinity)
-    for (const lp of localPts) { bMin.min(lp); bMax.max(lp) }
-    const center = bMin.clone().add(bMax).multiplyScalar(0.5)
-    bMin.z -= 0.05; bMax.z += 0.05
-    const size = bMax.clone().sub(bMin)
-    // _helperObj is in group-local space; center is already local.
-    this._helperObj.position.copy(center)
-    this._helperObj.scale.set(size.x || 0.1, size.y || 0.1, size.z || 0.1)
-    if (this.boxHelper.visible) this.boxHelper.update()
-  }
-
   /** Returns hex color for the given place type (grey if null). */
   _colorForType(placeType) {
     const entry = getPlaceTypeEntry(placeType)
@@ -363,24 +344,31 @@ export class AnnotatedRegionView {
    *   (`MapVisualMath.viewElevation`); omitted → straight down.
    */
   tick(t, elevation = 1) {
-    if (!this._group.visible) return
-    if (this._bornAt === null) this._bornAt = t
     const reduced = this._reduced
-    const entry = entryFrame(t, this._bornAt, reduced)
+    // Lifecycle first (ADR-166 M3b): stamp, derive the phase, decide drawn.
+    this._life = lifecycleStamp(this._life, t)
+    this._setDrawn(phaseTraits(lifecyclePhase(t, this._life, reduced)).drawn)
+    if (!this._drawn) return
+    this._sel = retargetSelection(t, this._sel, this._isSelected, reduced)
+    const sel   = selectionLevel(t, this._sel, reduced)
+    const entry = lifecycleEnvelope(t, this._life, reduced)
+    // Selection thickens the ring on the land curve (was an instant 2 → 4 px).
+    this._lineMat.linewidth = UNSELECTED_WIDTH + (SELECTED_WIDTH - UNSELECTED_WIDTH) * sel
 
     // Pending boundary: scroll dashOffset for "marching ants" flow.
     // dashOffset is a shader uniform — no needsUpdate required.
     if (this._isPending && this._lineMat.dashed && !reduced) {
       this._lineMat.dashOffset = -(t * 2.0)
     }
-    // Entry: the ring fades up and the whole group swells past its target once.
+    // Entry/exit: the ring fades up and swells past its target once; on the
+    // way out it dims and contracts with the light (one envelope, P9).
     this._lineMat.opacity = (this._isPending ? PENDING_OPACITY : CONFIRMED_OPACITY) * entry.opacity
     if (entry.scale !== 1) this._group.scale.setScalar(entry.scale)
     else if (this._group.scale.x !== 1) this._group.scale.setScalar(1)
 
     // The light: role × view angle × (Zone) per-entity breath.
     const isZone = this._placeType === 'Zone'
-    const gain = emphasisFor(this._placeType, { selected: this._isSelected, urgent: this._containsViolated })
+    const gain = selectedEmphasis(this._placeType, sel, { urgent: this._containsViolated })
     const view = floorLightGains(elevation)
     const breath = isZone
       ? zoneFillFrame(t, this._phase, { selected: this._isSelected, reduced }).opacity
@@ -428,7 +416,6 @@ export class AnnotatedRegionView {
     this._bandMat.color.setHex(light)
     this._curtainMat.color.setHex(light)
     for (const r of this._rims) r.mat.color.setHex(light)
-    this.boxHelper.material?.color.setHex(fact)
   }
 
   // ── Label update (call once per frame while visible) ──────────────────────
@@ -441,7 +428,7 @@ export class AnnotatedRegionView {
   updateLabelPosition(camera) {
     if (!this._label) return
     const cam = camera ?? this._camera
-    if (!cam || !this._group.visible) return
+    if (!cam || !this._life.present) return
     this._group.getWorldPosition(this._labelAnchor)
     this._label.updatePosition(cam, this._labelAnchor)
   }
@@ -462,10 +449,11 @@ export class AnnotatedRegionView {
     this._setPoints(corners)
   }
 
-  /** Refreshes BoxHelper after confirm/cancel grab. */
-  updateBoxHelper() {
-    if (this.boxHelper.visible) this.boxHelper.update()
-  }
+  /**
+   * Kept for the polymorphic contract (PHILOSOPHY #17 — the commands call it
+   * on every entity view). There is no box to refresh: selection is the light.
+   */
+  updateBoxHelper() {}
 
   // ── Place type (color) update ──────────────────────────────────────────────
 
@@ -498,24 +486,44 @@ export class AnnotatedRegionView {
 
   // ── Visual state ───────────────────────────────────────────────────────────
 
+  /**
+   * The logical show/hide (ADR-166 M3b): a hide arms the exit (the next ticks
+   * put the light out), a re-show replays the entry. Owned by the lifecycle
+   * reducers (#4), not by the undo call sites.
+   * @param {boolean} visible
+   */
   setVisible(visible) {
-    this._group.visible = visible
+    this._life = visible ? lifecycleShow(this._life) : lifecycleHide(this._life)
     this._label?.setWanted(visible)
-    if (!visible) this.boxHelper.visible = false
-    // Re-arm the entry pop (undo of a soft delete is a boundary moment too, #4).
-    if (visible) this._bornAt = null
+    if (visible) this._setDrawn(true)
+    else if (!this._life.exitPending) this._setDrawn(false)   // never seen — nothing to put out
   }
 
+  /** Sole writer of the group's visibility — the DRAWN state (PHILOSOPHY #4). */
+  _setDrawn(drawn) {
+    if (this._drawn === drawn) return
+    this._drawn = drawn
+    this._group.visible = drawn
+  }
+
+  /**
+   * Selection = the light rising on the land curve (the next tick starts the
+   * segment; ring width and gain are written there) + the label's highlight.
+   * @param {boolean} sel
+   */
   setObjectSelected(sel) {
-    this._isSelected        = sel
-    this.boxHelper.visible  = sel
-    this._lineMat.linewidth = sel ? SELECTED_WIDTH : UNSELECTED_WIDTH
-    if (sel)  this.boxHelper.update()
-    if (!sel) this._fillMat.opacity = FILL_OPACITY
+    this._isSelected = sel
+    this._label?.setHighlighted(sel)
   }
 
-  /** True when the region is shown in the scene (false when soft-deleted). */
-  get visible() { return this._group.visible }
+  /**
+   * The LOGICAL fact: the region exists for the user (pickable, counted). False
+   * from the moment of a soft delete, while the light is still going out.
+   */
+  get visible() { return this._life.present }
+
+  /** True while any part is on screen (present, or still exiting). */
+  get drawn() { return this._drawn }
 
   // ── Edit-mode no-ops ───────────────────────────────────────────────────────
 
@@ -541,8 +549,9 @@ export class AnnotatedRegionView {
    */
   dispose(scene) {
     this._unsubReduced()
+    this._life  = { present: false, bornAt: null, exitAt: null, exitPending: false }
+    this._drawn = false
     scene.remove(this._group)   // removes group + all its children
-    scene.remove(this.boxHelper)
     this._lineGeo.dispose()
     this._lineMat.dispose()
     if (this._fillGeo) this._fillGeo.dispose()

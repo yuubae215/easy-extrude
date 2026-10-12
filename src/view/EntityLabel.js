@@ -11,7 +11,12 @@
  *   - textContent is written ONLY through setText()
  *   - the accent bar colour ONLY through setAccent()
  *   - desired visibility ONLY through setWanted()
- *   - the screen transform ONLY through updatePosition()
+ *   - the screen transform ONLY through `_writeTransform()`, which composes
+ *     the position (updatePosition) and the highlight scale (setHighlighted).
+ *     Before ADR-166 M3b, setHighlighted wrote `transform: scale(…)` itself and
+ *     erased the position: a highlighted label jumped to the screen corner and
+ *     stayed there while the camera was still (the dead-zone filter skips the
+ *     rewrite). Two writers of one property — PHILOSOPHY #4.
  * Consumers compose these from their own single owner method (e.g.
  * MeshView._syncLabel) — never poke the DOM element directly.
  *
@@ -51,6 +56,7 @@ export class EntityLabel {
     this._cachedRect  = null   // cached canvas bounding rect
     this._cachedRectW = 0      // canvas clientWidth at cache time
     this._cachedRectH = 0      // canvas clientHeight at cache time
+    this._scale       = 1      // highlight scale — composed into the transform, never written alone
 
     this._el = document.createElement('div')
     this._el.className = 'ee-entity-label'   // semantic hook (styling/debug); content stays owner-written
@@ -101,16 +107,27 @@ export class EntityLabel {
         background:  BG_HIGHLIGHT,
         borderColor: ACCENT_HL,
         color:       '#fff',
-        transform:   'scale(1.18)',
       })
     } else {
       Object.assign(this._el.style, {
         background:  BG_DEFAULT,
         borderColor: this._accent,
         color:       FG_DEFAULT,
-        transform:   'scale(1)',
       })
     }
+    this._scale = highlighted ? 1.18 : 1
+    this._writeTransform()
+  }
+
+  /**
+   * Sole writer of `style.transform`: the last projected position composed
+   * with the highlight scale. Nothing to write before the first projection.
+   */
+  _writeTransform() {
+    if (!this._el || this._lblX === null) return
+    this._el.style.transform = this._scale === 1
+      ? `translate3d(${this._lblX}px,${this._lblY}px,0)`
+      : `translate3d(${this._lblX}px,${this._lblY}px,0) scale(${this._scale})`
   }
 
   /**
@@ -167,7 +184,7 @@ export class EntityLabel {
     const ry = Math.round(sy - 16)
     this._lblX = rx
     this._lblY = ry
-    this._el.style.transform = `translate3d(${rx}px,${ry}px,0)`
+    this._writeTransform()
     this._setDisplay(true)
   }
 

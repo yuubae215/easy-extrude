@@ -396,7 +396,9 @@ const DECLARED_VOCABULARIES = {
 // EntityLabel (−3), the white datum material left with the device, and the
 // violation red that was repeated per setter became one `VIOLATION_COLOR`
 // constant per view (the colour itself is unchanged — tokenising it is M4's).
-const UNDECLARED_OCCURRENCE_BASELINE = 757
+// 757 → 755 (ADR-166 M3b): the white BoxHelper literals of the annotation
+// views retired — selection is the light, not a wireframe box.
+const UNDECLARED_OCCURRENCE_BASELINE = 755
 const UNDECLARED_DISTINCT_BASELINE   = 199
 
 const HEX_LITERAL = /#[0-9a-fA-F]{6}\b|\b0x[0-9a-fA-F]{6}\b/g

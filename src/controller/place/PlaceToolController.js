@@ -56,6 +56,8 @@ import { createAddAnnotationCommand } from '../../command/AddAnnotationCommand.j
 import { geometrySnapshot, snapTransition, snapFlashDescriptor } from '../../view/SnapFeedbackMath.js'
 import { SnapFlash } from '../../view/SnapFlash.js'
 import { cursorFrame, ringFrame, mapGridStep } from '../../view/MapPreviewMath.js'
+import { lightTint } from '../../view/MapVisualMath.js'
+import { radialSprite } from '../../view/DecalTextures.js'
 import { prefersReducedMotion } from '../../theme/motion.js'
 import { COLOR } from '../../theme/tokens.js'
 
@@ -519,6 +521,12 @@ export class PlaceToolController {
       scene.remove(state.cursorDot)
       state.cursorDot.geometry.dispose()
       state.cursorDot.material.dispose()
+      // The floor pool is a child of the dot (created with it — #9); its
+      // sprite map is module-owned (DecalTextures), so only geo/mat go.
+      for (const child of state.cursorDot.children) {
+        child.geometry.dispose()
+        child.material.dispose()
+      }
       state.cursorDot = null
     }
     if (state.snapRingMesh) {
@@ -641,19 +649,43 @@ export class PlaceToolController {
     const geometry = this._geometryForType(tool)
     const entry    = getPlaceTypeEntry(this._placeTypeForType(tool))
     const color    = entry ? parseInt(entry.color.slice(1), 16) : 0x80cbc4
+    // The preview is drawn in the SAME light as the placed annotation (ADR-166
+    // M3b): the place-type colour (the fact) warmed toward the one stage light.
+    // Before, it was a flat unlit dot and line — the annotation changed visual
+    // language at the moment it was placed.
+    const light    = lightTint(color)
 
-    // Cursor dot — shown only in drawing state
+    // Cursor dot — shown only in drawing state. A small fact-coloured core over
+    // a pool of light on the floor (the placed Hub/Anchor's own halo recipe:
+    // the shared white radial sprite, tinted, additive). The pool is a child,
+    // so the MapPreviewMath breathe on the dot carries both.
     if (!state.cursorDot) {
       const g = new THREE.SphereGeometry(0.08, 8, 8)
       const m = new THREE.MeshBasicMaterial({ color, depthTest: false })
       state.cursorDot = new THREE.Mesh(g, m)
       state.cursorDot.renderOrder = 3
+      const pool = new THREE.Mesh(
+        new THREE.PlaneGeometry(0.64, 0.64),
+        new THREE.MeshBasicMaterial({
+          map:         radialSprite('#ffffff'),
+          color:       light,
+          transparent: true,
+          opacity:     0.55,
+          depthTest:   false,
+          depthWrite:  false,
+          blending:    THREE.AdditiveBlending,
+          side:        THREE.DoubleSide,
+        }),
+      )
+      pool.renderOrder = 2
+      state.cursorDot.add(pool)
       scene.add(state.cursorDot)
     }
     state.cursorDot.position.copy(cursor)
     state.cursorDot.material.color.setHex(color)
+    state.cursorDot.children[0]?.material.color.setHex(light)
 
-    this._updateSnapRing(state.snapCandidate, color)
+    this._updateSnapRing(state.snapCandidate, light)
 
     let previewPts = null
 
@@ -681,7 +713,7 @@ export class PlaceToolController {
       if (!state.previewLine) {
         const geo = new THREE.BufferGeometry()
         const mat = new THREE.LineBasicMaterial({
-          color, depthTest: false, transparent: true, opacity: 0.70,
+          color: light, depthTest: false, transparent: true, opacity: 0.70,
         })
         state.previewLine = new THREE.Line(geo, mat)
         state.previewLine.renderOrder = 2
@@ -691,7 +723,7 @@ export class PlaceToolController {
         'position', new THREE.Float32BufferAttribute(new Float32Array(flat), 3),
       )
       state.previewLine.geometry.attributes.position.needsUpdate = true
-      state.previewLine.material.color.setHex(color)
+      state.previewLine.material.color.setHex(light)
     } else if (state.previewLine) {
       scene.remove(state.previewLine)
       state.previewLine.geometry.dispose()
@@ -702,8 +734,9 @@ export class PlaceToolController {
 
   /**
    * Shows or hides the endpoint snap indicator ring (PC only, ADR-031 §6).
+   * Additive, so the lock reads as light gathering on the vertex (ADR-166 M3b).
    * @param {THREE.Vector3|null} snapPt
-   * @param {number} color
+   * @param {number} color  the preview's light tint (`lightTint(fact)`)
    */
   _updateSnapRing(snapPt, color) {
     const { state } = this
@@ -721,6 +754,8 @@ export class PlaceToolController {
         transparent: true,
         opacity:     0.85,
         side:        THREE.DoubleSide,
+        blending:    THREE.AdditiveBlending,
+        depthWrite:  false,
       })
       const mesh = new THREE.Mesh(geo, mat)
       mesh.renderOrder = 5

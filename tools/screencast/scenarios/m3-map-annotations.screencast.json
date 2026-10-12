@@ -1,0 +1,55 @@
+{
+  "$schema": "../schema/screencast-1.0.schema.json",
+  "version": "screencast/1.0",
+  "meta": {
+    "id": "m3-map-annotations",
+    "title": "ADR-166 M3 — map annotations as light on the floor",
+    "description": "The M3 record clip (ADR-166 M3a + M3b): a layout template's Zone is light on the floor, read from an oblique angle; selection is the light rising on the land curve (no white box); a delete puts the light out on the exit curve while the voxel dissolve narrates the event; undo replays the entry. Re-shoot against an older tree by overriding app.url to compare.",
+    "tags": ["motion", "adr-166"]
+  },
+  "imports": ["../library/easy-extrude.screencast.json"],
+  "app": {
+    "url": "http://localhost:5173/easy-extrude/",
+    "server": { "command": "pnpm dev --port 5173 --strictPort" },
+    "viewport": { "width": 1280, "height": 720 },
+    "deviceScaleFactor": 1,
+    "storage": { "ee_tour": "dismissed" },
+    "ready": { "text": "Start from a process layout" },
+    "settleMs": 800,
+    "probes": { "worldToScreen": "window.__easyExtrude.worldToScreen" }
+  },
+  "capture": { "fps": 30, "clock": "virtual", "format": "png" },
+  "style": {
+    "accent": "#ff7d2e",
+    "cursor": { "visible": true, "size": 22, "trail": true },
+    "keys": { "visible": true, "holdMs": 1200, "anchor": "bottom-center", "inset": [90, 58] },
+    "captions": { "anchor": "bottom-left", "inset": [212, 58] }
+  },
+  "outputs": [
+    { "format": "mp4", "path": "../../../docs/motion/media/m3-map-annotations.mp4", "width": 1280, "fps": 30, "quality": "standard" }
+  ],
+  "steps": [
+    { "do": "click", "target": { "text": "Straight conveyor line", "exact": true }, "duration": 800 },
+    { "do": "wait", "duration": 2600, "note": "the boot flight lands and the stage light comes on" },
+
+    { "do": "caption", "index": 1, "text": "Light on the floor" },
+    { "do": "use", "macro": "ee/orbit", "with": { "dx": 220, "dy": -40, "duration": 2000 } },
+    { "do": "wait", "duration": 500 },
+
+    { "do": "caption", "index": 2, "text": "Select: the light lands" },
+    { "do": "click", "target": { "text": "Transport lane footprint", "exact": true }, "duration": 800 },
+    { "do": "wait", "duration": 900 },
+    { "do": "move", "to": { "viewport": [0.62, 0.86] }, "duration": 600, "note": "step off the outliner row so the row hover clears" },
+    { "do": "wait", "duration": 300 },
+
+    { "do": "caption", "index": 3, "text": "Delete: the light goes out" },
+    { "do": "key", "keys": "Delete" },
+    { "do": "wait", "duration": 1300 },
+
+    { "do": "caption", "index": 4, "text": "Undo: it comes back" },
+    { "do": "key", "keys": "Control+z", "show": true },
+    { "do": "wait", "duration": 1400 },
+    { "do": "caption", "text": null },
+    { "do": "wait", "duration": 400 }
+  ]
+}

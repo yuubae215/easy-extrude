@@ -388,7 +388,11 @@ const SUPPORT_LABELS = new Map([
 // support-verified へ (MapVisualMath.test.js / FloorLightGeometry.test.js)。M3 を 2 本に割ったので、M3b
 // (選択・消滅・置く前) の goal AnnotationsSelectAndLeaveAsLight が exploring で 1 つ増えた — 満期は
 // 機械可読 (GREP:src/view/MapVisualMath.js::exitFrame) なので分子 (G3) は動かない。
-const DEBT_BASELINE = 51
+// 2026-10-12 (同日): 51 → 50。ADR-166 M3b で AnnotationsSelectAndLeaveAsLight が support-verified へ
+// (MapVisualMath.test.js のライフサイクル / 選択 + AnnotationLifecycle.test.js の構文 census)。満期に
+// 書いた `exitFrame` は `lifecycleEnvelope` という名で実装された (退場だけでなく入場も運ぶため) — 満期の
+// GREP ではなく goal の昇格で決着させた。
+const DEBT_BASELINE = 50
 
 /**
  * G3 — 満期 trigger を持たない exploring goal の個数 (実測値)。

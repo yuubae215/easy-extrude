@@ -4,7 +4,7 @@
 - Date: 2026-10-11
 - Deciders: yuubae215, Claude
 - 段: 本 ADR の M1〜M4 (下の §段)。IA 再設計の順序表には載せない (画面の住所を変えないため)
-- Retires: なし — 宣言していた `GREP:src/view/AnnotatedRegionView.js::The\sBlueprint\sdevice` (製図台の装置 = 対角ハッチ・コーナー登録マーク) は M3a (2026-10-12) で退役済み。本 ADR は M3b/M4 が残るので Proposed のまま — Proposed の Retires は「在らねばならない」と問われるため、満期の来た行をここで閉じる
+- Retires: なし — 宣言していた `GREP:src/view/AnnotatedRegionView.js::The\sBlueprint\sdevice` (製図台の装置 = 対角ハッチ・コーナー登録マーク) は M3a (2026-10-12) で退役済み。本 ADR は M4 が残るので Proposed のまま (M3b は 2026-10-12 に実施) — Proposed の Retires は「在らねばならない」と問われるため、満期の来た行をここで閉じる
 - Supersedes / Superseded by: ADR-093 を部分的に置き換える (D3 Blueprint アトモスフィアの部分だけ — M3a で実施 2026-10-12。D1 位相を同一性から導く・D2 曲線 2 本・D6 reduced motion は継承)
 
 ## Context — Goal と力学 (§1.2 Goal)
@@ -70,11 +70,45 @@ Tier (Fact / Affordance / Delight) は従来どおり守る。棚卸しで出た
 | **M1 棚卸し** (**実施 2026-10-11**) | モーション基盤 (`src/theme/motion.js`・`MotionGovernor`・`MotionMath`) か reduced-motion の境界を参照する演出を、品質ゲート・Tier・「今ならこう作る」との差で採点した表を作る。各演出の撮影 (screencast DSL — ADR-160) は、作り直す PR の直前に刷新前の動画として撮る | 表のファイル = 母集団 (構文から導出)。**結果は `docs/motion/inventory.md`** — 53 ファイル・21 行、C 4 行 (背景 / リンクの波紋 / マップ注釈 / 起動ホーム)。2026-10-12 に母集団を追補して 62 ファイル・29 行 (基盤を通らずに見た目を書き換えるもの — キューブの状態の手掛かり `MeshView` ほか)、census は `src/MotionInventoryCoverage.test.js` |
 | **M2 方向性を決める** (**実施 2026-10-12**) | モーション・アイデンティティ 5 軸を当事者と決め、CLAUDE.md に「モーション・アイデンティティ」節として固定する。背景 (SceneStage) のアトモスフィアを Void Grid 型から選び直す | CLAUDE.md に節があり、5 軸が埋まっている。**結果**: 節は CLAUDE.md、軸の母集団は animation-fx Step 1.5 から導出して `src/MotionIdentity.test.js` が問う |
 | **M3a マップ注釈 = 床の光** (**実施 2026-10-12**) | 案 B。注釈の名札を EntityLabel に揃える (名札の仕組みを 1 つに — ADR-155 D1 の続き)。投影・角度に依らず読める (見る角度を `MapVisualMath` の入力にする)。Zone の強さを役割で決める。Blueprint 装置を退役 | 純粋層テスト (位相の同一性・linear 禁止・reduced motion のフレーム一致を継承 + 角度の入力 + 役割の表)。刷新前後の静止画 `docs/motion/media/m3a-*.png` (動画は M3b の後に M3 全体で撮る) |
-| **M3b 選択・消滅・置く前** | 選択時の見せ方 (BoxHelper の白い箱 → 光が強まって `land` で着地)、消滅演出 (P9 — ライフサイクルに `exiting`、論理の可視性と描画の可視性を 2 欄に分ける)、配置プレビュー (`MapPreviewMath`) を同じ光で描く | `exiting` の状態機械 (STATE_TRANSITIONS)、hit-test が退場中の注釈を拾わないこと、刷新前後の動画 |
+| **M3b 選択・消滅・置く前** (**実施 2026-10-12**) | 選択時の見せ方 (BoxHelper の白い箱 → 光が強まって `land` で着地)、消滅演出 (P9 — ライフサイクルに `exiting`、論理の可視性と描画の可視性を 2 欄に分ける)、配置プレビュー (`MapPreviewMath`) を同じ光で描く | `exiting` の状態機械 (STATE_TRANSITIONS)、hit-test が退場中の注釈を拾わないこと、刷新前後の動画。**結果**: 下の「M3b で決めたこと」、動画 `docs/motion/media/m3-map-annotations.mp4` (刷新後) / `m3-map-annotations-before.mp4` (M3a 時点) |
 | **M4 残りの演出** | M1 の採点が低い順に作り直す (最初の候補: リンクの波紋 + リンク線、キューブの状態の手掛かり — ホバー・選択・接近、起動ホーム) | M1 の表の全行が「今の水準」になるか、残す理由が書かれている |
 
 M3 は M2 の後に置く — 床の光は M2 で決める背景の光源を共有するので、先に作ると光源が 2 つになる (§1.1)。
 M3 は 2 本に割った (当事者合意 2026-10-12): `exiting` の状態追加と見た目の刷新が同じ差分に混ざるとレビューできないため。
+
+**M3b で決めたこと (2026-10-12、当事者合意 — 俯瞰の推奨 3 点に「はい、お願いします」):**
+
+| 問い | 決定 | 正本 |
+|---|---|---|
+| 1 欄 2 事実 | `visible` を割る: 論理 **`present`** (view の `visible` getter — hit-test・数え上げが読む) と描画 **drawn** (相から導出、`_setDrawn` が唯一の書き手) | `MapVisualMath` `PHASE_TRAITS` (相ごとに宣言、未宣言で throw) |
+| ライフサイクル | `entering` / `idle` / **`exiting`** / `hidden` の 4 相。純粋 reducer (`lifecycleShow` / `lifecycleHide` / `lifecycleStamp` / `lifecyclePhase`) が唯一の書き手で view は保持するだけ。表示中への再 show は再入場しない。一度も描かれていない注釈の hide は即 `hidden` | STATE_TRANSITIONS §Map annotation motion |
+| 退場の形 | 光が消える: `exit` 曲線 (inCubic) で opacity 1→0、scale 1→0.85、`EXIT_FADE` 0.22 s。名札は即座に消す。削除のボクセル dissolve (ADR-065) はそのまま重ねる — dissolve は**出来事**、光の消灯は**物の退場**を言う (dissolve の見直しは M4) | `lifecycleEnvelope` |
+| 退場中の undo | 入場をやり直す (逆再生しない — 相が 1 本で済む) | `lifecycleShow` |
+| 誰が退場を tick するか | AppController の `_exitingAnnotations`。`objectRemoved` で入れ (原則 #32)、`objectAdded` と drawn=false で出す。MotionGovernor には預けない (予算で間引かれると描かれたまま凍る) | `AppController` |
+| 選択の見せ方 | BoxHelper を退役。光の強さ ×1.4 + 床の光の大きさ ×1.15 + 線幅を、`land` (outExpo) `SELECT_LAND` 0.24 s で動く度合い `selectionLevel` が運ぶ。区間は「変化の時点の度合い・時刻・目標」の写し — 途中反転は画面上の光から続く、同じ要求 2 回で再開しない。名札は `setHighlighted` (書き手は `setObjectSelected` 1 つ)。`updateBoxHelper()` は no-op で残す (原則 #17 — コマンドが全 view に呼ぶ) | `retargetSelection` / `selectionLevel` / `selectedEmphasis` |
+| 置く前 | カーソルは事実色の芯 + 床の光だまり (Hub の halo と同じ白スプライトを `lightTint` で着色・加算)、線とスナップの輪は `lightTint`。曲線 `MapPreviewMath` は不変 | `PlaceToolController._updatePreview` |
+
+**語彙 (原則 #33):** 「消した注釈は光が消えるように退場し、その間はもう選べない」が言えなかった — `visible` が
+「ユーザーにとって在る」と「描かれている」を兼ねていた (1 語 1 事実の違反) ので、`present` と drawn に割った。
+「選択の途中」を言う語も無かった (`selected` は真偽値) ので、度合い `selectionLevel` を起こした。光の語
+(`lightTint` / `STAGE_LIGHT`) は M2/M3a で在ったので、置く前のプレビューは線をつないだだけ。
+
+**M3b で分かったこと (原則 #19):**
+- **退場は放っておくと再生されなかった。** 描画ループは `_scene.objects` だけを歩き、soft delete は
+  `detachObject` で実体をそこから外す。相を足しただけでは退場中の view は誰にも tick されず、光が凍る。
+  2 欄に割る設計の段階で、tick の**母集団**が変わることを数えて見つけた (原則 #31 の形 — 外された物は
+  *在るもの*を辿るループに現れない)。
+- **名札の強調は位置を消していた (既存の不具合)。** `EntityLabel.setHighlighted` が `transform: scale(1.18)` を
+  直接書き、位置を運ぶ `translate3d` を上書きしていた。カメラが静止していると dead-zone filter が位置を
+  書き直さないので、強調した名札は画面の隅に張り付く (minimap のホバー連動で CF の名札に潜在していた)。
+  1 つの style 欄に 2 人の書き手 (原則 #4)。`_writeTransform()` を唯一の書き手にし、
+  `src/view/EntityLabel.test.js` が「強調しても位置が残る・静止カメラでも残る」を問う。
+- **GSN の満期の名前は実装で変わった。** 起票時に満期を `GREP:…::exitFrame` と書いたが、退場だけでなく入場も
+  運ぶ包絡なので `lifecycleEnvelope` になった。満期の GREP ではなく goal の昇格 (support-verified) で決着させ、
+  `check-gsn-debt.mjs` の baseline を 51 → 50 に下げた。
+
+**検証できていないこと:** Route / Boundary の見た目 (M3a と同じく、テンプレに実例が無い)。退場の中間フレームは
+実機で時計を 1/12 に落として静止画で確認し、動画は仮想時間の screencast で撮った。
 
 **M3a で決めたこと (2026-10-12、当事者合意 — 「M3a からおすすめで」):**
 
@@ -158,7 +192,8 @@ reduced 境界の外) を含む 9 本を採点した。どちらも M4 の最初
 | `src/view/SceneStage.js` / `StageMath.js` / `SceneView.js` (グリッドのフェード) / `src/theme/tokens.js` (地の色・舞台の光・`EASING`) | M2 — 背景のアトモスフィアと曲線の語彙 (**実施**) |
 | `CLAUDE.md` | M2 — モーション・アイデンティティ節 |
 | `.claude/skills/animation-fx/` | M1〜M4 で得た再利用できる知見の書き戻し |
-| `docs/STATE_LEDGER.md` | 「Map 注釈ビュー (motion)」行 — 基数 `0..N` の位相の扱いは継承、角度の入力を追記 (M3 の PR) |
+| `docs/STATE_LEDGER.md` | 「Map 注釈ビュー (motion)」行 — 基数 `0..N` の位相の扱いは継承、角度の入力を追記 (M3 の PR)。M3b で 4 相と 2 欄・退場中の母集団を追記 |
+| `src/view/Annotated*View.js` / `MapVisualMath.js` / `EntityLabel.js` / `AppController` (`_exitingAnnotations`) / `PlaceToolController` | M3b — ライフサイクル 4 相と 2 欄、選択の着地、BoxHelper の退役、名札の強調が位置を消す不具合の修正、置く前のプレビューの光 (**実施**)。hit-test のロジックは触っていない (退場中の注釈はモデルの外にいて、`visible` は `present` を返す) |
 
 **触らない:** 契約、`core/`、注釈の意味 (place type の分類と違反アラーム — ADR-043)。
 
