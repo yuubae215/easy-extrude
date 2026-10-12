@@ -632,3 +632,12 @@ test('selected emphasis blends the role gain, and a violation outranks every lev
   }
   assert.ok(SELECT_GROW > 1)
 })
+
+test('a clock that steps backward does not skip the exit', () => {
+  // Found recording the M3 clip: under Playwright's fake clock performance.now
+  // stepped back 2 ms between frames, and an exit stamped on the later frame
+  // read as "already over" — the annotation vanished with no exit at all.
+  const { life } = reach('hidden')          // exitAt = 12
+  assert.equal(lifecyclePhase(12 - 0.002, life), 'exiting')
+  assert.deepEqual(lifecycleEnvelope(12 - 0.002, life), { scale: 1, opacity: 1 })
+})

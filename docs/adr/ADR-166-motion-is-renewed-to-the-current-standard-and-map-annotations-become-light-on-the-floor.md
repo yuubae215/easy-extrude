@@ -70,7 +70,7 @@ Tier (Fact / Affordance / Delight) は従来どおり守る。棚卸しで出た
 | **M1 棚卸し** (**実施 2026-10-11**) | モーション基盤 (`src/theme/motion.js`・`MotionGovernor`・`MotionMath`) か reduced-motion の境界を参照する演出を、品質ゲート・Tier・「今ならこう作る」との差で採点した表を作る。各演出の撮影 (screencast DSL — ADR-160) は、作り直す PR の直前に刷新前の動画として撮る | 表のファイル = 母集団 (構文から導出)。**結果は `docs/motion/inventory.md`** — 53 ファイル・21 行、C 4 行 (背景 / リンクの波紋 / マップ注釈 / 起動ホーム)。2026-10-12 に母集団を追補して 62 ファイル・29 行 (基盤を通らずに見た目を書き換えるもの — キューブの状態の手掛かり `MeshView` ほか)、census は `src/MotionInventoryCoverage.test.js` |
 | **M2 方向性を決める** (**実施 2026-10-12**) | モーション・アイデンティティ 5 軸を当事者と決め、CLAUDE.md に「モーション・アイデンティティ」節として固定する。背景 (SceneStage) のアトモスフィアを Void Grid 型から選び直す | CLAUDE.md に節があり、5 軸が埋まっている。**結果**: 節は CLAUDE.md、軸の母集団は animation-fx Step 1.5 から導出して `src/MotionIdentity.test.js` が問う |
 | **M3a マップ注釈 = 床の光** (**実施 2026-10-12**) | 案 B。注釈の名札を EntityLabel に揃える (名札の仕組みを 1 つに — ADR-155 D1 の続き)。投影・角度に依らず読める (見る角度を `MapVisualMath` の入力にする)。Zone の強さを役割で決める。Blueprint 装置を退役 | 純粋層テスト (位相の同一性・linear 禁止・reduced motion のフレーム一致を継承 + 角度の入力 + 役割の表)。刷新前後の静止画 `docs/motion/media/m3a-*.png` (動画は M3b の後に M3 全体で撮る) |
-| **M3b 選択・消滅・置く前** (**実施 2026-10-12**) | 選択時の見せ方 (BoxHelper の白い箱 → 光が強まって `land` で着地)、消滅演出 (P9 — ライフサイクルに `exiting`、論理の可視性と描画の可視性を 2 欄に分ける)、配置プレビュー (`MapPreviewMath`) を同じ光で描く | `exiting` の状態機械 (STATE_TRANSITIONS)、hit-test が退場中の注釈を拾わないこと、刷新前後の動画。**結果**: 下の「M3b で決めたこと」、動画 `docs/motion/media/m3-map-annotations.mp4` (刷新後) / `m3-map-annotations-before.mp4` (M3a 時点) |
+| **M3b 選択・消滅・置く前** (**実施 2026-10-12**) | 選択時の見せ方 (BoxHelper の白い箱 → 光が強まって `land` で着地)、消滅演出 (P9 — ライフサイクルに `exiting`、論理の可視性と描画の可視性を 2 欄に分ける)、配置プレビュー (`MapPreviewMath`) を同じ光で描く | `exiting` の状態機械 (STATE_TRANSITIONS)、hit-test が退場中の注釈を拾わないこと、刷新前後の動画。**結果**: 下の「M3b で決めたこと」、実機の静止画 `docs/motion/media/m3b-*.png`。**動画は得られていない** — 下の「分かったこと」 |
 | **M4 残りの演出** | M1 の採点が低い順に作り直す (最初の候補: リンクの波紋 + リンク線、キューブの状態の手掛かり — ホバー・選択・接近、起動ホーム) | M1 の表の全行が「今の水準」になるか、残す理由が書かれている |
 
 M3 は M2 の後に置く — 床の光は M2 で決める背景の光源を共有するので、先に作ると光源が 2 つになる (§1.1)。
@@ -103,12 +103,22 @@ M3 は 2 本に割った (当事者合意 2026-10-12): `exiting` の状態追加
   書き直さないので、強調した名札は画面の隅に張り付く (minimap のホバー連動で CF の名札に潜在していた)。
   1 つの style 欄に 2 人の書き手 (原則 #4)。`_writeTransform()` を唯一の書き手にし、
   `src/view/EntityLabel.test.js` が「強調しても位置が残る・静止カメラでも残る」を問う。
+- **仮想時間の録画では 220 ms の退場が撮れなかった。** screencast (ADR-160) で刷新前後を撮ったところ、刷新後の
+  動画で注釈が退場なしに消えた。調べると Playwright の偽の時計の下で、描画ループが view に渡す `t` が単調でなく
+  (8.036 → 7.91 → 7.84 … 8.054 → 7.92 → 8.164)、±0.2 s 跳ねていた — 退場そのものと同じ長さなので、相が丸ごと
+  飛ばされる。2 つのことをした: (1) 時計が刻印より**戻った**ら退場の始まりとして扱う (`lifecyclePhase` は
+  `e < 0` を「終わった」と読んでいた — 本番の `performance.now` は単調なので到達しないが、時計の後退で退場が
+  消えるのは誤り。テスト「a clock that steps backward does not skip the exit」)。(2) 退場を飛ばした動画は
+  **嘘の画面になるので commit しない**。証拠は実機 (本物の時計) を 1/12 に落とした静止画
+  `docs/motion/media/m3b-exit-slowed-clock.png` と、選択・削除・undo の静止画 `m3b-select-delete-undo.png`。
+  `t` が 2 系列に交互に並ぶ形は、偽の時計の下で描画ループが 2 本走っている可能性を示すが、**確かめていない**
+  (dev の StrictMode 二重マウントか、偽の rAF の挙動か)。録画の道具側の課題として残す。
 - **GSN の満期の名前は実装で変わった。** 起票時に満期を `GREP:…::exitFrame` と書いたが、退場だけでなく入場も
   運ぶ包絡なので `lifecycleEnvelope` になった。満期の GREP ではなく goal の昇格 (support-verified) で決着させ、
   `check-gsn-debt.mjs` の baseline を 51 → 50 に下げた。
 
 **検証できていないこと:** Route / Boundary の見た目 (M3a と同じく、テンプレに実例が無い)。退場の中間フレームは
-実機で時計を 1/12 に落として静止画で確認し、動画は仮想時間の screencast で撮った。
+実機で時計を 1/12 に落として静止画で確認した。M3 全体の動画 (M3a で約束した) は仮想時間の録画が退場を飛ばすため未取得 — シナリオ `tools/screencast/scenarios/m3-map-annotations.screencast.json` は残し、道具が単調な時計を保証できたら撮る。
 
 **M3a で決めたこと (2026-10-12、当事者合意 — 「M3a からおすすめで」):**
 

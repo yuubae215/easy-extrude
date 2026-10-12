@@ -383,8 +383,11 @@ export function lifecyclePhase(t, life, reduced = false) {
   }
   if (life.exitPending) return reduced ? 'hidden' : 'exiting'
   if (reduced || life.exitAt === null || badClock(t) || badClock(life.exitAt)) return 'hidden'
-  const e = t - life.exitAt
-  return e >= 0 && e < EXIT_FADE ? 'exiting' : 'hidden'
+  // A clock that steps BACK past the stamp is the start of the exit, not its
+  // end: treating e < 0 as "over" skipped the exit outright under Playwright's
+  // fake clock (found recording the M3 clip — performance.now went 8150 → 8148
+  // between two frames). The envelope clamps the progress to 0 to match.
+  return t - life.exitAt < EXIT_FADE ? 'exiting' : 'hidden'
 }
 
 /**

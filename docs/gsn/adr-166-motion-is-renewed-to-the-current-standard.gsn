@@ -82,8 +82,9 @@ artifacts
 
             solution ExitingIsTwoColumnsAndAskedInBothLayers
             uuid dba088ef-f322-455d-96a7-5774cfc1fd3d
-            summary "M3b 実施 (2026-10-12、当事者合意): ライフサイクル entering / idle / exiting / hidden を純粋 reducer (MapVisualMath の lifecycleShow / lifecycleHide / lifecycleStamp / lifecyclePhase / lifecycleEnvelope) にし、論理 present (visible getter — hit-test が読む) と描画 drawn (_setDrawn が唯一の書き手) を 2 欄に割った。src/view/MapVisualMath.test.js が全相の traits 宣言 (未宣言で throw)・present == pickable・宣言された遷移だけが起きること・exiting → idle の禁止・退場が inCubic で単調に消え縮むこと・reduced では中間相が無いこと・選択の着地 (outExpo) / 同じ要求 2 回で再開しない / 途中反転で跳ねないことを問い、src/view/AnnotationLifecycle.test.js が 3 つの view で visible が present を返し setVisible が mesh を書かず BoxHelper が 0 個であることを構文で数える (pnpm test 1780+ pass)。起票時の予定『view の単体テスト』は DOM を要するので構文の census に置き換えた。実機: conveyor テンプレで選択・削除 (退場中の静止画を時計 1/12 で確認)・undo、刷新前後の動画 docs/motion/media/m3-map-annotations*.mp4。検証していないこと: Route / Boundary の実機撮影 (M3a と同じくテンプレに実例が無い)"
+            summary "M3b 実施 (2026-10-12、当事者合意): ライフサイクル entering / idle / exiting / hidden を純粋 reducer (MapVisualMath の lifecycleShow / lifecycleHide / lifecycleStamp / lifecyclePhase / lifecycleEnvelope) にし、論理 present (visible getter — hit-test が読む) と描画 drawn (_setDrawn が唯一の書き手) を 2 欄に割った。src/view/MapVisualMath.test.js が全相の traits 宣言 (未宣言で throw)・present == pickable・宣言された遷移だけが起きること・exiting → idle の禁止・退場が inCubic で単調に消え縮むこと・reduced では中間相が無いこと・選択の着地 (outExpo) / 同じ要求 2 回で再開しない / 途中反転で跳ねないことを問い、src/view/AnnotationLifecycle.test.js が 3 つの view で visible が present を返し setVisible が mesh を書かず BoxHelper が 0 個であることを構文で数える (pnpm test 1780+ pass)。起票時の予定『view の単体テスト』は DOM を要するので構文の census に置き換えた。実機: conveyor テンプレで選択・削除 (退場中の静止画を時計 1/12 で確認)・undo — docs/motion/media/m3b-*.png。検証していないこと: Route / Boundary の実機撮影 (M3a と同じくテンプレに実例が無い)、動画 (仮想時間の録画では偽の時計の t が ±0.2 s 跳ね、220 ms の退場が飛ばされた — 嘘の画面になるので commit しない)"
             artifacts
             - "src/view/MapVisualMath.test.js"
             - "src/view/AnnotationLifecycle.test.js"
             - "src/view/EntityLabel.test.js"
+            - "docs/motion/media/m3b-exit-slowed-clock.png"
