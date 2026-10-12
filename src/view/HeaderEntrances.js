@@ -201,6 +201,8 @@ export const START_KIND = Object.freeze({
   QUESTS: 'quests',
   /** 誘導インテーク (ADR-063 Phase 3)。 */
   GUIDED_INTAKE: 'guided-intake',
+  /** 判定基準の聞き取り (ADR-165 D3)。 */
+  CRITERIA_HEARING: 'criteria-hearing',
 })
 
 /**
@@ -240,6 +242,14 @@ export const START_ENTRY_BY_KIND = Object.freeze({
     why: '文書の中を埋める順序つきの器なので、文書が要る。器は ADR-106 (Phase 3) で '
        + '`ContextLayer` のタブから `DocIntakeLayer` (ADR-112 で**恒久住所**) へ移ったが、'
        + '**入口はここ 1 つのまま**である — 器が動いても入口は増えない、が両 ADR の接点。',
+  }),
+  [START_KIND.CRITERIA_HEARING]: Object.freeze({
+    label: 'Hear the criteria (end users)', callback: 'onCriteriaHearingStart', shortcut: null, requires: REQUIRES.CONTEXT_DOC,
+    adr: 'ADR-165',
+    why: '設計の前にエンドユーザ全員の期待値と重みを聞き切る順序つきの器 (D3)。誘導インテークと同じ '
+       + '文書の入口 (`DocIntakeLayer`) に載るが、**別の問い**なので別の入口を持つ — 誘導インテークの '
+       + '開始画面の奥にだけ置くと、ヘッダの「誘導インテーク」が開始画面を飛ばして始まるので**到達できない** '
+       + '(原則 #16)。文書を書くので文書が要る。',
   }),
 })
 

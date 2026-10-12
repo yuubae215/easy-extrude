@@ -272,3 +272,20 @@ test('a stored line status is rejected — the status is derived (ADR-165 D5)', 
     criteriaAgreement: { agreed: { line: {}, version: 1, by: [] }, status: 'agreed' },
   }), false)
 })
+
+test('a context/0.6 doc with hearing trials conforms; a stored "afterTrial" is rejected — rounds are derived (ADR-165 D4)', () => {
+  const line = { mix: { D: 1, Q: 1, C: 1, S: 1 }, elements: { takt: { criterion: { op: '<=', value: 10 }, weight: 1 } } }
+  assert.equal(validate({
+    version: 'context/0.6',
+    actors: [{ ref: 'a', role: 'ehs', endUser: true }],
+    criteriaHearing: { trials: [{ actor: 'a', line, seen: [] }, { actor: 'a', line, seen: ['cand_b'] }] },
+  }), true, JSON.stringify(validate.errors))
+  assert.equal(validate({
+    version: 'context/0.6',
+    criteriaHearing: { trials: [{ actor: 'a', line, seen: [], afterTrial: 1 }] },
+  }), false, 'what changed after trial n is a diff of two trials, never a stored field')
+  assert.equal(validate({
+    version: 'context/0.6',
+    criteriaHearing: { trials: [{ actor: 'a', line }] },
+  }), false, '`seen` is required — no candidates shown is a declared [] (原則 #31)')
+})

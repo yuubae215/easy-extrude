@@ -2,6 +2,7 @@ import { useMemo } from 'react'
 import { useUIStore } from '../../store/uiStore.js'
 import {
   WIZARD_CATALOG,
+  CRITERIA_HEARING_WIZARD,
   wizardStepGaps,
   wizardTrail,
 } from '../../context/WizardCatalog.js'
@@ -17,6 +18,11 @@ import {
   RequirementSummary,
 } from './IntakePanel.jsx'
 import { ParametricAssetPanel } from './ParametricAssetPanel.jsx'
+import {
+  EndUsersStep, MixStep, ExpectationsStep, TrialStep, AgreementReview,
+} from './CriteriaHearingSteps.jsx'
+import { HEARING_STEP } from '../../context/CriteriaHearing.js'
+import { COLOR } from '../../theme/tokens.js'
 
 /**
  * WizardPanel — the guided-intake wizard tab (ADR-063 Phase 3, "選択優先
@@ -68,7 +74,7 @@ function Trail({ nodes }) {
 
 // ── Start screen (wizard inactive) ─────────────────────────────────────────────
 
-function StartScreen({ onStart }) {
+function StartScreen({ onStart, onStartHearing }) {
   return (
     <div>
       <div style={{ fontSize: '11px', color: '#bbb', lineHeight: 1.6, marginBottom: '10px' }}>
@@ -82,14 +88,40 @@ function StartScreen({ onStart }) {
         The Intake tab keeps the full expert forms.
       </div>
       <button onClick={onStart} style={btnStyle(true)}>▶ Start guided intake</button>
+      <div style={{ fontSize: '10px', color: COLOR.textSecondary, lineHeight: 1.6, margin: '14px 0 6px' }}>
+        Before designing, hear every end user out: what they expect of speed,
+        quality, cost and safety, and how much each matters — then agree on the line.
+      </div>
+      <button onClick={onStartHearing} style={btnStyle(false)}>▶ Hear the criteria</button>
     </div>
   )
 }
 
 // ── Committed-entry readout for the current step ───────────────────────────────
 
+/**
+ * The entries each step kind lists under "added in this document". Every kind
+ * is declared — the hearing's steps declare that they list nothing (their
+ * answers are shown by the step itself) — and an undeclared kind throws.
+ */
+const COMMITTED_BY_KIND = Object.freeze({
+  actor:       (lists) => lists.actors,
+  variable:    (lists) => lists.variables,
+  requirement: (lists) => lists.requirements,
+  [HEARING_STEP.END_USERS]:    () => [],
+  [HEARING_STEP.MIX]:          () => [],
+  [HEARING_STEP.EXPECTATIONS]: () => [],
+  [HEARING_STEP.TRIAL]:        () => [],
+})
+
 function CommittedList({ kind, actors, variables, requirements }) {
-  const items = kind === 'actor' ? actors : kind === 'variable' ? variables : requirements
+  // The else-branch used to fall through to `requirements`, so the criteria
+  // hearing's steps rendered every requirement as an empty card — found in
+  // the browser run of ADR-165 PR3 (a fall-through default is the absence of a
+  // decision — PHILOSOPHY #31).
+  const list = COMMITTED_BY_KIND[kind]
+  if (!list) throw new Error(`[WizardPanel] no committed-entry list declared for step kind "${kind}"`)
+  const items = list({ actors, variables, requirements })
   if (!items || items.length === 0) return null
   return (
     <div style={{ marginBottom: '8px' }}>
@@ -109,10 +141,18 @@ function CommittedList({ kind, actors, variables, requirements }) {
 
 // ── Step screen ────────────────────────────────────────────────────────────────
 
-function StepScreen({ def, wizard, actors, variables, requirements, seedIndex, callbacks }) {
+/** The criteria hearing's step bodies, by step kind (ADR-165 D3). */
+const HEARING_STEP_BODY = Object.freeze({
+  [HEARING_STEP.END_USERS]:    EndUsersStep,
+  [HEARING_STEP.MIX]:          MixStep,
+  [HEARING_STEP.EXPECTATIONS]: ExpectationsStep,
+  [HEARING_STEP.TRIAL]:        TrialStep,
+})
+
+function StepScreen({ def, wizard, docLike, actors, variables, requirements, seedIndex, callbacks }) {
   const step = def.steps[wizard.index]
-  const docLike = { actors, variables, requirements }
   const gaps = wizardStepGaps(def, wizard, docLike)
+  const HearingBody = HEARING_STEP_BODY[step.kind]
   const isLast = wizard.index === def.steps.length - 1
 
   const onAdd = data => callbacks.onAddDocEntry?.(step.kind, data)
@@ -125,6 +165,10 @@ function StepScreen({ def, wizard, actors, variables, requirements, seedIndex, c
       <div style={{ fontSize: '10px', color: '#999', lineHeight: 1.6, marginBottom: '8px' }}>
         {step.prompt}
       </div>
+
+      {HearingBody && (
+        <HearingBody key={wizard.respondent ?? ''} doc={docLike} respondent={wizard.respondent ?? null} callbacks={callbacks} />
+      )}
 
       <CommittedList kind={step.kind} actors={actors} variables={variables} requirements={requirements} />
 
@@ -211,6 +255,27 @@ function ReviewScreen({ actors, variables, requirements, callbacks }) {
   )
 }
 
+// ── Criteria hearing review = the agreement (ADR-165 D3 Step 5) ───────────────
+
+function HearingReviewScreen({ doc, callbacks }) {
+  return (
+    <div>
+      <div style={{ fontSize: '12px', fontWeight: 'bold', color: COLOR.textPrimary, marginBottom: '3px' }}>
+        Heard in full? → Agree
+      </div>
+      <div style={{ fontSize: '10px', color: COLOR.textSecondary, lineHeight: 1.6, marginBottom: '8px' }}>
+        When every end user has answered everything, each of them agrees to the
+        line. After that, the line moves only by a proposal the others approve.
+      </div>
+      <AgreementReview doc={doc} callbacks={callbacks} />
+      <div style={{ display: 'flex', gap: '6px', marginTop: '10px' }}>
+        <button onClick={() => callbacks.onWizardBack?.()} style={btnStyle(false)}>← Back</button>
+        <button onClick={() => callbacks.onWizardFinish?.()} style={btnStyle(true)}>✓ Finish</button>
+      </div>
+    </div>
+  )
+}
+
 // ── WizardPanel (public) ───────────────────────────────────────────────────────
 
 export function WizardPanel() {
@@ -224,21 +289,31 @@ export function WizardPanel() {
 
   const wizard = ctx.wizard
   const def    = wizard ? WIZARD_CATALOG[wizard.defId] : null
+  // The hearing's gates read the document slice projected on the document
+  // edge (it lives outside the floor); the guided intake keeps its arrays.
+  const docLike = def?.review === 'agreement'
+    ? (ctx.criteriaDoc ?? { actors: [], requirements: [] })
+    : { actors, variables, requirements }
 
   return (
     <div style={{ paddingBottom: '8px' }}>
       <IntakeSharedDefs />
       {!wizard || !def ? (
-        <StartScreen onStart={() => callbacks.onWizardStart?.()} />
+        <StartScreen
+          onStart={() => callbacks.onWizardStart?.()}
+          onStartHearing={() => callbacks.onWizardStart?.(CRITERIA_HEARING_WIZARD.id)}
+        />
       ) : (
         <>
-          <Trail nodes={wizardTrail(def, wizard, { actors, variables, requirements })} />
+          <Trail nodes={wizardTrail(def, wizard, docLike)} />
           {wizard.status === 'step' ? (
             <StepScreen
-              def={def} wizard={wizard}
+              def={def} wizard={wizard} docLike={docLike}
               actors={actors} variables={variables} requirements={requirements}
               seedIndex={seedIndex} callbacks={callbacks}
             />
+          ) : def.review === 'agreement' ? (
+            <HearingReviewScreen doc={docLike} callbacks={callbacks} />
           ) : (
             <ReviewScreen
               actors={actors} variables={variables} requirements={requirements}

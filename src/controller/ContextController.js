@@ -54,6 +54,8 @@ import { AGENDA_REF_PREFIX, AGENDA_SOURCE } from '../context/Agenda.js'
 import { validateContext } from '../context/ContextValidator.js'
 import { applyAdmissibleEdit } from '../context/ContextEditModel.js'
 import { applyQuestionAnswer } from '../context/FormApplication.js'
+import { withEndUserStance, endUsersOf } from '../context/ActorStance.js'
+import { criteriaSliceOf, recordTrial, trialGuards, HEARING_STEP } from '../context/CriteriaHearing.js'
 import {
   createBlankDoc, addActor, addFact, addVariable, addRequirement,
   updateActor, updateVariable, updateRequirement, removeDocEntry,
@@ -86,7 +88,7 @@ import { getTemplateMeta, exampleFiles } from '../context/TemplateCatalog.js'
 import { canonicalForm } from '../context/CanonicalForm.js'
 import { structurePreview } from '../view/TemplatePreviewMath.js'
 import {
-  WIZARD_CATALOG, CELL_INTAKE_WIZARD,
+  WIZARD_CATALOG, CELL_INTAKE_WIZARD, CRITERIA_HEARING_WIZARD,
   startWizard, nextWizardState, prevWizardState, wizardStepGaps,
 } from '../context/WizardCatalog.js'
 import {
@@ -223,11 +225,18 @@ export class ContextController {
     // 別の入口を持つ。
     registerCallback('onOpenDocIntake',          (tab)        => this.openDocIntake(tab))
     registerCallback('onCloseDocIntake',         ()           => this.closeDocIntake())
-    registerCallback('onWizardStart',            ()           => this.startWizard())
+    registerCallback('onWizardStart',            (defId)      => this.startWizard(defId))
     registerCallback('onWizardNext',             ()           => this.wizardNext())
     registerCallback('onWizardBack',             ()           => this.wizardBack())
     registerCallback('onWizardFinish',           ()           => this.finishWizard())
     registerCallback('onWizardExit',             ()           => this.exitWizard())
+    // ── ADR-165 D3 the criteria hearing (in the document intake, not the floor) ──
+    registerCallback('onCriteriaHearingStart',   ()           => this.startWizard(CRITERIA_HEARING_WIZARD.id))
+    registerCallback('onHearingRespondent',      (ref)        => this.setHearingRespondent(ref))
+    registerCallback('onHearingAddEndUser',      (actor)      => this.hearingAddEndUser(actor))
+    registerCallback('onHearingStandAsEndUser',  (ref)        => this.hearingStandAsEndUser(ref))
+    registerCallback('onHearingAnswer',          (answer)     => this.hearingAnswer(answer))
+    registerCallback('onHearingAgree',           (ref)        => this.hearingAgree(ref))
     registerCallback('onAssetViewerOpen',        (assetId)    => this.openAssetViewer(assetId))
     registerCallback('onAssetParam',             (key, value) => this.setAssetParam(key, value))
     registerCallback('onAssetViewerCommit',      ()           => this.commitAsset())
@@ -889,8 +898,14 @@ export class ContextController {
     useUIStore.getState().actions.setDocIntake(null)
   }
 
-  /** Enter the guided-intake wizard at step 0, in the document-intake container. */
-  startWizard() {
+  /**
+   * Enter a wizard at step 0, in the document-intake container. Without an id
+   * it is the guided intake (the entry cards' route). The criteria hearing
+   * starts with its first end user answering, when there is one (ADR-165 D3).
+   *
+   * @param {string} [defId] — a WIZARD_CATALOG id
+   */
+  startWizard(defId = CELL_INTAKE_WIZARD.id) {
     if (!this._ctxService.loaded) {
       this._ctrl._uiView.showToast(
         'Open a context first (New Project / Import) to start the guided intake.',
@@ -898,8 +913,10 @@ export class ContextController {
       )
       return
     }
+    const def = WIZARD_CATALOG[defId]
+    if (!def) throw new Error(`[ContextController] no wizard "${defId}"`)
     const ui = useUIStore.getState().actions
-    ui.contextSetWizard(startWizard(CELL_INTAKE_WIZARD))
+    ui.contextSetWizard(startWizard(def, def.initial?.(this._ctxService.getDoc()) ?? {}))
     ui.setDocIntake(DOC_INTAKE_TAB.WIZARD)
   }
 
@@ -919,7 +936,13 @@ export class ContextController {
       this._ctrl._uiView.showToast(gaps.join(' · '), { type: 'warn' })
       return
     }
-    useUIStore.getState().actions.contextSetWizard(nextWizardState(def, state, doc))
+    const next = nextWizardState(def, state, doc)
+    useUIStore.getState().actions.contextSetWizard(next)
+    // Opening "Try it" is the act D4 anchors on: what the respondent held when
+    // they looked is recorded as they arrive (ADR-165 §PR3 の俯瞰 Q2).
+    if (next.status === 'step' && def.steps[next.index]?.kind === HEARING_STEP.TRIAL) {
+      this._recordTrial(next.respondent)
+    }
   }
 
   /** Step back (review → last step; step 0 stays). Always allowed. */
@@ -950,6 +973,120 @@ export class ContextController {
   /** Leave the wizard at any point; committed steps stay in the doc (undoable). */
   exitWizard() {
     useUIStore.getState().actions.contextSetWizard(null)
+  }
+
+  // ── Criteria hearing (ADR-165 D3 / D4) ───────────────────────────────────────
+  // The hearing writes the same fields the floor's form writes, through the
+  // same pure transforms (FormApplication / CriteriaLine / CriteriaHearing) —
+  // only the room differs. It lives in the document intake, so its gate is a
+  // loaded DOCUMENT, never an open floor (ADR-106 D4).
+
+  /**
+   * Apply a pure document transform as one undoable command. A refused
+   * transform (it throws) is shown, never swallowed (PHILOSOPHY #11); a
+   * transform that changes nothing pushes nothing.
+   */
+  _commitHearing(label, transform) {
+    const ctrl = this._ctrl
+    if (!this._ctxService.loaded) {
+      ctrl._uiView.showToast('Open a context first — the hearing writes into a document.', { type: 'warn' })
+      return
+    }
+    const beforeDoc = this._ctxService.getDoc()
+    let afterDoc
+    try {
+      afterDoc = transform(beforeDoc)
+    } catch (err) {
+      ctrl._uiView.showToast(err.message, { type: 'warn' })
+      return
+    }
+    if (afterDoc === beforeDoc) return
+    const cmd = createDocEditCommand(this._ctxService, beforeDoc, afterDoc, label, this._viewContext())
+    Promise.resolve(cmd.execute())
+      .then(() => {
+        ctrl._commandStack.push(cmd)
+        ctrl._refreshUndoRedoState()
+      })
+      .catch((err) => {
+        ctrl._uiView.showToast(`Could not record: ${err.message}`, { type: 'error' })
+        console.error('[ContextController]', err)
+      })
+  }
+
+  /** Who answers Steps 2–4. Only an end user can be the respondent. */
+  setHearingRespondent(ref) {
+    const state = useUIStore.getState().context.wizard
+    if (!state || state.defId !== CRITERIA_HEARING_WIZARD.id) return
+    const doc = this._ctxService.getDoc()
+    if (!endUsersOf(doc).some(u => u.ref === ref)) {
+      this._ctrl._uiView.showToast(`"${ref}" does not stand as an end user — declare the stance first.`, { type: 'warn' })
+      return
+    }
+    useUIStore.getState().actions.contextSetWizard({ ...state, respondent: ref })
+    if (state.status === 'step' && CRITERIA_HEARING_WIZARD.steps[state.index]?.kind === HEARING_STEP.TRIAL) {
+      this._recordTrial(ref)
+    }
+  }
+
+  /** Step 1: a new person who stands as an end user (job function optional — R13 asks later). */
+  hearingAddEndUser({ ref, name, role }) {
+    this._commitHearing('Add end user', doc => {
+      if ((doc.actors ?? []).some(a => a.ref === ref)) throw new Error(`An actor "${ref}" already exists.`)
+      const actor = withEndUserStance({ ref, ...(name ? { name } : {}), ...(role ? { role } : {}) })
+      return addActor(doc, actor)
+    })
+    const state = useUIStore.getState().context.wizard
+    if (state?.defId === CRITERIA_HEARING_WIZARD.id && !state.respondent) {
+      useUIStore.getState().actions.contextSetWizard({ ...state, respondent: ref })
+    }
+  }
+
+  /** Step 1: an existing actor stands as an end user (the floor's R12 answer, same transform). */
+  hearingStandAsEndUser(ref) {
+    this._commitHearing('Stand as end user', doc =>
+      applyQuestionAnswer(doc, { ref: 'hearing', target: ref, answerKind: 'endUserStance' }, { actorRef: ref }))
+    const state = useUIStore.getState().context.wizard
+    if (state?.defId === CRITERIA_HEARING_WIZARD.id && !state.respondent) {
+      useUIStore.getState().actions.contextSetWizard({ ...state, respondent: ref })
+    }
+  }
+
+  /** Steps 2–3: the respondent's mix / expectations / weights (the R12 `criteria` answer). */
+  hearingAnswer(answer) {
+    const respondent = useUIStore.getState().context.wizard?.respondent
+    if (!respondent) {
+      this._ctrl._uiView.showToast('Pick who is answering first (Step 1).', { type: 'warn' })
+      return
+    }
+    this._commitHearing(`Answer criteria (${respondent})`, doc =>
+      applyQuestionAnswer(doc, { ref: 'hearing', target: respondent, answerKind: 'criteria' }, answer))
+  }
+
+  /** Review: one end user agrees to the line — their own act, so their key is required. */
+  hearingAgree(ref) {
+    const g = this._ctxService.agreementGuards(ref, this._keyring)
+    if (!g.ok) {
+      this._ctrl._uiView.showToast(g.reasons.join(' '), { type: 'warn' })
+      return
+    }
+    this._commitHearing(`Agree to the line (${ref})`, doc =>
+      applyQuestionAnswer(doc, { ref: 'hearing', target: ref, answerKind: 'agreement' }, { actorRef: ref }))
+  }
+
+  /**
+   * Record that `respondent` opened "Try it". An agreed respondent has nothing
+   * to record (their changes are proposals); any other refusal is shown.
+   */
+  _recordTrial(respondent) {
+    if (!respondent) return
+    const g = trialGuards(this._ctxService.getDoc(), respondent)
+    if (!g.ok) {
+      // The step gate already refused blanks; reaching here means an agreed
+      // respondent revisiting — say why nothing was recorded (PHILOSOPHY #11).
+      this._ctrl._uiView.showToast(g.reasons.join(' '), { type: 'info' })
+      return
+    }
+    this._commitHearing(`Try it (${respondent})`, doc => recordTrial(doc, respondent))
   }
 
   // ── Parametric asset viewer (ADR-063 Phase 4) ────────────────────────────────
@@ -1924,6 +2061,10 @@ export class ContextController {
       this._ctxService.checksSummary(),
     )
     ui.contextSetVars(this._ctxService.getDoc()?.variables ?? [])
+    // The criteria hearing reads from outside the floor (ADR-165 D3) — same
+    // edge, same reason as `variables`.
+    const doc = this._ctxService.getDoc()
+    ui.contextSetCriteriaDoc(doc ? criteriaSliceOf(doc) : null)
   }
 
   /** Resync widget regions to the canonical doc (after undo / redo of an edit). */

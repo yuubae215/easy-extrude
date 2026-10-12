@@ -27,6 +27,11 @@
  * @module context/CriteriaCatalog
  */
 
+// The hearing asks the mix as four numbers. Archetypes to start from (flow v4
+// Step 2 — "never stop the line" = D40 Q25 C15 S20 …) are 保留: a curated
+// ratio may be judgement knowledge (CLAUDE.md 軸 1 → core/), and the
+// stakeholder decides before any lands here (ADR-165 §PR3, DEF-065).
+
 /** Upper tier of the value tree — keys of `actor.mix`, in asking order. */
 export const CRITERIA_CATEGORIES = Object.freeze(['D', 'Q', 'C', 'S'])
 

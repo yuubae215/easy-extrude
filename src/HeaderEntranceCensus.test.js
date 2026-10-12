@@ -278,13 +278,16 @@ test('startEntryFor throws on an undeclared kind rather than falling through', (
   }
 })
 
-test('the five start kinds are exactly the five doors ADR-108 folded', () => {
+test('the start kinds are the five doors ADR-108 folded, plus the hearing ADR-165 added', () => {
   // 03-implementation-order.md は「4 重導線」と書いていた。数えると 5 で、
   // Tutorial (= STORY) が落ちていた。記憶は母集団の権威ではない (ADR-102)。
-  assert.equal(Object.keys(START_ENTRY_BY_KIND).length, 5)
+  // 6 つ目は ADR-165 D3 の聞き取り (PR3)。誘導インテークの開始画面の奥にだけ置くと、
+  // ヘッダの誘導インテークが開始画面を飛ばすので到達できなかった (原則 #16)。
+  assert.equal(Object.keys(START_ENTRY_BY_KIND).length, 6)
   const adrs = Object.values(START_ENTRY_BY_KIND).map(e => e.adr).sort()
-  assert.deepEqual(adrs, ['ADR-047', 'ADR-051', 'ADR-063', 'ADR-065', 'ADR-089'],
-    '5 種はそれぞれ別の ADR が正しく作ったもの。中身は変えず並べ方だけを変える (D3)。')
+  assert.deepEqual(adrs, ['ADR-047', 'ADR-051', 'ADR-063', 'ADR-065', 'ADR-089', 'ADR-165'],
+    '5 種はそれぞれ別の ADR が正しく作ったもの。中身は変えず並べ方だけを変える (ADR-108 D3)。' +
+    '足すのは別の問いを持つ入口だけ。')
 })
 
 // ─── G3 / D1: ファイル動詞 × 対象 ────────────────────────────────────────────

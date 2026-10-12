@@ -268,6 +268,13 @@ export const useUIStore = create((set, get) => ({
     // 'none-declared' / 'all-pass' / 'failing'. "No checks declared" and
     // "everything passed" are different facts with different next moves.
     checksSummary: { kind: 'unexamined' },
+    // ADR-165 D3: the slice of the document the criteria hearing reads —
+    // `{actors, requirements, criteriaAgreement, criteriaHearing}` — projected
+    // on the DOCUMENT edge (the hearing lives in the document intake, outside
+    // the floor — ADR-106 D3). The panel asks the same pure gates on it that the
+    // controller asks on the canonical doc (one predicate, two projections).
+    // `null` = no document. Sole writer `_refreshDocReadModels`.
+    criteriaDoc: null,
     // A gesture on someone else's claim, captured and waiting for its reason.
     // NOT a proposal yet — a proposal must carry a rationale (D3), and there is
     // no honest default for "why do you want this?", so the draft exists rather
@@ -357,6 +364,8 @@ export const useUIStore = create((set, get) => ({
     // null = inactive (the wizard tab shows its start screen). Shapes:
     //   { defId, status:'step', index }
     //   { defId, status:'review' }
+    //   (+ the criteria hearing's `respondent` — the end user answering Steps
+    //   2–4, kept across transitions; ADR-165 D3)
     // Step drafts stay component-local (transient, never a second source — §1.1).
     wizard: null,
     // ADR-063 Phase 4 parametric asset viewer — sole writer ContextController
@@ -601,6 +610,9 @@ export const useUIStore = create((set, get) => ({
     // that re-derives from ContextService (PHILOSOPHY #4 / #24).
     contextSetDiscovery: (discovery, checksSummary) => set(state => ({
       context: { ...state.context, discovery, checksSummary },
+    })),
+    contextSetCriteriaDoc: (criteriaDoc) => set(state => ({
+      context: { ...state.context, criteriaDoc },
     })),
     contextSetProposalDraft: (proposalDraft) => set(state => ({
       context: { ...state.context, proposalDraft },
