@@ -20,12 +20,19 @@
  * (消えたファイルを指したままの行が無い)。同じファイルが 2 行に現れることも禁じる
  * (判定が 2 つあるのは判定が無いのと同じ)。
  *
+ *   - **母集団 (2 本目の信号 — 2026-10-12 追加)** = 基盤を参照しないが、見た目の値を
+ *     書き換えるファイル (`.opacity =` / `.emissiveIntensity =` の代入、色の `lerp` /
+ *     `lerpColors`)。当事者が名指した「キューブのホバー・選択の切り替え・グラブ中の
+ *     スナップ先への近づき」(`MeshView`) は 1 本目の信号では**定義上**入らなかった —
+ *     基盤を通らずに動く演出こそ、reduced motion の境界も曲線の語彙も通っていない
+ *     いちばん古い層なのに、基盤を参照するものだけを数える表はそれを見ない (原則 #31)。
+ *
  * ## この証拠が構造的に見逃すもの (宣言)
  *
- * 母集団の定義は「基盤を参照する」ことなので、基盤を通らずに CSS の `transition` だけで
- * 動く部品は入らない。それは基盤 (曲線の語彙・reduced motion の境界) の外で動いている
- * ということで、それ自体が M2 で数えるべき別の欠陥である — ここで母集団を CSS まで
- * 広げると、静的なスタイルの大半が入り表が読めなくなる (原則 #20)。
+ * 2 本目の信号は Three.js の材質と DOM の `style.opacity` の書き換えを読む。それ以外の
+ * 見た目の変化 (`.visible` の切替だけ・`emissive.set` だけ・`scale` だけ) で動く部品は
+ * 入らない — 入れると静的な表示切替の大半が入り表が読めなくなる (原則 #20)。CSS の
+ * `transition` だけで動く部品の曲線は `MotionIdentity.test.js` の ratchet が数える。
  *
  * @see docs/adr/ADR-166-motion-is-renewed-to-the-current-standard-and-map-annotations-become-light-on-the-floor.md
  */
@@ -39,12 +46,17 @@ const INVENTORY = 'docs/motion/inventory.md'
 const TABLE_HEADING = '## 採点表'
 const MOTION_REFERENCE = /theme\/motion|MotionMath|MotionGovernor|prefersReducedMotion|useReducedMotion/
 
-/** 母集団: モーション基盤を参照する非テストファイル (構文で導出)。 */
+const VISUAL_WRITE = /\.(opacity|emissiveIntensity)\s*=[^=]|lerpColors\(|\.color\.lerp\(/
+
+/** 母集団: モーション基盤を参照するか、見た目の値を書き換える非テストファイル (構文で導出)。 */
 function motionSources() {
   return collectSources()
     .map(abs => relPath(abs))
     .filter(rel => !/\.test\.jsx?$/.test(rel))
-    .filter(rel => MOTION_REFERENCE.test(readFileSync(repoPath(rel), 'utf8')))
+    .filter(rel => {
+      const src = readFileSync(repoPath(rel), 'utf8')
+      return MOTION_REFERENCE.test(src) || VISUAL_WRITE.test(src)
+    })
     .sort()
 }
 
@@ -76,7 +88,7 @@ test('every motion source is scored in the inventory — unscored files are 0', 
     what:       '演出の採点表',
     population: motionSources(),
     declared:   tableRows().flat(),
-    howDerived: 'src/** の非テストファイルのうち、モーション基盤か reduced-motion の境界を参照するもの',
+    howDerived: 'src/** の非テストファイルのうち、モーション基盤か reduced-motion の境界を参照するもの、または見た目の値 (opacity・色の補間) を書き換えるもの',
     onNew:      `${INVENTORY} の採点表に行を足し、判定 (A / B / C / 対象外) を付けること。`
               + '対象外も理由つきの判定であり、空欄で通さない (原則 #31)。',
   })
