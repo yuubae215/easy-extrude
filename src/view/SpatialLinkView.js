@@ -40,6 +40,7 @@ import { LINK_TYPE_COLORS } from '../theme/semantic.js'
 import { prefersReducedMotion, onReducedMotionChange } from '../theme/motion.js'
 import { CUE_REST, SELECTION_CUE, VIOLATION_CUE, cueLevel, retargetCue, settledCue } from './CueFollowMath.js'
 import { LINK_TONES, breachPulse, linkLineFrame } from './LinkMotionMath.js'
+import { dashMarch } from './IdleMotionMath.js'
 
 /**
  * Link colour by `semanticType` (ADR-038). Re-exported from the declared
@@ -126,12 +127,13 @@ export class SpatialLinkView {
    *
    * @param {THREE.Vector3} srcPos
    * @param {THREE.Vector3} tgtPos
-   * @param {number} [dashOffset=0]   Negative value scrolls dashes source→target (marching ants).
+   * @param {number} [grabElapsed=NaN] seconds since an endpoint was grabbed — drives the marching
+   *                                  ants from the clock (`dashMarch`, ADR-166 M4d1); absent: dashes hold.
    * @param {number} [tension=0]      0..1 — colour shift from the type colour toward `strain` (cautionTone).
    * @param {number} [severity=0]     0..1 — bounded_by proximity gradient; overrides tension and the violation.
    * @param {number} [t=NaN]          loop clock (seconds) — absent: the look stands at its targets.
    */
-  update(srcPos, tgtPos, dashOffset = 0, tension = 0, severity = 0, t = NaN) {
+  update(srcPos, tgtPos, grabElapsed = NaN, tension = 0, severity = 0, t = NaN) {
     const pts = [srcPos.x, srcPos.y, srcPos.z, tgtPos.x, tgtPos.y, tgtPos.z]
     this._geo.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3))
     this._geo.attributes.position.needsUpdate = true
@@ -139,6 +141,10 @@ export class SpatialLinkView {
 
     this._applyLook(tension, severity, t)
 
+    // The march is a function of the grab's elapsed time, not of how many frames
+    // ran (it used to advance a fixed step per call — its speed was the frame rate).
+    // Reduced motion: the dashes hold; the tension colour still says "stretched".
+    const dashOffset = dashMarch(grabElapsed, this._reduced)
     if (dashOffset !== 0) {
       this._mat.dashOffset = dashOffset
     }

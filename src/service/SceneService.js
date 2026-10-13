@@ -247,8 +247,8 @@ export class SceneService extends EventEmitter {
     this._linkSelectedIds = new Set()
     /** Entity IDs currently being grabbed. Drives marching ants + tension. */
     this._dragEntityIds   = new Set()
-    /** Accumulates each frame during drag to scroll dash offset. */
-    this._dashTimer       = 0
+    /** Loop clock when the current grab began (NaN = no grab) — the marching ants read elapsed time from it (ADR-166 M4d1). */
+    this._grabClockStart  = NaN
     /** Last animation-loop clock (seconds) — read by `_updateSpatialLinkViews` (ADR-166 M4b). */
     this._linkClock       = NaN
     /**
@@ -1803,7 +1803,10 @@ export class SceneService extends EventEmitter {
    */
   _updateSpatialLinkViews() {
     const hasDrag = this._dragEntityIds.size > 0
-    if (hasDrag) this._dashTimer += 0.018   // advance marching ants
+    // Marching ants run on the loop clock from the grab's start, not per call
+    // (ADR-166 M4d1). The start is stamped at the first frame with a known clock.
+    if (hasDrag && !Number.isFinite(this._grabClockStart)) this._grabClockStart = this._linkClock
+    const grabElapsed = this._linkClock - this._grabClockStart
 
     for (const [id, view] of this._linkViews) {
       const link = this._model.getLink(id)
@@ -1817,10 +1820,10 @@ export class SceneService extends EventEmitter {
         this._dragEntityIds.has(link.targetId)
       )
 
-      let dashOffset = 0
-      let tension    = 0
+      let elapsed = NaN
+      let tension = 0
       if (isDragging) {
-        dashOffset = -this._dashTimer
+        elapsed = grabElapsed
         const currentDist = src.distanceTo(tgt)
         // tension: 0 at rest, ramps to 1 at 50% stretch beyond rest distance
         tension = Math.max(0, (currentDist / view.restDistance) - 1) / 0.5
@@ -1828,7 +1831,7 @@ export class SceneService extends EventEmitter {
 
       const severity = link.semanticType === 'bounded_by'
         ? (link.properties?.severity ?? 0) : 0
-      view.update(src, tgt, dashOffset, tension, severity, this._linkClock)
+      view.update(src, tgt, elapsed, tension, severity, this._linkClock)
     }
 
     this._evaluateClearanceLinks()
@@ -2066,7 +2069,7 @@ export class SceneService extends EventEmitter {
         }
       }
     } else {
-      this._dashTimer = 0
+      this._grabClockStart = NaN
     }
     this._applyLinkHighlights()
   }

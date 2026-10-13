@@ -15,13 +15,20 @@
  *   3. 基盤の外で CSS の既定キーワードを使って動く箇所の **個数** (ratchet)。M1 の census
  *      (`MotionInventoryCoverage.test.js`) が「構造的に見逃す」と宣言していた欠陥 —
  *      基盤を通らず `transition` だけで動く部品 — を、ここで数える。
+ *   4. 待機のループ (時間スケール・振付パターン — ADR-166 M4d1): 見た目の値を手書きの
+ *      `Math.sin` で揺らす行と、呼ばれるたびに定数を足して進むアニメの蓄積器の **個数が 0**。
+ *      前者は位相・周期・reduced の境界を各自で選び直す形 (3 つの view が 3 つの周期で書き、
+ *      2 つが reduced を読まず、1 つは N 枚を同位相で揺らしていた)、後者は速さがフレーム率に
+ *      なる形 (掴んだリンクの破線が `+= 0.018`/呼び出し)。待機の値は `IdleMotionMath` から引く。
  *
  * ## この証拠が構造的に見逃すもの (宣言)
  *
  * 曲線の *名前* は数えるが、曲線が役割に合っているか (位置に fade を使っていないか) は
  * 見ない — それは採点表 (`docs/motion/inventory.md`) とレビューの仕事。ratchet は
  * `transition` / `animation` を名指す行だけを読むので、別の行に組み立てた文字列は
- * 数えない。
+ * 数えない。4 は「見た目の欄への代入と `Math.sin` が同じ行に在る」形と「数値リテラルを
+ * `+=` する」形だけを読む — 一度変数に入れてから代入する揺れ、整数の歩み、
+ * `*Math.js` の純粋層 (そこは曲線の語彙を持つ場所なので数えない) は見ない。
  *
  * @see docs/adr/ADR-166-motion-is-renewed-to-the-current-standard-and-map-annotations-become-light-on-the-floor.md
  */
@@ -105,4 +112,28 @@ test('CSS default easings outside the vocabulary never increase (ratchet)', () =
     `Use EASING.<role> from src/theme/tokens.js:\n  ${hits.join('\n  ')}`)
   assert.equal(hits.length, KEYWORD_EASING_BASELINE,
     `CSS default easings are down to ${hits.length} — lower KEYWORD_EASING_BASELINE to ${hits.length}.`)
+})
+
+// ── 4. 待機のループ (ADR-166 M4d1) ───────────────────────────────────────────
+
+/** A visual field written from a hand-rolled sine on the same line. */
+const HAND_ROLLED_LOOP = /\.(opacity|emissiveIntensity|dashOffset)\s*=[^=].*Math\.(sin|cos)\(/
+/** A per-call accumulator: a decimal literal added to a field every time a frame is asked for. */
+const FRAME_STEP = /\+=\s*\d*\.\d+\s*$/
+/** The pure motion layer owns the curves; it is the one place a sine may stand. */
+const PURE_MOTION_LAYER = /Math\.js$/
+
+test('no view hand-rolls an idle loop or steps an animation per frame — IdleMotionMath owns the waiting', () => {
+  const hits = []
+  for (const file of collectSources()) {
+    if (PURE_MOTION_LAYER.test(file)) continue
+    const lines = stripComments(readFileSync(file, 'utf8'))
+    lines.forEach((line, i) => {
+      if (HAND_ROLLED_LOOP.test(line)) hits.push(`${relPath(file)}:${i + 1} hand-rolled loop`)
+      if (FRAME_STEP.test(line.trimEnd())) hits.push(`${relPath(file)}:${i + 1} per-frame step`)
+    })
+  }
+  assert.deepEqual(hits, [],
+    'Idle motion is a function of the loop clock with phase from identity and a reduced-motion rest — ' +
+    'use idleLevel / idleBreath / dashMarch from src/view/IdleMotionMath.js:\n  ' + hits.join('\n  '))
 })

@@ -35,9 +35,10 @@
  * [r, g, b] ∈ [0,1] out (the view calls `setRGB`).
  */
 
-import { clamp01, easeOutExpo, easeOutQuad, breathe } from './MotionMath.js'
+import { clamp01, easeOutExpo, easeOutQuad } from './MotionMath.js'
+import { IDLE_PERIOD, idleBreath } from './IdleMotionMath.js'
 import { SELECT_LAND } from './CueFollowMath.js'
-import { phaseFor, lightTint } from './MapVisualMath.js'
+import { lightTint } from './MapVisualMath.js'
 import { COLOR } from '../theme/tokens.js'
 
 const hexNumber = hex => parseInt(hex.slice(1), 16)
@@ -132,8 +133,8 @@ export function bindFrame(elapsed, reduced = false) {
 
 // ── Broken: the violation's breath ──────────────────────────────────────────
 
-/** Period of a violated link's breath (seconds) — inside the idle band (2–6 s). */
-export const BREACH_PERIOD = 2.0
+/** Period of a violated link's breath (seconds) — the `breach` row of the idle periods (M4d1). */
+export const BREACH_PERIOD = IDLE_PERIOD.breach
 
 /**
  * The breath of a violated link at clock `t`, ∈ [0,1]. Phase from identity, so
@@ -144,9 +145,7 @@ export const BREACH_PERIOD = 2.0
  * @param {boolean} [reduced]
  */
 export function breachPulse(t, linkId, reduced = false) {
-  if (reduced || !Number.isFinite(t)) return 0
-  const cycle = t / BREACH_PERIOD + phaseFor(linkId)
-  return breathe(cycle - Math.floor(cycle))
+  return idleBreath(t, linkId, BREACH_PERIOD, reduced)
 }
 
 // ── The line's frame ────────────────────────────────────────────────────────

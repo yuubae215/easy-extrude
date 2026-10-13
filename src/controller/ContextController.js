@@ -1301,6 +1301,9 @@ export class ContextController {
 
     this._intakeGhost = new UncertaintyGhostView(this._ctrl._sceneView.scene, document.body, {
       axis: 'x', interval: [lo, hi], nominal, dims, position, labelText,
+      // The intake slot holds at most one ghost (0..1) and it has no doc identity
+      // yet — the slot's name is its identity (declared, not defaulted).
+      id: 'intake',
     })
     this._intakeGhost.showNominal(true)
 
@@ -1467,6 +1470,7 @@ export class ContextController {
         region: req.admissible.region,
         handleRadius: 30,
         labelText: req.by ?? req.ref,
+        id: req.ref,
       })
       this._authorWidgets.push({ reqRef: req.ref, varRef: req.constrains[0], widget })
     }

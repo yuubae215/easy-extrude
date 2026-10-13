@@ -22,6 +22,8 @@
  * @module view/RegionAuthoringWidget
  */
 import * as THREE from 'three'
+import { prefersReducedMotion, onReducedMotionChange } from '../theme/motion.js'
+import { IDLE_PERIOD, idleLevel } from './IdleMotionMath.js'
 
 const Z_FILL    = 2     // mm lift for the fill + edges
 const Z_HANDLE  = 6     // mm lift for the pickable handles (above the fill)
@@ -37,9 +39,16 @@ export class RegionAuthoringWidget {
    * @param {{x:[number,number], y:[number,number]}} cfg.region  initial AABB box
    * @param {number} cfg.handleRadius      world-unit handle pick radius
    * @param {string} cfg.labelText
+   * @param {string} cfg.id                the requirement's ref — the identity the fill's
+   *                                       breath takes its phase from (N widgets de-sync)
    */
-  constructor(scene, container, { region, handleRadius = 30, labelText = '' }) {
+  constructor(scene, container, { region, handleRadius = 30, labelText = '', id }) {
     this._scene  = scene
+    this._id     = id
+    // The reduced-motion boundary (src/theme/motion.js), followed for changes;
+    // released in dispose() (#9).
+    this._reduced = prefersReducedMotion()
+    this._unsubReduced = onReducedMotionChange(r => { this._reduced = r })
     this._region = { x: [...region.x], y: [...region.y] }
     this._r      = handleRadius
     this._conflict = false
@@ -160,8 +169,10 @@ export class RegionAuthoringWidget {
 
   tick(t, camera, renderer) {
     if (!this._visible) return
-    // Gentle fill pulse so the editable region reads as live.
-    this._fillMat.opacity = 0.18 + 0.06 * Math.sin(t * 2)
+    // The idle breath (ADR-166 M4d1) so the editable region reads as live:
+    // the `draft` period, phase from the requirement's identity, still under
+    // reduced motion.
+    this._fillMat.opacity = idleLevel(t, this._id, IDLE_PERIOD.draft, 0.12, 0.24, this._reduced)
     this._updateLabel(camera, renderer)
   }
 
@@ -205,6 +216,8 @@ export class RegionAuthoringWidget {
   }
 
   dispose() {
+    this._unsubReduced?.()
+    this._unsubReduced = null
     this._scene.remove(this._group)
     this._fill.geometry.dispose()
     this._fillMat.dispose()

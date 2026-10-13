@@ -14,18 +14,25 @@
  *
  * Sole owner = ContextController (PHILOSOPHY #4/#9): created on viewer open,
  * `update()`d per parameter change (geometry rebuilt — entity count can change
- * with parameters), `tick()`ed per frame (gentle opacity pulse, seconds clock),
+ * with parameters), `tick()`ed per frame (the idle breath, seconds clock),
  * disposed on viewer close / overlay exit.
+ *
+ * The breath is the governed idle loop (`IdleMotionMath`, ADR-166 M4d1): the
+ * `draft` period, each fill's phase from its entity `ref` — the N boxes of one
+ * asset no longer pulse in lockstep — and the middle opacity under reduced
+ * motion (the boundary is read once here and followed for changes; #9: the
+ * subscription is released in `dispose()`).
  *
  * @module view/ParametricPreviewView
  */
 import * as THREE from 'three'
+import { prefersReducedMotion, onReducedMotionChange } from '../theme/motion.js'
+import { IDLE_PERIOD, idleLevel } from './IdleMotionMath.js'
 
 const GHOST_COLOR   = 0x3a7bd5
 const FILL_OPACITY  = 0.18
 const EDGE_OPACITY  = 0.9
-const PULSE_AMPL    = 0.05   // opacity pulse amplitude
-const PULSE_HZ      = 0.5
+const BREATH_AMPL   = 0.05   // the fill breathes FILL_OPACITY ± BREATH_AMPL
 
 export class ParametricPreviewView {
   /**
@@ -35,9 +42,11 @@ export class ParametricPreviewView {
     this._scene = scene
     this._group = new THREE.Group()
     scene.add(this._group)
-    /** @type {{fillMat: THREE.Material}[]} pulse targets */
+    /** @type {{fillMat: THREE.Material, key: string}[]} breath targets (key = entity ref → phase) */
     this._fills = []
     this._disposables = []
+    this._reduced = prefersReducedMotion()
+    this._unsubReduced = onReducedMotionChange(r => { this._reduced = r })
   }
 
   /**
@@ -67,7 +76,7 @@ export class ParametricPreviewView {
       edge.position.copy(fill.position)
       this._group.add(edge)
 
-      this._fills.push({ fillMat })
+      this._fills.push({ fillMat, key: e.ref })
       this._disposables.push({ geometry: geo, material: fillMat })
       this._disposables.push({ geometry: edgeGeo, material: edgeMat })
     }
@@ -87,12 +96,14 @@ export class ParametricPreviewView {
   }
 
   /**
-   * Per-frame gentle pulse — signals "this is a live, uncommitted preview".
+   * Per-frame idle breath — signals "this is a live, uncommitted preview".
    * @param {number} t — seconds (AppController loop clock)
    */
   tick(t) {
-    const pulse = FILL_OPACITY + PULSE_AMPL * Math.sin(2 * Math.PI * PULSE_HZ * t)
-    for (const f of this._fills) f.fillMat.opacity = pulse
+    for (const f of this._fills) {
+      f.fillMat.opacity = idleLevel(t, f.key, IDLE_PERIOD.draft,
+        FILL_OPACITY - BREATH_AMPL, FILL_OPACITY + BREATH_AMPL, this._reduced)
+    }
   }
 
   /** Remove children + dispose GPU resources (symmetric with update — #9). */
@@ -107,6 +118,8 @@ export class ParametricPreviewView {
   }
 
   dispose() {
+    this._unsubReduced?.()
+    this._unsubReduced = null
     this._clear()
     this._scene.remove(this._group)
   }

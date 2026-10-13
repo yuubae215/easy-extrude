@@ -200,6 +200,7 @@ export class ContextDemoController {
         dims:      entity.dimensions,
         position:  entity.position,
         labelText: `${prov.interval[0]}–${prov.interval[1]} ${prov.unit ?? ''} · unconfirmed`,
+        id:        prov.entityRef,
       })
     }
 
