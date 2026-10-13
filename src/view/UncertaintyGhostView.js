@@ -24,6 +24,7 @@
  */
 import * as THREE from 'three'
 import { prefersReducedMotion } from '../theme/motion.js'
+import { IDLE_PERIOD, idleLevel } from './IdleMotionMath.js'
 
 const COLLAPSE_DURATION = 0.8   // seconds: band shrinks onto the nominal box
 const FADE_DURATION     = 0.25  // seconds: residual fade-out after the snap
@@ -42,9 +43,12 @@ export class UncertaintyGhostView {
    * @param {{x,y,z}}      cfg.dims      entity dimensions
    * @param {{x,y,z}}      cfg.position  resolved entity center (non-axis components used)
    * @param {string}       cfg.labelText e.g. "2700–3000 mm · 未確定"
+   * @param {string}       cfg.id        the undecided thing's identity — the idle breath
+   *                                     takes its phase from it (N bands de-sync, ADR-166 M4d1)
    */
-  constructor(scene, container, { axis, interval, nominal, dims, position, labelText }) {
+  constructor(scene, container, { axis, interval, nominal, dims, position, labelText, id }) {
     this._scene   = scene
+    this._id      = id
     this._axis    = axis
     this._lo      = interval[0]
     this._hi      = interval[1]
@@ -212,9 +216,10 @@ export class UncertaintyGhostView {
     if (!this._visible) return false
 
     if (this._phase === 'idle') {
-      // Gentle opacity pulse: 0.08 .. 0.16 — static band under reduced motion
-      // (the information is "unresolved interval here", not the pulse).
-      this._band.material.opacity = this._reduced ? 0.12 : 0.12 + 0.04 * Math.sin(t * 2)
+      // The idle breath (ADR-166 M4d1): 0.08 .. 0.16 on the `unresolved` period,
+      // phase from identity — static at the middle under reduced motion (the
+      // information is "unresolved interval here", not the breath).
+      this._band.material.opacity = idleLevel(t, this._id, IDLE_PERIOD.unresolved, 0.08, 0.16, this._reduced)
       this._updateLabel(camera, renderer)
       return false
     }

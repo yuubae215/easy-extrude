@@ -146,12 +146,35 @@ artifacts
                 goal BRowsCatchUpWithTheStage
                 uuid 4f0dd0ec-d430-48ff-8188-ead48f1293f1
                 summary "B の残りの行 (背景に揃える行・DOM の開閉ほか) が A になるか、残す理由が書かれている (M4d)"
-                state ToBeDeveloped
-                labels support-exploring
 
-                    assumption TheInventoryRowsCloseOneByOne
-                    uuid 726be535-c8df-4be1-bd62-02a63fa70c6b
-                    summary "計画: M4d (B の残り — M4a の残し: キューブの選択の輪郭 boxHelper と SelectPulse、座標フレームの接続線、実体ごとの接地影。M4b の残し: 掴んでいる間の破線の行進がフレーム率依存)。各段は inventory の行を A にするか残す理由を書く。満期=GREP:docs/motion/inventory.md::M4d\s✓"
-                    artifacts
-                    - "docs/motion/inventory.md"
-                    - "src/MotionInventoryCoverage.test.js"
+                    strategy BySubStageOfTheRemainingRows
+                    uuid a6415df6-272f-4c47-92fa-8a2b50e326ca
+                    summary "M4d を 4 本に割る (当事者合意 2026-10-13): 残りの B で ✕ を持つ — 原則 #30 の『無統治の動き』に当たる — 待機の呼吸を先頭 (M4d1) に、選択の合図 (M4d2)・舞台の光に揃える (M4d3)・DOM の開閉 (M4d4) と続ける。同じ実体を別の ADR が作り直す行 (GraspGhostView — ADR-158) は段を持たず DEFERRAL_LEDGER が満期つきで受ける"
+
+                        goal IdleLoopsAreGoverned
+                        uuid 51d0c7da-59b9-4bde-aae6-f402a804c957
+                        summary "待機のループはどれも統治されている: 値は時計 t だけの関数 (フレーム率にも呼ばれた回数にも依らない)、位相は同一性から (N 個が揃わない)、周期は宣言された表 IDLE_PERIOD (待機帯 2〜6 s)、reduced では範囲の中央で静止。パラメトリックのプレビュー・領域作図・不確定の帯・違反のリンク・掴んだリンクの破線の行進が 1 つの源 IdleMotionMath から引く (M4d1)"
+                        labels support-verified
+
+                            solution IdleMotionIsOneSourceAndAsked
+                            uuid 112ac1a8-80bd-47e6-94f9-0bc33ae80212
+                            summary "M4d1 実施 (2026-10-13、当事者合意 — 俯瞰の推奨 2 点「M4d を 4 本に割る」「M4d1 から」に「両方おすすめで」): 純粋 src/view/IdleMotionMath.js (idleBreath / idleLevel / dashMarch、IDLE_PERIOD = breach 2 s・draft 3 s・unresolved 4 s)。LinkMotionMath.breachPulse はその breach 行に移した。ParametricPreviewView (位相 = 箱の ref)・RegionAuthoringWidget (要求の ref)・UncertaintyGhostView (entityRef / 唯一の枠 intake) が引き、前 2 者は reduced の境界を読み変更を追う (購読は dispose で解く)。SceneService の破線は `+= 0.018`/呼び出しを退役し、掴んだ瞬間のループ時計からの経過で dashMarch。src/view/IdleMotionMath.test.js が周期が待機帯に在り急ぐものほど短いこと・違反の呼吸が同じ表の 1 行であること・周期性と有界・N 個の位相が散ること・reduced で中央に静止・同じ時刻に 2 回聞いても破線が進まず 30 fps と 144 fps で同じ値になること (同じ要求を 2 回通す形)・reduced と時計の無いときに破線が止まることを問う。MotionIdentity.test.js が、見た目の欄を手書きの Math.sin で揺らす行と数値リテラルを += する行が src の純粋層の外に 0 であることを問う (旧コードに当てると 4 箇所のうち 3 箇所を捕まえた — 変数に入れてから代入する ParametricPreviewView は宣言した死角)"
+                            artifacts
+                            - "src/view/IdleMotionMath.test.js"
+                            - "src/view/LinkMotionMath.test.js"
+                            - "src/MotionIdentity.test.js"
+                            - "src/MotionInventoryCoverage.test.js"
+                            - "docs/motion/inventory.md"
+
+                        goal RemainingSubStagesCloseTheirRows
+                        uuid 40a760e8-b05b-4f2d-bde4-39cfa82e544b
+                        summary "M4d2〜M4d4 の行が A になるか、残す理由が書かれている"
+                        state ToBeDeveloped
+                        labels support-exploring
+
+                            assumption TheInventoryRowsCloseOneByOne
+                            uuid 726be535-c8df-4be1-bd62-02a63fa70c6b
+                            summary "計画: M4d を 4 本に割る (当事者合意 2026-10-13): M4d1 待機の呼吸の統治 (実施 — 下の goal) → M4d2 選択の合図 (SelectPulse の 2 曲線・選択の輪郭 boxHelper・座標フレームの接続線) → M4d3 舞台の光に揃える (起動の飛び込み・出現と消滅・スナップ・祝賀・ロボットの読み込み中、実体ごとの接地影) → M4d4 DOM の開閉。GraspGhostView は段を持たない (ADR-158 の段 G-9 — DEF-069)。各段は inventory の行を A にするか残す理由を書く。満期=GREP:docs/motion/inventory.md::M4d\s✓"
+                            artifacts
+                            - "docs/motion/inventory.md"
+                            - "src/MotionInventoryCoverage.test.js"
