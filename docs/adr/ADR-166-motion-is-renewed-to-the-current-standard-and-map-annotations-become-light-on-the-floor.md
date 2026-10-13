@@ -4,7 +4,7 @@
 - Date: 2026-10-11
 - Deciders: yuubae215, Claude
 - 段: 本 ADR の M1〜M4 (下の §段)。IA 再設計の順序表には載せない (画面の住所を変えないため)
-- Retires: なし — 宣言していた `GREP:src/view/AnnotatedRegionView.js::The\sBlueprint\sdevice` (製図台の装置 = 対角ハッチ・コーナー登録マーク) は M3a (2026-10-12) で退役済み。本 ADR は M4d3b〜M4d4 が残るので Proposed のまま (M3b・M4a・M4b は 2026-10-12、M4c・M4d1・M4d2・M4d3a は 2026-10-13 に実施) — Proposed の Retires は「在らねばならない」と問われるため、満期の来た行をここで閉じる
+- Retires: なし — 宣言していた `GREP:src/view/AnnotatedRegionView.js::The\sBlueprint\sdevice` (製図台の装置 = 対角ハッチ・コーナー登録マーク) は M3a (2026-10-12) で退役済み。本 ADR は M4d4 が残るので Proposed のまま (M3b・M4a・M4b は 2026-10-12、M4c・M4d1・M4d2・M4d3a・M4d3b は 2026-10-13 に実施) — Proposed の Retires は「在らねばならない」と問われるため、満期の来た行をここで閉じる
 - Supersedes / Superseded by: ADR-093 を部分的に置き換える (D3 Blueprint アトモスフィアの部分だけ — M3a で実施 2026-10-12。D1 位相を同一性から導く・D2 曲線 2 本・D6 reduced motion は継承)
 
 ## Context — Goal と力学 (§1.2 Goal)
@@ -71,10 +71,31 @@ Tier (Fact / Affordance / Delight) は従来どおり守る。棚卸しで出た
 | **M2 方向性を決める** (**実施 2026-10-12**) | モーション・アイデンティティ 5 軸を当事者と決め、CLAUDE.md に「モーション・アイデンティティ」節として固定する。背景 (SceneStage) のアトモスフィアを Void Grid 型から選び直す | CLAUDE.md に節があり、5 軸が埋まっている。**結果**: 節は CLAUDE.md、軸の母集団は animation-fx Step 1.5 から導出して `src/MotionIdentity.test.js` が問う |
 | **M3a マップ注釈 = 床の光** (**実施 2026-10-12**) | 案 B。注釈の名札を EntityLabel に揃える (名札の仕組みを 1 つに — ADR-155 D1 の続き)。投影・角度に依らず読める (見る角度を `MapVisualMath` の入力にする)。Zone の強さを役割で決める。Blueprint 装置を退役 | 純粋層テスト (位相の同一性・linear 禁止・reduced motion のフレーム一致を継承 + 角度の入力 + 役割の表)。刷新前後の静止画 `docs/motion/media/m3a-*.png` (動画は M3b の後に M3 全体で撮る) |
 | **M3b 選択・消滅・置く前** (**実施 2026-10-12**) | 選択時の見せ方 (BoxHelper の白い箱 → 光が強まって `land` で着地)、消滅演出 (P9 — ライフサイクルに `exiting`、論理の可視性と描画の可視性を 2 欄に分ける)、配置プレビュー (`MapPreviewMath`) を同じ光で描く | `exiting` の状態機械 (STATE_TRANSITIONS)、hit-test が退場中の注釈を拾わないこと、刷新前後の動画。**結果**: 下の「M3b で決めたこと」、実機の静止画 `docs/motion/media/m3b-*.png`。**動画は得られていない** — 下の「分かったこと」 |
-| **M4 残りの演出** | M1 の採点が低い順に作り直す。4 本に割った (当事者合意 2026-10-12): **M4a 状態の手掛かりの追従** (キューブのホバー・選択・違反・接近、座標フレームの減光、領域ゴーストの絞り込み — **実施 2026-10-12**) → **M4b リンク** (波紋 + リンク線を一体で — **実施 2026-10-12**) → **M4c 起動ホーム** (**実施 2026-10-13**) → **M4d B の残り** — 4 本に割った (当事者合意 2026-10-13): **M4d1 待機の呼吸の統治** (**実施 2026-10-13**) → **M4d2 選択の合図** (**実施 2026-10-13**) → M4d3 舞台の光に揃える — 2 本に割った (当事者合意 2026-10-13): **M4d3a 光と曲線** (**実施 2026-10-13**) → M4d3b ロボットの読み込みの語り + 接地影 → M4d4 DOM の開閉。`GraspGhostView` は段を持たない (ADR-158 — DEF-069) | M1 の表の全行が「今の水準」になるか、残す理由が書かれている。**M4a の結果**: 下の「M4a で決めたこと」、3 行が A へ (`docs/motion/inventory.md`)。**M4b の結果**: 下の「M4b で決めたこと」、C の 2 行を 1 行に束ねて A へ。**M4c の結果**: 下の「M4c で決めたこと」、C の最後の 1 行が A へ (C は 0 行)。**M4d1 の結果**: 下の「M4d1 で決めたこと」、B の 3 行が A へ (B は 10 行)。**M4d2 の結果**: 下の「M4d2 で決めたこと」、B の 1 行が A へ (B は 9 行)、A の 2 行 (キューブ・座標フレーム) の残しが閉じた。**M4d3a の結果**: 下の「M4d3a で決めたこと」、B の 4 行が A へ (B は 5 行)、A の 3 行 (不確定の帯・プレビュー・領域作図) の G4 の残しが閉じた |
+| **M4 残りの演出** | M1 の採点が低い順に作り直す。4 本に割った (当事者合意 2026-10-12): **M4a 状態の手掛かりの追従** (キューブのホバー・選択・違反・接近、座標フレームの減光、領域ゴーストの絞り込み — **実施 2026-10-12**) → **M4b リンク** (波紋 + リンク線を一体で — **実施 2026-10-12**) → **M4c 起動ホーム** (**実施 2026-10-13**) → **M4d B の残り** — 4 本に割った (当事者合意 2026-10-13): **M4d1 待機の呼吸の統治** (**実施 2026-10-13**) → **M4d2 選択の合図** (**実施 2026-10-13**) → M4d3 舞台の光に揃える — 2 本に割った (当事者合意 2026-10-13): **M4d3a 光と曲線** (**実施 2026-10-13**) → **M4d3b ロボットの読み込みの語り + 接地影** (**実施 2026-10-13**) → M4d4 DOM の開閉。`GraspGhostView` は段を持たない (ADR-158 — DEF-069) | M1 の表の全行が「今の水準」になるか、残す理由が書かれている。**M4a の結果**: 下の「M4a で決めたこと」、3 行が A へ (`docs/motion/inventory.md`)。**M4b の結果**: 下の「M4b で決めたこと」、C の 2 行を 1 行に束ねて A へ。**M4c の結果**: 下の「M4c で決めたこと」、C の最後の 1 行が A へ (C は 0 行)。**M4d1 の結果**: 下の「M4d1 で決めたこと」、B の 3 行が A へ (B は 10 行)。**M4d2 の結果**: 下の「M4d2 で決めたこと」、B の 1 行が A へ (B は 9 行)、A の 2 行 (キューブ・座標フレーム) の残しが閉じた。**M4d3a の結果**: 下の「M4d3a で決めたこと」、B の 4 行が A へ (B は 5 行)、A の 3 行 (不確定の帯・プレビュー・領域作図) の G4 の残しが閉じた。**M4d3b の結果**: 下の「M4d3b で決めたこと」、B の 1 行 (ロボットの描画) が A へ (B は 4 行)、A の 1 行 (キューブ) の M2 の残し (接地影) が閉じた |
 
 M3 は M2 の後に置く — 床の光は M2 で決める背景の光源を共有するので、先に作ると光源が 2 つになる (§1.1)。
 M3 は 2 本に割った (当事者合意 2026-10-12): `exiting` の状態追加と見た目の刷新が同じ差分に混ざるとレビューできないため。
+
+**M4d3b で決めたこと (2026-10-13、当事者合意 — 俯瞰の推奨 3 点「影は Solid と腕の台座 (`ImportedMeshView` は残し)・真下に落ちる」「DOM の `LOADING…` は残す」「腕は `fade` 0.3 s で入り、光は同じ瞬間に `exit`」に「All good, please go ahead!」):**
+
+| 問い | 決定 | 正本 |
+|---|---|---|
+| 待つ間に何を言うか | **どこ**に来るか。腕は初見まで非表示 (ADR-150 D2) なので、台座の床 (base フレームの Z=0) に舞台の光の点を置く。DOM の `LOADING…` は**なぜ**を言うので残す — 2 つは別の事実で、第二の源ではない | `RobotRevealMath.BEACON` |
+| 光の形と呼吸 | 色は `STAGE_LIGHT.color` (光は 1 つ)、径は台座 (Ø150 mm) の 2 倍。`unresolved` (4 s — まだ決まっていない) で `lo..hi` を呼吸し、位相はロボットの id (N 台が同時に読み込んでも揃わない)。reduced では中央で静止 | `beaconFrame` / `IDLE_PERIOD.unresolved` |
+| 着地 | 腕は `fade` (不透明度) で 0.3 s かけて入り、光は同じ瞬間に `exit` (保ってから去る、0.85× へ) で消え、消え切ったら解放する (基数 1 → 0、原則 #9)。読み込みが落ちて骨格を見せるときも同じ着地 (骨格も初見)。reduced では即時 | `ARM_REVEAL_CUE` / `BEACON_CUE` |
+| 状態の数 | **増やさない**。初見は論理 2 状態 (待機 / 表示済み) のまま、着地は時計から導く**描画の度合い** (M4a の「目標と度合いの 2 欄」と同じ形)。3 状態にしないので状態機械の図は起こさない | STATE_LEDGER「腕の初見」 |
+| 腕の不透明度の書き手 | **`_writeLook` 1 つ** = 素材の不透明度 × 未検証の半透明 (ADR-144 D4) × 到着。`_setUnverifiedLook` と `setToolMount` は事実を書いて `_writeLook` を呼ぶだけになった (M4d2 の教訓: 度合いの読み手を足すと、外の直接の書き手は次のフレームで上書きされる) | `RobotStage._writeLook` |
+| 接地影の光源 | 光は 1 つ — 床の光だまりは上から来るので影は**真下**に落ちる (接地影)。リムは輪郭を分ける逆光で影を作らないので、2 つ目の影の源ではない。色は光を抜いた床 `backdropEdge` (新しい色を足さない) | `GroundShadowMath.SHADOW` |
+| 接地影の形 | 描いたジオメトリの点を床へ射影した最小面積の外接長方形 (回した箱は回した影)、縁は smoothstep で柔らかく、浮くと `fade` の減衰 (1 − x)² で薄まり縁が広がる。長さはすべて足跡に比例 (mm と m で同じ絵 — 原則 #27)。平らなスケッチ・床より下の体は影を落とさない。腕は台座の丸で、到着と一緒に濃くなる | `footprintOf` / `groundShadowFrame` / `robotFootprint` |
+| 範囲 | Solid / Profile (`MeshView`) と腕。`ImportedMeshView` は別クラスで、点群が大きく足跡の計算を毎回の差し替えで払う設計を別に決める必要があるので**残し** (`ImportedMeshView` は動きを持たず inventory の母集団の外 — 影を持たないことは STATE_LEDGER「接地影」の行が言う) | — |
+| 機械が問う所 (Q3) | `RobotRevealMath.test.js` (光の色 = 舞台の光・周期・N 台の位相・reduced・退場の中点 0.875 = inCubic・到着の中点 0.75 = outQuad)、`GroundShadowMath.test.js` (色・回した箱の面積・浮きの中点 0.25・mm/m・0 の場合)、`RobotStageLook.test.js` (腕の素材を書くメソッドの個数 — 旧コードに当てると落ちる)、`e2e/robot-appearance.spec.js` (止めた間は光が在り影が無い、着地後は光が解放され影が在る、失敗でも光が消える) | 各テスト |
+
+**語彙 (原則 #33):** 「腕はここに来る」は既に在る語 (舞台の光・`unresolved`・`fade` / `exit`・同一性の位相) で言えた — 線だけをつないだ。足した語は**接地影** 1 つ (M2 で名指しして残した語) で、高さという事実に画素を与えるもの。
+
+**M4d3b で分かったこと (原則 #19):**
+- **書き手の数え方は「メソッド単位」が効く。** 腕の素材の不透明度を書く行は 3 つのメソッドに散っていたが、どれも `material.opacity = …` という同じ形で、行を grep しても「どこが書いてよいか」は言えない。数える単位をメソッドにすると (`RobotStageLook.test.js`)、許された書き手の**集合**を宣言でき、空の集合も fail にできる (原則 #31)。M4d2 の「度合いの読み手に変えた PR は、その画素の外の書き手を数える」をここでは**実装の前に**当てた (欠陥は出荷していない — 予防なので原則も Yellow Card も足していない。#4 の検査の形の 1 例)。
+
+**実機:** e2e (Chromium、URDF の取得を止める) で、待つ間の光の存在・影の不在、着地後の光の解放・影の存在を確かめた。**検証できていないこと:** 実機での見え (人の目 — 光の明るさと影の濃さの値は当て推量で、撮影していない)、時間軸の動画 (M3b と同じ理由)、Solid の接地影の e2e (純粋層のテストと配線の読みのみ)。
 
 **M4d3a で決めたこと (2026-10-13、当事者合意 — 俯瞰の推奨 3 点「M4d3 を 3a 光と曲線 / 3b 読み込みの語り + 接地影 に割る」「読み込み中は台座の床に舞台の光の点」「地の色は状態のトーン、白く飛ぶ所だけ舞台の光」に「推奨案に賛成」):**
 
@@ -328,6 +349,7 @@ reduced 境界の外) を含む 9 本を採点した。どちらも M4 の最初
 | `src/view/CueFollowMath.js` (新設) / `MotionMath.js` (`easeOutQuad`) / `MapVisualMath.js` (adapter) / `MeshView.js` / `CoordinateFrameView.js` / `RegionGhostView.js` / `AppController` (tick を 2 行) | M4a — 状態の手掛かりの追従、接近の色 (**実施**)。当たり判定・選択の書き手 (`SelectionManager`)・接近の強さの計算 (`computeApproachWarmth`)・`SnapFlash` の曲線は触っていない |
 | `src/view/LinkMotionMath.js` / `LinkBindEffect.js` (新設) / `SpatialLinkView.js` / `RippleEffect.js` / `LinkCreationHandler` / `SceneService` (`_linkClock`、`id` を渡す) / `AppController` (`_updateWorldPoses(t)`) | M4b — リンクの成立・強調・違反 (**実施**)。違反の判定 (`_evaluateClearanceLinks`)・リンクの作成と undo・LINK NETWORK パネル・デモの呼び手 (`ContextDemoController`) は触っていない |
 | `src/view/LayoutPlanMath.js` (新設) / `src/components/Home/HomeScreen.jsx` / `ChromeMath.js` (`attentionBreath` / `itemEnterDelay`、入場の fill を `backwards`) / `ContextInspector` の `Badge` と 4 つの呼び手 / `uiStore` (`launchHomePlans`) / `AppController` (`_layoutPlans`) | M4c — 起動ホームの上面図・光・スタッガー、デモのバッジの呼吸 (**実施**)。stage の取得 (`claimStage` / `releaseStage`)・テンプレの読み込み経路 (`docFromLayout` → `loadContext`)・カタログ・ツアーの進行・BootReveal は触っていない |
+| `src/view/RobotRevealMath.js` / `GroundShadowMath.js` / `GroundShadow.js` (新設) / `RobotStage.js` (`tick`・`_writeLook`・光・影) / `RobotStageSet.js` (`tick`・`id` を渡す・e2e の読み出し) / `MeshView.js` (`_writeShadow`) / `AppController` (tick を 1 行、`robotAppearance()` に 2 欄) | M4d3b — 読み込み中の光、腕の着地、接地影 (**実施**)。読み込みの寿命 (`setRenderStyle` の token・`_pendingStyle`・失敗の経路)・関節と preview の決定・`RobotMeshLoadingNotice`・舞台の光 (`StageMath`)・`ImportedMeshView` は触っていない |
 | `CommandFeedbackMath.js` (`flash`・`sparkScale`・`fade` の減衰) / `LandingEffects.js` / `SnapFeedbackMath.js` / `SnapFlash.js` / `CelebrationMath.js` (`flash`・`particleProgress`) / `CelebrationField.js` (インスタンスごとの色) / `Celebration.jsx` / `RegionAuthoringWidget.js` / `UncertaintyGhostView.js` / `ParametricPreviewView.js` / `RegionGhostMath.js` (`GAP_COLOR`) | M4d3a — 光と曲線 (**実施**)。演出を出す条件 (`lifecycleDescriptor` のラベル表・`snapTransition`・`pickCelebration`)・`MotionGovernor` の予算・`BootReveal` / `StageMath`・`RobotStage`・`MeshView` は触っていない |
 | `src/view/SelectPulseMath.js` (新設) / `SelectPulse.js` / `MeshView.js` (輪郭) / `RotationHandler` (1 行の削除) / `CoordinateFrameView.js` (接続線) / `SceneService` (`showConnection()` の引数) | M4d2 — 選択の合図の 2 曲線、輪郭の着地、接続線の減光 (**実施**)。選択の書き手 (`SelectionManager` の書き込み順・`reassertHighlight`)・合図を出す条件 (主選択の Solid に入った瞬間だけ)・`ImportedMeshView` / `MeasureLineView` の輪郭は触っていない |
 | `src/view/IdleMotionMath.js` (新設) / `LinkMotionMath.js` (`breachPulse` を表の 1 行へ) / `ParametricPreviewView.js` / `RegionAuthoringWidget.js` / `UncertaintyGhostView.js` / `SpatialLinkView.js` (`grabElapsed`) / `SceneService` (`_grabClockStart`) / `ContextController`・`ContextDemoController` (`id` を渡す) | M4d1 — 待機の呼吸の統治 (**実施**)。帯の収束の曲線 (`collapsing` / `fading`)・`RegionResolveEffect`・張力の計算・プレビューと作図の色 (G4 は M4d3)・配置の確定の経路は触っていない |
