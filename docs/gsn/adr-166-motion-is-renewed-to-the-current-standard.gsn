@@ -166,15 +166,31 @@ artifacts
                             - "src/MotionInventoryCoverage.test.js"
                             - "docs/motion/inventory.md"
 
+                        goal ArmSaysWhereAndBodiesStandOnTheFloor
+                        uuid fe745259-cacb-4245-aa91-917ea2ee8568
+                        summary "読み込み中の腕は、どこに来るかを言う (台座の床に舞台の光の点が unresolved で呼吸し、位相はロボットの id)。着地で腕は fade で入り光は exit で同じ瞬間に消える。体 (Solid と腕) は床に接地影を落とし、浮けば薄まる — 光は 1 つ (真下に落ちる)、色は光を抜いた床"
+                        labels support-verified
+
+                            solution RevealAndShadowArePureAndAsked
+                            uuid 9d39cf43-3889-434a-9fea-7c2bf417db7b
+                            summary "M4d3b 実施 (2026-10-13、当事者合意 — 俯瞰の推奨 3 点「影は Solid + 腕の台座」「DOM の LOADING… は残す」「腕は fade 0.3 s・光は exit で同時に」に「All good, please go ahead!」): 純粋 src/view/RobotRevealMath.js (beaconFrame / armReveal / robotFootprint — CueFollowMath の区間と IdleMotionMath を引く) と src/view/GroundShadowMath.js (footprintOf = 床への射影の最小面積外接長方形 / groundShadowFrame / シェーダの双子 shadowFalloff)。view は GroundShadow.js (MeshView と RobotStage が 1 つずつ持ち dispose で解く)。腕の素材の書き手は RobotStage._writeLook 1 つに集約 (旧 _setUnverifiedLook / setToolMount の直接書き込みを退役) — src/view/RobotStageLook.test.js がメソッド単位で数え、旧コードに当てると落ちることを確かめた。RobotRevealMath.test.js が光の色 = STAGE_LIGHT、周期 = unresolved、N 台の位相が散る、reduced で中央に静止・着地は即時、退場の中点 0.875 (inCubic — 線形なら 0.5)、到着の中点 0.75 (outQuad) を問う。GroundShadowMath.test.js が影の色 = backdropEdge、回した箱の足跡の面積が箱と等しい (AABB ではない)、浮くと (1 − x)² (中点 0.25)、mm と m で同じ絵、平らなスケッチと床下は 0 を問う。e2e/robot-appearance.spec.js が URDF を止めた間は光が在り影が無く、着地後は光が解放され影が在ること、読み込み失敗でも光が消えることを問う"
+                            artifacts
+                            - "src/view/RobotRevealMath.test.js"
+                            - "src/view/GroundShadowMath.test.js"
+                            - "src/view/RobotStageLook.test.js"
+                            - "src/MotionInventoryCoverage.test.js"
+                            - "e2e/robot-appearance.spec.js"
+                            - "docs/motion/inventory.md"
+
                         goal RemainingSubStagesCloseTheirRows
                         uuid 40a760e8-b05b-4f2d-bde4-39cfa82e544b
-                        summary "M4d3b〜M4d4 の行が A になるか、残す理由が書かれている (M4d2 と M4d3a は 2026-10-13 に実施 — ADR-166 本文)"
+                        summary "M4d4 の行が A になるか、残す理由が書かれている (M4d2・M4d3a・M4d3b は 2026-10-13 に実施 — ADR-166 本文)"
                         state ToBeDeveloped
                         labels support-exploring
 
                             assumption TheInventoryRowsCloseOneByOne
                             uuid 726be535-c8df-4be1-bd62-02a63fa70c6b
-                            summary "計画: M4d を 4 本に割る (当事者合意 2026-10-13): M4d1 待機の呼吸の統治 (実施 — 下の goal) → M4d2 選択の合図 (SelectPulse の 2 曲線・選択の輪郭 boxHelper・座標フレームの接続線) → M4d3 舞台の光に揃える — 2 本に割った (当事者合意 2026-10-13): M4d3a 光と曲線 (起動の飛び込み・出現と消滅・スナップ・祝賀 — 実施) → M4d3b ロボットの読み込み中・実体ごとの接地影 → M4d4 DOM の開閉。GraspGhostView は段を持たない (ADR-158 の段 G-9 — DEF-069)。各段は inventory の行を A にするか残す理由を書く。満期=GREP:docs/motion/inventory.md::M4d\s✓"
+                            summary "計画: M4d を 4 本に割る (当事者合意 2026-10-13): M4d1 待機の呼吸の統治 (実施 — 下の goal) → M4d2 選択の合図 (SelectPulse の 2 曲線・選択の輪郭 boxHelper・座標フレームの接続線) → M4d3 舞台の光に揃える — 2 本に割った (当事者合意 2026-10-13): M4d3a 光と曲線 (起動の飛び込み・出現と消滅・スナップ・祝賀 — 実施) → M4d3b ロボットの読み込み中・実体ごとの接地影 (実施 — 上の goal) → M4d4 DOM の開閉。GraspGhostView は段を持たない (ADR-158 の段 G-9 — DEF-069)。各段は inventory の行を A にするか残す理由を書く。満期=GREP:docs/motion/inventory.md::M4d\s✓"
                             artifacts
                             - "docs/motion/inventory.md"
                             - "src/MotionInventoryCoverage.test.js"

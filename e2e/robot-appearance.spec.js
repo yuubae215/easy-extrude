@@ -241,4 +241,32 @@ test('when the mesh cannot load, the arm is shown as the skeleton and the user i
     { timeout: 30_000 }).toBe('skeleton')
   await expect(page.getByText(/Could not load the realistic robot mesh/)).toBeVisible()
   await expect.poll(async () => (await appearance(page)).loading).toBe(false)
+  // The fallback is a first look too: the waiting light hands the spot over (ADR-166 M4d3b).
+  await expect.poll(async () => Object.values((await appearance(page)).beacons).join()).toBe('false')
+})
+
+test('while the first look loads, the base shows WHERE the arm is coming; the light goes out when it lands (ADR-166 M4d3b)', async ({ page }) => {
+  // Hold the mesh so the spawn sits inside the load (same gate as the ADR-150 test).
+  let release
+  const gate = new Promise(r => { release = r })
+  await page.route('**/robot/ur5e_visual/urdf/ur5e.urdf', async route => {
+    await gate
+    await route.continue()
+  })
+  const errors = await boot(page)
+  await addRobot(page)
+  await expect.poll(async () => Object.keys((await appearance(page)).shown).length).toBe(1)
+  await page.waitForTimeout(500)
+  // Waiting: the arm is hidden, the light is on its base, and a hidden arm casts nothing.
+  let a = await appearance(page)
+  expect(Object.values(a.shown)).toEqual([null])
+  expect(Object.values(a.beacons)).toEqual([true])
+  expect(Object.values(a.shadows)).toEqual([false])
+  release()
+  // Landed: the arm is drawn, the light has gone out (and been released), the arm stands on its shadow.
+  await expect.poll(async () => Object.values((await appearance(page)).shown).join(), { timeout: 30_000 }).toBe('realistic')
+  await expect.poll(async () => Object.values((await appearance(page)).beacons).join()).toBe('false')
+  a = await appearance(page)
+  expect(Object.values(a.shadows)).toEqual([true])
+  expect(errors).toEqual([])
 })

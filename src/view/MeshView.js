@@ -18,6 +18,8 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { shellCornerSets } from '../domain/hollowBody.js'
 import { geometryEngine } from '../service/GeometryEngine.js'
 import { EntityLabel } from './EntityLabel.js'
+import { GroundShadow } from './GroundShadow.js'
+import { footprintOf } from './GroundShadowMath.js'
 import { COLOR, hexNumber, dim } from '../theme/tokens.js'
 import { SUBELEMENT_COLORS } from '../theme/semantic.js'
 import { prefersReducedMotion, onReducedMotionChange } from '../theme/motion.js'
@@ -103,6 +105,17 @@ export class MeshView {
     this._shell = null
     /** @type {import('three').Vector3[]|null} last corners drawn — re-drawn when the shell changes */
     this._lastCorners = null
+
+    // ── Ground shadow (ADR-166 M4d3b) ──────────────────────────────────────
+    // One per body, born here and released in dispose (原則 #9). Its footprint
+    // is read off the geometry actually drawn — every geometry path (sync,
+    // worker, extruded profile, shell) replaces `cuboid.geometry`, so the one
+    // reader in `_writeShadow` follows all of them without a hook in each.
+    this._shadow = new GroundShadow(scene)
+    /** @type {THREE.BufferGeometry|null} the geometry `_footprint` was read from */
+    this._shadowGeo = null
+    /** @type {ReturnType<typeof footprintOf>} */
+    this._footprint = null
 
     // ── Floating name/class label (ADR-070 決定1) ─────────────────────────
     // Staged disclosure: shown while selected or hovered (never always-on —
@@ -587,6 +600,22 @@ export class MeshView {
    */
   tick(t) {
     this._syncEmissive(t)
+    this._writeShadow()
+  }
+
+  /**
+   * Sole writer of this body's ground shadow (ADR-166 M4d3b, 原則 #4). The
+   * footprint is re-read only when the drawn geometry has been replaced; a
+   * hidden body casts nothing.
+   */
+  _writeShadow() {
+    const geo = this.cuboid.geometry
+    if (geo !== this._shadowGeo) {
+      this._shadowGeo = geo
+      const pos = geo.attributes?.position
+      this._footprint = pos ? footprintOf(pos.array) : null
+    }
+    this._shadow.write(this._footprint, { visible: this.cuboid.visible })
   }
 
   /**
@@ -965,6 +994,7 @@ export class MeshView {
   dispose(scene) {
     this._unsubReduced?.()
     this._unsubReduced = null
+    this._shadow.dispose()
     if (this._label) {
       this._label.dispose()
       this._label = null

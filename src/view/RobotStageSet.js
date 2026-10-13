@@ -138,7 +138,7 @@ export class RobotStageSet {
       if (this._stages.has(id)) continue
       // The stage is told the scene's style AT BIRTH (ADR-150 D2), so it can
       // stay hidden until that style lands instead of flashing the skeleton.
-      const stage = new RobotStage(this._scene, { declaredStyle: this._renderStyle, createLabel: this._createLabel })
+      const stage = new RobotStage(this._scene, { id, declaredStyle: this._renderStyle, createLabel: this._createLabel })
       this._stages.set(id, stage)
       // The obligation "a new stage draws the style this scene declared" lives
       // HERE, on the event that creates the stage, not next to the declaration
@@ -261,6 +261,38 @@ export class RobotStageSet {
 
   /** @param {string} id @returns {boolean} */
   has(id) { return this._stages.has(id) }
+
+  /**
+   * Advance every stage's clock-driven look (ADR-166 M4d3b — the waiting
+   * light, the arm's arrival, the ground shadow). Once per frame, by the owner's loop.
+   * @param {number} t loop clock (seconds)
+   */
+  tick(t) {
+    for (const stage of this._stages.values()) stage.tick(t)
+  }
+
+  /**
+   * Which stages still show the waiting light, keyed by robot id (read-only —
+   * the e2e lane; the unit lanes cannot build a stage).
+   * @returns {Record<string, boolean>}
+   */
+  beacons() {
+    /** @type {Record<string, boolean>} */
+    const out = {}
+    for (const [id, stage] of this._stages) out[id] = stage.beaconPresent
+    return out
+  }
+
+  /**
+   * Which stages draw a ground shadow, keyed by robot id (read-only — e2e).
+   * @returns {Record<string, boolean>}
+   */
+  shadows() {
+    /** @type {Record<string, boolean>} */
+    const out = {}
+    for (const [id, stage] of this._stages) out[id] = stage.shadowDrawn
+    return out
+  }
 
   /** The style this scene DECLARES (原則 #4 — only `setRenderStyle` writes it). */
   get renderStyle() { return this._renderStyle }

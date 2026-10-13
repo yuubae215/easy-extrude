@@ -10,6 +10,13 @@ import {
 import { instantiateRealisticRobot } from './realisticRobotAsset.js'
 import { axialToolLengthM, tcpMarkerPose, toolParts } from '../domain/robotTool.js'
 import { COLOR } from '../theme/tokens.js'
+import { prefersReducedMotion, onReducedMotionChange } from '../theme/motion.js'
+import { CUE_REST, settledCue, retargetCue } from './CueFollowMath.js'
+import {
+  ARM_REVEAL_CUE, BEACON, BEACON_CUE, armReveal, beaconFrame, robotFootprint,
+} from './RobotRevealMath.js'
+import { radialSprite } from './DecalTextures.js'
+import { GroundShadow } from './GroundShadow.js'
 
 /**
  * How much of its own opacity the skeleton keeps while it draws a CLIENT
@@ -56,8 +63,9 @@ function sameHand(a, b) {
  * boundary and get applied here via `setJointValues`, not solved locally.
  *
  * OWNERSHIP: a persistent view owned by `SceneView` (constructed and disposed
- * there), same pattern as `SceneStage` — no MotionGovernor involvement since
- * nothing here animates on its own.
+ * there), same pattern as `SceneStage` — no MotionGovernor involvement: its
+ * only motion (the waiting light, the arm's arrival, ADR-166 M4d3b) is a
+ * function of the loop clock, advanced by the owner's `tick(t)`.
  *
  * The robot model is a self-contained 6-DOF "skeleton" URDF
  * (`public/robot/skeleton_arm.urdf`) whose joint origins reproduce the
@@ -80,6 +88,13 @@ function sameHand(a, b) {
  * cannot be loaded, the skeleton is revealed instead and the rejection reaches
  * the owner (RobotStageSet → toast), so the arm never silently stays invisible
  * (原則 #11).
+ *
+ * WHERE, WHILE WAITING (ADR-166 M4d3b): during that first look a point of the
+ * stage light lies on the base frame's floor and breathes (`unresolved`), so the
+ * empty base says "an arm is coming HERE" — the DOM notice says why. When the
+ * look lands, the arm comes in on `fade` and the light goes out on `exit` in
+ * the same instant (`RobotRevealMath`). The arm also lays a contact shadow on
+ * the floor (`GroundShadow`), like every body.
  */
 export class RobotStage {
   /**
@@ -97,6 +112,10 @@ export class RobotStage {
   constructor(scene, opts = {}) {
     this._scene = scene
     this.robot = null
+    /** The robot's id — the identity the waiting light's phase comes from (ADR-093 D1). */
+    this._id = opts.id ?? null
+    this._reduced = prefersReducedMotion()
+    this._unsubReduced = onReducedMotionChange(r => { this._reduced = r })
     /**
      * The tool mount this arm draws its tool and TCP marker from (ADR-151), or
      * null when the robot declares none. Only `setToolMount` writes it after
@@ -158,8 +177,41 @@ export class RobotStage {
     this._awaitingFirstLook =
       assertRenderStyle(opts.declaredStyle ?? ROBOT_RENDER_STYLE.SKELETON) !== ROBOT_RENDER_STYLE.SKELETON
 
+    /**
+     * The arm's arrival (ADR-166 M4d3b): the segment follows the first-look
+     * fact in `tick`; the level multiplies the arm's opacity in `_writeLook`.
+     * An arm drawn from birth has nothing to arrive from — settled at 1.
+     */
+    this._revealSeg = this._awaitingFirstLook ? CUE_REST : settledCue(1)
+    this._revealLevel = this._awaitingFirstLook ? 0 : 1
+    /**
+     * The waiting light — exists only while there is something to wait for:
+     * cardinality 1 from birth while the first look is pending, 0 otherwise,
+     * released by `_releaseBeacon` once it has gone out (原則 #9).
+     * @type {THREE.Mesh|null}
+     */
+    this._beacon = null
+    this._beaconSeg = settledCue(1)
+    if (this._awaitingFirstLook) {
+      this._beacon = new THREE.Mesh(
+        new THREE.CircleGeometry(BEACON.radius, 48),
+        new THREE.MeshBasicMaterial({
+          map: radialSprite(BEACON.color),   // module-owned texture — not disposed here
+          transparent: true,
+          opacity: 0,
+          blending: THREE.AdditiveBlending,
+          depthWrite: false,
+        }),
+      )
+      this._beacon.name = 'robotBeacon'
+      this._beacon.position.z = 0.01   // on the base frame's floor, a hair above it
+      this._group.add(this._beacon)
+    }
+    this._shadow = new GroundShadow(scene)
+
     this._attachRobot(this._buildSkeletonRobot())
     this.previewSolution(null)
+    this._writeLook()
   }
 
   /** Parses the bundled primitive-geometry skeleton. Synchronous, no network (ADR-088 §1.1). */
@@ -332,17 +384,9 @@ export class RobotStage {
     this._hand = hand ? JSON.parse(JSON.stringify(hand)) : null
     if (!this.robot) return
     this._detachTool()
-    const before = this._materials.length
     this._attachTool(this.robot)
-    // Only the NEW materials need the current look; the arm's already carry it.
-    if (this._unverified) {
-      for (const [material, opacity] of this._materials.slice(before)) {
-        material.transparent = true
-        material.opacity = opacity * UNVERIFIED_OPACITY
-        material.depthWrite = false
-        material.needsUpdate = true
-      }
-    }
+    // The new tool's materials take the arm's current look from its one writer.
+    this._writeLook()
   }
 
   /** Removes and frees the current tool + marker (the release paired with `_attachTool`, 原則 #9). */
@@ -518,14 +562,11 @@ export class RobotStage {
     this._renderStyle = style
     // Carry the pose/look this stage was already showing onto the new
     // geometry — a style swap must not reset a mid-preview arm to rest.
-    // `_attachRobot` just cloned fresh materials at their native opacity, so
-    // `_unverified` must be reset to match BEFORE calling `_setUnverifiedLook`
-    // — otherwise its no-redundant-work guard (`_unverified === unverified`)
-    // sees the old flag, believes the new materials already carry the old
-    // look, and never actually writes them.
+    // `_attachRobot` just cloned fresh materials at their native opacity; the
+    // one look writer composes the carried facts onto them.
     if (priorJoints) this.setJointValues(priorJoints)
-    this._unverified = false
-    this._setUnverifiedLook(wasUnverified)
+    this._unverified = wasUnverified
+    this._writeLook()
     this._endFirstLook()
   }
 
@@ -596,12 +637,77 @@ export class RobotStage {
   _setUnverifiedLook(unverified) {
     if (this._unverified === unverified) return
     this._unverified = unverified
+    this._writeLook()
+  }
+
+  /**
+   * **Sole writer of this arm's material look** (原則 #4 — ADR-166 M4d3b). The
+   * opacity is the product of the facts that thin it: the material's own
+   * opacity × the unverified ghost (ADR-144 D4) × the arm's arrival. Before
+   * M4d3b `_setUnverifiedLook` and `setToolMount` wrote materials directly;
+   * the moment a clock-driven arrival also reads the opacity, a second writer
+   * becomes a last-write-wins race (the M4d2 lesson) — so every path now sets
+   * its fact and calls this. `RobotStageLook.test.js` counts the writers.
+   */
+  _writeLook() {
+    const k = (this._unverified ? UNVERIFIED_OPACITY : 1) * this._revealLevel
+    const solid = k >= 1
     for (const [material, opacity] of this._materials) {
-      material.transparent = unverified || opacity < 1
-      material.opacity = unverified ? opacity * UNVERIFIED_OPACITY : opacity
-      material.depthWrite = !unverified
-      material.needsUpdate = true
+      const transparent = !solid || opacity < 1
+      if (material.transparent !== transparent || material.depthWrite !== solid) {
+        material.transparent = transparent
+        material.depthWrite = solid
+        material.needsUpdate = true
+      }
+      material.opacity = opacity * k
     }
+  }
+
+  /**
+   * Per-frame motion (ADR-166 M4d3b) — called once per frame by the owner
+   * (`RobotStageSet.tick`). The arm's arrival and the waiting light follow the
+   * first-look fact; the ground shadow follows the base.
+   * @param {number} t loop clock (seconds)
+   */
+  tick(t) {
+    const r = this._reduced
+    const shown = this._awaitingFirstLook ? 0 : 1
+    this._revealSeg = retargetCue(t, this._revealSeg, shown, ARM_REVEAL_CUE, r)
+    const level = armReveal(t, this._revealSeg, r)
+    if (level !== this._revealLevel) {
+      this._revealLevel = level
+      this._writeLook()
+    }
+    if (this._beacon) {
+      this._beaconSeg = retargetCue(t, this._beaconSeg, 1 - shown, BEACON_CUE, r)
+      const f = beaconFrame(t, this._id, this._beaconSeg, r)
+      if (f.present <= 0) this._releaseBeacon()
+      else {
+        this._beacon.material.opacity = f.opacity
+        this._beacon.scale.setScalar(f.scale)
+      }
+    }
+    const p = this._group.position
+    this._shadow.write(robotFootprint(p.x, p.y, p.z), {
+      visible: this._group.visible && !!this.robot?.visible,
+      round: Infinity,             // a pedestal is round
+      strength: this._revealLevel, // the shadow arrives with the arm
+    })
+  }
+
+  /** Whether the waiting light is on this stage (read-only — e2e, ADR-166 M4d3b). */
+  get beaconPresent() { return this._beacon !== null }
+
+  /** Whether the arm's ground shadow is drawn (read-only — e2e). */
+  get shadowDrawn() { return this._shadow.drawn }
+
+  /** The release paired with the waiting light's creation in the constructor (原則 #9). */
+  _releaseBeacon() {
+    if (!this._beacon) return
+    this._group.remove(this._beacon)
+    this._beacon.geometry.dispose()
+    this._beacon.material.dispose()
+    this._beacon = null
   }
 
   /**
@@ -707,6 +813,10 @@ export class RobotStage {
     // `setRenderStyle`'s superseded branch) instead of relying on GC.
     this._styleLoadToken++
     this._pendingStyle = null
+    this._unsubReduced?.()
+    this._unsubReduced = null
+    this._releaseBeacon()
+    this._shadow.dispose()
     this._tcpLabel?.dispose()
     this._tcpLabel = null
     RobotStage._disposeTree(this.robot)

@@ -1095,6 +1095,11 @@ export class AppController {
         // very frames the skeleton flashed — this lane is the one that sees it.
         shown:    this._sceneView.robotStages?.shownStyles?.() ?? {},
         loading:  this._sceneView.robotStages?.loading ?? false,
+        // ADR-166 M4d3b: where an arm is coming — the waiting light per arm
+        // (true while its first look is pending and until the light has gone
+        // out) and whether the arm lays its ground shadow.
+        beacons:  this._sceneView.robotStages?.beacons?.() ?? {},
+        shadows:  this._sceneView.robotStages?.shadows?.() ?? {},
       }),
       // Read-only camera snapshot (position / orbit target / up). Console debug
       // aid and the E2E regression guard for the Map Mode camera-reset contract
@@ -4686,6 +4691,9 @@ export class AppController {
       // updateLabelPosition() below also reads _group.position set here — no change needed.
       this._service._updateWorldPoses(t)
       this._syncRobotStage()   // robot skeleton follows the robot_base CF (ADR-084 §2)
+      // The waiting light, the arm's arrival and its ground shadow (ADR-166 M4d3b) —
+      // after the pose sync so the shadow stands under this frame's base.
+      this._sceneView.robotStages?.tick(t)
       this._sceneView.render()
       this._sceneView.robotStages?.updateLabelPositions(this._sceneView.activeCamera)
       if (this._gizmoView) this._gizmoView.update()
