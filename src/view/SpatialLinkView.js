@@ -20,6 +20,13 @@
  *   references → amber  #F59E0B
  *   represents → rose   #F43F5E
  *
+ * Motion (ADR-166 M4b): the highlight and the violation are TARGETS (setters
+ * record booleans); `update(…, t)` is the sole writer of the line's colour,
+ * opacity and dashes, composing the followed levels with the continuous
+ * tension/severity through the pure `LinkMotionMath.linkLineFrame`. A violated
+ * link breathes with a phase from its id (N links never blink together); the
+ * binding light at creation is a separate transient (`LinkBindEffect`).
+ *
  * No-op interface: every MeshView method called through polymorphic references
  * in AppController is implemented as a no-op (PHILOSOPHY #17).
  *
@@ -30,6 +37,9 @@
  */
 import * as THREE from 'three'
 import { LINK_TYPE_COLORS } from '../theme/semantic.js'
+import { prefersReducedMotion, onReducedMotionChange } from '../theme/motion.js'
+import { CUE_REST, SELECTION_CUE, VIOLATION_CUE, cueLevel, retargetCue, settledCue } from './CueFollowMath.js'
+import { LINK_TONES, breachPulse, linkLineFrame } from './LinkMotionMath.js'
 
 /**
  * Link colour by `semanticType` (ADR-038). Re-exported from the declared
@@ -51,10 +61,13 @@ export class SpatialLinkView {
    * @param {THREE.Vector3} srcPos       world centroid of the source entity
    * @param {THREE.Vector3} tgtPos       world centroid of the target entity
    * @param {string}        semanticType semanticType of the SpatialLink (ADR-038)
+   * @param {{id?: string|null}} [opts] the link's identity — seeds the breath's
+   *   phase (ADR-093 D1). A ghost suggestion has none (phase 0; it never breaks).
    */
-  constructor(scene, srcPos, tgtPos, semanticType) {
+  constructor(scene, srcPos, tgtPos, semanticType, { id = null } = {}) {
     this._scene = scene
-    this._baseColor = LINK_TYPE_COLORS[semanticType] ?? 0x888888
+    this._id = id
+    this._baseColor = LINK_TYPE_COLORS[semanticType] ?? LINK_TONES.unknown
 
     // ── Dashed line ────────────────────────────────────────────────────────
     this._geo = new THREE.BufferGeometry()
@@ -92,11 +105,14 @@ export class SpatialLinkView {
     // Rest distance: baseline for tension computation during grab.
     this._restDistance = Math.max(srcPos.distanceTo(tgtPos), 0.001)
 
-    // Clearance violation state (bounded_by links only).
-    this._violated = false
-
-    // Flash state: non-null while the acceptance flash is playing (seconds timestamp).
-    this._flashStart = null
+    // Targets (setters write these) and the levels on screen (update() follows them).
+    this._violated    = false
+    this._highlighted = false
+    /** @type {{highlight: import('./CueFollowMath.js').CueSegment, violation: import('./CueFollowMath.js').CueSegment}} */
+    this._cues     = { highlight: CUE_REST, violation: CUE_REST }
+    this._clocked  = false   // a first clocked update lands on the targets (no entrance)
+    this._reduced      = prefersReducedMotion()
+    this._unsubReduced = onReducedMotionChange(r => { this._reduced = r })
 
     // Set initial geometry
     this.update(srcPos, tgtPos)
@@ -111,63 +127,17 @@ export class SpatialLinkView {
    * @param {THREE.Vector3} srcPos
    * @param {THREE.Vector3} tgtPos
    * @param {number} [dashOffset=0]   Negative value scrolls dashes source→target (marching ants).
-   * @param {number} [tension=0]      0..1 — color shift from semantic color toward orange-red.
-   * @param {number} [severity=0]     0..1 — bounded_by proximity gradient; overrides tension and _violated.
+   * @param {number} [tension=0]      0..1 — colour shift from the type colour toward `strain` (cautionTone).
+   * @param {number} [severity=0]     0..1 — bounded_by proximity gradient; overrides tension and the violation.
+   * @param {number} [t=NaN]          loop clock (seconds) — absent: the look stands at its targets.
    */
-  update(srcPos, tgtPos, dashOffset = 0, tension = 0, severity = 0) {
+  update(srcPos, tgtPos, dashOffset = 0, tension = 0, severity = 0, t = NaN) {
     const pts = [srcPos.x, srcPos.y, srcPos.z, tgtPos.x, tgtPos.y, tgtPos.z]
     this._geo.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3))
     this._geo.attributes.position.needsUpdate = true
     this._line.computeLineDistances()
 
-    // Rubber-band tension: shift color toward orange-red as stretch increases.
-    if (tension > 0) {
-      const t = Math.min(tension, 1) * Math.min(tension, 1)  // ease-in for drama
-      const base    = new THREE.Color(this._baseColor)
-      const hot     = new THREE.Color(0xF97316)               // orange
-      this._mat.color.lerpColors(base, hot, t)
-      if (this._arrow) this._arrow.cone.material.color.lerpColors(base, hot, t)
-    } else {
-      this._mat.color.set(this._baseColor)
-      if (this._arrow) this._arrow.cone.material.color.set(this._baseColor)
-    }
-
-    // Severity gradient for bounded_by links: semantic → amber → red as limit approaches.
-    // Overrides tension color when severity > 0. Preserves binary _violated for other link types.
-    if (severity > 0) {
-      const safe  = new THREE.Color(this._baseColor)
-      const amber = new THREE.Color(0xFBBF24)
-      const red   = new THREE.Color(0xEF4444)
-      let gradColor
-      if (severity < 0.5) {
-        gradColor = safe.clone().lerp(amber, severity * 2)
-      } else {
-        gradColor = amber.clone().lerp(red, (severity - 0.5) * 2)
-      }
-      this._mat.color.copy(gradColor)
-      if (this._arrow) this._arrow.cone.material.color.copy(gradColor)
-      this._mat.dashSize = 0.35 - severity * 0.20
-      this._mat.gapSize  = 0.18 - severity * 0.10
-      this._mat.opacity  = 0.4 + severity * 0.4
-      // Pulse only at full violation zone (severity ≈ 1)
-      if (severity > 0.8) {
-        const pulse = 0.5 + 0.5 * Math.sin(Date.now() * 0.008)
-        const bright = new THREE.Color(0xFF9999)
-        this._mat.color.lerp(bright, pulse * 0.4)
-        if (this._arrow) this._arrow.cone.material.color.lerp(bright, pulse * 0.4)
-        this._mat.opacity = 0.8 + pulse * 0.2
-      }
-    } else if (this._violated) {
-      // Fallback binary alert for non-bounded_by links (e.g., contains, tact-time)
-      const pulse = 0.5 + 0.5 * Math.sin(Date.now() * 0.008)
-      const alertRed    = new THREE.Color(0xEF4444)
-      const alertBright = new THREE.Color(0xFF9999)
-      this._mat.color.lerpColors(alertRed, alertBright, pulse * 0.4)
-      if (this._arrow) this._arrow.cone.material.color.lerpColors(alertRed, alertBright, pulse * 0.4)
-      this._mat.dashSize = 0.15
-      this._mat.gapSize  = 0.08
-      this._mat.opacity  = 0.8 + pulse * 0.2
-    }
+    this._applyLook(tension, severity, t)
 
     if (dashOffset !== 0) {
       this._mat.dashOffset = dashOffset
@@ -184,37 +154,55 @@ export class SpatialLinkView {
         this._arrow.setDirection(dir)
       }
     }
-
-    // Acceptance flash: boost opacity 1.0 → normal over 300ms after link creation.
-    if (this._flashStart !== null) {
-      const elapsed = performance.now() / 1000 - this._flashStart
-      if (elapsed < 0.3) {
-        this._mat.opacity = 1.0 - elapsed * 2   // 1.0 → 0.4
-      } else {
-        this._flashStart = null
-      }
-    }
   }
 
-  // ── Acceptance flash ──────────────────────────────────────────────────────
+  // ── The look (sole writer of colour / opacity / dashes) ───────────────────
 
   /**
-   * Triggers a 300ms opacity flash on the link line to confirm link creation.
-   * Sole writer of _flashStart (PHILOSOPHY #4).
+   * Follow the targets and write one composed frame (ADR-166 M4b). Without a
+   * clock (an un-ticked ghost suggestion) or before the first clocked update,
+   * the levels stand at their targets — a line never animates into its first
+   * state. Sole writer of `_mat.color/opacity/dash*` and the cone colour (#4).
+   * @param {number} tension
+   * @param {number} severity
+   * @param {number} t loop clock (seconds)
    */
-  triggerFlash() {
-    this._flashStart = performance.now() / 1000
+  _applyLook(tension, severity, t) {
+    const c = this._cues
+    const r = this._reduced
+    if (!Number.isFinite(t) || !this._clocked) {
+      c.highlight = settledCue(this._highlighted ? 1 : 0)
+      c.violation = settledCue(this._violated ? 1 : 0)
+      if (Number.isFinite(t)) this._clocked = true
+    } else {
+      c.highlight = retargetCue(t, c.highlight, this._highlighted ? 1 : 0, SELECTION_CUE, r)
+      c.violation = retargetCue(t, c.violation, this._violated ? 1 : 0, VIOLATION_CUE, r)
+    }
+    const f = linkLineFrame({
+      base:      this._baseColor,
+      highlight: cueLevel(t, c.highlight, SELECTION_CUE, r),
+      tension,
+      severity,
+      violation: cueLevel(t, c.violation, VIOLATION_CUE, r),
+      pulse:     breachPulse(t, this._id, r),
+    })
+    this._mat.color.setRGB(f.rgb[0], f.rgb[1], f.rgb[2])
+    this._mat.opacity  = f.opacity
+    this._mat.dashSize = f.dashSize
+    this._mat.gapSize  = f.gapSize
+    if (this._arrow) this._arrow.cone.material.color.setRGB(f.rgb[0], f.rgb[1], f.rgb[2])
   }
 
   // ── Clearance violation state ──────────────────────────────────────────────
 
   /**
-   * Sets the clearance violation state for bounded_by links.
-   * When violated, the link pulses red to alert the user.
+   * Records the violation TARGET. The next `update` arrives at it at once
+   * (Tier F) and, once cleared, leaves an afterglow; a violated line breathes.
    * @param {boolean} violated
    */
   setViolated(violated) {
-    this._violated = violated
+    this._violated = !!violated
+    if (!this._clocked) this._applyLook(0, 0, NaN)   // not on screen in time yet: stand at the target
   }
 
   // ── Tension / highlight state ──────────────────────────────────────────────
@@ -231,13 +219,13 @@ export class SpatialLinkView {
   get restDistance() { return this._restDistance }
 
   /**
-   * Raises or lowers the line opacity to indicate that the linked entity is
-   * selected (highlighted) or idle.  Also enlarges dashes slightly when active.
+   * Records the highlight TARGET (a linked entity is selected or dragged). The
+   * line lands on it (`land`) and lets go on `fade` — it brightens and its
+   * dashes lengthen; `update` writes the pixels.
    */
   setHighlighted(highlighted) {
-    this._mat.opacity  = highlighted ? 1.0 : 0.4
-    this._mat.dashSize = highlighted ? 0.45 : 0.35
-    this._mat.gapSize  = highlighted ? 0.15 : 0.18
+    this._highlighted = !!highlighted
+    if (!this._clocked) this._applyLook(0, 0, NaN)   // not on screen in time yet: stand at the target
   }
 
   // ── Visual state ───────────────────────────────────────────────────────────
@@ -278,6 +266,8 @@ export class SpatialLinkView {
    * @param {THREE.Scene} scene
    */
   dispose(scene) {
+    this._unsubReduced?.()
+    this._unsubReduced = null
     scene.remove(this._line)
     this._geo.dispose()
     this._mat.dispose()

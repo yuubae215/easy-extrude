@@ -4653,7 +4653,7 @@ export class AppController {
       // (Entity meshes are updated synchronously in event handlers via applyPreviewTranslation;
       // without this ordering, link arrows lag one frame behind the entity during movement.)
       // updateLabelPosition() below also reads _group.position set here — no change needed.
-      this._service._updateWorldPoses()
+      this._service._updateWorldPoses(t)
       this._syncRobotStage()   // robot skeleton follows the robot_base CF (ADR-084 §2)
       this._sceneView.render()
       this._sceneView.robotStages?.updateLabelPositions(this._sceneView.activeCamera)

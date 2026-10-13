@@ -4,7 +4,7 @@
 - Date: 2026-10-11
 - Deciders: yuubae215, Claude
 - 段: 本 ADR の M1〜M4 (下の §段)。IA 再設計の順序表には載せない (画面の住所を変えないため)
-- Retires: なし — 宣言していた `GREP:src/view/AnnotatedRegionView.js::The\sBlueprint\sdevice` (製図台の装置 = 対角ハッチ・コーナー登録マーク) は M3a (2026-10-12) で退役済み。本 ADR は M4 が残るので Proposed のまま (M3b は 2026-10-12 に実施) — Proposed の Retires は「在らねばならない」と問われるため、満期の来た行をここで閉じる
+- Retires: なし — 宣言していた `GREP:src/view/AnnotatedRegionView.js::The\sBlueprint\sdevice` (製図台の装置 = 対角ハッチ・コーナー登録マーク) は M3a (2026-10-12) で退役済み。本 ADR は M4 (M4c・M4d) が残るので Proposed のまま (M3b・M4a・M4b は 2026-10-12 に実施) — Proposed の Retires は「在らねばならない」と問われるため、満期の来た行をここで閉じる
 - Supersedes / Superseded by: ADR-093 を部分的に置き換える (D3 Blueprint アトモスフィアの部分だけ — M3a で実施 2026-10-12。D1 位相を同一性から導く・D2 曲線 2 本・D6 reduced motion は継承)
 
 ## Context — Goal と力学 (§1.2 Goal)
@@ -71,10 +71,31 @@ Tier (Fact / Affordance / Delight) は従来どおり守る。棚卸しで出た
 | **M2 方向性を決める** (**実施 2026-10-12**) | モーション・アイデンティティ 5 軸を当事者と決め、CLAUDE.md に「モーション・アイデンティティ」節として固定する。背景 (SceneStage) のアトモスフィアを Void Grid 型から選び直す | CLAUDE.md に節があり、5 軸が埋まっている。**結果**: 節は CLAUDE.md、軸の母集団は animation-fx Step 1.5 から導出して `src/MotionIdentity.test.js` が問う |
 | **M3a マップ注釈 = 床の光** (**実施 2026-10-12**) | 案 B。注釈の名札を EntityLabel に揃える (名札の仕組みを 1 つに — ADR-155 D1 の続き)。投影・角度に依らず読める (見る角度を `MapVisualMath` の入力にする)。Zone の強さを役割で決める。Blueprint 装置を退役 | 純粋層テスト (位相の同一性・linear 禁止・reduced motion のフレーム一致を継承 + 角度の入力 + 役割の表)。刷新前後の静止画 `docs/motion/media/m3a-*.png` (動画は M3b の後に M3 全体で撮る) |
 | **M3b 選択・消滅・置く前** (**実施 2026-10-12**) | 選択時の見せ方 (BoxHelper の白い箱 → 光が強まって `land` で着地)、消滅演出 (P9 — ライフサイクルに `exiting`、論理の可視性と描画の可視性を 2 欄に分ける)、配置プレビュー (`MapPreviewMath`) を同じ光で描く | `exiting` の状態機械 (STATE_TRANSITIONS)、hit-test が退場中の注釈を拾わないこと、刷新前後の動画。**結果**: 下の「M3b で決めたこと」、実機の静止画 `docs/motion/media/m3b-*.png`。**動画は得られていない** — 下の「分かったこと」 |
-| **M4 残りの演出** | M1 の採点が低い順に作り直す。4 本に割った (当事者合意 2026-10-12): **M4a 状態の手掛かりの追従** (キューブのホバー・選択・違反・接近、座標フレームの減光、領域ゴーストの絞り込み — **実施 2026-10-12**) → **M4b リンク** (波紋 + リンク線を一体で) → **M4c 起動ホーム** → **M4d B の残り** | M1 の表の全行が「今の水準」になるか、残す理由が書かれている。**M4a の結果**: 下の「M4a で決めたこと」、3 行が A へ (`docs/motion/inventory.md`) |
+| **M4 残りの演出** | M1 の採点が低い順に作り直す。4 本に割った (当事者合意 2026-10-12): **M4a 状態の手掛かりの追従** (キューブのホバー・選択・違反・接近、座標フレームの減光、領域ゴーストの絞り込み — **実施 2026-10-12**) → **M4b リンク** (波紋 + リンク線を一体で — **実施 2026-10-12**) → **M4c 起動ホーム** → **M4d B の残り** | M1 の表の全行が「今の水準」になるか、残す理由が書かれている。**M4a の結果**: 下の「M4a で決めたこと」、3 行が A へ (`docs/motion/inventory.md`)。**M4b の結果**: 下の「M4b で決めたこと」、C の 2 行を 1 行に束ねて A へ |
 
 M3 は M2 の後に置く — 床の光は M2 で決める背景の光源を共有するので、先に作ると光源が 2 つになる (§1.1)。
 M3 は 2 本に割った (当事者合意 2026-10-12): `exiting` の状態追加と見た目の刷新が同じ差分に混ざるとレビューできないため。
+
+**M4b で決めたこと (2026-10-12、当事者合意 — 俯瞰の推奨 3 点「波紋を割る」「色はトークンへ」「呼吸は `loop` 2 s」に「3点ともおすすめで」):**
+
+| 問い | 決定 | 正本 |
+|---|---|---|
+| 1 語 2 事実 | `RippleEffect` は「リンクが結ばれた」と「ここに物が現れた」(デモの承認・段階的な種明かし) を兼ねていた。**割った**: 成立は新設の `LinkBindEffect`、`RippleEffect` は「ここに現れた」だけを言い、大きさ `land`・α `fade` に直した (曲線だけ — 形は M4d) | `LinkBindEffect` / `rippleFrame` |
+| 成立の形 | 光が 2 端から中点へ `land` で走る (`BIND_TRAVEL` = `SELECT_LAND` 0.24 s — 選択と同じ tempo)。**1 つの進捗が両端を運ぶので、出会いは構成上同時**。出会いが境目 (G3): 閃光が `land` で広がり、閃光と線に沿った余韻が `fade` で消える (`BIND_AFTERGLOW` 0.3 s)。色は種の色を舞台の光で照らした色 (`lightTint` — M3a と同じ 1 つの光)。reduced は出会いの点と線を静止した光で同じ時間だけ示す | `LinkMotionMath.bindFrame` |
+| 線の書き手 | setter (`setHighlighted` / `setViolated`) は目標だけを記録し、`update(…, t)` → `_applyLook` が色・不透明度・破線・矢印の唯一の書き手。旧 `triggerFlash` (線形の `1 − 2t`) は退役 — 線の画素を 2 人が書いていた。最初の時計つき update より前は目標で静止 | `SpatialLinkView._applyLook` |
+| 追従 | 強調は `SELECTION_CUE` (着地 `land`・手放し `fade`)、違反は `VIOLATION_CUE` (即時 + 余韻 0.3 s)。**張力と深刻度は距離なので時間で追わない** (M4a の接近の色と同じ判断) | `CueFollowMath` (共有) |
+| 時計 | 描画ループの `t` を `SceneService._updateWorldPoses(t)` が `_linkClock` に写す。ループ外の呼び出し (pose cache の補充) は最後の時計を再利用する — 区間を打ち直さない。線は `Date.now()` / `performance.now()` を読まない (テストが問う) | `SceneService._linkClock` |
+| 違反の呼吸 | `loop` (sin² = inOutSine の往復 = `breathe`)、周期 2 s (待機帯 2〜6 s の中。旧 ≈ 0.8 s は警報に近かった)。位相は `phaseFor(link.id)` (ADR-093 D1)。reduced と壊れた時計では呼吸が止まり違反色で静止 | `breachPulse` |
+| 色 | トークン外の 5 色を宣言された語へ: 張力・深刻度の中間 = `cautionTone`、違反 = `dangerTone`、呼吸の明るい側 = `dangerTone` を舞台の光で 50% 照らした色、未知の種 = `entityDefault` | `LINK_TONES` |
+| 大きさ | 玉の半径は**リンクのスパンから**導出 (`bindRadius` = スパン × 0.05) | `bindRadius` |
+
+**語彙 (原則 #33):** 「結ばれたことを光で言う」が言えなかった — `RippleEffect` が 2 つの事実を運んでいた (1 語 1 事実の違反) ので割った。強調・違反の追従、同一性からの位相、光の色は M4a・ADR-093・M2 の語が既に在ったので、**語は足していない** (線をつないだだけ)。
+
+**M4b で分かったこと (原則 #19):**
+- **旧波紋は既定のシーンで一度も見えていなかった。** 実機で時計を落として撮ったところ、玉も閃光も写らなかった。既定のシーンは mm (カメラは約 780 先) で、半径の固定値 0.15 は 0.15 mm。リンクの成立の儀式は出荷以来、見える単位のシーンでしか見えていなかった。world の固定値だけで寸法を決めた形 (原則 #27 の鏡像の片方)。玉の大きさをリンクのスパンから導出し、テストが「mm のシーンと m のシーンで同じ比」を問う。デモ側の `RippleEffect` は呼び手が実体の寸法から半径を渡しているので影響は無い。
+- **旧実装は違反が解けても不透明度が残っていた。** 違反の分岐は不透明度を書くが、解けたときに戻す書き手は `setHighlighted` だけだった (呼ばれるまで 0.8 のまま)。毎フレーム全ての欄を純粋関数から書く形にしたので、この種の取り残しは構造上起きない。
+
+**実機:** 時計を 1/12 に落とした実機 (本物の時計) で、L キーからリンクを結び、2 つの玉が走って出会い、閃光が広がって消え、余韻の線が破線へ戻るまでを撮った — `docs/motion/media/m4b-link-bind-slowed-clock.png`。**検証できていないこと:** 違反の呼吸・強調の追従・張力の色の実機撮影 (純粋層のテストと配線の読みのみ — 違反を作るテンプレの手順を持っていない)、時間軸の動画 (M3b と同じ理由)。**残し**: 掴んでいる間の破線の行進 (`_dashTimer += 0.018`/フレーム) はフレーム率に依存したまま (動きの意味は張力の色が運ぶ) — M4d で時計へ。
 
 **M4a で決めたこと (2026-10-12、当事者合意 — 俯瞰の推奨 2 点「M4 を 4a→4b→4c→4d に割る」「接近の色は snapTone」に「両方おすすめで」):**
 
@@ -225,6 +246,7 @@ reduced 境界の外) を含む 9 本を採点した。どちらも M4 の最初
 | `src/view/Annotated*View.js` / `MapVisualMath.js` / `EntityLabel.js` / `AppController` (`_exitingAnnotations`) / `PlaceToolController` | M3b — ライフサイクル 4 相と 2 欄、選択の着地、BoxHelper の退役、名札の強調が位置を消す不具合の修正、置く前のプレビューの光 (**実施**)。hit-test のロジックは触っていない (退場中の注釈はモデルの外にいて、`visible` は `present` を返す) |
 
 | `src/view/CueFollowMath.js` (新設) / `MotionMath.js` (`easeOutQuad`) / `MapVisualMath.js` (adapter) / `MeshView.js` / `CoordinateFrameView.js` / `RegionGhostView.js` / `AppController` (tick を 2 行) | M4a — 状態の手掛かりの追従、接近の色 (**実施**)。当たり判定・選択の書き手 (`SelectionManager`)・接近の強さの計算 (`computeApproachWarmth`)・`SnapFlash` の曲線は触っていない |
+| `src/view/LinkMotionMath.js` / `LinkBindEffect.js` (新設) / `SpatialLinkView.js` / `RippleEffect.js` / `LinkCreationHandler` / `SceneService` (`_linkClock`、`id` を渡す) / `AppController` (`_updateWorldPoses(t)`) | M4b — リンクの成立・強調・違反 (**実施**)。違反の判定 (`_evaluateClearanceLinks`)・リンクの作成と undo・LINK NETWORK パネル・デモの呼び手 (`ContextDemoController`) は触っていない |
 
 **触らない:** 契約、`core/`、注釈の意味 (place type の分類と違反アラーム — ADR-043)。
 

@@ -104,15 +104,29 @@ artifacts
             - "docs/motion/inventory.md"
             - "docs/motion/media/m4a-cube-cues-slowed-clock.png"
 
+        goal LinksBindStrainAndBreakAsLight
+        uuid c37981ed-e22d-4933-a6c1-cc6e2efe02bb
+        summary "リンクの成立・張力・違反は、モーション・アイデンティティの語彙で読める: 成立は光が 2 端から中点へ走って同時に出会い、閃光と線に沿った余韻で言う。強調と違反は追従し (到着 = land、手放し = fade、違反は即時 + 余韻)、違反の呼吸は N 本が揃わず、reduced では静止した違反色。色はすべて宣言されたトークン。成立の手掛かりはシーンの単位に依らず見える (M4b)"
+        labels support-verified
+
+            solution LinkMotionIsPureAndAsked
+            uuid a02ee133-99e5-42da-b980-451f24165af7
+            summary "M4b 実施 (2026-10-12、当事者合意 — 俯瞰の推奨 3 点に「3点ともおすすめで」): RippleEffect を 1 語 1 事実で割り、リンクの成立は新設 LinkBindEffect、RippleEffect はデモの「ここに現れた」だけを言い曲線を land/fade に。SpatialLinkView は setter が目標だけを書き update(…, t) が唯一の画素の書き手 (triggerFlash 退役)、合成は純粋 LinkMotionMath.linkLineFrame。src/view/LinkMotionMath.test.js が、両端が同時に中点で出会うこと・応答帯 (≤ 300 ms) と選択と同じ tempo・travel が outExpo で余韻が outQuad・時計の後退を始まりと読むこと・reduced で静止した手掛かり・呼吸が待機帯 (2〜6 s) で周期的・N=25 本の位相が散ること・reduced で呼吸が止まること・色がすべて宣言されたトークンであること・優先順位と余韻の連続・波紋が linear でないこと・玉の大きさがスパンに比例すること・配線 (私的な時計を読まない、id が位相に、ループの時計が update に届く) を問う。tokens.test.js の宣言外の色 751 → 743、種類 198 → 195。pnpm test 1806 pass、typecheck・build 緑。実機: 時計 1/12 の静止画 docs/motion/media/m4b-link-bind-slowed-clock.png で、2 つの玉が走って出会い、閃光が広がって消え、余韻の線が破線へ戻るまでを確認。実機で分かったこと: 旧波紋の半径 0.15 は既定の mm シーンで 0.15 mm = 一度も見えていなかった (原則 #27) — 玉の大きさをリンクのスパンから導出した。検証していないこと: 違反の呼吸・強調の追従・張力の色の実機撮影 (純粋層のテストと配線の読みのみ)、時間軸の動画 (仮想時間の録画は時計が単調でない — M3b)"
+            artifacts
+            - "src/view/LinkMotionMath.test.js"
+            - "src/theme/tokens.test.js"
+            - "docs/motion/inventory.md"
+            - "docs/motion/media/m4b-link-bind-slowed-clock.png"
+
         goal RemainingMotionMeetsTheStandard
         uuid 131cccd7-12fe-447f-919f-43bcd8cf57c8
-        summary "M1 の採点表の全行が『今の水準』(A) になるか、残す理由が書かれている (M4b リンク / M4c 起動ホーム / M4d B の残り)"
+        summary "M1 の採点表の全行が『今の水準』(A) になるか、残す理由が書かれている (M4c 起動ホーム / M4d B の残り — M4b リンクは LinksBindStrainAndBreakAsLight で実施)"
         state ToBeDeveloped
         labels support-exploring
 
             assumption TheInventoryRowsCloseOneByOne
             uuid 726be535-c8df-4be1-bd62-02a63fa70c6b
-            summary "計画: M4b (RippleEffect + SpatialLinkView を一体で — 2 端から中点へ光が走る、違反の脈動の位相を同一性から、reduced の境界を読む) → M4c (起動ホーム) → M4d (B の残り)。各段は inventory の行を A にするか残す理由を書く。MotionInventoryCoverage.test.js が母集団と行の一致を問い続ける。満期=GREP:docs/motion/inventory.md::M4d\s✓"
+            summary "計画: M4b (RippleEffect + SpatialLinkView を一体で — 実施 2026-10-12) → M4c (起動ホーム) → M4d (B の残り — M4b の残し: 掴んでいる間の破線の行進がフレーム率依存)。各段は inventory の行を A にするか残す理由を書く。MotionInventoryCoverage.test.js が母集団と行の一致を問い続ける。満期=GREP:docs/motion/inventory.md::M4d\s✓"
             artifacts
             - "docs/motion/inventory.md"
             - "src/MotionInventoryCoverage.test.js"

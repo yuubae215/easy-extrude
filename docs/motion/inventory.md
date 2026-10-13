@@ -1,7 +1,7 @@
 # 演出の棚卸しと採点 (ADR-166 M1)
 
 - 採点日: 2026-10-11 (物差しは「今の Claude の能力」で、時間とともに動く — 採点は日付つきでしか言えない。ADR-166 の assumption `TheYardstickMoves`)
-- 母集団: `src/**` の非テストファイルのうち、モーション基盤 (`theme/motion` / `MotionMath` / `MotionGovernor`) か reduced-motion の境界 (`prefersReducedMotion` / `useReducedMotion`) を参照するもの、**または基盤を通らずに見た目の値を書き換えるもの** (`.opacity =`・色の `lerp`) — **63 ファイル** (M1 時点の 53 に、2026-10-12 に 2 本目の信号で 9 本を足し、M4a で基盤に `CueFollowMath` が 1 本増えた。当事者が「キューブのホバー・選択の切り替え・グラブ中のスナップ先への近づき」を名指したとき、それを描く `MeshView` が表に無かった — 基盤を参照するものだけを数える定義では、基盤を通らない最も古い層が**定義上**入らない)。手書きの一覧ではなく、`src/MotionInventoryCoverage.test.js` が構文から導出し、下の表のどれか 1 行にちょうど 1 回現れることを問う (原則 #31 — 表に無いファイルが増えたら落ちる)。
+- 母集団: `src/**` の非テストファイルのうち、モーション基盤 (`theme/motion` / `MotionMath` / `MotionGovernor`) か reduced-motion の境界 (`prefersReducedMotion` / `useReducedMotion`) を参照するもの、**または基盤を通らずに見た目の値を書き換えるもの** (`.opacity =`・色の `lerp`) — **63 ファイル** (M1 時点の 53 に、2026-10-12 に 2 本目の信号で 9 本を足し、M4a で基盤に `CueFollowMath` が 1 本増え、M4b でリンクの `LinkBindEffect` / `LinkMotionMath` が 2 本増えた — **65 ファイル**。当事者が「キューブのホバー・選択の切り替え・グラブ中のスナップ先への近づき」を名指したとき、それを描く `MeshView` が表に無かった — 基盤を参照するものだけを数える定義では、基盤を通らない最も古い層が**定義上**入らない)。手書きの一覧ではなく、`src/MotionInventoryCoverage.test.js` が構文から導出し、下の表のどれか 1 行にちょうど 1 回現れることを問う (原則 #31 — 表に無いファイルが増えたら落ちる)。
 - 採点の根拠: コード読み (各ファイルの設計記述と、使っている曲線・時間)。2026-10-10 の実機撮影 (マップ注釈・背景) を加えた。**各演出の撮影は、作り直す PR の直前に刷新前の動画として撮る** (screencast DSL — ADR-160)。M1 の時点で 53 ファイル分を撮らなかったのは、作り直さない行 (A・対象外) まで撮る費用に見合わないため。
 
 ## 物差し
@@ -30,7 +30,7 @@
 | `src/view/LandingEffects.js`<br>`src/view/CommandFeedbackMath.js` | 実体の出現 (輪郭が組み上がる) と消滅 (ボクセルが散る) | F | ✓ | ✓ | ✓ | △ | — | B | 出現は今の水準。消滅も対で持つ (P9)。背景を替えたら、組み上がりの閃光の色と光を背景の光源へ揃える | M4 |
 | `src/view/SelectPulse.js` | 選択の合図 (輪郭が膨らんで消える) | A | △ | — | △ | — | — | B | 拡大と α が同じ進行度から出ている (1 本の曲線)。小さいうちが一番明るい 2 曲線へ (ADR-093 D2 と同じ処方) | M4 |
 | `src/view/SnapFlash.js`<br>`src/view/SnapFeedbackMath.js` | スナップが噛んだ瞬間の閃光 | A | ✓ | — | ✓ | △ | — | B | 振付は良い (素の線形フェードにしないと明記)。背景を替えたら光の色だけ揃える | M4 |
-| `src/view/RippleEffect.js` | リンク成立の波紋 (球が広がって消える) | F | ✕ | — | ✕ | ✕ | — | **C** | 拡大 `1 + p·3` と α `0.8·(1−p)` がどちらも線形 — いちばん古い世代の演出。成立したリンクの 2 端から中点へ光が走って結ぶ (境目 = 結ばれた瞬間に閃光、余韻で線に沿って減衰) | M4 |
+| `src/view/RippleEffect.js`<br>`src/view/SpatialLinkView.js`<br>`src/view/LinkBindEffect.js`<br>`src/view/LinkMotionMath.js` | リンクの成立・張力・違反 (と、割り出した「ここに現れた」の波紋) | F | ✓ | ✓ | ✓ | ✓ | ✓ | **A** (M4b 2026-10-12) | ~~C: 波紋の拡大と α が線形・線のフラッシュも線形 (`1 − 2t`)・違反の脈動が `Date.now()` 共有で N 本同位相・reduced 境界の外・色 5 つがトークン外~~ → 成立は `LinkBindEffect`: 光が 2 端から中点へ `land` で走り (1 つの進捗が両端を運ぶので**同時に**出会う)、出会いで閃光、線に沿った余韻が `fade` で消える (0.24 + 0.3 s)。線の画素の書き手は `update(…, t)` 1 つ (`triggerFlash` は退役)。強調は `SELECTION_CUE`・違反は `VIOLATION_CUE` で追従 (`CueFollowMath` を共有)。違反の呼吸は `loop` (sin² = inOutSine の往復) 2 s 周期、位相は `phaseFor(link.id)` — N 本が揃わない。reduced では呼吸が止まり違反色で静止。色は `cautionTone` (張力・深刻度の中間) / `dangerTone` (違反) / `dangerTone` を舞台の光で照らした色 (呼吸の明るい側) / `entityDefault` (未知の種)。`RippleEffect` は 1 語 1 事実で「ここに現れた」(デモ) だけを言い、大きさ `land`・α `fade` に。**残し**: 掴んでいる間の破線の行進 (`_dashTimer += 0.018`/フレーム) はフレーム率に依存したまま (動きの意味は張力の色が運ぶので M4d で時計へ) | — |
 | `src/view/CelebrationField.js`<br>`src/view/CelebrationMath.js`<br>`src/components/Feedback/Celebration.jsx` | 達成の祝賀 (粒子の破裂と帯) | D | ✓ | ✓ | ✓ | △ | — | B | 事実の遷移だけで鳴る規律は今の水準。粒子の色と光を背景に揃える | M4 |
 | `src/view/ExtrudeFrontView.js`<br>`src/view/ExtrudeFrontMath.js`<br>`src/controller/handler/FaceExtrudeHandler.js` | 押し出しの成長前線 (伸びている面の縁が光る) | A | ✓ | — | ✓ | ✓ | ✓ | A | アプリの名前の操作の境目として今の水準 (ADR-080) | — |
 | `src/view/AnnotatedPointView.js`<br>`src/view/AnnotatedLineView.js`<br>`src/view/AnnotatedRegionView.js`<br>`src/view/MapVisualMath.js` | マップ注釈 (Zone / Route / Boundary / Hub / Anchor) | A | ✓ | ✓ | ✓ | ✓ | ✓ | **A** (M3a + M3b で作り直し 2026-10-12) | ~~C: Blueprint のハッチが斜めで縞に潰れ、Zone が画面でいちばん目立つ~~ → 床の光 (縁の光 + 光の幕を視角で受け渡す)、強さは役割 (Zone = 地)、光は舞台の光に寄せる (G4)、名札は EntityLabel (M3a)。選択は白い BoxHelper → 光が `land` で強まり床の光が育つ + 名札の強調、削除は光が `exit` で消える (P9 — 出現と対、退場中は選べない) (M3b)。残る未検証: Route / Boundary の実機撮影 (テンプレに実例が無い)。実機の静止画 `docs/motion/media/m3b-*.png` (動画は未取得 — 仮想時間の録画が退場を飛ばす、ADR-166 M3b) | M3a ✓ / M3b ✓ |
@@ -40,7 +40,6 @@
 | `src/view/RobotStage.js` | ロボットの描画 (骨格 / 実写の切替、近似の半透明) | F | — | — | ✕ | △ | — | B | 骨格から実写への切替に境目が無い (ADR-150 で一瞬の入れ替わりは消したが、読み込み中の状態に語りが無い)。ADR-164 D5 のフォールバックと一緒に、読み込み中・落ちた時の見せ方を作る | M4 |
 | `src/view/MeshView.js` | **キューブ (Solid) の状態の手掛かり** — ホバー・選択・違反の自発光、グラブ中にスナップ先へ近づくと輪郭が暖色へ (2026-10-12 追加 — 当事者の名指し) | A / F | ✓ | — | ✓ | ✓ | — | **A** (M4a で作り直し 2026-10-12) — 以下は刷新前の採点 C の記述 | ホバー・選択・違反の切替は `emissive.set` で**一瞬で入れ替わる** (境目が無い)。接近の暖色は距離で決まる (時間ではない) が、`#F59E0B` はトークン外の 4 色目で、噛んだ瞬間の `SnapFlash` と語りが繋がっていない。今なら: 自発光を目標値へ短く追わせる (ホバー入り `land` ≈120ms・出 `fade` ≈180ms、選択は `SelectPulse` と同じ瞬間に着地、違反は最優先で即時 + 余韻)。接近は舞台の光 / `accent` の語で温め、噛む閾値で `SnapFlash` へ受け渡す (近づく → 噛む を 1 本の物語に)。reduced では切替は即時のまま読みを保つ。**M4a で実施**: 自発光は 3 つの度合い (ホバー `land` 0.15s / 選択 `land` 0.24s = マップ注釈と同じ `SELECT_LAND` / 違反は即時、手放しは `fade` 0.2s・違反の余韻 0.3s) を優先順位の層で合成 (`blendLayers` — 満ちれば強い方が勝つ規則は不変)。接近の色は `snapTone` (噛んだ瞬間の `SnapFlash` と同じ色 — 近づく → 噛む が 1 色の物語、トークン外の 4 色目が消えた)。接近は距離で決まるので時間の追従はかけない (かけると手より遅れる)。**残り**: 選択の輪郭 `boxHelper` は切替のまま (書き手が `RotationHandler` にもある — `SelectPulse` の行と一緒に M4d)、実体ごとの接地影 (M2 の残し) は M4d。実機の静止画 `docs/motion/media/m4a-cube-cues-slowed-clock.png` (時計 1/12) | M4a ✓ |
 | `src/view/CoordinateFrameView.js` | 座標フレームの選択・減光 (線の不透明度の切替) (2026-10-12 追加) | A | ✓ | — | ✓ | — | — | **A** (M4a 2026-10-12) | ~~B: 減光が一瞬で入れ替わる~~ → 文脈の減光は `fade` で両方向、選ばれた原点の球は `accent` へ `land` で着地 (`CueFollowMath` を共有)。画面に現れる瞬間は目標で始める (前回の描画から fade しない)。減光を失った球の印は即座に消す (選択を持たない枠に印を残さない — 従来の規則)。**残り**: 親子の接続線 `showConnection(dimmed)` は呼び手が値を渡す別の書き手なので切替のまま | M4a ✓ |
-| `src/view/SpatialLinkView.js` | リンク線の張力の色・違反の脈動・成立のフラッシュ (2026-10-12 追加) | F | ✕ | ✕ | △ | △ | ✓ | **C** | 成立のフラッシュが線形 (`1 − 2t`)。違反の脈動は `Date.now()` を全リンクで共有 = N 本が**同位相で点滅** (lockstep)。reduced-motion の境界を読まない (原則 #30 の外で動く)。色は 5 つともトークン外。今なら: 位相は同一性から、フラッシュは `RippleEffect` の作り直し (2 端から中点へ光が走る) と一体で、reduced では静止した違反色 | M4 |
 | `src/view/ParametricPreviewView.js` | パラメトリック配置プレビューの塗りの脈動 (2026-10-12 追加) | A | ✓ | ✕ | — | — | △ | B | 全部の塗りが同じ位相で呼吸 (lockstep)、reduced-motion の境界を読まない。配置ツールのプレビュー (`MapPreviewMath`) と同じ語彙・同じ境界に揃える | M4 |
 | `src/view/RegionAuthoringWidget.js` | 領域作図ウィジェットの塗りの脈動 (2026-10-12 追加) | A | ✓ | — | — | — | △ | B | `sin(2t)` の呼吸が reduced-motion の境界を読まない。上と同じ処方 | M4 |
 | `src/view/RegionGhostView.js` | 領域ゴーストのペルソナ絞り込みの減光 (2026-10-12 追加) | F | ✓ | — | ✓ | — | — | **A** (M4a 2026-10-12) | ~~B: 絞り込みの減光が一瞬で入れ替わる~~ → 領域ごとの度合いが `fade` で追う (塗り・縁・名札が同じ度合い)。最初の tick より前に設定された絞り込みは即座に着地する (開いた瞬間に暗転を演じない) | M4a ✓ |
@@ -56,14 +55,14 @@
 
 | 判定 | 行 | ファイル |
 |---|---|---|
-| **C 作り直す** | 3 (リンクの波紋 / 起動ホーム / **リンク線**) — 背景は M2 で A へ、マップ注釈は M3a で B → M3b で A へ、キューブの状態の手掛かりは M4a で A へ | 1 + 3 + 1 = 5 |
+| **C 作り直す** | 1 (起動ホーム) — 背景は M2 で A へ、マップ注釈は M3a で B → M3b で A へ、キューブの状態の手掛かりは M4a で A へ、リンクの波紋とリンク線は M4b で 1 行に束ねて A へ | 3 |
 | **B 部分的に古い** | 13 (座標フレームと領域ゴーストは M4a で A へ) | 29 |
-| **A 今の水準** | 10 | 21 |
+| **A 今の水準** | 11 | 25 |
 | 対象外 (基盤・配線・静的) | 3 | 8 |
-| 計 | 29 | **63** |
+| 計 | 28 | **65** |
 
 **いちばん効く 1 手は M2 (背景のアトモスフィアの選び直し)。** B の 11 行のうち 4 行 (起動の飛び込み・出現と消滅・スナップ・祝賀) が「背景を替えたら光と色を揃える」で終わる — 背景が単調な既定のままでは、どの演出も単体で浮く (G4)。C の背景と M3 のマップ注釈は同じ光源を共有するので、ADR-166 の順序 (M2 → M3 → M4) は採点からも支持される。M4 の最初の候補は、線形が残っている唯一の行の **リンクの波紋** と、第一印象の **起動ホーム**。
 
 **追記 (2026-10-12):** 2 本目の信号で入った 9 本のうち、当事者が名指したキューブの状態の手掛かり (`MeshView` — ホバー・選択・違反が一瞬で入れ替わる / 接近の暖色がトークン外で `SnapFlash` と繋がっていない) は C。M4 の最初の候補に加える。同じく入った `SpatialLinkView` (違反の脈動が N 本同位相・reduced 境界の外) はリンクの波紋と同じ段で作り直す。追従の処方 (状態の目標値へ短く追わせる) は `MeshView` / `CoordinateFrameView` / `RegionGhostView` / DOM の 2 本で共有できるので、1 つの純粋関数として起こす。
 
-**M4 の割り方 (2026-10-12、当事者合意):** M4a 状態の手掛かりの追従 (`MeshView` / `CoordinateFrameView` / `RegionGhostView` — **実施**) → M4b リンク (`RippleEffect` + `SpatialLinkView` を一体で) → M4c 起動ホーム → M4d B の残り (背景に揃える行・DOM の開閉)。M4a を先頭にしたのは、追従の純粋関数 `CueFollowMath` を M4b / M4d が引けるようにするため。
+**M4 の割り方 (2026-10-12、当事者合意):** M4a 状態の手掛かりの追従 (`MeshView` / `CoordinateFrameView` / `RegionGhostView` — **実施**) → M4b リンク (`RippleEffect` + `SpatialLinkView` を一体で — **実施**、1 行に束ねて A) → M4c 起動ホーム → M4d B の残り (背景に揃える行・DOM の開閉)。M4a を先頭にしたのは、追従の純粋関数 `CueFollowMath` を M4b / M4d が引けるようにするため。

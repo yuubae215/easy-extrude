@@ -17,7 +17,7 @@ import { createSpatialLinkCommand }     from '../../command/CreateSpatialLinkCom
 import { createMountAnnotationCommand } from '../../command/MountAnnotationCommand.js'
 import { createFastenFrameCommand }     from '../../command/FastenFrameCommand.js'
 import { LINK_TYPE_COLORS }             from '../../view/SpatialLinkView.js'
-import { RippleEffect }                 from '../../view/RippleEffect.js'
+import { LinkBindEffect }               from '../../view/LinkBindEffect.js'
 import { CONTEXTUAL }                   from '../../view/VisibilityAxes.js'
 import { S_LINK_MODE, S_MOUNT_PICKING } from '../../core/editorStates.js'
 
@@ -177,16 +177,14 @@ export class LinkCreationHandler {
     ctrl._commandStack.push(createSpatialLinkCommand(link, ctrl._service))
     ctrl._uiView.showToast(`Link created: ${option.label}`)
     ctrl._updateNPanel()
-    // Acceptance ceremony: ripple sphere at link midpoint + brief line flash.
+    // Acceptance: light runs from both ends and meets at the midpoint (ADR-166 M4b).
     const srcPos = ctrl._dragSuggestionCentroid(sourceId)
     const tgtPos = ctrl._dragSuggestionCentroid(targetId)
     if (srcPos && tgtPos) {
-      const midpoint = srcPos.clone().lerp(tgtPos, 0.5)
-      const color    = LINK_TYPE_COLORS[option.semanticType] ?? 0x888888
+      const color  = LINK_TYPE_COLORS[option.semanticType]   // unknown type → LinkBindEffect's neutral tone
       ctrl._motion.spawn(reduced =>
-        new RippleEffect(ctrl._sceneView.scene, midpoint, color, 0.15, { reduced }))
+        new LinkBindEffect(ctrl._sceneView.scene, srcPos, tgtPos, color, { reduced }))
     }
-    ctrl._service._linkViews.get(link.id)?.triggerFlash?.()
   }
 
   /**

@@ -249,6 +249,8 @@ export class SceneService extends EventEmitter {
     this._dragEntityIds   = new Set()
     /** Accumulates each frame during drag to scroll dash offset. */
     this._dashTimer       = 0
+    /** Last animation-loop clock (seconds) — read by `_updateSpatialLinkViews` (ADR-166 M4b). */
+    this._linkClock       = NaN
     /**
      * View context for HTML label rendering (camera, renderer, container).
      * Set by AppController.setViewContext() after construction.
@@ -1134,7 +1136,11 @@ export class SceneService extends EventEmitter {
    * Since move() now directly updates `translation`, no grabbed/not-grabbed
    * branching is needed — worldPos is always derived from translation.
    */
-  _updateWorldPoses() {
+  _updateWorldPoses(t) {
+    // The loop clock for the link lines' motion (ADR-166 M4b). Off-loop calls
+    // (eager cache refills) carry none and reuse the last frame's clock, so a
+    // line's follow segment is never re-stamped by a call outside the loop.
+    if (Number.isFinite(t)) this._linkClock = t
     // Purge stale entries from removed entities before recomputing (PHILOSOPHY #24).
     this._worldPoseCache.clear()
 
@@ -1769,7 +1775,7 @@ export class SceneService extends EventEmitter {
   _createLinkView(link) {
     const src = this._entityWorldCentroid(link.sourceId) ?? new Vector3()
     const tgt = this._entityWorldCentroid(link.targetId) ?? new Vector3()
-    const view = new SpatialLinkView(this._threeScene, src, tgt, link.semanticType)
+    const view = new SpatialLinkView(this._threeScene, src, tgt, link.semanticType, { id: link.id })
     this._linkViews.set(link.id, view)
     // Apply current selection/drag highlight to the newly created view.
     const highlighted =
@@ -1822,7 +1828,7 @@ export class SceneService extends EventEmitter {
 
       const severity = link.semanticType === 'bounded_by'
         ? (link.properties?.severity ?? 0) : 0
-      view.update(src, tgt, dashOffset, tension, severity)
+      view.update(src, tgt, dashOffset, tension, severity, this._linkClock)
     }
 
     this._evaluateClearanceLinks()
