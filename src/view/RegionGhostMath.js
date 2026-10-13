@@ -16,8 +16,9 @@
 import { COLOR, hexNumber } from '../theme/tokens.js'
 
 /** Conflict gap colour (empty intersection band) — single source for the
- * RegionGhostView band and the RegionResolveEffect recolor start. */
-export const GAP_COLOR = 0xcc3333
+ * RegionGhostView band and the RegionResolveEffect recolor start. The danger
+ * tone (ADR-166 M4d3 — was the off-token #cc3333). */
+export const GAP_COLOR = hexNumber(COLOR.dangerTone)
 /** Resolution flood colour (the "it settled" green — token-derived). */
 export const RESOLVE_COLOR = hexNumber(COLOR.factTone)
 

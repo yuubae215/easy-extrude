@@ -23,12 +23,15 @@
  */
 import * as THREE from 'three'
 import { prefersReducedMotion, onReducedMotionChange } from '../theme/motion.js'
+import { COLOR, hexNumber } from '../theme/tokens.js'
 import { IDLE_PERIOD, idleLevel } from './IdleMotionMath.js'
 
 const Z_FILL    = 2     // mm lift for the fill + edges
 const Z_HANDLE  = 6     // mm lift for the pickable handles (above the fill)
-const OK_COLOR       = 0x10b981 // green — region currently clear of conflict
-const CONFLICT_COLOR = 0xcc3333 // red — region in conflict
+// State tones (ADR-166 M4d3 — were the off-token #10b981 / #cc3333): clear of
+// conflict is a settled fact, a conflict is the danger tone.
+const OK_COLOR       = hexNumber(COLOR.factTone)
+const CONFLICT_COLOR = hexNumber(COLOR.dangerTone)
 const HANDLE_COLOR   = 0xffffff
 
 export class RegionAuthoringWidget {
@@ -88,9 +91,9 @@ export class RegionAuthoringWidget {
     this._label = document.createElement('div')
     Object.assign(this._label.style, {
       position: 'fixed', pointerEvents: 'none', userSelect: 'none',
-      background: 'rgba(30,30,30,0.85)', color: '#10b981', fontSize: '12px',
+      background: 'rgba(30,30,30,0.85)', color: COLOR.factTone, fontSize: '12px',
       fontFamily: 'monospace', padding: '3px 8px', borderRadius: '3px',
-      border: '1px solid #10b981', whiteSpace: 'nowrap', display: 'none', zIndex: '50',
+      border: `1px solid ${COLOR.factTone}`, whiteSpace: 'nowrap', display: 'none', zIndex: '50',
     })
     this._label.textContent = labelText
     this._labelText = labelText

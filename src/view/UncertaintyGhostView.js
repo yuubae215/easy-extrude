@@ -24,13 +24,16 @@
  */
 import * as THREE from 'three'
 import { prefersReducedMotion } from '../theme/motion.js'
+import { COLOR, hexNumber } from '../theme/tokens.js'
 import { IDLE_PERIOD, idleLevel } from './IdleMotionMath.js'
 
 const COLLAPSE_DURATION = 0.8   // seconds: band shrinks onto the nominal box
 const FADE_DURATION     = 0.25  // seconds: residual fade-out after the snap
 
-const BAND_COLOR    = 0xd5a23a  // amber — uncertainty
-const NOMINAL_COLOR = 0x3a7bd5  // blue — proposed decision
+// State tones (ADR-166 M4d3 — the band's amber #d5a23a was a hand copy of
+// `cautionTone`, the nominal blue was `infoTone` written by hand).
+const BAND_COLOR    = hexNumber(COLOR.cautionTone)  // uncertainty — take care
+const NOMINAL_COLOR = hexNumber(COLOR.infoTone)     // the proposed decision
 
 export class UncertaintyGhostView {
   /**
@@ -115,12 +118,12 @@ export class UncertaintyGhostView {
       pointerEvents: 'none',
       userSelect:    'none',
       background:    'rgba(30, 30, 30, 0.85)',
-      color:         '#d5a23a',
+      color:         COLOR.cautionTone,
       fontSize:      '12px',
       fontFamily:    'monospace',
       padding:       '3px 8px',
       borderRadius:  '3px',
-      border:        '1px solid #d5a23a',
+      border:        `1px solid ${COLOR.cautionTone}`,
       whiteSpace:    'nowrap',
       display:       'none',
       zIndex:        '50',

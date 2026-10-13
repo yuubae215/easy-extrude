@@ -5,6 +5,8 @@ import {
   snapFlashDescriptor, snapFlashFrame,
 } from './SnapFeedbackMath.js'
 import { COLOR, DURATION, hexNumber } from '../theme/tokens.js'
+import { STAGE_LIGHT } from './StageMath.js'
+import { easeOutQuad } from './MotionMath.js'
 
 const TARGET   = { label: 'Vertex', type: 'vertex', position: { x: 1, y: 2, z: 3 } }
 const TARGET_B = { label: 'Edge midpoint', type: 'edge', position: { x: 4, y: 5, z: 6 } }
@@ -157,4 +159,25 @@ test('frame: malformed progress/intensity never produces NaN styles', () => {
   for (const f of [snapFlashFrame(NaN), snapFlashFrame(0.5, false, NaN)]) {
     for (const v of Object.values(f)) assert.ok(Number.isFinite(v))
   }
+})
+
+// ── ADR-166 M4d3 ────────────────────────────────────────────────────────────
+
+test('the lock point is lit by the ONE stage light; the rings keep the channel tone (M4d3)', () => {
+  for (const channel of ['geometry', 'stack']) {
+    const d = snapFlashDescriptor(channel, 'engage', { x: 1, y: 2, z: 3 }, 2)
+    assert.equal(d.flash, hexNumber(STAGE_LIGHT.color), channel)
+    assert.notEqual(d.flash, d.color)
+  }
+})
+
+test('every snap opacity decays on `fade` (outQuad read 1 → 0), never a line (M4d3)', () => {
+  // ring: held to 0.2, then (1 − outQuad) over [0.2, 1]
+  const f = snapFlashFrame(0.6)
+  assert.ok(Math.abs(f.ringOpacity - 0.95 * (1 - easeOutQuad(0.5))) < 1e-12)
+  // spark: (1 − outQuad) over [0, 0.45]
+  assert.ok(Math.abs(snapFlashFrame(0.225).sparkOpacity - (1 - easeOutQuad(0.5))) < 1e-12)
+  // echo: (1 − outQuad) over its own window
+  const ep = 0.5, p = 0.22 + 0.78 * ep
+  assert.ok(Math.abs(snapFlashFrame(p).echoOpacity - 0.35 * (1 - easeOutQuad(ep))) < 1e-12)
 })

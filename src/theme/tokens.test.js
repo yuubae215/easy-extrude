@@ -413,7 +413,13 @@ const DECLARED_VOCABULARIES = {
 // one stage light (pointing at a card lights it — nothing is selected yet, so
 // it is not the accent). Distinct 195 → 190: `#2b2d31`, `#7fb2ff`, `#a8a8a8`,
 // `#eaeaea` had no other user, and `#9a9a9a` was `textSecondary` written by hand.
-const UNDECLARED_OCCURRENCE_BASELINE = 731
+// 731 → 719 (ADR-166 M4d3a): the landing effects' private white flash became
+// the one stage light (−2), and the hand copies of state tones in the region
+// authoring widget, the uncertainty band, the parametric preview and the
+// region gap (#10b981 / #cc3333 / #d5a23a / #3a7bd5, −10) became
+// `factTone` / `dangerTone` / `cautionTone` / `infoTone`. Distinct stays 190:
+// every one of those hues still has another user.
+const UNDECLARED_OCCURRENCE_BASELINE = 719
 const UNDECLARED_DISTINCT_BASELINE   = 190
 
 const HEX_LITERAL = /#[0-9a-fA-F]{6}\b|\b0x[0-9a-fA-F]{6}\b/g

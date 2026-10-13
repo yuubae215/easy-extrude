@@ -95,8 +95,11 @@ const MOTION_PROPERTY = /\b(transition|animation)\b/
  * 2026-10-13 (ADR-166 M4c): 16 → 13 — the Home card's border/transform `ease`
  * (×2) became `fade` / `land` + spring, and the demo badge's
  * `ease-in-out infinite` became the attention breath (`loop`, 2 s, phased).
+ * 2026-10-13 (ADR-166 M4d3a): 13 → 11 — the celebration banner's `ease-out`
+ * became `land`, and the particle fan's one `ease-out` (distance and alpha on
+ * one curve) became two animations, flight on `land` and alpha/light on `fade`.
  */
-const KEYWORD_EASING_BASELINE = 13
+const KEYWORD_EASING_BASELINE = 11
 
 test('CSS default easings outside the vocabulary never increase (ratchet)', () => {
   const hits = []

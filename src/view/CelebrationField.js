@@ -1,6 +1,6 @@
 // @ts-nocheck
 import * as THREE from 'three'
-import { particleFrame } from './CelebrationMath.js'
+import { particleFrame, particleProgress } from './CelebrationMath.js'
 
 /**
  * CelebrationField — transient 3D particle burst for a session "won moment"
@@ -13,7 +13,12 @@ import { particleFrame } from './CelebrationMath.js'
  * `_animate` performance guard from ADR-065 Consequences §6). Own overlay
  * geometry only: never touches entity materials (PHILOSOPHY #4). Sized from
  * the anchor bounds so the burst stays proportionate in mm- and m-scale
- * scenes (#27). The per-frame shape is the pure `particleFrame` curve —
+ * scenes (#27). Each particle runs the pure `particleFrame` curve on its OWN
+ * staggered clock (`particleProgress` — the fan never leaves in lockstep) and
+ * is born in the one stage light (`desc.flash`), cooling to the win's state
+ * tone — per-instance colour; one shared material has one opacity, so each
+ * particle's fade rides its scale (the VoxelBurst constraint, ADR-166 M4d3).
+ * Under reduced motion `particleFrame`
  * under reduced motion it returns one static held frame (frozen mid-burst,
  * visible for the descriptor's duration), so the cue degrades to a static
  * rendering, never to nothing (#30/#11).
@@ -23,7 +28,7 @@ export class CelebrationField {
    * @param {THREE.Scene} scene
    * @param {{center:{x:number,y:number,z:number}, radius:number}} bounds
    *   anchor from `CommandFeedbackMath.boundsOf` (the landed entity)
-   * @param {{color:string, particles:number, durationMs:number}} desc
+   * @param {{color:string, flash:string, particles:number, durationMs:number}} desc
    *   from `CelebrationMath.celebrationDescriptor`
    * @param {{reduced?: boolean}} [opts] supplied by MotionGovernor.spawn
    */
@@ -40,11 +45,13 @@ export class CelebrationField {
     const size  = Math.max(bounds.radius * 0.06, 0.012)
     const geo   = new THREE.OctahedronGeometry(size)
     const mat   = new THREE.MeshBasicMaterial({
-      color:       desc.color,
+      // no `color`: the default (neutral) multiplier — colour is per instance
       transparent: true,
       opacity:     0.9,
       depthTest:   false,
     })
+    this._baseColor  = new THREE.Color(desc.color)
+    this._flashColor = new THREE.Color(desc.flash)
     this._mesh = new THREE.InstancedMesh(geo, mat, count)
     this._mesh.renderOrder = 3
 
@@ -65,22 +72,29 @@ export class CelebrationField {
     scene.add(this._mesh)
   }
 
-  /** Write one pure-curve frame into the instance matrices. */
+  /** Write one pure-curve frame per particle into the instance matrices and colours. */
   _applyFrame(progress) {
-    const f = particleFrame(progress, this._reduced)
     const m = new THREE.Matrix4()
     const pos = new THREE.Vector3()
+    const c = new THREE.Color()
     for (let i = 0; i < this._count; i++) {
+      const f = particleFrame(particleProgress(progress, i, this._reduced), this._reduced)
       pos.copy(this._dirs[i])
         .multiplyScalar(f.dist * this._maxDist)
         .add(this._center)
       pos.z += f.lift * this._maxDist
-      m.makeScale(f.scale, f.scale, f.scale)
+      // The particle's own fade rides its scale (one material, one opacity);
+      // the reduced held cue carries its opacity on the material instead.
+      const s = Math.max(this._reduced ? f.scale : f.scale * (f.opacity / 0.9), 0.001)
+      m.makeScale(s, s, s)
       m.setPosition(pos)
       this._mesh.setMatrixAt(i, m)
+      this._mesh.setColorAt(i, c.copy(this._baseColor).lerp(this._flashColor, f.glow))
     }
     this._mesh.instanceMatrix.needsUpdate = true
-    this._mesh.material.opacity = f.opacity
+    this._mesh.instanceColor.needsUpdate = true
+    // Reduced: the held cue keeps its low opacity on the material.
+    this._mesh.material.opacity = this._reduced ? particleFrame(0, true).opacity : 0.9
   }
 
   /**
