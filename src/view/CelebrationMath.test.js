@@ -17,7 +17,11 @@ import {
   celebrationDescriptor,
   pickCelebration,
   particleFrame,
+  particleProgress,
+  GLOW_SPAN,
 } from './CelebrationMath.js'
+import { STAGE_LIGHT } from './StageMath.js'
+import { easeOutQuad } from './MotionMath.js'
 import { COLOR, DURATION } from '../theme/tokens.js'
 
 // ── clearedTransition ────────────────────────────────────────────────────────
@@ -165,4 +169,34 @@ test('particleFrame under reduced motion is a static held cue, not nothing', () 
   const b = particleFrame(0.9, true)
   assert.deepEqual(a, b)          // frozen — no movement
   assert.ok(a.opacity > 0)        // …but visibly present (#11)
+})
+
+// ── ADR-166 M4d3 ────────────────────────────────────────────────────────────
+
+test('every celebration is born in the ONE stage light and keeps its state tone (M4d3)', () => {
+  for (const [kind, detail] of [['all-green'], ['conflicts-cleared'], ['questions-cleared'], ['milestone', { milestone: 10 }]]) {
+    const d = celebrationDescriptor(kind, detail)
+    assert.equal(d.flash, STAGE_LIGHT.color, kind)
+    assert.notEqual(d.flash, d.color, kind)
+  }
+})
+
+test('particleFrame: alpha and glow on `fade`, size on `exit` — no linear ramp (M4d3)', () => {
+  assert.equal(particleFrame(0).glow, 1)
+  assert.equal(particleFrame(GLOW_SPAN).glow, 0)
+  assert.ok(Math.abs(particleFrame(GLOW_SPAN / 2).glow - (1 - easeOutQuad(0.5))) < 1e-12)
+  assert.ok(Math.abs(particleFrame(0.7).opacity - 0.9 * (1 - easeOutQuad(0.5))) < 1e-12)
+  // exit: the particle keeps its size at first (a line would already be at 0.75 at p = 0.5)
+  assert.ok(particleFrame(0.5).scale > 0.9)
+  assert.equal(particleFrame(0.3, true).glow, 0, 'reduced: no flash')
+})
+
+test('the fan never leaves in lockstep: N particles are on N different clocks (M4d3)', () => {
+  const N = 28
+  const at = new Set(Array.from({ length: N }, (_, i) => particleProgress(0.3, i).toFixed(6)))
+  assert.ok(at.size > N * 0.8, `only ${at.size} distinct clocks among ${N}`)
+  // …and all of them land inside the burst
+  for (let i = 0; i < N; i++) assert.equal(particleProgress(1, i), 1)
+  // reduced: one held frame, no offsets
+  assert.equal(particleProgress(0.3, 5, true), 0.3)
 })

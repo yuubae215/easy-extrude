@@ -29,7 +29,8 @@
  * itself is unit-testable.
  */
 import { COLOR, DURATION, hexNumber } from '../theme/tokens.js'
-import { clamp01, easeOutCubic, easeOutExpo, easeOutBack } from './MotionMath.js'
+import { clamp01, easeOutCubic, easeOutExpo, easeOutBack, easeOutQuad } from './MotionMath.js'
+import { STAGE_LIGHT } from './StageMath.js'
 
 /**
  * Commands whose apply/undo CREATES or REMOVES an entity. `push` is the
@@ -60,7 +61,10 @@ function entryOf(label) {
  *
  * @param {{phase?: string, label?: string}} [landing]
  * @returns {{kind: 'materialize'|'dissolve', direction: 'added'|'removed',
- *            color: number, duration: number}|null}
+ *            color: number, flash: number, duration: number}|null}
+ *   `color` is the state tone (the fact: appeared / vanished); `flash` is what
+ *   the boundary instant lights toward — the ONE stage light (ADR-166 M4d3),
+ *   never a private white.
  *   `null` for malformed input, a pose/geometry label (silent by the volume
  *   design), or an unrecognised label — no effect, honest silence (#11).
  */
@@ -75,9 +79,11 @@ export function lifecycleDescriptor(landing) {
   return transition === 'appear'
     ? { kind: 'materialize', direction: 'added',
         color: hexNumber(COLOR.factTone),
+        flash: hexNumber(STAGE_LIGHT.color),
         duration: DURATION.voxelMaterialize / 1000 }
     : { kind: 'dissolve', direction: 'removed',
         color: hexNumber(COLOR.infoTone),
+        flash: hexNumber(STAGE_LIGHT.color),
         duration: DURATION.voxelDissolve / 1000 }
 }
 
@@ -194,11 +200,14 @@ export function localProgress(progress, delay) {
 
 /**
  * Edge/boundary flash intensity ∈ [0,1] — the "境目こそ主役" accent the view
- * lerps the (shared) material colour toward white by. The flash marks the one
+ * lerps the (shared) material colour toward the descriptor's `flash` (the one
+ * stage light — ADR-166 M4d3; it was a private white) by. The flash marks the one
  * instant the transition is legible: for dissolve, the BREAK at t≈0 (the entity
  * cracks apart); for materialize, the ASSEMBLY as the shell lands (~55–90%,
  * the moment the object snaps into being). A single spike each, decayed — never
- * a strobe. Zero under reduced motion (the view skips it).
+ * a strobe. Zero under reduced motion (the view skips it). Both slopes are the
+ * `fade` role (colour — outQuad): the charge rises as outQuad, the decay reads
+ * outQuad from 1 to 0, i.e. (1 − x)² (ADR-166 M4d3 — they were linear ramps).
  *
  * @param {'materialize'|'dissolve'} kind
  * @param {number} progress global progress ∈ [0,1]
@@ -207,25 +216,26 @@ export function localProgress(progress, delay) {
 export function voxelFlash(kind, progress) {
   const p = clamp01(progress)
   if (kind === 'dissolve') {
-    return p < 0.18 ? 1 - p / 0.18 : 0            // bright crack at the start
+    return p < 0.18 ? 1 - easeOutQuad(p / 0.18) : 0     // bright crack at the start
   }
-  if (p < 0.55) return 0                          // shell still inbound
-  if (p < 0.72) return (p - 0.55) / 0.17          // charge as it lands
-  if (p < 0.92) return 1 - (p - 0.72) / 0.20      // flash + decay
+  if (p < 0.55) return 0                                // shell still inbound
+  if (p < 0.72) return easeOutQuad((p - 0.55) / 0.17)   // charge as it lands
+  if (p < 0.92) return 1 - easeOutQuad((p - 0.72) / 0.20) // flash + decay
   return 0
 }
 
 /**
  * Whole-cloud alpha envelope for the shared InstancedMesh material (a single
  * material has a single opacity — per-voxel fade rides scale). Held high, then
- * a soft fade-out over the final 15% so the burst never pops out of existence.
+ * a soft fade-out over the final 15% so the burst never pops out of existence
+ * (the `fade` role — outQuad read 1 → 0; ADR-166 M4d3, was linear).
  *
  * @param {number} progress global progress ∈ [0,1]
  * @returns {number} material opacity ∈ [0, 0.92]
  */
 export function voxelEnvelope(progress) {
   const p = clamp01(progress)
-  return p < 0.85 ? 0.92 : 0.92 * (1 - (p - 0.85) / 0.15)
+  return p < 0.85 ? 0.92 : 0.92 * (1 - easeOutQuad((p - 0.85) / 0.15))
 }
 
 /**
@@ -254,4 +264,20 @@ export function voxelJitter(index) {
 export function glitchGate(index, progress) {
   const step = Math.floor(clamp01(progress) * 24)
   return ((index * 7 + step) % 6) === 0 ? 0.25 : 1
+}
+
+/**
+ * Size of one assembly spark at its LOCAL progress (`WireframeAssembly` layer 2
+ * — the fade rides scale because one shared material has one opacity). It
+ * grows on approach with the `land` role (outExpo — the same curve that flies
+ * it in) and evaporates after landing with the `fade` role (outQuad read
+ * 1 → 0). Before ADR-166 M4d3 the evaporation was a linear ramp.
+ *
+ * @param {number} lp local progress ∈ [0,1]
+ * @returns {number} ∈ [0,1]
+ */
+export function sparkScale(lp) {
+  const p = clamp01(lp)
+  if (p < 0.7) return 0.35 + 0.65 * easeOutExpo(p)
+  return 1 - easeOutQuad((p - 0.7) / 0.3)
 }

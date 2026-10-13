@@ -4,7 +4,7 @@ import { buildGeometry } from '../model/CuboidModel.js'
 import { easeOutCubic, easeOutExpo } from './MotionMath.js'
 import {
   voxelFrame, voxelJitter, glitchGate,
-  voxelDelay, localProgress, voxelFlash, voxelEnvelope,
+  voxelDelay, localProgress, voxelFlash, voxelEnvelope, sparkScale,
 } from './CommandFeedbackMath.js'
 
 /**
@@ -18,7 +18,7 @@ import {
  *
  * @param {THREE.Scene} scene
  * @param {{center:{x,y,z}, radius:number, corners?:Array<{x,y,z}>}} anchor
- * @param {{kind:'materialize'|'dissolve', color:number, duration:number}} desc
+ * @param {{kind:'materialize'|'dissolve', color:number, flash:number, duration:number}} desc
  * @param {{reduced?: boolean}} [opts]
  */
 export function createLandingEffect(scene, anchor, desc, opts = {}) {
@@ -56,7 +56,7 @@ export class VoxelBurst {
    * @param {{center:{x:number,y:number,z:number}, radius:number}} bounds
    *   from `CommandFeedbackMath.boundsOf` (the appearing/vanishing entity's
    *   world corners, captured at the domain event)
-   * @param {{kind:'materialize'|'dissolve', color:number, duration:number}} desc
+   * @param {{kind:'materialize'|'dissolve', color:number, flash:number, duration:number}} desc
    *   from `CommandFeedbackMath.lifecycleDescriptor` (duration in seconds)
    * @param {{reduced?: boolean}} [opts] supplied by MotionGovernor.spawn
    */
@@ -74,7 +74,7 @@ export class VoxelBurst {
     const size  = Math.max(bounds.radius * 0.11, 0.018)
     const geo   = new THREE.BoxGeometry(size, size, size)
     this._baseColor = new THREE.Color(desc.color)
-    this._flashColor = new THREE.Color(0xffffff)
+    this._flashColor = new THREE.Color(desc.flash)
     const mat   = new THREE.MeshBasicMaterial({
       color:       this._baseColor.clone(),
       transparent: true,
@@ -143,8 +143,8 @@ export class VoxelBurst {
       this._mesh.setMatrixAt(i, m)
     }
     this._mesh.instanceMatrix.needsUpdate = true
-    // Whole-cloud alpha envelope + boundary flash (colour → white at the
-    // break / assembly instant). Reduced motion: fixed low-opacity, no flash.
+    // Whole-cloud alpha envelope + boundary flash (colour → the one stage
+    // light at the break / assembly instant — ADR-166 M4d3). Reduced motion: fixed low-opacity, no flash.
     if (this._reduced) {
       this._mesh.material.color.copy(this._baseColor)
       this._mesh.material.opacity = 0.4
@@ -192,7 +192,8 @@ export class VoxelBurst {
  *   2. Voxel sparks fly IN from outside and LAND on points along those edges
  *      (the "assembled from blocks" energy, fitting a voxel modeller), then
  *      evaporate as the real solid stands revealed.
- * A single assembly flash (`voxelFlash('materialize')`) whitens both layers as
+ * A single assembly flash (`voxelFlash('materialize')`) lights both layers
+ * toward the one stage light (`desc.flash` — ADR-166 M4d3; it whitened them) as
  * the form completes, then the envelope fades them out (#30 corollary: appear
  * is a brief cue). Reduced motion: the full outline held static at half
  * intensity — information preserved, movement dropped (#30/#11).
@@ -201,7 +202,7 @@ export class WireframeAssembly {
   /**
    * @param {THREE.Scene} scene
    * @param {{center:{x,y,z}, radius:number, corners:Array<{x,y,z}>}} anchor
-   * @param {{color:number, duration:number}} desc (duration in seconds)
+   * @param {{color:number, flash:number, duration:number}} desc (duration in seconds)
    * @param {{reduced?: boolean}} [opts]
    */
   constructor(scene, anchor, desc, { reduced = false } = {}) {
@@ -211,7 +212,7 @@ export class WireframeAssembly {
     this._start    = performance.now() / 1000
     this._center   = new THREE.Vector3(anchor.center.x, anchor.center.y, anchor.center.z)
     this._baseColor  = new THREE.Color(desc.color)
-    this._flashColor = new THREE.Color(0xffffff)
+    this._flashColor = new THREE.Color(desc.flash)
     const radius = Math.max(anchor.radius, 0.05)
 
     // ── Layer 1: the exact 12 OBB edges (via MeshView's geometry path) ──────
@@ -306,7 +307,7 @@ export class WireframeAssembly {
       pos.copy(this._sparkStarts[i]).lerp(this._sparkTargets[i], eIn)
       // grow on approach, then evaporate after landing (fade rides scale — one
       // shared material has one opacity, same constraint as VoxelBurst).
-      const vis = this._reduced ? 0.7 : (lp < 0.7 ? 0.35 + 0.65 * eIn : Math.max(1 - (lp - 0.7) / 0.3, 0))
+      const vis = this._reduced ? 0.7 : sparkScale(lp)
       const spin = this._reduced ? 0 : (1 - eIn) * 1.3 * (i % 2 === 0 ? 1 : -1)
       euler.set(spin, spin * 0.5, spin * ((i % 3) - 1))
       quat.setFromEuler(euler)

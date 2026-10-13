@@ -22,7 +22,9 @@
  */
 import { COLOR, DURATION } from '../theme/tokens.js'
 import { unsettledCount } from './CheckFeedbackMath.js'
-import { clamp01, easeOutCubic } from './MotionMath.js'
+import { clamp01, easeOutExpo, easeOutQuad, easeInCubic } from './MotionMath.js'
+import { STAGE_LIGHT } from './StageMath.js'
+import { voxelDelay, localProgress } from './CommandFeedbackMath.js'
 
 /**
  * CommandStack-depth milestones a session can cross (the stack caps at
@@ -89,11 +91,14 @@ export function commandMilestone(prevDepth, curDepth) {
  *
  * @param {'all-green'|'conflicts-cleared'|'questions-cleared'|'milestone'} kind
  * @param {{milestone?: number}} [detail]
- * @returns {{kind: string, label: string, color: string, particles: number,
- *            durationMs: number}|null}
+ * @returns {{kind: string, label: string, color: string, flash: string,
+ *            particles: number, durationMs: number}|null}
+ *   `color` is the state tone of the win (the fact); `flash` is the light each
+ *   particle is born in — the ONE stage light (ADR-166 M4d3), cooling to
+ *   `color` as it flies.
  */
 export function celebrationDescriptor(kind, detail = {}) {
-  const base = { particles: 14, durationMs: DURATION.celebration }
+  const base = { particles: 14, durationMs: DURATION.celebration, flash: STAGE_LIGHT.color }
   switch (kind) {
     case 'all-green':
       return { ...base, kind, label: 'All checks pass', color: COLOR.factTone }
@@ -139,27 +144,54 @@ export function pickCelebration(facts) {
   return null
 }
 
+/** How much of a particle's life it spends cooling from the stage light to its tone. */
+export const GLOW_SPAN = 0.35
+
 /**
- * Per-frame shape of one 3D celebration particle (CelebrationField renders it;
- * the curve lives here so it is unit-testable, same split as `voxelFrame`).
+ * Per-frame shape of one celebration particle at its OWN local progress (the
+ * 3D `CelebrationField` and the DOM fan both render it; the curve lives here
+ * so it is unit-testable, same split as `voxelFrame`).
  *
- * Motion allowed: radial flight 0 → 1 of `maxDist` with an ease-out, a slight
- * upward lift, and a fade-out over the last 60%.
- * Reduced motion: a static held cue — frozen at 40% radius, low opacity —
- * information preserved ("something was just won"), movement dropped (#30).
+ * One curve per role (ADR-166 M4d3 — before it, opacity and scale were linear
+ * ramps, and one progress drove the whole fan in lockstep):
+ *   - dist / lift: `land` (outExpo) — the burst leaves at once and settles,
+ *   - glow: born in the stage light, cooling to the state tone on `fade`
+ *     (outQuad read 1 → 0) over the first `GLOW_SPAN`,
+ *   - opacity: held, then `fade` over the last 60%,
+ *   - scale: `exit` (inCubic) — the particle keeps its size, then goes.
+ * Reduced motion: a static held cue — frozen at 40% radius, low opacity, no
+ * glow — information preserved ("something was just won"), movement dropped (#30).
  *
- * @param {number} progress ∈ [0,1]
+ * @param {number} progress local progress ∈ [0,1] (see `particleProgress`)
  * @param {boolean} [reduced]
- * @returns {{dist: number, lift: number, opacity: number, scale: number}}
+ * @returns {{dist: number, lift: number, opacity: number, scale: number, glow: number}}
  */
 export function particleFrame(progress, reduced = false) {
-  if (reduced) return { dist: 0.4, lift: 0.1, opacity: 0.4, scale: 1 }
+  if (reduced) return { dist: 0.4, lift: 0.1, opacity: 0.4, scale: 1, glow: 0 }
   const p = clamp01(progress)
-  const eased = easeOutCubic(p)
+  const out = easeOutExpo(p)
   return {
-    dist:    eased,
-    lift:    0.25 * eased,
-    opacity: p < 0.4 ? 0.9 : 0.9 * (1 - (p - 0.4) / 0.6),
-    scale:   1 - 0.5 * p,
+    dist:    out,
+    lift:    0.25 * out,
+    opacity: p < 0.4 ? 0.9 : 0.9 * (1 - easeOutQuad((p - 0.4) / 0.6)),
+    scale:   1 - 0.5 * easeInCubic(p),
+    glow:    p < GLOW_SPAN ? 1 - easeOutQuad(p / GLOW_SPAN) : 0,
   }
+}
+
+/**
+ * One particle's local progress from the burst's global progress: the fan
+ * leaves in a golden-ratio scatter, never all at once (quality gate 2). The
+ * scatter is the landing effects' own (`voxelDelay` / `localProgress`) — one
+ * stagger vocabulary for every burst, not a second copy of the constants.
+ * Reduced motion ignores the offset (the held cue is one frame).
+ *
+ * @param {number} progress global progress ∈ [0,1]
+ * @param {number} index particle index
+ * @param {boolean} [reduced]
+ * @returns {number} ∈ [0,1]
+ */
+export function particleProgress(progress, index, reduced = false) {
+  if (reduced) return clamp01(progress)
+  return localProgress(progress, voxelDelay(index))
 }

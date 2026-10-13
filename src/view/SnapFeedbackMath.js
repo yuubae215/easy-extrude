@@ -30,7 +30,8 @@
  * shape comes from `snapFlashFrame` so the curve itself is unit-testable.
  */
 import { COLOR, DURATION, hexNumber } from '../theme/tokens.js'
-import { clamp01, easeOutCubic, easeOutBack } from './MotionMath.js'
+import { clamp01, easeOutCubic, easeOutBack, easeOutQuad } from './MotionMath.js'
+import { STAGE_LIGHT } from './StageMath.js'
 
 /** Intensity per transition — retarget is deliberately the quieter sibling. */
 const INTENSITY = Object.freeze({ engage: 1, retarget: 0.55 })
@@ -105,7 +106,10 @@ export function snapTransition(prev, next) {
  * @param {{x:number,y:number,z:number}|null|undefined} snap  the new snapshot
  * @param {number|null|undefined} entityRadius  grabbed entity bounding radius
  * @returns {{x:number, y:number, z:number, radius:number, color:number,
- *            duration:number, intensity:number}|null} duration in seconds
+ *            flash:number, duration:number, intensity:number}|null} duration in
+ *   seconds. `color` is the channel's state tone (the rings — which constraint
+ *   engaged); `flash` is the centre spark, the exact lock point lit by the ONE
+ *   stage light (ADR-166 M4d3 — the click is light, the ring is the fact).
  */
 export function snapFlashDescriptor(channel, transition, snap, entityRadius) {
   if (transition !== 'engage' && transition !== 'retarget') return null
@@ -117,6 +121,7 @@ export function snapFlashDescriptor(channel, transition, snap, entityRadius) {
     x: snap.x, y: snap.y, z: snap.z,
     radius:    Math.max(entityRadius * 0.4, 0.02),
     color:     hexNumber(channel === 'stack' ? COLOR.factTone : COLOR.snapTone),
+    flash:     hexNumber(STAGE_LIGHT.color),
     duration:  transition === 'retarget' ? base * RETARGET_DURATION_SCALE : base,
     intensity: INTENSITY[transition],
   }
@@ -133,6 +138,9 @@ export function snapFlashDescriptor(channel, transition, snap, entityRadius) {
  *     two fronts never move in unison),
  *   - spark: a centre dot that *contracts* onto the lock point on its own
  *     faster timeline (overlap) — the "click" that marks the exact anchor.
+ * Every opacity decays on the `fade` role (outQuad read 1 → 0, i.e. (1 − x)²
+ * — ADR-166 M4d3; the three decays were linear ramps); sizes keep their own
+ * curves (the ring's settle is the one `spring` of a snap).
  * Reduced motion: a static held ring at fixed scale/opacity — the information
  * ("a lock engaged here") is preserved, the movement is dropped (#30/#11).
  *
@@ -150,12 +158,12 @@ export function snapFlashFrame(progress, reduced = false, intensity = 1) {
   }
   const p = clamp01(progress)
   const ringScale   = 0.25 + 0.75 * easeOutBack(p)
-  const ringOpacity = k * (p < 0.2 ? 0.95 : 0.95 * (1 - (p - 0.2) / 0.8))
+  const ringOpacity = k * (p < 0.2 ? 0.95 : 0.95 * (1 - easeOutQuad((p - 0.2) / 0.8)))
   const ep          = clamp01((p - 0.22) / 0.78)
   const echoScale   = 0.4 + 1.1 * easeOutCubic(ep)
-  const echoOpacity = ep === 0 ? 0 : k * 0.35 * (1 - ep)
+  const echoOpacity = ep === 0 ? 0 : k * 0.35 * (1 - easeOutQuad(ep))
   const sp           = clamp01(p / 0.45)
   const sparkScale   = Math.max(1.4 - 1.15 * easeOutCubic(sp), 0.001)
-  const sparkOpacity = k * (1 - sp)
+  const sparkOpacity = k * (1 - easeOutQuad(sp))
   return { ringScale, ringOpacity, echoScale, echoOpacity, sparkScale, sparkOpacity }
 }

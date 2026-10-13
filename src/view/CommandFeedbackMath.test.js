@@ -2,8 +2,10 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   lifecycleDescriptor, boundsOf, voxelFrame, voxelJitter, glitchGate,
-  voxelDelay, localProgress, voxelFlash, voxelEnvelope, STAGGER_SPREAD,
+  voxelDelay, localProgress, voxelFlash, voxelEnvelope, STAGGER_SPREAD, sparkScale,
 } from './CommandFeedbackMath.js'
+import { STAGE_LIGHT } from './StageMath.js'
+import { easeOutQuad } from './MotionMath.js'
 import { COLOR, DURATION, hexNumber } from '../theme/tokens.js'
 
 test('entity-lifecycle labels map to materialize (appear) / dissolve (vanish)', () => {
@@ -181,4 +183,30 @@ test('glitchGate is a deterministic two-level gate', () => {
     }
   }
   assert.deepEqual([...seen].sort(), [0.25, 1])   // both levels actually occur
+})
+
+// ── ADR-166 M4d3: the one stage light, the `fade` role ──────────────────────
+
+test('the boundary flash lights toward the ONE stage light, not a private white (M4d3)', () => {
+  for (const label of ['Add "Box"', 'Delete "Box"']) {
+    const d = lifecycleDescriptor({ phase: 'push', label })
+    assert.equal(d.flash, hexNumber(STAGE_LIGHT.color), label)
+    assert.notEqual(d.flash, 0xffffff)
+    assert.notEqual(d.flash, d.color, 'the state tone (the fact) stays its own colour')
+  }
+})
+
+test('the flash, the envelope tail and the spark evaporation decay on `fade`, not a line (M4d3)', () => {
+  // dissolve crack: 1 → 0 over [0, 0.18] read as outQuad
+  assert.ok(Math.abs(voxelFlash('dissolve', 0.09) - (1 - easeOutQuad(0.5))) < 1e-12)
+  // materialize: charge rises as outQuad, decays as outQuad read 1 → 0
+  assert.ok(Math.abs(voxelFlash('materialize', 0.635) - easeOutQuad(0.5)) < 1e-12)
+  assert.ok(Math.abs(voxelFlash('materialize', 0.82) - (1 - easeOutQuad(0.5))) < 1e-12)
+  // a line would sit at the midpoint of its segment at the half-way point — fade does not
+  assert.ok(voxelFlash('materialize', 0.82) < 0.5)
+  assert.ok(voxelEnvelope(0.925) < 0.92 * 0.5)
+  assert.ok(Math.abs(voxelEnvelope(1)) < 1e-12)
+  assert.ok(sparkScale(0.85) < 0.5)
+  assert.ok(Math.abs(sparkScale(1)) < 1e-12)
+  assert.ok(sparkScale(0.6) > sparkScale(0.1), 'grows on approach')
 })

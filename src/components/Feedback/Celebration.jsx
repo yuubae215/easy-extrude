@@ -2,7 +2,8 @@ import { useUIStore } from '../../store/uiStore.js'
 import { useReducedMotion, usePrevOnChange } from './FeedbackPrimitives.jsx'
 import { checkStatusKeys } from '../../view/CheckFeedbackMath.js'
 import { pickCelebration } from '../../view/CelebrationMath.js'
-import { COLOR, DURATION, rgba } from '../../theme/tokens.js'
+import { voxelDelay, STAGGER_SPREAD } from '../../view/CommandFeedbackMath.js'
+import { COLOR, EASING, rgba } from '../../theme/tokens.js'
 
 /**
  * Celebration — the DOM burst for a "won moment" (ADR-065 Phase 4, Widening 2;
@@ -35,9 +36,14 @@ const CELEBRATION_CSS = `
   80%  { transform: scale(1);    opacity: 1; }
   100% { transform: scale(0.96); opacity: 0; }
 }
-@keyframes eaCelebrateParticle {
-  0%   { transform: translate(0, 0) scale(1); opacity: 0.95; }
-  100% { transform: translate(var(--ea-dx), var(--ea-dy)) scale(0.4); opacity: 0; }
+@keyframes eaCelebrateParticleFly {
+  0%   { transform: translate(0, 0) scale(1); }
+  100% { transform: translate(var(--ea-dx), var(--ea-dy)) scale(0.4); }
+}
+@keyframes eaCelebrateParticleFade {
+  0%   { opacity: 0.95; background: var(--ea-flash); }
+  35%  { background: var(--ea-tone); }
+  100% { opacity: 0; background: var(--ea-tone); }
 }
 `
 
@@ -55,7 +61,13 @@ export function CelebrationDefs() {
 export function CelebrationBurst({ descriptor, tick }) {
   const reduced = useReducedMotion()
   if (!descriptor) return null
-  const { label, color, particles, durationMs } = descriptor
+  const { label, color, flash, particles, durationMs } = descriptor
+  // The fan: flight on `land`, light and alpha on `fade` (two curves — ADR-166
+  // M4d3; one `ease-out` used to carry both), each particle on its own delay
+  // from the landing effects' golden scatter (never all at once), born in the
+  // one stage light and cooling to the win's tone.
+  const fanMs = Math.round(durationMs * 0.55)
+  const ownMs = Math.round(fanMs * (1 - STAGGER_SPREAD))
 
   const banner = (
     <div style={{
@@ -64,7 +76,7 @@ export function CelebrationBurst({ descriptor, tick }) {
       border: `1px solid ${color}`,
       boxShadow: `0 0 14px ${rgba(color, 0.55)}`,
       color, fontSize: '12px', fontWeight: 'bold', whiteSpace: 'nowrap',
-      ...(reduced ? {} : { animation: `eaCelebrateBanner ${durationMs}ms ease-out both` }),
+      ...(reduced ? {} : { animation: `eaCelebrateBanner ${durationMs}ms ${EASING.land} both` }),
     }}>
       ✓ {label}
     </div>
@@ -81,14 +93,20 @@ export function CelebrationBurst({ descriptor, tick }) {
         // Deterministic radial fan (no Math.random — replays identically).
         const angle = (i / particles) * 2 * Math.PI
         const dist  = 60 + (i % 3) * 22
+        const delayMs = Math.round(voxelDelay(i) * fanMs)
         return (
           <span key={i} style={{
             position: 'absolute',
             width: '6px', height: '6px', borderRadius: '50%',
             background: color,
+            '--ea-tone':  color,
+            '--ea-flash': flash,
             '--ea-dx': `${Math.cos(angle) * dist}px`,
             '--ea-dy': `${Math.sin(angle) * dist - 18}px`,
-            animation: `eaCelebrateParticle ${Math.round(durationMs * 0.55)}ms ease-out both`,
+            animation: [
+              `eaCelebrateParticleFly ${ownMs}ms ${EASING.land} ${delayMs}ms both`,
+              `eaCelebrateParticleFade ${ownMs}ms ${EASING.fade} ${delayMs}ms both`,
+            ].join(', '),
           }} />
         )
       })}

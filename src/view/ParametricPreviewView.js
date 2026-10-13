@@ -27,9 +27,10 @@
  */
 import * as THREE from 'three'
 import { prefersReducedMotion, onReducedMotionChange } from '../theme/motion.js'
+import { COLOR, hexNumber } from '../theme/tokens.js'
 import { IDLE_PERIOD, idleLevel } from './IdleMotionMath.js'
 
-const GHOST_COLOR   = 0x3a7bd5
+const GHOST_COLOR   = hexNumber(COLOR.infoTone) // was the same blue by hand (ADR-166 M4d3)
 const FILL_OPACITY  = 0.18
 const EDGE_OPACITY  = 0.9
 const BREATH_AMPL   = 0.05   // the fill breathes FILL_OPACITY ± BREATH_AMPL

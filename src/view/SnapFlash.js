@@ -25,7 +25,7 @@ export class SnapFlash {
    * @param {THREE.Scene} scene
    * @param {{activeCamera: THREE.Camera}} sceneView  camera accessor (read per tick)
    * @param {{x:number, y:number, z:number, radius:number, color:number,
-   *          duration:number, intensity:number}} desc
+   *          flash:number, duration:number, intensity:number}} desc
    *   from `SnapFeedbackMath.snapFlashDescriptor` (duration in seconds)
    * @param {{reduced?: boolean}} [opts] supplied by MotionGovernor.spawn
    */
@@ -43,8 +43,10 @@ export class SnapFlash {
                                  new THREE.MeshBasicMaterial(matOpts))
     this._echo  = new THREE.Mesh(new THREE.RingGeometry(0.88, 0.96, 32),
                                  new THREE.MeshBasicMaterial(matOpts))
+    // The centre spark is the lock point lit by the one stage light (ADR-166
+    // M4d3); the rings keep the channel's state tone.
     this._spark = new THREE.Mesh(new THREE.CircleGeometry(0.16, 16),
-                                 new THREE.MeshBasicMaterial(matOpts))
+                                 new THREE.MeshBasicMaterial({ ...matOpts, color: desc.flash }))
 
     this._group = new THREE.Group()
     for (const mesh of [this._ring, this._echo, this._spark]) {
