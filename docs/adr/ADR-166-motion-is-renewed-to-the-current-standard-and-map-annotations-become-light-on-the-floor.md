@@ -4,7 +4,7 @@
 - Date: 2026-10-11
 - Deciders: yuubae215, Claude
 - 段: 本 ADR の M1〜M4 (下の §段)。IA 再設計の順序表には載せない (画面の住所を変えないため)
-- Retires: なし — 宣言していた `GREP:src/view/AnnotatedRegionView.js::The\sBlueprint\sdevice` (製図台の装置 = 対角ハッチ・コーナー登録マーク) は M3a (2026-10-12) で退役済み。本 ADR は M4 (M4c・M4d) が残るので Proposed のまま (M3b・M4a・M4b は 2026-10-12 に実施) — Proposed の Retires は「在らねばならない」と問われるため、満期の来た行をここで閉じる
+- Retires: なし — 宣言していた `GREP:src/view/AnnotatedRegionView.js::The\sBlueprint\sdevice` (製図台の装置 = 対角ハッチ・コーナー登録マーク) は M3a (2026-10-12) で退役済み。本 ADR は M4d が残るので Proposed のまま (M3b・M4a・M4b は 2026-10-12、M4c は 2026-10-13 に実施) — Proposed の Retires は「在らねばならない」と問われるため、満期の来た行をここで閉じる
 - Supersedes / Superseded by: ADR-093 を部分的に置き換える (D3 Blueprint アトモスフィアの部分だけ — M3a で実施 2026-10-12。D1 位相を同一性から導く・D2 曲線 2 本・D6 reduced motion は継承)
 
 ## Context — Goal と力学 (§1.2 Goal)
@@ -71,10 +71,33 @@ Tier (Fact / Affordance / Delight) は従来どおり守る。棚卸しで出た
 | **M2 方向性を決める** (**実施 2026-10-12**) | モーション・アイデンティティ 5 軸を当事者と決め、CLAUDE.md に「モーション・アイデンティティ」節として固定する。背景 (SceneStage) のアトモスフィアを Void Grid 型から選び直す | CLAUDE.md に節があり、5 軸が埋まっている。**結果**: 節は CLAUDE.md、軸の母集団は animation-fx Step 1.5 から導出して `src/MotionIdentity.test.js` が問う |
 | **M3a マップ注釈 = 床の光** (**実施 2026-10-12**) | 案 B。注釈の名札を EntityLabel に揃える (名札の仕組みを 1 つに — ADR-155 D1 の続き)。投影・角度に依らず読める (見る角度を `MapVisualMath` の入力にする)。Zone の強さを役割で決める。Blueprint 装置を退役 | 純粋層テスト (位相の同一性・linear 禁止・reduced motion のフレーム一致を継承 + 角度の入力 + 役割の表)。刷新前後の静止画 `docs/motion/media/m3a-*.png` (動画は M3b の後に M3 全体で撮る) |
 | **M3b 選択・消滅・置く前** (**実施 2026-10-12**) | 選択時の見せ方 (BoxHelper の白い箱 → 光が強まって `land` で着地)、消滅演出 (P9 — ライフサイクルに `exiting`、論理の可視性と描画の可視性を 2 欄に分ける)、配置プレビュー (`MapPreviewMath`) を同じ光で描く | `exiting` の状態機械 (STATE_TRANSITIONS)、hit-test が退場中の注釈を拾わないこと、刷新前後の動画。**結果**: 下の「M3b で決めたこと」、実機の静止画 `docs/motion/media/m3b-*.png`。**動画は得られていない** — 下の「分かったこと」 |
-| **M4 残りの演出** | M1 の採点が低い順に作り直す。4 本に割った (当事者合意 2026-10-12): **M4a 状態の手掛かりの追従** (キューブのホバー・選択・違反・接近、座標フレームの減光、領域ゴーストの絞り込み — **実施 2026-10-12**) → **M4b リンク** (波紋 + リンク線を一体で — **実施 2026-10-12**) → **M4c 起動ホーム** → **M4d B の残り** | M1 の表の全行が「今の水準」になるか、残す理由が書かれている。**M4a の結果**: 下の「M4a で決めたこと」、3 行が A へ (`docs/motion/inventory.md`)。**M4b の結果**: 下の「M4b で決めたこと」、C の 2 行を 1 行に束ねて A へ |
+| **M4 残りの演出** | M1 の採点が低い順に作り直す。4 本に割った (当事者合意 2026-10-12): **M4a 状態の手掛かりの追従** (キューブのホバー・選択・違反・接近、座標フレームの減光、領域ゴーストの絞り込み — **実施 2026-10-12**) → **M4b リンク** (波紋 + リンク線を一体で — **実施 2026-10-12**) → **M4c 起動ホーム** (**実施 2026-10-13**) → **M4d B の残り** | M1 の表の全行が「今の水準」になるか、残す理由が書かれている。**M4a の結果**: 下の「M4a で決めたこと」、3 行が A へ (`docs/motion/inventory.md`)。**M4b の結果**: 下の「M4b で決めたこと」、C の 2 行を 1 行に束ねて A へ。**M4c の結果**: 下の「M4c で決めたこと」、C の最後の 1 行が A へ (C は 0 行) |
 
 M3 は M2 の後に置く — 床の光は M2 で決める背景の光源を共有するので、先に作ると光源が 2 つになる (§1.1)。
 M3 は 2 本に割った (当事者合意 2026-10-12): `exiting` の状態追加と見た目の刷新が同じ差分に混ざるとレビューできないため。
+
+**M4c で決めたこと (2026-10-13、当事者合意 — 俯瞰の推奨 3 点「間取りの上面図」「ホバーは舞台の光」「バッジは loop 2 s・位相は同一性から」をすべて採用):**
+
+| 問い | 決定 | 正本 |
+|---|---|---|
+| カードが何を言うか | 名前と説明文 (思い出させる) に加えて **上面図** (見て分かる)。Zone は光だまりの縁 (M3a の床の光と同じ語)、Solid は足跡、ロボットのベースは舞台の光の点、Anchor は分類色の点。M1 の処方「セルの中でロボットが 1 回動く」は解の形だったので Goal「一目でどんなセルか分かる」まで戻した。ロボットを動かすには運動学と実写メッシュをカードごとに立ち上げることになり、Goal に対して重すぎる | `LayoutPlanMath.layoutPlan` |
+| 図の源 | DSL を読み直さず、**クリックで読み込むのと同じコンパイル済みシーン** (`compileLayout`) から導出する。コンベアの駅は戦略 (`linear`) が位置を決めるので、DSL には位置が無い。図は AppController が一度だけ導出して store (`launchHomePlans`) へ置き、カードは描くだけ (ADR-062 Phase 5 の TemplateGallery の前例)。コンパイルは純粋層 (`layoutPlanOf`) の中で行う — AppController がコンパイルする形は ADR-162 が退役させた | `layoutPlanOf` / `AppController._layoutPlans` |
+| 種と基数 | 種ごとの役割表 (`PLAN_ROLE_BY_TYPE`) は未宣言の種で throw (原則 #31)。枠はロボットのベースだけを描き、判定は `isRobotBaseFrame` を呼ぶ (同一性の述語は 1 箇所)。描く物が 0 個なら `null` (空の枠は描かない)。Empty のカードは「図なし」を宣言する。親の鎖が切れた枠は推測の位置に描かない | `PLAN_ROLE_BY_TYPE` |
+| 大きさ | 枠 120 × 64 に一様に収める — mm のセルと m のセルが同じ図になる (M4b の教訓、原則 #27) | `PLAN_FRAME` |
+| 振付 | カードは読み順にスタッガー (`itemEnterMotion` — 目は左上から入る、それが「触った点」の代わり)。図は**光の落ちる所** (ロボットのベース、無ければセルの中央) から外へ、カードの着地の後に `fade` で点く (広がり 160 ms) | `planLightDelay` / `itemEnterDelay` |
+| 指したカード | **舞台の光**が当たる: 枠が `stageLight` に、外側に淡い光、図の光だまりが強まる (色と光 = `fade`、浮き = `land` + spring — `tierAMotion`)。強調色 `accent` は「操作の対象」なので使わない (まだ何も選ばれていない)。旧ホバーの青 `#3a7bd5` と名前の青 `#7fb2ff` は退役 | `HomeScreen` |
+| 待機 | カードの光だまりは舞台と**同じ呼吸** (`STAGE.breath` の周期・深さ)、位相はテンプレの id から (N 枚が揃わない — G5) | `poolBreathTiming` |
+| 暗幕 | 手書きの rgba を退役し、舞台の地 (`BACKDROP` — 中心の位置と 2 色) を半透明にしたもの。起動の部屋と同じ部屋に立つ | `HomeScreen` |
+| デモのバッジ | `ease-in-out infinite` 1.2 s・全部同位相 → **注意の呼吸** `attentionBreath`: リンクの違反と同じ `BREACH_PERIOD` 2 s・`loop`、位相は印の同一性 (衝突の ref・変数・属性)。`pulse` は真偽値から**同一性の名前**に変えた — 呼び手が名前を渡さなければ呼吸しない (位相の源を省けない形) | `ChromeMath.attentionBreath` |
+| ツアーのカード | 直さない (A)。入場は既に `enterMotion` (`land`)、色はトークン、事実 (`factTone`) と操作中の段 (`accent`) の塗り分けも宣言済み | — |
+
+**語彙 (原則 #33):** 「カードを見ればどんなセルか分かる」が言えなかった — カードの語は名前と説明文だけで、語が実物のどこを指すかを見る手段が無かった (検査 4) ので、**上面図**を足した。光・呼吸・スタッガー・位相の語は M2〜M4b で在ったので足していない (線をつないだだけ)。
+
+**M4c で分かったこと (原則 #19):**
+- **入場の fill が浮きを消していた (既存の潜在的な不具合)。** `itemEnterMotion` は `both` で最後のキーフレーム (`transform: none`) を入場の後も持ち続け、要素自身の inline の `transform` に勝つ。メニューの項目は浮かないので見えなかったが、カードに使うとホバーの浮きが一度も動かない。1 つの欄に書き手が 2 人 (原則 #4 — アニメーションの fill も書き手)。遅延の間 opacity 0 を持てれば足りるので `backwards` にし、`ChromeMath.test.js` が forwards / both でないことを問う。
+- **退役の検査が、プレビューの形で戻りかけた退役形を止めた。** 初版では AppController が `layoutPlan(compileLayout(dsl))` を呼び、ADR-162 の `Retires:` の GREP (`AppController.js::compileLayout(dsl)`) が `pnpm test:adr` で落ちた。プレビューは読み込みではないが、コントローラにコンパイルさせない理由 (DSL を捨てる読み込み口を作らない) はそのまま当てはまる。GREP を避ける改名ではなく、コンパイルを純粋層 `layoutPlanOf` に移して答えた。
+
+**実機:** dev サーバの実機 (本物の時計) で刷新前後とホバーを撮った — `docs/motion/media/m4c-home-before-after.png`。CSS アニメーションの時計を 0.08 倍に落として (CDP `Animation.setPlaybackRate`) 入場の中間フレームを撮った — `docs/motion/media/m4c-home-light-on-slowed-clock.png` (ロボットの近くの物から点き、コンベアの両端・パレットの箱・工場セルの縁が後から点く)。**検証できていないこと:** デモのバッジの呼吸の実機撮影 (純粋層のテストと 5 つの呼び手の読みのみ)、時間軸の動画 (M3b と同じ理由)、図が当事者に「そのセルに見える」か (人の目 — 静止画を見て判断してほしい)。
 
 **M4b で決めたこと (2026-10-12、当事者合意 — 俯瞰の推奨 3 点「波紋を割る」「色はトークンへ」「呼吸は `loop` 2 s」に「3点ともおすすめで」):**
 
@@ -247,6 +270,7 @@ reduced 境界の外) を含む 9 本を採点した。どちらも M4 の最初
 
 | `src/view/CueFollowMath.js` (新設) / `MotionMath.js` (`easeOutQuad`) / `MapVisualMath.js` (adapter) / `MeshView.js` / `CoordinateFrameView.js` / `RegionGhostView.js` / `AppController` (tick を 2 行) | M4a — 状態の手掛かりの追従、接近の色 (**実施**)。当たり判定・選択の書き手 (`SelectionManager`)・接近の強さの計算 (`computeApproachWarmth`)・`SnapFlash` の曲線は触っていない |
 | `src/view/LinkMotionMath.js` / `LinkBindEffect.js` (新設) / `SpatialLinkView.js` / `RippleEffect.js` / `LinkCreationHandler` / `SceneService` (`_linkClock`、`id` を渡す) / `AppController` (`_updateWorldPoses(t)`) | M4b — リンクの成立・強調・違反 (**実施**)。違反の判定 (`_evaluateClearanceLinks`)・リンクの作成と undo・LINK NETWORK パネル・デモの呼び手 (`ContextDemoController`) は触っていない |
+| `src/view/LayoutPlanMath.js` (新設) / `src/components/Home/HomeScreen.jsx` / `ChromeMath.js` (`attentionBreath` / `itemEnterDelay`、入場の fill を `backwards`) / `ContextInspector` の `Badge` と 4 つの呼び手 / `uiStore` (`launchHomePlans`) / `AppController` (`_layoutPlans`) | M4c — 起動ホームの上面図・光・スタッガー、デモのバッジの呼吸 (**実施**)。stage の取得 (`claimStage` / `releaseStage`)・テンプレの読み込み経路 (`docFromLayout` → `loadContext`)・カタログ・ツアーの進行・BootReveal は触っていない |
 
 **触らない:** 契約、`core/`、注釈の意味 (place type の分類と違反アラーム — ADR-043)。
 

@@ -91,6 +91,7 @@ import { startTour, nextTourState }   from '../view/TourMath.js'
 // document — the same loadContext path as any document (ADR-162, §1.1).
 import { docFromLayout }              from '../context/DocBuilder.js'
 import { getLayoutTemplateMeta }      from '../layout/LayoutTemplateCatalog.js'
+import { layoutPlanOf }               from '../view/LayoutPlanMath.js'
 import layoutPickPlace                from '../../examples/layout_pick_place_cell.json'
 import layoutConveyor                 from '../../examples/layout_conveyor_line.json'
 import layoutPalletizing              from '../../examples/layout_palletizing.json'
@@ -256,6 +257,9 @@ export class AppController {
     // (an undo mid-exit hands the entity back to the main walk).
     /** @type {Set<AnnotatedPoint|AnnotatedLine|AnnotatedRegion>} */
     this._exitingAnnotations = new Set()
+
+    /** @type {object|null} memoized file → floor plan map for the Home cards (ADR-166 M4c) */
+    this._layoutPlanCache = null
 
     // ── Domain event subscriptions — keep View in sync with domain state ──
     this._service.on('objectAdded',   obj       => {
@@ -4552,8 +4556,35 @@ export class AppController {
 
   // Taking / releasing the stage is one call each (ADR-113). Release names the
   // claim, so a late close cannot clear a claim the gallery has since taken.
-  _openHome()  { useUIStore.getState().actions.claimStage(SCREEN_CLAIM.LAUNCH_HOME) }
+  _openHome() {
+    const ui = useUIStore.getState().actions
+    ui.setLaunchHomePlans(this._layoutPlans())
+    ui.claimStage(SCREEN_CLAIM.LAUNCH_HOME)
+  }
   _closeHome() { useUIStore.getState().actions.releaseStage(SCREEN_CLAIM.LAUNCH_HOME) }
+
+  /**
+   * Floor plans for the Home cards (ADR-166 M4c), keyed by example file. The
+   * fact is the compiled scene a card's click would load; compiling and
+   * projecting are both inside the pure `layoutPlanOf` — this controller owns
+   * only the bundled DSL map (ADR-162 retired a controller-side compile). Computed once and memoized — the bundled DSLs are static
+   * modules. A DSL whose derivation throws gets no plan (an honest card
+   * without one, never a guessed one — #11; the TemplateGallery precedent).
+   */
+  _layoutPlans() {
+    if (this._layoutPlanCache) return this._layoutPlanCache
+    const plans = {}
+    for (const [file, dsl] of Object.entries(this._layoutTemplateDsls())) {
+      try {
+        plans[file] = layoutPlanOf(dsl)
+      } catch (err) {
+        console.error(`[AppController] floor plan failed for ${file}`, err)
+        plans[file] = null
+      }
+    }
+    this._layoutPlanCache = plans
+    return plans
+  }
 
   /** Persist (or clear) the Blender-style "don't show on startup" preference. */
   _persistHomeFlag(value) {

@@ -89,44 +89,69 @@ artifacts
             - "src/view/EntityLabel.test.js"
             - "docs/motion/media/m3b-exit-slowed-clock.png"
 
-        goal StateCuesFollowTheirTargets
-        uuid f07039dd-f7b9-4060-9f01-1d3c6149318f
-        summary "キューブ・座標フレーム・領域ゴーストの状態の手掛かり (ホバー・選択・違反・文脈の減光・ペルソナの絞り込み) は、切り替えの境目に役割どおりの曲線と時間を持つ (到着 = land、手放し = fade、違反は即時 + 余韻)。追従の源は 1 つで、マップ注釈の選択と共有する。グラブの接近は噛んだ瞬間の閃光と同じ色で温まる (M4a)"
-        labels support-verified
-
-            solution CueFollowIsOneSourceAndAsked
-            uuid dba35aae-45c8-4fff-84cb-4bcce82a3acc
-            summary "M4a 実施 (2026-10-12、当事者合意): M3b の retargetSelection / selectionLevel を src/view/CueFollowMath.js へ移して一般化 (MapVisualMath は同名の adapter を残す — 振る舞い不変、MapVisualMath.test.js / AnnotationLifecycle.test.js は書き換えずに緑。テストの fixture 1 箇所だけ target: true → 1)。src/view/CueFollowMath.test.js が全プロファイルの脚が応答帯 (≤ 300 ms) に在ること・到着が outExpo で手放しが outQuad であること・同じ要求 2 回で再開しないこと・途中反転で両方向に跳ねないこと・違反が即時で余韻を残すこと・reduced と壊れた時計で即着地すること・層の合成が満ちれば優先順位どおりであることを問い、マップ注釈と同じ SELECT_LAND であることを等値で問う。MeshView / CoordinateFrameView / RegionGhostView は真偽値を目標とし tick(t) が唯一の書き手。接近の色は snapTone (tokens.test.js の宣言外の色 755 → 751、種類 199 → 198)。pnpm test 1789 pass。実機: 時計 1/12 の静止画 docs/motion/media/m4a-cube-cues-slowed-clock.png で解除の fade・選択の land の中間フレームを確認。検証していないこと: 座標フレーム・領域ゴースト・接近の色の実機撮影、時間軸の動画 (仮想時間の録画は M3b で時計が単調でないと分かっている)"
-            artifacts
-            - "src/view/CueFollowMath.test.js"
-            - "src/view/MapVisualMath.test.js"
-            - "src/theme/tokens.test.js"
-            - "docs/motion/inventory.md"
-            - "docs/motion/media/m4a-cube-cues-slowed-clock.png"
-
-        goal LinksBindStrainAndBreakAsLight
-        uuid c37981ed-e22d-4933-a6c1-cc6e2efe02bb
-        summary "リンクの成立・張力・違反は、モーション・アイデンティティの語彙で読める: 成立は光が 2 端から中点へ走って同時に出会い、閃光と線に沿った余韻で言う。強調と違反は追従し (到着 = land、手放し = fade、違反は即時 + 余韻)、違反の呼吸は N 本が揃わず、reduced では静止した違反色。色はすべて宣言されたトークン。成立の手掛かりはシーンの単位に依らず見える (M4b)"
-        labels support-verified
-
-            solution LinkMotionIsPureAndAsked
-            uuid a02ee133-99e5-42da-b980-451f24165af7
-            summary "M4b 実施 (2026-10-12、当事者合意 — 俯瞰の推奨 3 点に「3点ともおすすめで」): RippleEffect を 1 語 1 事実で割り、リンクの成立は新設 LinkBindEffect、RippleEffect はデモの「ここに現れた」だけを言い曲線を land/fade に。SpatialLinkView は setter が目標だけを書き update(…, t) が唯一の画素の書き手 (triggerFlash 退役)、合成は純粋 LinkMotionMath.linkLineFrame。src/view/LinkMotionMath.test.js が、両端が同時に中点で出会うこと・応答帯 (≤ 300 ms) と選択と同じ tempo・travel が outExpo で余韻が outQuad・時計の後退を始まりと読むこと・reduced で静止した手掛かり・呼吸が待機帯 (2〜6 s) で周期的・N=25 本の位相が散ること・reduced で呼吸が止まること・色がすべて宣言されたトークンであること・優先順位と余韻の連続・波紋が linear でないこと・玉の大きさがスパンに比例すること・配線 (私的な時計を読まない、id が位相に、ループの時計が update に届く) を問う。tokens.test.js の宣言外の色 751 → 743、種類 198 → 195。pnpm test 1806 pass、typecheck・build 緑。実機: 時計 1/12 の静止画 docs/motion/media/m4b-link-bind-slowed-clock.png で、2 つの玉が走って出会い、閃光が広がって消え、余韻の線が破線へ戻るまでを確認。実機で分かったこと: 旧波紋の半径 0.15 は既定の mm シーンで 0.15 mm = 一度も見えていなかった (原則 #27) — 玉の大きさをリンクのスパンから導出した。検証していないこと: 違反の呼吸・強調の追従・張力の色の実機撮影 (純粋層のテストと配線の読みのみ)、時間軸の動画 (仮想時間の録画は時計が単調でない — M3b)"
-            artifacts
-            - "src/view/LinkMotionMath.test.js"
-            - "src/theme/tokens.test.js"
-            - "docs/motion/inventory.md"
-            - "docs/motion/media/m4b-link-bind-slowed-clock.png"
-
         goal RemainingMotionMeetsTheStandard
         uuid 131cccd7-12fe-447f-919f-43bcd8cf57c8
-        summary "M1 の採点表の全行が『今の水準』(A) になるか、残す理由が書かれている (M4c 起動ホーム / M4d B の残り — M4b リンクは LinksBindStrainAndBreakAsLight で実施)"
-        state ToBeDeveloped
-        labels support-exploring
+        summary "M1 の採点表の全行が『今の水準』(A) になるか、残す理由が書かれている (M4)"
 
-            assumption TheInventoryRowsCloseOneByOne
-            uuid 726be535-c8df-4be1-bd62-02a63fa70c6b
-            summary "計画: M4b (RippleEffect + SpatialLinkView を一体で — 実施 2026-10-12) → M4c (起動ホーム) → M4d (B の残り — M4b の残し: 掴んでいる間の破線の行進がフレーム率依存)。各段は inventory の行を A にするか残す理由を書く。MotionInventoryCoverage.test.js が母集団と行の一致を問い続ける。満期=GREP:docs/motion/inventory.md::M4d\s✓"
-            artifacts
-            - "docs/motion/inventory.md"
-            - "src/MotionInventoryCoverage.test.js"
+            strategy ByLowestScoreFirst
+            uuid d72b1037-b54b-4124-aaf0-e08472e80237
+            summary "採点の低い順に 4 本に割る (当事者合意 2026-10-12): M4a 状態の手掛かりの追従 → M4b リンク → M4c 起動ホーム → M4d B の残り。M4a の追従の純粋関数を後の段が引けるよう先頭に置いた。各段は inventory の行を A にするか残す理由を書き、MotionInventoryCoverage.test.js が母集団と行の一致を問い続ける"
+
+                goal StateCuesFollowTheirTargets
+                uuid f07039dd-f7b9-4060-9f01-1d3c6149318f
+                summary "キューブ・座標フレーム・領域ゴーストの状態の手掛かり (ホバー・選択・違反・文脈の減光・ペルソナの絞り込み) は、切り替えの境目に役割どおりの曲線と時間を持つ (到着 = land、手放し = fade、違反は即時 + 余韻)。追従の源は 1 つで、マップ注釈の選択と共有する。グラブの接近は噛んだ瞬間の閃光と同じ色で温まる (M4a)"
+                labels support-verified
+
+                    solution CueFollowIsOneSourceAndAsked
+                    uuid dba35aae-45c8-4fff-84cb-4bcce82a3acc
+                    summary "M4a 実施 (2026-10-12、当事者合意): M3b の retargetSelection / selectionLevel を src/view/CueFollowMath.js へ移して一般化 (MapVisualMath は同名の adapter を残す — 振る舞い不変、MapVisualMath.test.js / AnnotationLifecycle.test.js は書き換えずに緑。テストの fixture 1 箇所だけ target: true → 1)。src/view/CueFollowMath.test.js が全プロファイルの脚が応答帯 (≤ 300 ms) に在ること・到着が outExpo で手放しが outQuad であること・同じ要求 2 回で再開しないこと・途中反転で両方向に跳ねないこと・違反が即時で余韻を残すこと・reduced と壊れた時計で即着地すること・層の合成が満ちれば優先順位どおりであることを問い、マップ注釈と同じ SELECT_LAND であることを等値で問う。MeshView / CoordinateFrameView / RegionGhostView は真偽値を目標とし tick(t) が唯一の書き手。接近の色は snapTone (tokens.test.js の宣言外の色 755 → 751、種類 199 → 198)。pnpm test 1789 pass。実機: 時計 1/12 の静止画 docs/motion/media/m4a-cube-cues-slowed-clock.png で解除の fade・選択の land の中間フレームを確認。検証していないこと: 座標フレーム・領域ゴースト・接近の色の実機撮影、時間軸の動画 (仮想時間の録画は M3b で時計が単調でないと分かっている)"
+                    artifacts
+                    - "src/view/CueFollowMath.test.js"
+                    - "src/view/MapVisualMath.test.js"
+                    - "src/theme/tokens.test.js"
+                    - "docs/motion/inventory.md"
+                    - "docs/motion/media/m4a-cube-cues-slowed-clock.png"
+
+                goal LinksBindStrainAndBreakAsLight
+                uuid c37981ed-e22d-4933-a6c1-cc6e2efe02bb
+                summary "リンクの成立・張力・違反は、モーション・アイデンティティの語彙で読める: 成立は光が 2 端から中点へ走って同時に出会い、閃光と線に沿った余韻で言う。強調と違反は追従し (到着 = land、手放し = fade、違反は即時 + 余韻)、違反の呼吸は N 本が揃わず、reduced では静止した違反色。色はすべて宣言されたトークン。成立の手掛かりはシーンの単位に依らず見える (M4b)"
+                labels support-verified
+
+                    solution LinkMotionIsPureAndAsked
+                    uuid a02ee133-99e5-42da-b980-451f24165af7
+                    summary "M4b 実施 (2026-10-12、当事者合意 — 俯瞰の推奨 3 点に「3点ともおすすめで」): RippleEffect を 1 語 1 事実で割り、リンクの成立は新設 LinkBindEffect、RippleEffect はデモの「ここに現れた」だけを言い曲線を land/fade に。SpatialLinkView は setter が目標だけを書き update(…, t) が唯一の画素の書き手 (triggerFlash 退役)、合成は純粋 LinkMotionMath.linkLineFrame。src/view/LinkMotionMath.test.js が、両端が同時に中点で出会うこと・応答帯 (≤ 300 ms) と選択と同じ tempo・travel が outExpo で余韻が outQuad・時計の後退を始まりと読むこと・reduced で静止した手掛かり・呼吸が待機帯 (2〜6 s) で周期的・N=25 本の位相が散ること・reduced で呼吸が止まること・色がすべて宣言されたトークンであること・優先順位と余韻の連続・波紋が linear でないこと・玉の大きさがスパンに比例すること・配線 (私的な時計を読まない、id が位相に、ループの時計が update に届く) を問う。tokens.test.js の宣言外の色 751 → 743、種類 198 → 195。pnpm test 1806 pass、typecheck・build 緑。実機: 時計 1/12 の静止画 docs/motion/media/m4b-link-bind-slowed-clock.png で、2 つの玉が走って出会い、閃光が広がって消え、余韻の線が破線へ戻るまでを確認。実機で分かったこと: 旧波紋の半径 0.15 は既定の mm シーンで 0.15 mm = 一度も見えていなかった (原則 #27) — 玉の大きさをリンクのスパンから導出した。検証していないこと: 違反の呼吸・強調の追従・張力の色の実機撮影 (純粋層のテストと配線の読みのみ)、時間軸の動画 (仮想時間の録画は時計が単調でない — M3b)"
+                    artifacts
+                    - "src/view/LinkMotionMath.test.js"
+                    - "src/theme/tokens.test.js"
+                    - "docs/motion/inventory.md"
+                    - "docs/motion/media/m4b-link-bind-slowed-clock.png"
+
+                goal LaunchHomeShowsTheCellInTheStageLight
+                uuid 49dd363f-0c86-442e-b650-2f00f47018d9
+                summary "起動ホームのカードは、どんなセルかを上面図で言う (認識 — 説明文を読んで思い描かなくてよい)。図は読み込むのと同じコンパイル済みシーンから導出し、床の光と同じ語 (Zone = 光だまりの縁、ロボット = 光の点) で、舞台の光 1 つに照らされる。カードは読み順に出て、図は光の落ちる所から外へ点く。指したカードには舞台の光が当たる (強調色は使わない)。待機中の光だまりは舞台の呼吸を同一性の位相で継ぐ。デモの『未決』バッジは違反のリンクと同じ呼吸で、N 個が揃わない。色はトークンか導出 (M4c)"
+                labels support-verified
+
+                    solution LaunchHomePlanIsDerivedAndAsked
+                    uuid 9bd94af4-3f99-4777-94a2-86ead013937d
+                    summary "M4c 実施 (2026-10-13、当事者合意 — 俯瞰の推奨 3 点「間取りの上面図」「ホバーは舞台の光」「バッジは loop 2 s・同一性の位相」): 純粋 src/view/LayoutPlanMath.js (compileLayout の出力 → 上面図、種ごとの役割表は未宣言で throw)、AppController._layoutPlans が一度だけ導出して store (launchHomePlans) へ — TemplateGallery の前例。src/view/LayoutPlanMath.test.js がカタログの全実例に図があること (Empty は宣言された不在)・枠に一様に収まること・mm と m で同じ図・+Y が上・回転した Solid の足跡・ロボットのベースだけが isRobotBaseFrame で描かれること・親の鎖が切れた枠を推測で描かないこと・0 個で null・コンパイラが出しうる全種に役割が宣言されていること・光の落ちる所から外へ点くこと・N 枚の呼吸の位相が散ることを問う。ChromeMath.attentionBreath (BREACH_PERIOD・loop・phaseFor)。itemEnterMotion の fill を backwards に (forwards が inline の transform を上書きしてホバーの浮きが動かなかった — ChromeMath.test.js が問う)。ratchet: CSS 既定の曲線 16 → 13 (MotionIdentity.test.js)、宣言外の色 743 → 731・種類 195 → 190 (tokens.test.js)。pnpm test 1822 pass、build 緑。実機: 刷新前後とホバーの静止画 docs/motion/media/m4c-home-before-after.png、CSS の時計を 0.08 倍に落とした入場の中間フレーム docs/motion/media/m4c-home-light-on-slowed-clock.png (ロボットの近くから外へ点く)。検証していないこと: デモのバッジの呼吸の実機撮影 (純粋層のテストと呼び手の読みのみ)、時間軸の動画 (M3b と同じ理由)、図が当事者に『そのセルに見える』か (人の目)"
+                    artifacts
+                    - "src/view/LayoutPlanMath.test.js"
+                    - "src/view/ChromeMath.test.js"
+                    - "src/MotionIdentity.test.js"
+                    - "src/theme/tokens.test.js"
+                    - "docs/motion/inventory.md"
+                    - "docs/motion/media/m4c-home-before-after.png"
+                    - "docs/motion/media/m4c-home-light-on-slowed-clock.png"
+
+                goal BRowsCatchUpWithTheStage
+                uuid 4f0dd0ec-d430-48ff-8188-ead48f1293f1
+                summary "B の残りの行 (背景に揃える行・DOM の開閉ほか) が A になるか、残す理由が書かれている (M4d)"
+                state ToBeDeveloped
+                labels support-exploring
+
+                    assumption TheInventoryRowsCloseOneByOne
+                    uuid 726be535-c8df-4be1-bd62-02a63fa70c6b
+                    summary "計画: M4d (B の残り — M4a の残し: キューブの選択の輪郭 boxHelper と SelectPulse、座標フレームの接続線、実体ごとの接地影。M4b の残し: 掴んでいる間の破線の行進がフレーム率依存)。各段は inventory の行を A にするか残す理由を書く。満期=GREP:docs/motion/inventory.md::M4d\s✓"
+                    artifacts
+                    - "docs/motion/inventory.md"
+                    - "src/MotionInventoryCoverage.test.js"
