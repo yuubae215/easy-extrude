@@ -4209,7 +4209,7 @@ export class SceneService extends EventEmitter {
     // relationship, so neither gets one.
     const hasParent = this._model.getObject(obj.parentId) != null
     if (composed.visible && hasParent && !this._model.isLinkEndpoint(id)) {
-      obj.meshView.showConnection(composed.dimmed)
+      obj.meshView.showConnection()   // dims with the frame (ADR-166 M4d2)
     } else {
       obj.meshView.hideConnection()
     }

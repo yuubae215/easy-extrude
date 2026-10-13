@@ -109,6 +109,7 @@ export class CoordinateFrameView {
     // fades both ways; the active frame's sphere lands like every selection.
     this._dimTarget    = false
     this._dimCue       = CUE_REST
+    this._dimLevel     = 0          // the dimming on screen — the connection line reads it
     this._sphereLit    = false
     this._sphereCue    = CUE_REST
     this._xrayOpacity  = null   // last opacity written by _applyXray (skip no-op writes)
@@ -284,8 +285,20 @@ export class CoordinateFrameView {
       this._frustum.material.opacity = OPACITY_LINE_FULL + (OPACITY_LINE_DIMMED - OPACITY_LINE_FULL) * d
     }
     this._applyXray(OPACITY_FULL + (OPACITY_DIMMED - OPACITY_FULL) * d)
+    this._dimLevel = d
+    this._writeConnection(d)
     this._originSphere.material.color.lerpColors(WHITE, ACCENT, s)
     this._originSphere.scale.setScalar(1 + (SELECTED_SPHERE_SCALE - 1) * s)
+  }
+
+  /**
+   * Sole writer of the connection line's opacity (ADR-166 M4d2, 原則 #4) — the
+   * same dimming level as the axes.
+   * @param {number} d dimming level ∈ [0,1]
+   */
+  _writeConnection(d) {
+    if (!this._connectionLine) return
+    this._connectionLine.material.opacity = OPACITY_LINE_FULL + (OPACITY_LINE_DIMMED - OPACITY_LINE_FULL) * d
   }
 
   // ── Vision camera frustum (ADR-164 D3) ─────────────────────────────────────
@@ -431,15 +444,16 @@ export class CoordinateFrameView {
   /**
    * Shows the dashed connection line from the parent CoordinateFrame origin to
    * this frame's origin.  Lazily creates the Three.js Line on first call.
-   * @param {boolean} [dimmed=false]  match the frame's opacity level
+   *
+   * The line's opacity is NOT passed in (ADR-166 M4d2): it reads the frame's own
+   * dimming level in `_writeCues`, so it dims with the axes on `DIM_CUE` instead
+   * of swapping — the dimming already arrived through `applyVisibility`, and a
+   * second argument carrying the same fact was a second source of it (§1.1).
    */
-  showConnection(dimmed = false) {
+  showConnection() {
     if (!this._connectionLine) this._createConnectionLine()
     this._connectionLine.visible = true
-    const opacity = dimmed ? OPACITY_LINE_DIMMED : OPACITY_LINE_FULL
-    this._connectionLine.material.opacity     = opacity
-    this._connectionLine.material.transparent = opacity < 1.0
-    this._connectionLine.material.needsUpdate = true
+    this._writeConnection(this._dimLevel)   // the level on screen right now
   }
 
   /** Hides the connection line without disposing it. */
@@ -585,6 +599,7 @@ export class CoordinateFrameView {
       dashSize:  0.06,
       gapSize:   0.04,
       depthTest: false,
+      transparent: true,   // both levels are < 1; `_writeConnection` moves between them
     })
     this._connectionLine = new THREE.Line(geo, mat)
     this._connectionLine.renderOrder = 1

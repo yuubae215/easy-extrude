@@ -157,7 +157,10 @@ export class RotationHandler {
       const pivot = obj._position.clone()
       s.segStartPivot       = pivot.clone()
       projected = pivot.clone().project(ctrl._camera)
-      obj.meshView.boxHelper.visible = false
+      // The selection outline stays on through the rotate: it is the OBB's own
+      // edges, rebuilt every preview frame by updateGeometry (ADR-166 M4d2 — the
+      // hide here was the workaround from the AABB BoxHelper era, and a second
+      // writer of the outline beside MeshView, 原則 #4).
     }
 
     if (deferStartAngle) {

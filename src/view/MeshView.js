@@ -78,6 +78,7 @@ export class MeshView {
    */
   constructor(scene, camera = null, renderer = null, container = null) {
     this._selected           = false
+    this._selectLevel        = 0      // the selection cue on screen — read by the outline
     // Cue segments (ADR-166 M4a): the booleans are TARGETS; what is on screen
     // follows them in tick(t) — the boundary between two states has a shape.
     /** @type {{hover: import('./CueFollowMath.js').CueSegment, select: import('./CueFollowMath.js').CueSegment, violation: import('./CueFollowMath.js').CueSegment}} */
@@ -129,9 +130,12 @@ export class MeshView {
     // rotation because corners are baked as world-space vertices with no mesh transform.
     // The steady selection outline — one of the six selection painters ADR-100
     // collapsed onto `accent`. It was cyan; cyan also meant "active tool".
+    // Its opacity is the selection cue's level (ADR-166 M4d2): it lands with
+    // the emissive and `SelectPulse` in one instant, and fades when let go.
+    // Sole writer: `_writeOutline` (原則 #4).
     this.boxHelper = new THREE.LineSegments(
       new THREE.BufferGeometry(),
-      new THREE.LineBasicMaterial({ color: hexNumber(COLOR.accent) }),
+      new THREE.LineBasicMaterial({ color: hexNumber(COLOR.accent), transparent: true, opacity: 0 }),
     )
     this.boxHelper.visible = false
     scene.add(this.boxHelper)
@@ -481,9 +485,8 @@ export class MeshView {
 
   /** Updates the visual appearance for object-selected state */
   setObjectSelected(sel) {
-    this._selected = sel
+    this._selected = sel     // a TARGET — tick(t) lands the outline (ADR-166 M4d2)
     this._syncLabel()
-    this.boxHelper.visible = sel
   }
 
   // ── Entity identity: floating label + IFC base tint (ADR-070) ────────────
@@ -592,7 +595,8 @@ export class MeshView {
    * follows its target on its own profile (`CueFollowMath`): hover arrives on
    * `land` in `HOVER_LAND`, selection lands with the annotations'
    * `SELECT_LAND`, a violation arrives at once (Tier F) and leaves an
-   * afterglow; every cue lets go on `fade`. Reduced motion: at once.
+   * afterglow; every cue lets go on `fade`. Reduced motion: at once. The
+   * selection level it computes is handed to the outline (ADR-166 M4d2).
    * @param {number} t loop clock (seconds)
    */
   _syncEmissive(t) {
@@ -607,6 +611,20 @@ export class MeshView {
     layers[2][1] = cueLevel(t, c.violation, VIOLATION_CUE, r)
     const out = blendLayers(this._emissiveRgb, RGB_DARK, layers)
     this.cuboidMat.emissive.setRGB(out[0], out[1], out[2])
+    this._selectLevel = layers[1][1]
+    this._writeOutline(this._selectLevel)
+  }
+
+  /**
+   * Sole writer of the selection outline's pixels (ADR-166 M4d2, 原則 #4). The
+   * outline reads the SAME selection level as the emissive — one fact, one
+   * source — so it lands on `SELECTION_CUE` and lets go on `fade`. A hidden
+   * body shows no outline whatever the level.
+   * @param {number} level selection cue level ∈ [0,1]
+   */
+  _writeOutline(level) {
+    this.boxHelper.material.opacity = level
+    this.boxHelper.visible = level > 0 && this.cuboid.visible
   }
 
   /** No-op: boxHelper geometry is kept in sync by updateGeometry() */
@@ -900,11 +918,11 @@ export class MeshView {
   setVisible(visible) {
     this.cuboid.visible    = visible
     this.wireframe.visible = visible
+    this._writeOutline(this._selectLevel)   // a hidden body hides its outline at once
     if (!visible) {
       // Direct mutation is safe here: hiding the whole object overrides any
       // sub-element state. The visual-state owners (setObjectSelected,
       // setFaceHighlight) remain authoritative for show paths.
-      this.boxHelper.visible = false
       this.hlMesh.visible    = false
     }
     this._syncLabel()

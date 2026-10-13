@@ -76,6 +76,15 @@ const SELECTION_WRITE_RULES = [
        + '表示フラグの書き手はちょうど一箇所でなければ最後の書き込み勝ちの競合になる (原則 #4)',
   },
   {
+    name: '選択の輪郭の直接書き込み (meshView.boxHelper.visible)',
+    owners: [],
+    match: /meshView\s*[?]?\.\s*boxHelper\s*[?]?\.\s*visible\s*=[^=]/,
+    use: '輪郭は選択の度合いの読み手 — 書き手は MeshView._writeOutline ただ 1 つ。選択を書けば輪郭は tick(t) で着地する',
+    why: '回転の開始が輪郭を直接隠し、確定が reassertHighlight で戻していた (AABB の BoxHelper 時代の回避策)。'
+       + '輪郭が SELECTION_CUE の度合いを読むようになった今、外からの代入は次の tick に黙って上書きされる '
+       + '= 効かない書き手が残る (ADR-166 M4d2 / 原則 #4)',
+  },
+  {
     name: '退役した選択の入口 (_switchActiveObject)',
     owners: [],
     match: /_switchActiveObject\s*\(/,
