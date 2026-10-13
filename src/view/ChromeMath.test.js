@@ -68,7 +68,10 @@ test('itemEnterMotion: equal-interval stagger, strictly monotone in index, reduc
     assert.equal(delayOf(i) - delayOf(i - 1), step, 'equal intervals')
   }
   assert.match(itemEnterMotion(0, false).animation, /eaChromeEnter/, 'reuses the shared entry vocabulary')
-  assert.match(itemEnterMotion(0, false).animation, /both/, 'holds opacity 0 through the delay')
+  assert.match(itemEnterMotion(0, false).animation, /backwards/, 'holds opacity 0 through the delay')
+  // …and lets go after it: a forwards fill would keep `transform: none` over the
+  // item's own transform (a Home card's hover lift — ADR-166 M4c).
+  assert.doesNotMatch(itemEnterMotion(0, false).animation, /\b(both|forwards)\b/)
   assert.deepEqual(itemEnterMotion(3, true), {})
 })
 

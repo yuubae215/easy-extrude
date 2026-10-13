@@ -24,6 +24,9 @@
  */
 import { COLOR, DURATION, EASING, rgba } from '../theme/tokens.js'
 import { breathe } from './MotionMath.js'
+import { phaseFor } from './MapVisualMath.js'
+import { BREACH_PERIOD } from './LinkMotionMath.js'
+import { STAGE } from './StageMath.js'
 
 /**
  * Press/hover motion for a chrome button: press-down scale, spring-back on
@@ -129,7 +132,11 @@ export function popoverEnterMotion(reduced, origin = 'top left') {
  * Entry motion for ONE menu item: the shared `eaChromeEnter` slide-fade,
  * offset by an equal-interval stagger so items cascade instead of appearing
  * in lockstep (animation-fx quality gate 2 — no simultaneous motion).
- * `both` holds opacity 0 through the delay; hit-testing is unaffected.
+ * `backwards` holds opacity 0 through the delay; hit-testing is unaffected.
+ * NOT `both`: a forwards fill keeps the last keyframe's `transform: none`
+ * winning over the item's own inline transform after the entrance, so a Home
+ * card's hover lift never moved (found in ADR-166 M4c — the end state is the
+ * natural state, so nothing is lost by letting go of it).
  * Reduced → `{}` (all items simply present).
  *
  * @param {number} index 0-based item position (non-finite/negative → 0)
@@ -138,10 +145,46 @@ export function popoverEnterMotion(reduced, origin = 'top left') {
  */
 export function itemEnterMotion(index, reduced) {
   if (reduced) return {}
-  const i = Number.isFinite(index) && index > 0 ? Math.floor(index) : 0
   return {
-    animation: `eaChromeEnter ${DURATION.chromeEnter}ms ${EASING.land} both`,
-    animationDelay: `${i * DURATION.menuStagger}ms`,
+    animation: `eaChromeEnter ${DURATION.chromeEnter}ms ${EASING.land} backwards`,
+    animationDelay: `${itemEnterDelay(index)}ms`,
+  }
+}
+
+/**
+ * The stagger delay of item `index` (ms) — the one source for anything that
+ * must start in step with an item's entrance (a Home card's plan lights after
+ * its card, ADR-166 M4c).
+ *
+ * @param {number} index 0-based item position (non-finite/negative → 0)
+ * @returns {number} ms
+ */
+export function itemEnterDelay(index) {
+  const i = Number.isFinite(index) && index > 0 ? Math.floor(index) : 0
+  return i * DURATION.menuStagger
+}
+
+/**
+ * The breath of a marker that asks for attention until something is settled
+ * (a conflict, an unknown, an unsettled proposal — the demo badges, ADR-166
+ * M4c). The SAME breath as a violated link in the scene (M4b): `loop` curve,
+ * `BREACH_PERIOD` — one fact, "unsettled breathes at 2 s", in DOM and 3D. The
+ * phase comes from the marker's identity (`phaseFor`, ADR-093 D1), so N badges
+ * in one panel never blink in lockstep; a negative delay starts each one part-
+ * way through its cycle. It used to be `ease-in-out infinite` at 1.2 s, all in
+ * phase — an alarm, not a breath.
+ * Reduced → `{}`: the badge stays at full strength, still shown (#11).
+ *
+ * @param {string} key the marker's identity (the conflict ref, the variable…)
+ * @param {boolean} reduced
+ * @returns {object} inline-style fragment
+ */
+export function attentionBreath(key, reduced) {
+  if (reduced) return {}
+  const periodMs = BREACH_PERIOD * 1000
+  return {
+    animation: `eaAttentionBreath ${periodMs}ms ${EASING.loop} infinite`,
+    animationDelay: `${-Math.round(phaseFor(key) * periodMs)}ms`,
   }
 }
 
@@ -185,5 +228,17 @@ export const CHROME_CSS = `
 }
 @keyframes eaBreatheGlow {
   ${breatheGlowKeyframes()}
+}
+@keyframes eaAttentionBreath {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.35; }
+}
+@keyframes eaLightOn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes eaPoolBreath {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: ${1 - STAGE.breath.depth}; }
 }
 `

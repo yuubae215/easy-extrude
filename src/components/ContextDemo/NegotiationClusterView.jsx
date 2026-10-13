@@ -141,7 +141,7 @@ export function NegotiationClusterView({ order, clusters, filter, onApprove }) {
                     )
                   })()
                 ) : (
-                  <Badge color="#f59e0b" pulse>unsettled (no Decision proposed)</Badge>
+                  <Badge color="#f59e0b" pulse={step.ref}>unsettled (no Decision proposed)</Badge>
                 )}
               </div>
               <Ref>{step.ref}</Ref>

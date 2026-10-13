@@ -408,8 +408,13 @@ const DECLARED_VOCABULARIES = {
 // `entityDefault` (LinkMotionMath.LINK_TONES), and the binding handler's grey
 // fallback left with them. Distinct 198 → 195: three of those hues had no
 // other user.
-const UNDECLARED_OCCURRENCE_BASELINE = 743
-const UNDECLARED_DISTINCT_BASELINE   = 195
+// 743 → 731 (ADR-166 M4c): the launch Home's hand-picked greys, its blue hover
+// border `#3a7bd5` and blue card names `#7fb2ff` became chrome tokens and the
+// one stage light (pointing at a card lights it — nothing is selected yet, so
+// it is not the accent). Distinct 195 → 190: `#2b2d31`, `#7fb2ff`, `#a8a8a8`,
+// `#eaeaea` had no other user, and `#9a9a9a` was `textSecondary` written by hand.
+const UNDECLARED_OCCURRENCE_BASELINE = 731
+const UNDECLARED_DISTINCT_BASELINE   = 190
 
 const HEX_LITERAL = /#[0-9a-fA-F]{6}\b|\b0x[0-9a-fA-F]{6}\b/g
 

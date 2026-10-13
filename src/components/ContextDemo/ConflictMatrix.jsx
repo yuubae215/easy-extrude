@@ -175,8 +175,8 @@ export function ConflictMatrix({ matrix, filter, onSetFilter, selectedVariables 
                 {s.approved
                   ? <Badge color="#22C55E">resolved</Badge>
                   : s.resolvedBy
-                    ? <Badge color="#f0b030" pulse>proposed</Badge>
-                    : <Badge color="#cc3333" pulse>conflict</Badge>}
+                    ? <Badge color="#f0b030" pulse={v}>proposed</Badge>
+                    : <Badge color="#cc3333" pulse={v}>conflict</Badge>}
                 <span style={{ marginLeft: '5px' }}>{v}</span>
               </div>
               {s.gap && (

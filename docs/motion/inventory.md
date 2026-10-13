@@ -49,15 +49,15 @@
 | `src/components/Header/Header.jsx`<br>`src/components/Header/HeaderMenus.jsx`<br>`src/components/Header/ModeDropdown.jsx`<br>`src/components/AddMenu/AddMenu.jsx`<br>`src/components/ContextMenu/ContextMenu.jsx`<br>`src/components/LinkTypePicker/LinkTypePicker.jsx`<br>`src/components/ProjectionToggle/ProjectionToggle.jsx`<br>`src/components/InfoBar/InfoBar.jsx`<br>`src/components/UIShell.jsx` | メニュー・ドロップダウン・トグルの開閉 | A | △ | △ | △ | — | — | B | 開閉の多くが CSS の既定 `ease` (意図した曲線ではない) で、項目が一斉に出る。M2 の曲線の語彙に揃え、項目を浅いスタッガーで出す。`RobotAppearanceToggle` は ADR-164 D5 で撤去済み (2026-10-11 — 行から外した。代わりの `RobotMeshLoadingNotice` は動きを持たない) | M4 |
 | `src/components/Feedback/FeedbackPrimitives.jsx`<br>`src/components/Chrome/DiscoveryCounters.jsx`<br>`src/components/Context/IntakePanel.jsx` | 証拠の閃光・トースト・カウンタの変化 | F | ✓ | — | ✓ | — | — | A | 事実の遷移だけで鳴り、reduced motion で読みが消えない — 今の水準 | — |
 | `src/components/Grasp/GraspSearchPanel.jsx`<br>`src/components/Outliner/Outliner.jsx` | パネルの値の動き (スコアのバー・行の開閉) | A | △ | △ | — | — | — | B | バーの伸びと行の開閉が CSS の既定曲線。値が変わった行だけを短く光らせる (どこが変わったかを言う)。Grasp パネルは ADR-164 で縮むので、そのとき一緒に | M4 |
-| `src/components/Home/HomeScreen.jsx`<br>`src/components/Onboarding/TourCard.jsx`<br>`src/components/ContextDemo/ContextInspector.jsx` | 起動ホーム・ツアーカード・デモの点滅 | D | △ | ✕ | △ | ✕ | ✕ | **C** | アプリの第一印象なのに、ホームのテンプレのカードは境目の色替えと 1px の浮きだけで静止している。デモの点滅は `ease-in-out infinite` の一斉。カードのプレビューに小さな動き (セルの中でロボットが 1 回動く) を持たせ、入場をスタッガーにし、背景 (M2) と同じ光で包む | M4 |
+| `src/components/Home/HomeScreen.jsx`<br>`src/components/Onboarding/TourCard.jsx`<br>`src/components/ContextDemo/ContextInspector.jsx` | 起動ホーム・ツアーカード・デモの点滅 | D | ✓ | ✓ | ✓ | ✓ | ✓ | **A** (M4c 2026-10-13) | ~~C: ホームのテンプレのカードは境目の色替えと 1px の浮きだけで静止。デモの点滅は `ease-in-out infinite` の一斉~~ → カードは**上面図**を持つ (`LayoutPlanMath` — クリックで読み込むのと同じコンパイル済みシーンから導出、Zone は光だまりの縁・ロボットは舞台の光の点)。入場は読み順のスタッガー (G2)、図はカードの着地の後に光の落ちる所から外へ `fade` で点く (G3)。指したカードには舞台の光が当たる (枠・外側の光・光だまり — 色は `fade`、浮きは `land` + spring)。暗幕は舞台の地 `BACKDROP` (G4)。待機中は光だまりが舞台と同じ呼吸を同一性の位相で継ぐ (G5)。デモのバッジは `attentionBreath` (リンクの違反と同じ 2 s・`loop`・位相は印の同一性 — N 個が揃わない)。ツアーカードは既に `enterMotion` とトークンで A (直していない)。M1 の処方「ロボットが 1 回動く」は Goal (一目でどんなセルか) に対して重すぎるので採らなかった (ADR-166 M4c)。`LayoutPlanMath` は基盤も reduced 境界も読まないので母集団の外 (図の純粋な導出 — 動きはこの行の部品が持つ)。実機の静止画 `docs/motion/media/m4c-*.png` | M4c ✓ |
 
 ## 集計
 
 | 判定 | 行 | ファイル |
 |---|---|---|
-| **C 作り直す** | 1 (起動ホーム) — 背景は M2 で A へ、マップ注釈は M3a で B → M3b で A へ、キューブの状態の手掛かりは M4a で A へ、リンクの波紋とリンク線は M4b で 1 行に束ねて A へ | 3 |
+| **C 作り直す** | 0 — 背景は M2 で A へ、マップ注釈は M3a で B → M3b で A へ、キューブの状態の手掛かりは M4a で A へ、リンクの波紋とリンク線は M4b で 1 行に束ねて A へ、起動ホームは M4c で A へ | 0 |
 | **B 部分的に古い** | 13 (座標フレームと領域ゴーストは M4a で A へ) | 29 |
-| **A 今の水準** | 11 | 25 |
+| **A 今の水準** | 12 | 28 |
 | 対象外 (基盤・配線・静的) | 3 | 8 |
 | 計 | 28 | **65** |
 
@@ -65,4 +65,4 @@
 
 **追記 (2026-10-12):** 2 本目の信号で入った 9 本のうち、当事者が名指したキューブの状態の手掛かり (`MeshView` — ホバー・選択・違反が一瞬で入れ替わる / 接近の暖色がトークン外で `SnapFlash` と繋がっていない) は C。M4 の最初の候補に加える。同じく入った `SpatialLinkView` (違反の脈動が N 本同位相・reduced 境界の外) はリンクの波紋と同じ段で作り直す。追従の処方 (状態の目標値へ短く追わせる) は `MeshView` / `CoordinateFrameView` / `RegionGhostView` / DOM の 2 本で共有できるので、1 つの純粋関数として起こす。
 
-**M4 の割り方 (2026-10-12、当事者合意):** M4a 状態の手掛かりの追従 (`MeshView` / `CoordinateFrameView` / `RegionGhostView` — **実施**) → M4b リンク (`RippleEffect` + `SpatialLinkView` を一体で — **実施**、1 行に束ねて A) → M4c 起動ホーム → M4d B の残り (背景に揃える行・DOM の開閉)。M4a を先頭にしたのは、追従の純粋関数 `CueFollowMath` を M4b / M4d が引けるようにするため。
+**M4 の割り方 (2026-10-12、当事者合意):** M4a 状態の手掛かりの追従 (`MeshView` / `CoordinateFrameView` / `RegionGhostView` — **実施**) → M4b リンク (`RippleEffect` + `SpatialLinkView` を一体で — **実施**、1 行に束ねて A) → M4c 起動ホーム (**実施 2026-10-13** — C は 0 行に) → M4d B の残り (背景に揃える行・DOM の開閉)。M4a を先頭にしたのは、追従の純粋関数 `CueFollowMath` を M4b / M4d が引けるようにするため。

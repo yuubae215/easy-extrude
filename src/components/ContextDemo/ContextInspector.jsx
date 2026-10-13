@@ -4,6 +4,7 @@ import { NegotiationClusterView } from './NegotiationClusterView.jsx'
 import { FeedbackDefs, useReducedMotion } from '../Feedback/FeedbackPrimitives.jsx'
 import { BOTTOM_TIER, bottomEdgeOffset, floorHeight } from '../../view/EdgeOccupancy.js'
 import { isNarrowViewport } from '../../view/Viewport.js'
+import { attentionBreath } from '../../view/ChromeMath.js'
 
 /**
  * ContextInspector — requirement tree panel for the Context DSL demo (ADR-047).
@@ -173,26 +174,28 @@ export function Row({ onClick, selected, children }) {
   )
 }
 
-export function Badge({ color, children, pulse = false }) {
-  // Reduced motion: drop the continuous opacity pulse (an infinite blink is the
-  // exact motion `prefers-reduced-motion` guards against) — the badge stays at
-  // full opacity, so the "needs attention" marker is still shown, just static
-  // (ADR-064 Phase 4). The hook must run unconditionally: `pulse` flips at
-  // runtime (ConflictsTab passes `pulse={!c.resolvedBy}`), and short-circuiting
-  // the hook behind it would change the hook count between renders and throw.
+/**
+ * A small status badge. `pulse` names the badge's IDENTITY (the conflict ref,
+ * the variable, the attribute…) when it asks for attention — a breath phased
+ * by that identity (`attentionBreath`, ADR-166 M4c), so N unsettled badges in
+ * one panel never blink together. Absent → a static badge.
+ *
+ * Reduced motion: no breath — the badge stays at full opacity, so the "needs
+ * attention" marker is still shown, just static (ADR-064 Phase 4). The hook
+ * must run unconditionally: `pulse` flips at runtime (ConflictsTab passes the
+ * ref only while unresolved), and short-circuiting the hook behind it would
+ * change the hook count between renders and throw.
+ */
+export function Badge({ color, children, pulse = null }) {
   const reduced = useReducedMotion()
-  const animate = pulse && !reduced
   return (
     <span style={{
       display: 'inline-block', padding: '0 5px', borderRadius: '3px',
       border: `1px solid ${color}`, color, fontSize: '9px', marginLeft: '5px',
       verticalAlign: 'middle',
-      animation: animate ? 'ee-demo-pulse 1.2s ease-in-out infinite' : 'none',
+      ...(pulse ? attentionBreath(pulse, reduced) : {}),
     }}>
       {children}
-      {animate && (
-        <style>{'@keyframes ee-demo-pulse { 0%,100% { opacity: 1 } 50% { opacity: 0.35 } }'}</style>
-      )}
     </span>
   )
 }
@@ -219,7 +222,7 @@ function FactsTab({ demo, select }) {
         )}
         {unknownAttrs.map(([key]) => (
           <div key={key} style={{ fontSize: '10px' }}>
-            <Badge color="#f43f5e" pulse>unknown</Badge>
+            <Badge color="#f43f5e" pulse={`${fact.ref}:${key}`}>unknown</Badge>
             <span style={{ color: '#aaa', marginLeft: '4px' }}>{key}</span>
           </div>
         ))}
@@ -314,7 +317,7 @@ function ConflictsTab({ demo, select }) {
       {conflicts.map(c => (
         <Row key={c.ref} onClick={() => select(c.variable)} selected={demo.selectedItemRef === c.variable}>
           <div>
-            <Badge color={c.resolvedBy ? '#22C55E' : '#cc3333'} pulse={!c.resolvedBy}>
+            <Badge color={c.resolvedBy ? '#22C55E' : '#cc3333'} pulse={c.resolvedBy ? null : c.ref}>
               {c.resolvedBy ? 'resolved' : 'conflict'}
             </Badge>
             <span style={{ marginLeft: '5px' }}>{c.variable}</span>

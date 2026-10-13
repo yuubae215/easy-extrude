@@ -394,6 +394,14 @@ export const useUIStore = create((set, get) => ({
   // preview (blank template, or a doc whose derivation failed — #11 degrade).
   templateGalleryPreviews: null,
 
+  // ── Launch Home (ADR-089) ──────────────────────────────────────────────────
+  // ADR-166 M4c — per-template floor plans for the Home cards, keyed by
+  // `source.file`. Derived by AppController from its bundled Layout DSL map via
+  // compileLayout → LayoutPlanMath.layoutPlan (computed once, on first open);
+  // null until then. A card with no entry draws no plan (the Empty card, or a
+  // template whose derivation failed — #11 degrade, never a guessed plan).
+  launchHomePlans: null,
+
   // ══ Actions ════════════════════════════════════════════════════════════════
 
   actions: {
@@ -712,6 +720,7 @@ export const useUIStore = create((set, get) => ({
       },
     })),
     setTemplateGalleryPreviews: (previews) => set({ templateGalleryPreviews: previews }),
+    setLaunchHomePlans: (plans) => set({ launchHomePlans: plans }),
 
     // ADR-058 — read-only seed doc retained when a project is forked from an
     // example, so the intake forms can show the example's filled values as

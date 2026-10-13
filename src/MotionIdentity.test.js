@@ -85,8 +85,11 @@ const MOTION_PROPERTY = /\b(transition|animation)\b/
  * rises AND when it falls without the baseline being lowered — a ratchet
  * nobody turns is not a ratchet. M4 lowers it row by row.
  * 2026-10-12 (ADR-166 M2): 16 occurrences on 13 lines.
+ * 2026-10-13 (ADR-166 M4c): 16 → 13 — the Home card's border/transform `ease`
+ * (×2) became `fade` / `land` + spring, and the demo badge's
+ * `ease-in-out infinite` became the attention breath (`loop`, 2 s, phased).
  */
-const KEYWORD_EASING_BASELINE = 16
+const KEYWORD_EASING_BASELINE = 13
 
 test('CSS default easings outside the vocabulary never increase (ratchet)', () => {
   const hits = []
