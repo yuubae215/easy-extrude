@@ -14,7 +14,7 @@ artifacts
     summary "ADR-096 (Accepted, 実装済み 2026-07-26): CF 軸の可視性を explicit (eye 所有・永続) × contextual (選択所有・一時) の直交 2 軸にし、実際の描画は 2 軸の合成を 1 箇所で計算する。既定は種ごとに宣言する (CF は explicit=false、外形は true、robot_base は生まれた入口で分岐)。presentation/chrome 層に閉じ、ドメイン・契約・DSL には触れない"
     artifacts
     - "src/controller/SelectionManager.js"
-    - "src/view/OutlinerView.js"
+    - "src/view/OutlinerBridge.js"
 
     context Adr087ClosedOnlyForSkeletons
     uuid 3282453c-3225-4553-b168-a7075f22c0ef
@@ -75,9 +75,9 @@ artifacts
 
             solution RowTakesDeclaredValueOrThrows
             uuid c0754db0-080d-458a-a56d-cf022a36b916
-            summary "行の初期値は呼び出し側が宣言する必須引数になった: OutlinerView.addObject(id, name, type, parentId, explicitVisible) は boolean でなければ TypeError を投げ、uiStore.outlinerAddItem からは visible: true の直書きが消えた (node --test src/VisibilityOwnership.test.js — pass、直書きの再発と引数の欠落を静的に落とす)。AppController は SceneService.isExplicitVisible(id) の値をそのまま渡すので、行は生成の瞬間から軸そのものを表示する"
+            summary "行の初期値は呼び出し側が宣言する必須引数になった: OutlinerView.addObject(id, name, type, parentId, explicitVisible) は boolean でなければ TypeError を投げ、uiStore.outlinerAddItem からは visible: true の直書きが消えた (node --test src/VisibilityOwnership.test.js — pass、直書きの再発と引数の欠落を静的に落とす)。AppController は SceneService.isExplicitVisible(id) の値をそのまま渡すので、行は生成の瞬間から軸そのものを表示する 【2026-10-14 ADR-166 M4d4: TypeError を投げていた DOM の OutlinerView は未マウントのまま退役 (削除)。生きている経路 OutlinerBridge.addObject → uiStore.outlinerAddItem は explicitVisible を必須の位置引数で受け渡すが型の throw は持たない — 直書きの消滅は VisibilityOwnership.test.js が問い続ける】"
             artifacts
-            - "src/view/OutlinerView.js"
+            - "src/view/OutlinerBridge.js"
             - "src/store/uiStore.js"
             - "src/VisibilityOwnership.test.js"
 
@@ -104,7 +104,7 @@ artifacts
             uuid ce668387-69a7-498e-bbb4-772c636bfaa8
             summary "トグルが『何もしない』経路は構造的に消えた: 行はクリックで自分の flag を書かず意図だけを報告し (OutlinerView の eye ハンドラ)、AppController._setObjectVisible は SceneService.setExplicitVisible を常に呼んで軸を書く — 『既に非表示のものを非表示にする』が書けない。純粋側では node --test src/view/VisibilityAxes.test.js — pass が、既定 false の CF について反転後に visible === true になることを固定している"
             artifacts
-            - "src/view/OutlinerView.js"
+            - "src/components/Outliner/Outliner.jsx"
             - "src/controller/AppController.js"
             - "src/view/VisibilityAxes.test.js"
 

@@ -20,7 +20,7 @@ artifacts
     uuid 47fb1f1b-4cbd-4e03-9e63-7e467c055410
     summary "運用実態 (ADR-094 から継承した前提): モバイルでは Outliner がドロワーで既定非表示、NodeEditor はほぼ使われていない。ゆえに LINK NETWORK が唯一の常設構造ビューであり、Outliner へ委譲する案 (Option C) の委譲先が画面に無い。この前提が崩れる (Outliner が常設になる等) と Option C の却下理由も同時に失効する"
     artifacts
-    - "src/view/OutlinerView.js"
+    - "src/components/Outliner/Outliner.jsx"
 
     context BusinessTreeAttachPoint
     uuid 5a837064-abf3-4f17-a703-e5edf2446b62
