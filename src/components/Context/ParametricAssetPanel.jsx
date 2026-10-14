@@ -1,4 +1,5 @@
 import { useUIStore } from '../../store/uiStore.js'
+import { DURATION, EASING } from '../../theme/tokens.js'
 import {
   PARAMETRIC_CATALOG,
   getParametricAsset,
@@ -24,7 +25,7 @@ import {
 const cardStyle = {
   background: '#2a2a2a', border: '1px solid #3a3a3a', borderRadius: '5px',
   padding: '8px 10px', marginBottom: '7px', cursor: 'pointer',
-  transition: 'border-color 0.15s',
+  transition: `border-color ${DURATION.hover}ms ${EASING.fade}`,
 }
 
 function AssetPicker({ onOpen, embedded }) {

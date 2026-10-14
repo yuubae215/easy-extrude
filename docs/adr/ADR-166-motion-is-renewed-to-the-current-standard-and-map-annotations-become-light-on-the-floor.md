@@ -1,10 +1,10 @@
 # 166. 演出を今の水準へ作り直す — マップ注釈は床に当たった光にする
 
-- Status: Proposed
+- Status: Accepted (2026-10-14 — M4d4 で M1〜M4 のすべての段を実施。採点表の B は段を持たない `GraspGhostView` の 1 行だけ — ADR-158 の段 G-9 (未着手) への申し送りで、理由と満期は DEF-069 = ADR-158)
 - Date: 2026-10-11
 - Deciders: yuubae215, Claude
 - 段: 本 ADR の M1〜M4 (下の §段)。IA 再設計の順序表には載せない (画面の住所を変えないため)
-- Retires: なし — 宣言していた `GREP:src/view/AnnotatedRegionView.js::The\sBlueprint\sdevice` (製図台の装置 = 対角ハッチ・コーナー登録マーク) は M3a (2026-10-12) で退役済み。本 ADR は M4d4 が残るので Proposed のまま (M3b・M4a・M4b は 2026-10-12、M4c・M4d1・M4d2・M4d3a・M4d3b は 2026-10-13 に実施) — Proposed の Retires は「在らねばならない」と問われるため、満期の来た行をここで閉じる
+- Retires: PATH:src/view/OutlinerView.js — React の Outliner に置き換わってからどこからも new されていなかった DOM の Outliner (M4d4 で削除。採点表はこの死んだファイルの演出を採点していた)。M3a で宣言していた `GREP:src/view/AnnotatedRegionView.js::The\sBlueprint\sdevice` (製図台の装置) は M3a (2026-10-12) で退役済みで、満期の来た行はそのとき閉じた
 - Supersedes / Superseded by: ADR-093 を部分的に置き換える (D3 Blueprint アトモスフィアの部分だけ — M3a で実施 2026-10-12。D1 位相を同一性から導く・D2 曲線 2 本・D6 reduced motion は継承)
 
 ## Context — Goal と力学 (§1.2 Goal)
@@ -71,10 +71,34 @@ Tier (Fact / Affordance / Delight) は従来どおり守る。棚卸しで出た
 | **M2 方向性を決める** (**実施 2026-10-12**) | モーション・アイデンティティ 5 軸を当事者と決め、CLAUDE.md に「モーション・アイデンティティ」節として固定する。背景 (SceneStage) のアトモスフィアを Void Grid 型から選び直す | CLAUDE.md に節があり、5 軸が埋まっている。**結果**: 節は CLAUDE.md、軸の母集団は animation-fx Step 1.5 から導出して `src/MotionIdentity.test.js` が問う |
 | **M3a マップ注釈 = 床の光** (**実施 2026-10-12**) | 案 B。注釈の名札を EntityLabel に揃える (名札の仕組みを 1 つに — ADR-155 D1 の続き)。投影・角度に依らず読める (見る角度を `MapVisualMath` の入力にする)。Zone の強さを役割で決める。Blueprint 装置を退役 | 純粋層テスト (位相の同一性・linear 禁止・reduced motion のフレーム一致を継承 + 角度の入力 + 役割の表)。刷新前後の静止画 `docs/motion/media/m3a-*.png` (動画は M3b の後に M3 全体で撮る) |
 | **M3b 選択・消滅・置く前** (**実施 2026-10-12**) | 選択時の見せ方 (BoxHelper の白い箱 → 光が強まって `land` で着地)、消滅演出 (P9 — ライフサイクルに `exiting`、論理の可視性と描画の可視性を 2 欄に分ける)、配置プレビュー (`MapPreviewMath`) を同じ光で描く | `exiting` の状態機械 (STATE_TRANSITIONS)、hit-test が退場中の注釈を拾わないこと、刷新前後の動画。**結果**: 下の「M3b で決めたこと」、実機の静止画 `docs/motion/media/m3b-*.png`。**動画は得られていない** — 下の「分かったこと」 |
-| **M4 残りの演出** | M1 の採点が低い順に作り直す。4 本に割った (当事者合意 2026-10-12): **M4a 状態の手掛かりの追従** (キューブのホバー・選択・違反・接近、座標フレームの減光、領域ゴーストの絞り込み — **実施 2026-10-12**) → **M4b リンク** (波紋 + リンク線を一体で — **実施 2026-10-12**) → **M4c 起動ホーム** (**実施 2026-10-13**) → **M4d B の残り** — 4 本に割った (当事者合意 2026-10-13): **M4d1 待機の呼吸の統治** (**実施 2026-10-13**) → **M4d2 選択の合図** (**実施 2026-10-13**) → M4d3 舞台の光に揃える — 2 本に割った (当事者合意 2026-10-13): **M4d3a 光と曲線** (**実施 2026-10-13**) → **M4d3b ロボットの読み込みの語り + 接地影** (**実施 2026-10-13**) → M4d4 DOM の開閉。`GraspGhostView` は段を持たない (ADR-158 — DEF-069) | M1 の表の全行が「今の水準」になるか、残す理由が書かれている。**M4a の結果**: 下の「M4a で決めたこと」、3 行が A へ (`docs/motion/inventory.md`)。**M4b の結果**: 下の「M4b で決めたこと」、C の 2 行を 1 行に束ねて A へ。**M4c の結果**: 下の「M4c で決めたこと」、C の最後の 1 行が A へ (C は 0 行)。**M4d1 の結果**: 下の「M4d1 で決めたこと」、B の 3 行が A へ (B は 10 行)。**M4d2 の結果**: 下の「M4d2 で決めたこと」、B の 1 行が A へ (B は 9 行)、A の 2 行 (キューブ・座標フレーム) の残しが閉じた。**M4d3a の結果**: 下の「M4d3a で決めたこと」、B の 4 行が A へ (B は 5 行)、A の 3 行 (不確定の帯・プレビュー・領域作図) の G4 の残しが閉じた。**M4d3b の結果**: 下の「M4d3b で決めたこと」、B の 1 行 (ロボットの描画) が A へ (B は 4 行)、A の 1 行 (キューブ) の M2 の残し (接地影) が閉じた |
+| **M4 残りの演出** | M1 の採点が低い順に作り直す。4 本に割った (当事者合意 2026-10-12): **M4a 状態の手掛かりの追従** (キューブのホバー・選択・違反・接近、座標フレームの減光、領域ゴーストの絞り込み — **実施 2026-10-12**) → **M4b リンク** (波紋 + リンク線を一体で — **実施 2026-10-12**) → **M4c 起動ホーム** (**実施 2026-10-13**) → **M4d B の残り** — 4 本に割った (当事者合意 2026-10-13): **M4d1 待機の呼吸の統治** (**実施 2026-10-13**) → **M4d2 選択の合図** (**実施 2026-10-13**) → M4d3 舞台の光に揃える — 2 本に割った (当事者合意 2026-10-13): **M4d3a 光と曲線** (**実施 2026-10-13**) → **M4d3b ロボットの読み込みの語り + 接地影** (**実施 2026-10-13**) → **M4d4 DOM の開閉** (**実施 2026-10-14**)。`GraspGhostView` は段を持たない (ADR-158 — DEF-069) | M1 の表の全行が「今の水準」になるか、残す理由が書かれている。**M4a の結果**: 下の「M4a で決めたこと」、3 行が A へ (`docs/motion/inventory.md`)。**M4b の結果**: 下の「M4b で決めたこと」、C の 2 行を 1 行に束ねて A へ。**M4c の結果**: 下の「M4c で決めたこと」、C の最後の 1 行が A へ (C は 0 行)。**M4d1 の結果**: 下の「M4d1 で決めたこと」、B の 3 行が A へ (B は 10 行)。**M4d2 の結果**: 下の「M4d2 で決めたこと」、B の 1 行が A へ (B は 9 行)、A の 2 行 (キューブ・座標フレーム) の残しが閉じた。**M4d3a の結果**: 下の「M4d3a で決めたこと」、B の 4 行が A へ (B は 5 行)、A の 3 行 (不確定の帯・プレビュー・領域作図) の G4 の残しが閉じた。**M4d3b の結果**: 下の「M4d3b で決めたこと」、B の 1 行 (ロボットの描画) が A へ (B は 4 行)、A の 1 行 (キューブ) の M2 の残し (接地影) が閉じた。**M4d4 の結果**: 下の「M4d4 で決めたこと」、B の 3 行が A へ (B は段を持たない `GraspGhostView` の 1 行だけ — 完了条件を満たした)、CSS 既定曲線は 11 → 0 で ratchet から禁止へ |
 
 M3 は M2 の後に置く — 床の光は M2 で決める背景の光源を共有するので、先に作ると光源が 2 つになる (§1.1)。
 M3 は 2 本に割った (当事者合意 2026-10-12): `exiting` の状態追加と見た目の刷新が同じ差分に混ざるとレビューできないため。
+
+**M4d4 で決めたこと (2026-10-14、当事者合意 — 俯瞰の推奨 3 点「死んでいた `OutlinerView` は削除して退役」「ratchet は B 行の外の 7 件も含めて 0 にし禁止へ」「メニューは即時に閉じる (退場の状態を足さない)」に「はい、合意です！」):**
+
+| 問い | 決定 | 正本 |
+|---|---|---|
+| 採点表の処方と実物の食い違い | 処方を書き直してから直した。`OutlinerView` は**死んでいた** (どこからも new されない — `FloorContainerCensus.test.js` が出現 0 を確かめていた)。Header 系の 4 つのポップオーバーは ADR-080 で既に「起点から膨らむ + スタッガー」で、残りは `HeaderMenus` の面だけ。Grasp のバーは既に `land`、「値が変わった行を光らせる」は `DeltaChip` が言っていた | `docs/motion/inventory.md` |
+| 死んだファイル | **削除** (Retires: PATH)。誰も見ない画面の演出を磨くのは仕事ではない。同じ PR で、色の ratchet (719 → 699)、`FloorContainerCensus` の対象外宣言とその根拠の検査、`tokens.test.js` の選択の描き手の表、JSDoc の参照を下げた | — |
+| ノードエディタの点滅 (1 語 2 事実) | **割った**。形の更新 (`geometry.update`) は選択を 400 ms 借りて元に戻していた — 選択が 2 つの事実を描き、その間に選んだノードは無言で巻き戻された (原則 #4 の最後の書き込み勝ち)。いまは自分の欄 `_flashedAt` (ノードごとに 0..1、全体で 0..N) を持つ光の重ねで、舞台の光が `fade` で消える (`DURATION.flash`)。SVG は変化のたびに描き直すので**経過時間で置く** (負の delay) — 描き直しで光が始めからやり直さない。reduced では同じ時間だけ静かな光を保つ | `FeedbackMath.updateFlash` / `NodeEditorView._flashNode` |
+| メニューの面 | `HeaderMenus` の面を他のポップオーバーと同じ `popoverEnterMotion` (起点 = トリガの右下、`spring` — 許された 1 か所) にし、行は `itemEnterMotion` のスタッガー、ホバーは `fade` | `ChromeMath` |
+| メニューの閉じ方 | **即時** (退場の演出を足さない)。閉じた時点で利用者は次へ移っており、退場は応答を遅らせるだけ。足せばメニューごとに「閉じつつある」第 3 の状態が生まれる — `OverflowMenuState` の閉が段を持てない形 (ADR-113) を壊す | — |
+| 引き出し | `drawerMotion(open, reduced)` — **曲線が向きに従う**: 来るときは `land`、去るときは `exit` (Outliner と N パネルが同じ源を読む)。どちらも `ease` だった | `ChromeMath.drawerMotion` |
+| 値のバー | `barMotion` を 1 つの源に (Grasp パネルだけが `land`、余裕のメーターと取り込みの進捗は `ease` — 写しが 3 つで曲線が 2 つだった) | `ChromeMath.barMotion` |
+| B 行の外の 7 件 | 閃光 `flashStyle` → `fade`、取り込みパネルのバッジの弾み → `land`・展開 → α `fade` + 位置 `land`・カードのホバー → `fade`。この行 (`FeedbackPrimitives` / `IntakePanel`) は G1 ✓ の A と採点されていた — M4d3a と同じ採点の訂正 | — |
+| ratchet → 禁止 | 既定曲線の個数は **0** で、増えも減りもしないものは予算ではなく禁止なので、ratchet を禁止の検査に変えた。そのとき既定曲線の **2 つ目の形** — 曲線を書かない `transition: 'opacity 0.15s'` (ブラウザは黙って `ease` を使う) — が数えられていなかったと分かり (3 件: ツールバーのボタン・パラメトリック資産のカード・実体の名札)、両方の形を数える | `src/MotionIdentity.test.js` |
+| 機械が問う所 (Q3) | `MotionIdentity.test.js` (既定曲線 0 — キーワードと無言の両方、読み手の liveness)、`NodeEditorFlash.test.js` (選択の書き手はメソッド単位で 2 つ — 構築と `_selectNode`。旧コードに当てると 2 件とも落ちる)、`FeedbackMath.test.js` (`updateFlash` の舞台の光・`fade`・経過時間・終わり・reduced)、`ChromeMath.test.js` (`drawerMotion` の向き・`barMotion`)、`MotionInventoryCoverage.test.js` (母集団 70 — 死んだファイルが消え、reduced を読むようになった 3 本が入った) | — |
+
+**語彙 (原則 #33):** 「このノードはいま更新された」が言えなかった — 選択の語を借りていた (1 語 1 事実の違反) ので、選択から**割った**。光・`fade`・`land`・`exit` の語は在ったので足していない。足した関数 (`updateFlash` / `drawerMotion` / `barMotion`) は語ではなく、散っていた写しの源を 1 つにしたもの。
+
+**M4d4 で分かったこと (原則 #19):**
+- **書かなかった曲線は欄を持たない。** ratchet は既定曲線を「キーワードの個数」で数えていたので、曲線を**書かない**行 — ブラウザが黙って `ease` を選ぶ行 — はノードを持たず、11 → 0 の間ずっと見えなかった (原則 #31 の形: 在るものを辿る数え方は無いものを素通りする)。禁止に変えるときに「時間はあるのに曲線の語が無い行」として数える形を足した。新しい原則ではなく #31 の事例なので、原則は足していない。
+- **採点表は死んだファイルも採点する。** 母集団は構文から導出しているので「基盤を参照する」ファイルは入るが、「マウントされている」ことは問わない。死んだファイルは 2 つの検査 (`FloorContainerCensus` の出現 0 と採点表) にまたがって生き残っていた — 片方は死を知っていて、もう片方は知らなかった。マウントを母集団の条件にするのは過剰 (一般には導出できない) なので、検査は足していない。M1 の「構造的に見逃すもの」の宣言に加える。
+- **一時的な合図が持続する状態の書き手を借りる形** (ノードエディタの点滅が選択を借りる) は、M4d2 の「度合いの読み手に変えた瞬間に効かない書き手が生まれる」と同じ原則 #4 の事例。検査はメソッド単位で数える形 (M4d3b) をそのまま使った。
+
+**実機:** Chromium の実機 (vite dev) で、Header の `Start ▾` の面が `eaPopoverEnter` (spring 150 ms・起点 `right top`) で出て、行が 0 / 24 / 48 … ms のスタッガー (`land`) で並ぶこと、375 px の Outliner の引き出しが閉では `exit`・開では `land` の `transition` を持つことを読み出した。CSS の時計を 0.08 倍に落とした中間フレーム (行が上から順に現れている) — `docs/motion/media/m4d4-menu-slowed-clock.png`。e2e は smoke / mobile-reach / criteria-hearing の 58 本が緑。**検証できていないこと:** メニュー・引き出しの見えの良し悪し (人の目)、時間軸の動画 (M3b と同じ理由)、ノードの光の配線 (BFF の `geometry.update` を出すスタックを上げていない — 純粋層のテストと書き手の個数の検査のみ)。
 
 **M4d3b で決めたこと (2026-10-13、当事者合意 — 俯瞰の推奨 3 点「影は Solid と腕の台座 (`ImportedMeshView` は残し)・真下に落ちる」「DOM の `LOADING…` は残す」「腕は `fade` 0.3 s で入り、光は同じ瞬間に `exit`」に「All good, please go ahead!」):**
 
@@ -301,7 +325,7 @@ reduced 境界の外) を含む 9 本を採点した。どちらも M4 の最初
 | 軸 | 決定 |
 |---|---|
 | アトモスフィア | **Studio 型の作業セル**。フォグ・ダストを退役。背景は作業のある所が明るい放射グラデ、床に舞台の光の光だまり (6 秒周期の浅い呼吸)、同じ光をリムに。光は起動フライトの着地で入る (`lightOn` は `DURATION.bootReveal` から導出)。グリッドは事実なので残し、光の外で床に溶ける (`GRID_FADE` — フォグが隠していた端を自分で畳む) |
-| イージング族 | 役割で引く `EASING.land / fade / exit / loop / spring`。CSS 既定の `ease` 系は語彙から外し、基盤の外に残る 16 箇所は ratchet で数える |
+| イージング族 | 役割で引く `EASING.land / fade / exit / loop / spring`。CSS 既定の `ease` 系は語彙から外し、基盤の外に残る 16 箇所は ratchet で数える (M4d4 で 0 になり禁止へ) |
 | 時間スケール | きびきび (応答 ≤ 300ms、マクロは起動の 1 回、待機 2〜6s) — 既存の `DURATION` は帯の中にあったので値は変えない |
 | 振付パターン | 位相は同一性から (ADR-093 D1)、スタッガーは触った点からの距離順 |
 | 3色システム | 地 = グラファイト紺 (`backdropCenter` / `backdropEdge` / `grid*`)、強調 = `accent` の 1 色、光 = `stageLight` |
@@ -349,6 +373,7 @@ reduced 境界の外) を含む 9 本を採点した。どちらも M4 の最初
 | `src/view/CueFollowMath.js` (新設) / `MotionMath.js` (`easeOutQuad`) / `MapVisualMath.js` (adapter) / `MeshView.js` / `CoordinateFrameView.js` / `RegionGhostView.js` / `AppController` (tick を 2 行) | M4a — 状態の手掛かりの追従、接近の色 (**実施**)。当たり判定・選択の書き手 (`SelectionManager`)・接近の強さの計算 (`computeApproachWarmth`)・`SnapFlash` の曲線は触っていない |
 | `src/view/LinkMotionMath.js` / `LinkBindEffect.js` (新設) / `SpatialLinkView.js` / `RippleEffect.js` / `LinkCreationHandler` / `SceneService` (`_linkClock`、`id` を渡す) / `AppController` (`_updateWorldPoses(t)`) | M4b — リンクの成立・強調・違反 (**実施**)。違反の判定 (`_evaluateClearanceLinks`)・リンクの作成と undo・LINK NETWORK パネル・デモの呼び手 (`ContextDemoController`) は触っていない |
 | `src/view/LayoutPlanMath.js` (新設) / `src/components/Home/HomeScreen.jsx` / `ChromeMath.js` (`attentionBreath` / `itemEnterDelay`、入場の fill を `backwards`) / `ContextInspector` の `Badge` と 4 つの呼び手 / `uiStore` (`launchHomePlans`) / `AppController` (`_layoutPlans`) | M4c — 起動ホームの上面図・光・スタッガー、デモのバッジの呼吸 (**実施**)。stage の取得 (`claimStage` / `releaseStage`)・テンプレの読み込み経路 (`docFromLayout` → `loadContext`)・カタログ・ツアーの進行・BootReveal は触っていない |
+| `src/view/OutlinerView.js` (削除) / `NodeEditorView.js` (`_flashedAt`・`_flashNode`・レイヤ切替) / `FeedbackMath.js` (`flashStyle` の曲線・`updateFlash`) / `ChromeMath.js` (`drawerMotion`・`barMotion`・`eaLightOff`) / `HeaderMenus.jsx` / `Outliner.jsx` / `NPanel.jsx` / `GraspSearchPanel.jsx` / `ChecksPanel.jsx` / `ImportProgress.jsx` / `IntakePanel.jsx` / `ToolbarButton.jsx` / `ParametricAssetPanel.jsx` / `EntityLabel.js` / `MotionIdentity.test.js` (ratchet → 禁止) | M4d4 — DOM の開閉と既定曲線の禁止 (**実施**)。メニューの開閉の状態 (`OverflowMenuState`)・選択の書き手 (`SelectionManager`)・ノードエディタのグラフの導出と編集・引き出しの開閉の書き手 (`uiStore`)・下端の占有 (`EdgeOccupancy`) は触っていない |
 | `src/view/RobotRevealMath.js` / `GroundShadowMath.js` / `GroundShadow.js` (新設) / `RobotStage.js` (`tick`・`_writeLook`・光・影) / `RobotStageSet.js` (`tick`・`id` を渡す・e2e の読み出し) / `MeshView.js` (`_writeShadow`) / `AppController` (tick を 1 行、`robotAppearance()` に 2 欄) | M4d3b — 読み込み中の光、腕の着地、接地影 (**実施**)。読み込みの寿命 (`setRenderStyle` の token・`_pendingStyle`・失敗の経路)・関節と preview の決定・`RobotMeshLoadingNotice`・舞台の光 (`StageMath`)・`ImportedMeshView` は触っていない |
 | `CommandFeedbackMath.js` (`flash`・`sparkScale`・`fade` の減衰) / `LandingEffects.js` / `SnapFeedbackMath.js` / `SnapFlash.js` / `CelebrationMath.js` (`flash`・`particleProgress`) / `CelebrationField.js` (インスタンスごとの色) / `Celebration.jsx` / `RegionAuthoringWidget.js` / `UncertaintyGhostView.js` / `ParametricPreviewView.js` / `RegionGhostMath.js` (`GAP_COLOR`) | M4d3a — 光と曲線 (**実施**)。演出を出す条件 (`lifecycleDescriptor` のラベル表・`snapTransition`・`pickCelebration`)・`MotionGovernor` の予算・`BootReveal` / `StageMath`・`RobotStage`・`MeshView` は触っていない |
 | `src/view/SelectPulseMath.js` (新設) / `SelectPulse.js` / `MeshView.js` (輪郭) / `RotationHandler` (1 行の削除) / `CoordinateFrameView.js` (接続線) / `SceneService` (`showConnection()` の引数) | M4d2 — 選択の合図の 2 曲線、輪郭の着地、接続線の減光 (**実施**)。選択の書き手 (`SelectionManager` の書き込み順・`reassertHighlight`)・合図を出す条件 (主選択の Solid に入った瞬間だけ)・`ImportedMeshView` / `MeasureLineView` の輪郭は触っていない |

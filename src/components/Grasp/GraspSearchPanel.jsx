@@ -14,18 +14,13 @@ import { sourceLabel } from '../../domain/searchGeometry.js'
 import { MASS_DECLARATION_STATE } from '../../domain/targetMass.js'
 import { phaseRows, analysisSummary, analysisFreshness, analysisAvailability } from '../../view/GraspPhaseMath.js'
 import { DeltaChip, useReducedMotion } from '../Feedback/FeedbackPrimitives.jsx'
+import { barMotion } from '../../view/ChromeMath.js'
 import { NumField, SortChip, PICKER } from './GraspFields.jsx'
-import { COLOR, DURATION, EASING } from '../../theme/tokens.js'
+import { COLOR } from '../../theme/tokens.js'
 
-/**
- * A `transition: width` for a data bar fill (ADR-068 polish) so the bar glides
- * to its new fraction instead of snapping. Reduced motion drops the transition
- * (the number is the information, not the glide — PHILOSOPHY #30). Presentation
- * only; the fraction still comes verbatim from the contract diagnostics (#29).
- */
-function barTransition(reduced) {
-  return reduced ? undefined : `width ${DURATION.drawer}ms ${EASING.land}`
-}
+// A data bar's fill glides to its new fraction — `barMotion` (ChromeMath, the
+// one source since ADR-166 M4d4). Presentation only; the fraction still comes
+// verbatim from the contract diagnostics (#29).
 
 /**
  * GraspSearchPanel — UI → DSL → BFF → grasp-search verification (ADR-054 thread,
@@ -994,7 +989,7 @@ function FunnelRow({ label, stage, dominant, delta }) {
         color: dominant ? '#eb7' : '#aaa', fontWeight: dominant ? 'bold' : 'normal',
       }}>{label}</span>
       <div style={{ flex: 1, height: '9px', background: '#1a1a1a', borderRadius: '4px', overflow: 'hidden' }}>
-        <div style={{ width: `${pct}%`, height: '100%', background: dominant ? '#b58432' : '#3a6a9d', transition: barTransition(reduced) }} />
+        <div style={{ width: `${pct}%`, height: '100%', background: dominant ? '#b58432' : '#3a6a9d', transition: barMotion(reduced) }} />
       </div>
       <span style={{
         width: '34px', fontSize: '10px',
@@ -1026,7 +1021,7 @@ function NearMissMeter({ label, what, miss, closeness }) {
       <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
         <span style={{ width: '64px', fontSize: '10px', color: '#eb7', textAlign: 'right' }}>{label} miss</span>
         <div style={{ flex: 1, height: '7px', background: '#1a1a1a', borderRadius: '4px', overflow: 'hidden' }}>
-          <div style={{ width: `${pct}%`, height: '100%', background: 'linear-gradient(90deg, #7a5a24, #e8b04a)', transition: barTransition(reduced) }} />
+          <div style={{ width: `${pct}%`, height: '100%', background: 'linear-gradient(90deg, #7a5a24, #e8b04a)', transition: barMotion(reduced) }} />
         </div>
         <span style={{ fontSize: '9px', color: '#eb7', whiteSpace: 'nowrap' }}>{feel}</span>
       </div>
@@ -1203,7 +1198,7 @@ function ObjectiveBar({ label, value, verdict = null }) {
     <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '3px' }}>
       <span style={{ width: '64px', fontSize: '9px', color: '#aaa', textAlign: 'right' }}>{label}</span>
       <div style={{ flex: 1, height: '7px', background: '#1a1a1a', borderRadius: '4px', overflow: 'hidden' }}>
-        <div style={{ width: `${pct}%`, height: '100%', background: '#3a7bd5', transition: barTransition(reduced) }} />
+        <div style={{ width: `${pct}%`, height: '100%', background: '#3a7bd5', transition: barMotion(reduced) }} />
       </div>
       <span style={{ width: '30px', fontSize: '9px', color: '#9ad' }}>{value.toFixed(2)}</span>
       {/* A decided fact derived from the 0 (ADR-156 D6) — the candidate is kept

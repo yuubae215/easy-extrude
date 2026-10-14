@@ -25,8 +25,8 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useUIStore } from '../../store/uiStore.js'
-import { COLOR } from '../../theme/tokens.js'
-import { tierAMotion, enterMotion } from '../../view/ChromeMath.js'
+import { COLOR, DURATION, EASING } from '../../theme/tokens.js'
+import { tierAMotion, popoverEnterMotion, itemEnterMotion } from '../../view/ChromeMath.js'
 import { useReducedMotion } from '../Feedback/FeedbackPrimitives.jsx'
 import { useHoverPress } from '../Chrome/ChromePrimitives.jsx'
 import { iconFor } from './HeaderIcons.js'
@@ -108,7 +108,10 @@ function MenuSurface({ pos, minWidth = '230px', surfaceRef, children }) {
       background: COLOR.surfaceSunken, border: '1px solid #555', borderRadius: '6px',
       overflow: 'hidden', zIndex: '200', minWidth,
       boxShadow: '0 4px 16px rgba(0,0,0,0.6)', pointerEvents: 'auto',
-      ...enterMotion(reduced),
+      // Grows from its trigger (the surface hangs from the trigger's bottom-
+      // right corner — `top`/`right` above), like every other popover; it used
+      // to slide in from nowhere (ADR-166 M4d4).
+      ...popoverEnterMotion(reduced, 'top right'),
     }}>
       {children}
     </div>
@@ -120,8 +123,9 @@ function MenuSurface({ pos, minWidth = '230px', surfaceRef, children }) {
  * return value (`availabilityOf`) — the row cannot show a lock without also
  * being able to say why (原則 #11 / #25).
  */
-function MenuRow({ icon, label, shortcut, enabled, reason, trailing, onSelect }) {
+function MenuRow({ index, icon, label, shortcut, enabled, reason, trailing, onSelect }) {
   const pushToast = useUIStore(s => s.actions.pushToast)
+  const reduced = useReducedMotion()
   return (
     <button
       key={label}
@@ -136,6 +140,10 @@ function MenuRow({ icon, label, shortcut, enabled, reason, trailing, onSelect })
         cursor: enabled ? 'pointer' : 'help',
         fontSize: '13px', fontFamily: 'system-ui, -apple-system, sans-serif',
         textAlign: 'left', pointerEvents: 'auto',
+        // Rows cascade from the trigger instead of arriving in lockstep, and the
+        // hover tint glides (ADR-166 M4d4 — the same as the other popovers).
+        transition: `background ${DURATION.hover}ms ${EASING.fade}`,
+        ...itemEnterMotion(index, reduced),
       }}
       onMouseEnter={e => { e.currentTarget.style.background = '#3a3a3a' }}
       onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
@@ -225,10 +233,10 @@ export function VerbMenu({ verb }) {
                    icon={menu.icon} label={menu.label} title={menu.title} />
       {open && (
         <MenuSurface pos={pos} surfaceRef={surfaceRef}>
-          {menu.items.map(item => {
+          {menu.items.map((item, i) => {
             const { enabled, reason } = availabilityOf(item, facts)
             return (
-              <MenuRow key={item.key} icon={menu.icon} label={item.label}
+              <MenuRow key={item.key} index={i} icon={menu.icon} label={item.label}
                        shortcut={item.shortcut} enabled={enabled} reason={reason}
                        onSelect={() => { setOpen(false); callbacks[item.callback]?.() }} />
             )
@@ -294,21 +302,21 @@ export function MoreMenu() {
       {open && (
         <MenuSurface pos={pos} minWidth="220px" surfaceRef={surfaceRef}>
           {menu === null
-            ? OVERFLOW_VERBS.map(v => {
+            ? OVERFLOW_VERBS.map((v, i) => {
                 const m = menuFor(v)
                 return (
-                  <MenuRow key={v} icon={m.icon} label={m.label} enabled reason={null}
+                  <MenuRow key={v} index={i} icon={m.icon} label={m.label} enabled reason={null}
                            trailing="›" onSelect={() => setMenuState(s => descendTo(s, v))} />
                 )
               })
             : (
               <>
-                <MenuRow icon="back" label={menu.label} enabled reason={null}
+                <MenuRow key="back" index={0} icon="back" label={menu.label} enabled reason={null}
                          onSelect={() => setMenuState(ascend)} />
-                {menu.items.map(item => {
+                {menu.items.map((item, i) => {
                   const { enabled, reason } = availabilityOf(item, facts)
                   return (
-                    <MenuRow key={item.key} icon={menu.icon} label={item.label}
+                    <MenuRow key={item.key} index={i + 1} icon={menu.icon} label={item.label}
                              shortcut={item.shortcut} enabled={enabled} reason={reason}
                              onSelect={() => { close(); callbacks[item.callback]?.() }} />
                   )

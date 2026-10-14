@@ -19,3 +19,4 @@
 - v3.2 | 感想「毎回同じテイストになるとつまらない」(メタ要求) | SKILL.md Step 1.5 モーション・アイデンティティ新設 (5軸を project 契約に固定 / auto memory 台帳で project 間逸らし) + チェックリスト1項 | P11 P12 (ポートフォリオ層の誕生)
 - v3.3 | easy-extrude ADR-166 M2 (Void Grid → Studio の作業セル) | postfx-scene.md B. Studio に「フォグを外すときはフォグが担っていた機能 (グリッド端の隠蔽) を数え、床側の smoothstep フェードで畳む」 | P4 P9
 - v3.4 | easy-extrude ADR-166 M4a (キューブのホバー・選択・違反の切替) | three-3d.md §micro に「離散状態の手掛かりは区間で追わせる」(役割で曲線・同要求で再開しない・優先順位は lerp の層・setter で区間を作り直さない) | P1 P3 P9
+- v3.5 | easy-extrude ADR-166 M4d4 (DOM の開閉・既定曲線の禁止) | micro-2d.md に「CSS の `transition` は曲線を書かなければブラウザの `ease` — 既定曲線の検査はキーワードと**無言**の 2 形を数える」「引き出しの曲線は向きに従う (来る `land` / 去る `exit`)」「一時的な合図は持続する状態 (選択) を借りない — 自分の欄と経過時間で描く」 | P1 P3 P12

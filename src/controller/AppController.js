@@ -2,7 +2,7 @@
  * AppController - handles user input and coordinates the animation loop.
  *
  * Connects SceneModel (domain state) with the View layer (SceneView / MeshView /
- * UIView / OutlinerView). Owns only transient interaction state (drag, hover,
+ * UIView / OutlinerBridge). Owns only transient interaction state (drag, hover,
  * grab, sketch phase, etc.) — persistent domain state lives in SceneModel.
  *
  * Side effects: event listener registration, requestAnimationFrame, SceneModel
@@ -212,7 +212,7 @@ export class AppController {
    * @param {import('../view/SceneView.js').SceneView}       sceneView
    * @param {import('../view/UIView.js').UIView}             uiView
    * @param {import('../view/GizmoView.js').GizmoView}       gizmoView
-   * @param {import('../view/OutlinerView.js').OutlinerView} outlinerView
+   * @param {import('../view/OutlinerBridge.js').OutlinerBridge} outlinerView
    */
   constructor(sceneView, uiView, gizmoView = null, outlinerView = null) {
     this._sceneView          = sceneView

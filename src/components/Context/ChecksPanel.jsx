@@ -1,5 +1,6 @@
 import { useUIStore } from '../../store/uiStore.js'
-import { DeltaChip, LandingFlash, usePrevOnChange } from '../Feedback/FeedbackPrimitives.jsx'
+import { DeltaChip, LandingFlash, usePrevOnChange, useReducedMotion } from '../Feedback/FeedbackPrimitives.jsx'
+import { barMotion } from '../../view/ChromeMath.js'
 import { checkStatusKeys, checkTransitions, unsettledCount, checkMeter } from '../../view/CheckFeedbackMath.js'
 
 /**
@@ -120,13 +121,14 @@ function CheckCard({ check, tick, flash }) {
  * worst / required numbers (geometry length unit) are always printed beside it.
  */
 function MarginMeter({ meter, status }) {
+  const reduced = useReducedMotion()
   const color = status === 'pass' ? '#22C55E' : '#cc6666'
   return (
     <div style={{ marginTop: '4px' }}>
       <div style={{ height: '4px', borderRadius: '2px', background: '#333', overflow: 'hidden' }}>
         <div style={{
           width: `${Math.round(meter.closeness * 100)}%`, height: '100%',
-          background: color, transition: 'width 300ms ease',
+          background: color, transition: barMotion(reduced),
         }} />
       </div>
       <div style={{ fontSize: '9px', color: '#999', marginTop: '2px', fontFamily: 'monospace' }}>

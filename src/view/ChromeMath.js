@@ -152,6 +152,37 @@ export function itemEnterMotion(index, reduced) {
 }
 
 /**
+ * The slide of a mobile side drawer (the Outliner from the left, the N panel
+ * from the right — ADR-166 M4d4). Coming in is a position arriving → `land`;
+ * going away is an exit → `exit` (inCubic: it leaves without lingering). The
+ * curve follows the DIRECTION, so one `transition` string per state — it used
+ * to be the browser's `ease` both ways.
+ * Reduced → `undefined`: the drawer is simply there or not (#30).
+ *
+ * @param {boolean} open the drawer's target state
+ * @param {boolean} reduced
+ * @returns {string|undefined} a CSS `transition` value
+ */
+export function drawerMotion(open, reduced) {
+  if (reduced) return undefined
+  return `transform ${DURATION.drawer}ms ${open ? EASING.land : EASING.exit}`
+}
+
+/**
+ * The glide of a data bar's fill to its new fraction (score bars, margin
+ * meters, upload progress — ADR-068 polish; one source since ADR-166 M4d4,
+ * where three copies with two curves — `land` and the browser's `ease` — met).
+ * The value is a size arriving → `land`. Reduced → `undefined` (the bar snaps;
+ * the number beside it carries the fact).
+ *
+ * @param {boolean} reduced
+ * @returns {string|undefined} a CSS `transition` value
+ */
+export function barMotion(reduced) {
+  return reduced ? undefined : `width ${DURATION.drawer}ms ${EASING.land}`
+}
+
+/**
  * The stagger delay of item `index` (ms) — the one source for anything that
  * must start in step with an item's entrance (a Home card's plan lights after
  * its card, ADR-166 M4c).
@@ -236,6 +267,10 @@ export const CHROME_CSS = `
 @keyframes eaLightOn {
   from { opacity: 0; }
   to   { opacity: 1; }
+}
+@keyframes eaLightOff {
+  from { opacity: 0.45; }
+  to   { opacity: 0; }
 }
 @keyframes eaPoolBreath {
   0%, 100% { opacity: 1; }

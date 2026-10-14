@@ -12,7 +12,11 @@
  *   1. 節が在り、5 軸がすべて埋まっている (GSN `MotionIdentityIsFixedInOnePlace` の満期)
  *   2. イージング族: `EASING` は役割の名前で引く明示の曲線だけを持つ (CSS の既定キーワードを
  *      語彙に置かない — 既定の曲線は「誰も選ばなかった曲線」)
- *   3. 基盤の外で CSS の既定キーワードを使って動く箇所の **個数** (ratchet)。M1 の census
+ *   3. 基盤の外で CSS の既定曲線で動く箇所の **個数が 0** (ADR-166 M4d4 で ratchet から
+ *      禁止へ — M2 の 16 件を M4 が段ごとに下げ切った)。既定曲線には 2 つの形がある:
+ *      キーワード (`ease` / `ease-out` …) を書く形と、**曲線を書かない**形 (`'opacity 0.15s'`
+ *      — ブラウザは黙って `ease` を使う)。前者だけを数えていた ratchet は後者を見なかった
+ *      (M4d4 で 3 件見つかった — 書かなかった曲線は欄を持たない、原則 #31)。M1 の census
  *      (`MotionInventoryCoverage.test.js`) が「構造的に見逃す」と宣言していた欠陥 —
  *      基盤を通らず `transition` だけで動く部品 — を、ここで数える。
  *   4. 待機のループ (時間スケール・振付パターン — ADR-166 M4d1): 見た目の値を手書きの
@@ -24,9 +28,11 @@
  * ## この証拠が構造的に見逃すもの (宣言)
  *
  * 曲線の *名前* は数えるが、曲線が役割に合っているか (位置に fade を使っていないか) は
- * 見ない — それは採点表 (`docs/motion/inventory.md`) とレビューの仕事。ratchet は
+ * 見ない — それは採点表 (`docs/motion/inventory.md`) とレビューの仕事。3 は
  * `transition` / `animation` を名指す行だけを読むので、別の行に組み立てた文字列は
- * 数えない。4 は「見た目の欄への代入と `Math.sin` が同じ行に在る」形と「数値リテラルを
+ * 数えない。曲線を書かない形は「時間のリテラル (`150ms` / `0.15s`) が在って曲線の語
+ * (`EASING` / `cubic-bezier` / `steps(`) が無い行」として読む — 時間も変数から組み立てた
+ * 行は見ない。4 は「見た目の欄への代入と `Math.sin` が同じ行に在る」形と「数値リテラルを
  * `+=` する」形だけを読む — 一度変数に入れてから代入する揺れ、整数の歩み、
  * `*Math.js` の純粋層 (そこは曲線の語彙を持つ場所なので数えない) は見ない。
  *
@@ -86,35 +92,43 @@ test('EASING carries only explicit curves, named by role — never a CSS default
 const CSS_KEYWORD_EASING = /(?<![\w-])(ease-in-out|ease-out|ease-in|ease|linear)(?![\w-])/g
 const MOTION_PROPERTY = /\b(transition|animation)\b/
 
-/**
- * Today's count of CSS default easings driving motion outside the vocabulary.
- * A stated budget, not a target (ADR-100's ratchet): it fails when the count
- * rises AND when it falls without the baseline being lowered — a ratchet
- * nobody turns is not a ratchet. M4 lowers it row by row.
- * 2026-10-12 (ADR-166 M2): 16 occurrences on 13 lines.
- * 2026-10-13 (ADR-166 M4c): 16 → 13 — the Home card's border/transform `ease`
- * (×2) became `fade` / `land` + spring, and the demo badge's
- * `ease-in-out infinite` became the attention breath (`loop`, 2 s, phased).
- * 2026-10-13 (ADR-166 M4d3a): 13 → 11 — the celebration banner's `ease-out`
- * became `land`, and the particle fan's one `ease-out` (distance and alpha on
- * one curve) became two animations, flight on `land` and alpha/light on `fade`.
- */
-const KEYWORD_EASING_BASELINE = 11
+/** A time literal on a motion line: `150ms`, `0.15s`, `2s`. */
+const TIME_LITERAL = /(?<![\w.])\d*\.?\d+m?s(?![\w-])/
+/** A chosen curve on the same line. */
+const CHOSEN_CURVE = /EASING\.|cubic-bezier\(|steps\(/
 
-test('CSS default easings outside the vocabulary never increase (ratchet)', () => {
+/**
+ * Zero CSS default easings drive motion outside the vocabulary (ADR-166 M4d4).
+ *
+ * This was a ratchet from M2 (16 occurrences) down through M4c (13) and M4d3a
+ * (11); M4d4 took the last 11 to 0 and turned the budget into a ban, because a
+ * budget of 0 that may only fall is a ban written the long way.
+ * Two shapes are the browser's curve: the keyword, and NO curve at all — a
+ * `transition: 'opacity 0.15s'` runs on `ease` without saying so. The ratchet
+ * counted only the first shape; M4d4 found three of the second.
+ */
+test('no CSS default easing drives motion outside the vocabulary — named or silent', () => {
   const hits = []
   for (const file of collectSources()) {
     const lines = stripComments(readFileSync(file, 'utf8'))
     lines.forEach((line, i) => {
       if (!MOTION_PROPERTY.test(line)) return
       for (const m of line.matchAll(CSS_KEYWORD_EASING)) hits.push(`${relPath(file)}:${i + 1} ${m[1]}`)
+      if (TIME_LITERAL.test(line) && !CHOSEN_CURVE.test(line)) hits.push(`${relPath(file)}:${i + 1} (no curve — the browser's ease)`)
     })
   }
-  assert.ok(hits.length <= KEYWORD_EASING_BASELINE,
-    `CSS default easings rose to ${hits.length} (baseline ${KEYWORD_EASING_BASELINE}). ` +
-    `Use EASING.<role> from src/theme/tokens.js:\n  ${hits.join('\n  ')}`)
-  assert.equal(hits.length, KEYWORD_EASING_BASELINE,
-    `CSS default easings are down to ${hits.length} — lower KEYWORD_EASING_BASELINE to ${hits.length}.`)
+  assert.deepEqual(hits, [],
+    'Use EASING.<role> from src/theme/tokens.js (position/size `land`, alpha/colour `fade`, ' +
+    'leaving `exit`, waiting `loop`, the one overshoot `spring`):\n  ' + hits.join('\n  '))
+})
+
+test('the silent-curve reader sees what it claims to see (liveness)', () => {
+  // A reader that matches nothing is indistinguishable from a clean tree (原則 #31).
+  const silent = "transition: 'border-color 0.15s',"
+  assert.ok(MOTION_PROPERTY.test(silent) && TIME_LITERAL.test(silent) && !CHOSEN_CURVE.test(silent))
+  const chosen = 'transition: `opacity ${DURATION.hover}ms ${EASING.fade}`,'
+  assert.ok(CHOSEN_CURVE.test(chosen))
+  assert.ok(!TIME_LITERAL.test("background: 'linear-gradient(90deg, #7a5a24, #e8b04a)'"))
 })
 
 // ── 4. 待機のループ (ADR-166 M4d1) ───────────────────────────────────────────

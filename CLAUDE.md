@@ -206,7 +206,7 @@ Three.js `camera.up = (0,0,1)`. XY plane (Z=0) is the ground plane.
 演出の方向性の正本 (ADR-166 M2、2026-10-12 当事者合意)。新しい演出・作り直す演出はすべてこの 5 軸に
 従う — 演出ごとに方向を選び直さない (ADR-166 §力学: 古く見えた原因はここが一度も決まらなかったこと)。
 品質ゲート 5 条件と原則 #30 の Tier は `.claude/skills/animation-fx` のまま。採点表は `docs/motion/inventory.md`。
-機械が問う所 = `src/MotionIdentity.test.js` (節と 5 軸の存在・曲線の語彙・CSS 既定曲線の ratchet)。
+機械が問う所 = `src/MotionIdentity.test.js` (節と 5 軸の存在・曲線の語彙・CSS 既定曲線の禁止 — キーワードを書く形も曲線を書かない形も 0、ADR-166 M4d4)。
 
 | 軸 | 決定 | 正本 (値) |
 |---|---|---|

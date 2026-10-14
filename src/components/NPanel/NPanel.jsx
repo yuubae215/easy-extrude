@@ -10,6 +10,8 @@ import { ParametricAssetPanel } from '../Context/ParametricAssetPanel.jsx'
 import { BOTTOM_TIER, bottomEdgeOffset } from '../../view/EdgeOccupancy.js'
 import { floorIsOpen } from '../../view/FloorTabs.js'
 import { useIsNarrowViewport } from '../Chrome/ChromePrimitives.jsx'
+import { useReducedMotion } from '../Feedback/FeedbackPrimitives.jsx'
+import { drawerMotion } from '../../view/ChromeMath.js'
 
 /**
  * NPanel — the right dock: what you selected, and what you can do to it.
@@ -33,7 +35,8 @@ import { useIsNarrowViewport } from '../Chrome/ChromePrimitives.jsx'
  * an agreement: grasp-search results and the parametric-asset viewer.
  *
  * Desktop: display block/none driven by nPanelVisible
- * Mobile:  always in DOM, translateX(100%) when hidden (0.25s ease transition)
+ * Mobile:  always in DOM, translateX(100%) when hidden (`drawerMotion` — arrives
+ *          on `land`, leaves on `exit`, ADR-166 M4d4)
  *
  * Backdrop: rendered when backdropCallback !== null (mobile drawer mode)
  */
@@ -45,6 +48,7 @@ export function NPanel() {
   const assetViewer    = useUIStore(s => s.context.assetViewer)
   const floorOpen      = useUIStore(floorIsOpen)
   const isMobile       = useIsNarrowViewport()
+  const reduced        = useReducedMotion()
 
   const bottom = bottomEdgeOffset({ isMobile, tier: BOTTOM_TIER.DOCK, floorOpen })
 
@@ -64,11 +68,11 @@ export function NPanel() {
     pointerEvents: 'auto',
     ...(isMobile ? {
       display:    'block',
-      transition: 'transform 0.25s ease',
+      transition: drawerMotion(nPanelVisible, reduced),
       transform:  nPanelVisible ? 'translateX(0)' : 'translateX(100%)',
     } : {
       display:    nPanelVisible ? 'block' : 'none',
-      transition: '',
+      transition: undefined,
       transform:  'none',
     }),
   }

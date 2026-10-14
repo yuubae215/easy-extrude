@@ -224,7 +224,6 @@ test('STATE_TOKENS names real tokens, and every non-listed token has a stated re
  */
 const SELECTION_PAINTERS = [
   { kind: 'Outliner row (colour derivation)', file: 'src/view/OutlinerRowMath.js' },
-  { kind: 'Outliner row (DOM view)',          file: 'src/view/OutlinerView.js' },
   { kind: 'Outliner row (React panel)',       file: 'src/components/Outliner/Outliner.jsx' },
   { kind: '3D body highlight + outline',      file: 'src/view/MeshView.js' },
   { kind: 'CoordinateFrame origin sphere',    file: 'src/view/CoordinateFrameView.js' },
@@ -419,7 +418,11 @@ const DECLARED_VOCABULARIES = {
 // region gap (#10b981 / #cc3333 / #d5a23a / #3a7bd5, −10) became
 // `factTone` / `dangerTone` / `cautionTone` / `infoTone`. Distinct stays 190:
 // every one of those hues still has another user.
-const UNDECLARED_OCCURRENCE_BASELINE = 719
+// 719 → 699 (ADR-166 M4d4): the DOM `OutlinerView` — never mounted since the
+// React Outliner replaced it — was retired with its 20 literals. Distinct stays
+// 190: every one of its hues still has another user (the React Outliner copied
+// them). Nothing else in M4d4 touched a colour.
+const UNDECLARED_OCCURRENCE_BASELINE = 699
 const UNDECLARED_DISTINCT_BASELINE   = 190
 
 const HEX_LITERAL = /#[0-9a-fA-F]{6}\b|\b0x[0-9a-fA-F]{6}\b/g

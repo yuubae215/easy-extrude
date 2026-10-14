@@ -113,9 +113,6 @@ const BOTTOM_EDGE_EXEMPT = [
   { key: 'src/components/InfoBar/InfoBar.jsx',
     why: '下端の**基準**そのもの (bottom:0, h:26px)。場が開いても位置も高さも変えない '
        + '(ADR-106 D1 / 原則 #15) ので、占有量を引く側ではなく占有量を構成する側' },
-  { key: 'src/view/OutlinerView.js',
-    why: 'React の Outliner に置き換わった DOM view で、どこからも new されていない '
-       + '(この除外は下のテストが `new OutlinerView` の出現数 0 を確認したうえで成立する)' },
 ]
 
 // ── 母集団の導出 ────────────────────────────────────────────────────────────
@@ -473,15 +470,6 @@ test('下端に張り付く要素はすべて所有者から offset を引いて
               + 'EdgeOccupancy の bottomEdgeOffset({ isMobile, tier, floorOpen }) を引くこと — '
               + '名乗れる段が無いなら BOTTOM_TIER に段を足す (既定へ落とさない — 原則 #31)',
   })
-})
-
-test('OutlinerView の除外が成立している — どこからも new されていない', () => {
-  // 除外は宣言だが、その**根拠は導出**する。React の Outliner に置き換わった
-  // はずの DOM view が再び mount されたら、除外の理由が消えるのでここが落ちる。
-  const mounts = SOURCES.filter(s => /\bnew OutlinerView\s*\(/.test(s.body)).map(s => s.file)
-  assert.deepEqual(mounts, [],
-    'OutlinerView が再び mount されている — BOTTOM_EDGE_EXEMPT の除外理由が失効した。' +
-    '下端の占有量を所有者から引くよう直すこと')
 })
 
 // ── 導出そのものの liveness ─────────────────────────────────────────────────

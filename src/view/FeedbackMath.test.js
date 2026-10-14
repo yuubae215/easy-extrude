@@ -4,8 +4,9 @@
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { refsSignature, listDelta, settledRefs, flashStyle } from './FeedbackMath.js'
-import { COLOR, rgba } from '../theme/tokens.js'
+import { refsSignature, listDelta, settledRefs, flashStyle, updateFlash } from './FeedbackMath.js'
+import { COLOR, DURATION, EASING, rgba } from '../theme/tokens.js'
+import { STAGE_LIGHT } from './StageMath.js'
 
 const Q = (ref) => ({ ref, prompt: `p_${ref}` })
 
@@ -77,10 +78,11 @@ test('settledRefs does not mutate its inputs', () => {
 // ── flashStyle (ADR-064 Phase 4: reduced-motion degradation) ────────────────────
 
 test('flashStyle animates by default (motion allowed)', () => {
-  assert.deepEqual(flashStyle('green', false), { animation: 'eaFlashGreen 700ms ease-out' })
-  assert.deepEqual(flashStyle('amber', false), { animation: 'eaFlashAmber 700ms ease-out' })
+  // ADR-166 M4d4: the curve is the identity's `fade`, not the browser's `ease-out`.
+  assert.deepEqual(flashStyle('green', false), { animation: `eaFlashGreen ${DURATION.flash}ms ${EASING.fade}` })
+  assert.deepEqual(flashStyle('amber', false), { animation: `eaFlashAmber ${DURATION.flash}ms ${EASING.fade}` })
   // default reduced flag is false → unchanged from the pre-Phase-4 behaviour
-  assert.deepEqual(flashStyle('green'), { animation: 'eaFlashGreen 700ms ease-out' })
+  assert.deepEqual(flashStyle('green'), { animation: `eaFlashGreen ${DURATION.flash}ms ${EASING.fade}` })
 })
 
 test('flashStyle degrades to a static tint under reduced motion (no animation, info kept)', () => {
@@ -98,6 +100,30 @@ test('flashStyle degrades to a static tint under reduced motion (no animation, i
 })
 
 test('flashStyle treats an unknown tone as green in both modes', () => {
-  assert.deepEqual(flashStyle('bogus', false), { animation: 'eaFlashGreen 700ms ease-out' })
+  assert.deepEqual(flashStyle('bogus', false), flashStyle('green', false))
   assert.deepEqual(flashStyle('bogus', true), flashStyle('green', true))
+})
+
+// ── updateFlash (ADR-166 M4d4: a node update is its own fact, not a borrowed selection) ──
+
+test('updateFlash is the stage light fading on `fade`, placed by elapsed time', () => {
+  const f = updateFlash(0)
+  assert.equal(f.fill, STAGE_LIGHT.color)
+  assert.equal(f.animation, `eaLightOff ${DURATION.flash}ms ${EASING.fade} both`)
+  // A redraw mid-flash continues the same light (negative delay), never restarts it.
+  assert.equal(updateFlash(250).animationDelay, '-250ms')
+})
+
+test('updateFlash is gone at its end and never fabricates a flash from bad time', () => {
+  assert.equal(updateFlash(DURATION.flash), null)
+  assert.equal(updateFlash(-1), null)
+  assert.equal(updateFlash(NaN), null)
+})
+
+test('updateFlash under reduced motion holds a static light for the same duration', () => {
+  const f = updateFlash(100, true)
+  assert.equal(f.animation, undefined)
+  assert.equal(f.fill, STAGE_LIGHT.color)
+  assert.ok(f.opacity > 0)
+  assert.equal(updateFlash(DURATION.flash, true), null)
 })
