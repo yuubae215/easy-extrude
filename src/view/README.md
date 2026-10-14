@@ -5,7 +5,7 @@
 Representative files: per-entity views (`MeshView`, `ImportedMeshView`,
 `CoordinateFrameView`, `MeasureLineView`, `SpatialLinkView`,
 `Annotated{Line,Region,Point}View`), scene infrastructure (`SceneView`,
-`SceneStage`, `GizmoView`), DOM UI (`UIView`, `OutlinerView`,
+`SceneStage`, `GizmoView`), DOM UI (`UIView`, `OutlinerBridge`,
 `NodeEditorView`, bridges to React), and the motion system
 (`MotionGovernor`, `CameraFlight`, `BootReveal`, effect views — ADR-065…068).
 

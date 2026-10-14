@@ -1,8 +1,9 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { DURATION, EASING } from '../theme/tokens.js'
 import {
   tierAMotion, activeGlow, lockedStyle, enterMotion,
-  popoverEnterMotion, itemEnterMotion,
+  popoverEnterMotion, itemEnterMotion, drawerMotion, barMotion,
   breatheGlowKeyframes, CHROME_CSS,
 } from './ChromeMath.js'
 
@@ -95,4 +96,17 @@ test('CHROME_CSS defines exactly the keyframes the fragments reference', () => {
   assert.match(CHROME_CSS, /@keyframes eaChromeEnter/)
   assert.match(CHROME_CSS, /@keyframes eaBreatheGlow/)
   assert.match(CHROME_CSS, /@keyframes eaPopoverEnter/)
+  assert.match(CHROME_CSS, /@keyframes eaLightOff/)
+})
+
+test('drawerMotion: arriving lands, leaving exits — the curve follows the direction (ADR-166 M4d4)', () => {
+  assert.equal(drawerMotion(true, false),  `transform ${DURATION.drawer}ms ${EASING.land}`)
+  assert.equal(drawerMotion(false, false), `transform ${DURATION.drawer}ms ${EASING.exit}`)
+  assert.equal(drawerMotion(true, true), undefined)
+  assert.equal(drawerMotion(false, true), undefined)
+})
+
+test('barMotion: a bar fill lands on its new value; reduced snaps (ADR-166 M4d4)', () => {
+  assert.equal(barMotion(false), `width ${DURATION.drawer}ms ${EASING.land}`)
+  assert.equal(barMotion(true), undefined)
 })

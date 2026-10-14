@@ -6,7 +6,7 @@
  * domain entities themselves.
  *
  * DDD Phase 4: SceneService extends EventEmitter and emits domain events
- * whenever scene state changes. Subscribers (e.g. OutlinerView) react to
+ * whenever scene state changes. Subscribers (e.g. OutlinerBridge) react to
  * these events instead of being called directly by AppController.
  *
  * BFF Phase A (ADR-015): optional BFF integration via `connectBff()`.

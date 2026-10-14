@@ -10,7 +10,12 @@
  *   - Drag from output port → release on input port → linkType picker → CreateSpatialLinkCommand
  *   - Click spatial edge to select → Delete key → DeleteSpatialLinkCommand
  *   - Syncs with L-key flow via shared AppController callbacks
+ * ADR-166 M4d4: a geometry update lights its node (`updateFlash`) — its own
+ *   fact, drawn as an overlay; it never borrows the selection.
  */
+import { updateFlash }          from './FeedbackMath.js'
+import { prefersReducedMotion } from '../theme/motion.js'
+import { DURATION, EASING }     from '../theme/tokens.js'
 
 const NODE_W = 140
 const NODE_H = 48
@@ -74,6 +79,7 @@ export class NodeEditorView {
     this._sceneGraph    = { nodes: [], edges: [] }   // from getSceneGraph()
     this._nodePositions = new Map()                  // id → { x, y }
     this._selectedId    = null
+    this._flashedAt     = new Map()                  // id → performance.now() of its last geometry update (0..N)
     this._visible       = false
     this._layerVisible  = { frame: true, anchor: true, spatial: true, operation: true }
 
@@ -223,6 +229,7 @@ export class NodeEditorView {
       btn.style.cssText = `
         padding: 1px 6px; font-size: 9px; font-family: monospace;
         border-radius: 3px; cursor: pointer;
+        transition: opacity ${DURATION.hover}ms ${EASING.fade};
         border: 1px solid ${color};
         background: ${color}33;
         color: ${color};
@@ -468,6 +475,24 @@ export class NodeEditorView {
     rect.setAttribute('stroke-width', isSelected ? '2' : '1.5')
     g.appendChild(rect)
 
+    // "Just updated" light (ADR-166 M4d4) — over the body, under nothing it
+    // could block: pointer-events off, selection untouched.
+    const flashedAt = this._flashedAt.get(id)
+    const flash = flashedAt == null ? null : updateFlash(performance.now() - flashedAt, prefersReducedMotion())
+    if (flash) {
+      const light = document.createElementNS('http://www.w3.org/2000/svg', 'rect')
+      light.setAttribute('width', String(NODE_W)); light.setAttribute('height', String(NODE_H))
+      light.setAttribute('rx', '4');               light.setAttribute('fill', flash.fill)
+      light.style.pointerEvents = 'none'
+      if (flash.animation) {
+        light.style.animation      = flash.animation
+        light.style.animationDelay = flash.animationDelay
+      } else {
+        light.setAttribute('opacity', String(flash.opacity))
+      }
+      g.appendChild(light)
+    }
+
     // Accent bar
     const bar = document.createElementNS('http://www.w3.org/2000/svg', 'rect')
     bar.setAttribute('width', '6');  bar.setAttribute('height', String(NODE_H))
@@ -701,16 +726,25 @@ export class NodeEditorView {
     this._service.on('spatialLinkRemoved', refresh)
   }
 
-  // ── Flash on geometry update ────────────────────────────────────────────────
+  // ── Flash on geometry update (ADR-166 M4d4) ─────────────────────────────────
+  //
+  // Records WHEN the node changed; the light is drawn from the elapsed time.
+  // It used to set `_selectedId` for 400 ms and put the previous one back — the
+  // selection drew two facts, and a pick made inside the window was reverted.
 
   _flashNode(objectId) {
     const node =
       this._opGraph.nodes.find(n => n.objectId === objectId || n.id === objectId) ??
       this._sceneGraph.nodes.find(n => n.id === objectId)
     if (!node) return
-    const prev = this._selectedId
-    this._selectedId = node.id
+    const at = performance.now()
+    this._flashedAt.set(node.id, at)
     this._render()
-    setTimeout(() => { this._selectedId = prev; this._render() }, 400)
+    setTimeout(() => {
+      // A newer update of the same node owns the light now — leave it.
+      if (this._flashedAt.get(node.id) !== at) return
+      this._flashedAt.delete(node.id)
+      this._render()
+    }, DURATION.flash)
   }
 }

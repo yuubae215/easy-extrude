@@ -40,7 +40,7 @@ artifacts
     uuid 2ed0ea84-4675-4aec-abf6-c74b14fd5d2e
     summary "『グレーとオレンジ』は解の形で来た要件なので Goal へ持ち上げた (核 §1.2)。持ち上げた結果、当事者の好みは既存の矛盾の解決と一致していた — Outliner は既にオレンジ (#ff8c69) で選択を表しており、トークンが宣言する accent (#5c5cff) と食い違っている。好みだから採るのではなく、好みと構造が同じ方向を指しているから採る。定数 2 つを変える最小案を却下する根拠も同じで、最小案では『選択』の 4 色は 4 色のまま宣言外の 130 色も残り、次の機能追加で同じ濁りに戻る — 今回の観測がまさに『ADR-065 Phase 0 の後に濁った』結果である"
     artifacts
-    - "src/view/OutlinerView.js"
+    - "src/components/Outliner/Outliner.jsx"
 
     justification WhyRatchetNotBigBang
     uuid bedfdacc-aedb-41b5-bcdb-bc402fec75fc

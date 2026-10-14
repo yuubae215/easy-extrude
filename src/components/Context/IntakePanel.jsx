@@ -21,7 +21,7 @@ import {
   seedCardLines,
 } from '../../context/IntakeAssist.js'
 import { instantiateKpiExpr } from '../../context/RoleKpiCatalog.js'
-import { COLOR } from '../../theme/tokens.js'
+import { COLOR, DURATION, EASING } from '../../theme/tokens.js'
 import { isEndUser, jobFunctionOf, withEndUserStance, withoutEndUserStance } from '../../context/ActorStance.js'
 import {
   ROLES,
@@ -324,7 +324,7 @@ function Section({ title, count, children, open, onToggle }) {
           <span key={count} style={{
             background: '#2a4a2a', color: '#22C55E', borderRadius: '7px',
             padding: '0 5px', fontSize: '9px', marginLeft: 'auto',
-            ...(badgePop ? { animation: 'eaBadgePulse 450ms ease-out' } : {}),
+            ...(badgePop ? { animation: `eaBadgePulse 450ms ${EASING.land}` } : {}),
           }}>
             {count}
           </span>
@@ -421,7 +421,8 @@ function Reveal({ children }) {
     <div style={{
       opacity: shown ? 1 : 0,
       transform: shown ? 'translateY(0)' : 'translateY(-5px)',
-      transition: 'opacity 0.18s ease, transform 0.18s ease',
+      // Alpha fades, position lands (ADR-166 M4d4 — two curves, not the browser's `ease`).
+      transition: `opacity ${DURATION.chromeEnter}ms ${EASING.fade}, transform ${DURATION.chromeEnter}ms ${EASING.land}`,
     }}>
       {children}
     </div>
@@ -444,7 +445,7 @@ export function EntryCard({ children, onEdit, flash, badge, editable = true }) {
         cursor: editable ? 'pointer' : 'default',
         border: `1px solid ${hover && editable ? '#3a5a8a' : '#2e2e2e'}`,
         background: hover && editable ? 'rgba(90,155,245,0.09)' : 'rgba(255,255,255,0.02)',
-        transition: 'border-color 0.15s ease, background 0.15s ease',
+        transition: `border-color ${DURATION.hover}ms ${EASING.fade}, background ${DURATION.hover}ms ${EASING.fade}`,
         ...(flash ? flashAnim('amber') : {}),
       }}
     >

@@ -395,7 +395,10 @@ const SUPPORT_LABELS = new Map([
 // 2026-10-12 (同日): 50 → 51。ADR-166 M4 を 4 段に割った (当事者合意)。M4a の StateCuesFollowTheirTargets は
 // support-verified で生まれ (CueFollowMath.test.js)、残り 3 段を 1 つの goal RemainingMotionMeetsTheStandard
 // (exploring) として宣言した — 満期は機械可読 (GREP:docs/motion/inventory.md::M4d\s✓) なので分子 (G3) は動かない。
-const DEBT_BASELINE = 51
+// 2026-10-14: 51 → 50。ADR-166 M4d4 (DOM の開閉と既定曲線の禁止) で最後の exploring goal
+// (RemainingSubStagesCloseTheirRows → DomOpensAndClosesOnTheVocabulary) が support-verified へ
+// (MotionIdentity.test.js / NodeEditorFlash.test.js の node --test)。ADR-166 の木に未支持の goal は 0。
+const DEBT_BASELINE = 50
 
 /**
  * G3 — 満期 trigger を持たない exploring goal の個数 (実測値)。

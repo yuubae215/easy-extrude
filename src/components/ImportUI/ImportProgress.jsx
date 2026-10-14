@@ -1,11 +1,14 @@
 import { useUIStore } from '../../store/uiStore.js'
 import { isNarrowViewport } from '../../view/Viewport.js'
+import { barMotion } from '../../view/ChromeMath.js'
+import { useReducedMotion } from '../Feedback/FeedbackPrimitives.jsx'
 
 // レイアウトの寸法は**幅**の問い (ADR-114) — 入力の粗さで答えない
 const isMobile = () => isNarrowViewport()
 
 export function ImportProgress() {
   const importProgress = useUIStore(s => s.importProgress)
+  const reduced        = useReducedMotion()
 
   if (!importProgress) return null
 
@@ -45,7 +48,7 @@ export function ImportProgress() {
           width: `${percent}%`,
           background: '#4a90d9',
           borderRadius: '2px',
-          transition: 'width 0.3s ease',
+          transition: barMotion(reduced),
         }} />
       </div>
     </div>

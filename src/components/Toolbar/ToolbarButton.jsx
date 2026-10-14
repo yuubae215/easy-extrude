@@ -1,4 +1,4 @@
-import { COLOR, rgba } from '../../theme/tokens.js'
+import { COLOR, DURATION, EASING, rgba } from '../../theme/tokens.js'
 import { tierAMotion, activeGlow, lockedStyle } from '../../view/ChromeMath.js'
 import { useReducedMotion } from '../Feedback/FeedbackPrimitives.jsx'
 import { useHoverPress } from '../Chrome/ChromePrimitives.jsx'
@@ -37,7 +37,7 @@ export function ToolbarButton({
   // Merge the Tier A press-spring transition with the colour transitions —
   // a plain spread would let one overwrite the other.
   const motion = interactive ? tierAMotion({ pressed, reduced }) : {}
-  const transition = [motion.transition, 'background 0.15s, border-color 0.15s']
+  const transition = [motion.transition, `background ${DURATION.hover}ms ${EASING.fade}, border-color ${DURATION.hover}ms ${EASING.fade}`]
     .filter(Boolean).join(', ')
 
   function handleClick(e) {

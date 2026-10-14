@@ -27,7 +27,7 @@
  * HTML overlay rule (CODE_CONTRACTS §1): callers pass `SceneView.activeCamera`
  * to updatePosition() so ortho mode projects correctly.
  */
-import { Z, COLOR, rgba } from '../theme/tokens.js'
+import { Z, COLOR, DURATION, EASING, rgba } from '../theme/tokens.js'
 
 const BG_DEFAULT     = 'rgba(18,22,36,0.82)'
 const FG_DEFAULT     = '#b8c4d8'
@@ -77,7 +77,7 @@ export class EntityLabel {
       whiteSpace:      'nowrap',
       zIndex:          String(Z.sceneLabel),
       display:         'none',
-      transition:      'background 0.12s, border-color 0.12s',
+      transition:      `background ${DURATION.hover}ms ${EASING.fade}, border-color ${DURATION.hover}ms ${EASING.fade}`,
       transformOrigin: 'left center',
       willChange:      'transform',
     })

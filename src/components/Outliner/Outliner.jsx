@@ -4,7 +4,7 @@ import { IFC_CLASS_MAP } from '../../domain/IFCClassRegistry.js'
 import { PLACE_TYPE_MAP } from '../../domain/PlaceTypeRegistry.js'
 import { tourAnchor, tourVisible } from '../../view/TourMath.js'
 import { SCREEN_CLAIM, stageIs } from '../../view/ScreenClaim.js'
-import { activeGlow } from '../../view/ChromeMath.js'
+import { activeGlow, drawerMotion } from '../../view/ChromeMath.js'
 import { visibilityAffordance } from '../../view/OutlinerRowMath.js'
 import { useReducedMotion } from '../Feedback/FeedbackPrimitives.jsx'
 import { COLOR, DURATION, EASING, rgba } from '../../theme/tokens.js'
@@ -37,7 +37,7 @@ const ROBOT_FRAME_HINT = {
   [ROBOT_ROLE.TCP]:  'Robot TCP — how the gripper is aimed (drives the grasp wrist-cone). Select and rotate with R or the N-panel.',
 }
 
-// ── Icon config matching OutlinerView._createRow ──────────────────────────────
+// ── Icon config per row type (the retired DOM OutlinerView carried a copy) ──────────────────────────
 const TYPE_ICON = {
   cuboid:       { glyph: '⬡', color: COLOR.entityDefault, title: '' },
   sketch:       { glyph: '⬡', color: '#80cbc4', title: '' },
@@ -559,7 +559,8 @@ export function Outliner() {
       userSelect: 'none',
       pointerEvents: 'auto',
       transform: translate,
-      transition: isMobile ? 'transform 0.25s ease' : '',
+      // The drawer arrives on `land` and leaves on `exit` (ADR-166 M4d4).
+      transition: isMobile ? drawerMotion(drawerOpen, reduced) : undefined,
     }}>
       {/* Title bar — the side switch (ADR-111 D3).
           A DISPLAY switch, not an entity state: cardinality is always exactly 1

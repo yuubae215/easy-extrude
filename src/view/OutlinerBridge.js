@@ -1,7 +1,8 @@
 import { useUIStore } from '../store/uiStore.js'
 
 /**
- * OutlinerBridge — mirrors OutlinerView's public API to uiStore so the
+ * OutlinerBridge — the Outliner's controller-facing API (the retired DOM
+ * OutlinerView's surface, ADR-166 M4d4), mirrored to uiStore so the
  * React Outliner component can read current state.
  *
  * Phase 5: nativeView is optional (pass null or omit when React is always on).

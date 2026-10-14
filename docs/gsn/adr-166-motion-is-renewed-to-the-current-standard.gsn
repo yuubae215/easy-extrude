@@ -3,8 +3,8 @@ GOALS adr166_motion_is_renewed_to_the_current_standard
 goal MotionMeetsTodaysStandardAndAnnotationsReadInAnyView
 uuid 0077f1c2-1fbe-4b1a-8c69-def6fa8c9b2d
 summary "アプリの演出が、今の Claude が作れる水準で揃っている。マップ注釈は、どの投影・どの角度から見ても読め、実写のロボットと同じ空間にいるように見える"
-state UnderReview
-labels adr-166, adr-093, adr-103, adr-149, adr-155, adr-160, motion, principle-30, principle-31, principle-27, proposed, term-p-operate, change-presentation
+state Approved
+labels adr-166, adr-093, adr-103, adr-149, adr-155, adr-160, motion, principle-30, principle-31, principle-27, implemented, term-p-operate, change-presentation
 artifacts
 - "docs/adr/ADR-166-motion-is-renewed-to-the-current-standard-and-map-annotations-become-light-on-the-floor.md"
 
@@ -182,15 +182,19 @@ artifacts
                             - "e2e/robot-appearance.spec.js"
                             - "docs/motion/inventory.md"
 
-                        goal RemainingSubStagesCloseTheirRows
+                        goal DomOpensAndClosesOnTheVocabulary
                         uuid 40a760e8-b05b-4f2d-bde4-39cfa82e544b
-                        summary "M4d4 の行が A になるか、残す理由が書かれている (M4d2・M4d3a・M4d3b は 2026-10-13 に実施 — ADR-166 本文)"
-                        state ToBeDeveloped
-                        labels support-exploring
+                        summary "DOM の開閉と値の動きが曲線の語彙で動く (メニューは起点から膨らみ行がスタッガー・引き出しは来るとき land / 去るとき exit・値のバーは land)。基盤の外で CSS 既定曲線が動かす箇所は 0 — キーワードを書く形も、曲線を書かない形も。一時的な合図は持続する状態の書き手を借りない (ノードエディタの更新の光は選択から割った)"
+                        labels support-verified
 
-                            assumption TheInventoryRowsCloseOneByOne
-                            uuid 726be535-c8df-4be1-bd62-02a63fa70c6b
-                            summary "計画: M4d を 4 本に割る (当事者合意 2026-10-13): M4d1 待機の呼吸の統治 (実施 — 下の goal) → M4d2 選択の合図 (SelectPulse の 2 曲線・選択の輪郭 boxHelper・座標フレームの接続線) → M4d3 舞台の光に揃える — 2 本に割った (当事者合意 2026-10-13): M4d3a 光と曲線 (起動の飛び込み・出現と消滅・スナップ・祝賀 — 実施) → M4d3b ロボットの読み込み中・実体ごとの接地影 (実施 — 上の goal) → M4d4 DOM の開閉。GraspGhostView は段を持たない (ADR-158 の段 G-9 — DEF-069)。各段は inventory の行を A にするか残す理由を書く。満期=GREP:docs/motion/inventory.md::M4d\s✓"
+                            solution DomMotionIsBannedFromTheDefaultCurve
+                            uuid f1402ba5-f832-4cf8-ab00-2d6239450dd3
+                            summary "M4d4 実施 (2026-10-14、当事者合意 — 俯瞰の推奨 3 点「死んでいた OutlinerView は削除」「ratchet は B 行の外も含め 0 にし禁止へ」「メニューは即時に閉じる」に「はい、合意です！」): CSS 既定曲線 11 → 0、MotionIdentity.test.js を ratchet から禁止へ変え、曲線を書かない形 (時間のリテラルがあって曲線の語が無い行 — 3 件見つかった) も数える。NodeEditorFlash.test.js が選択の書き手をメソッド単位で 2 つ (構築と _selectNode) と問う (旧コードに当てると 2 件とも落ちる)。FeedbackMath.updateFlash (舞台の光・fade・経過時間で置く・reduced は静かな光)、ChromeMath.drawerMotion (向きで land / exit)・barMotion (写し 3 つを 1 つに)。採点表は B が GraspGhostView の 1 行 (DEF-069) だけ、母集団 70。pnpm test 1873 pass、build 緑、e2e 58 本 (smoke / mobile-reach / criteria-hearing) 緑。実機: メニューの面の spring と行のスタッガー・引き出しの land / exit を読み出し、0.08 倍の時計の中間フレーム docs/motion/media/m4d4-menu-slowed-clock.png。検証していないこと: 見えの良し悪し (人の目)・時間軸の動画・ノードの光の配線 (BFF の geometry.update を出すスタックを上げていない)"
                             artifacts
-                            - "docs/motion/inventory.md"
+                            - "src/MotionIdentity.test.js"
+                            - "src/view/NodeEditorFlash.test.js"
+                            - "src/view/FeedbackMath.test.js"
+                            - "src/view/ChromeMath.test.js"
                             - "src/MotionInventoryCoverage.test.js"
+                            - "docs/motion/inventory.md"
+                            - "docs/motion/media/m4d4-menu-slowed-clock.png"
