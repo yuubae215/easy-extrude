@@ -25,6 +25,10 @@ export type InterferencePhase = InterferencePhaseEvaluated | InterferencePhaseUn
  * The all-phase interference analysis (ADR-157 D6, contract v8), a CLOSED KIND-DISCRIMINATED union. `firstCollision` = not requested (the default; stated as a branch, never by omitting the key). `allPhases` = requested via graspSearch.interferenceAnalysis: every evaluated phase was judged to the end for every candidate that reached the interference stage, and the hits are counted per phase / part / obstacle. The answer itself (candidates, ranks, the funnel) is identical in both modes.
  */
 export type InterferenceAnalysis = InterferenceAnalysisFirstCollision | InterferenceAnalysisAllPhases;
+/**
+ * The arm measured at the pick pose and along each phase's straight TCP path (ADR-158 PR1, contract v10). A MEASUREMENT, not a judgement: the search still judges the arm at the pick pose only (approach x arm = atEndOnly), so a candidate whose arm touches something only on the path stays among the returned candidates. Population = candidatesAnalysed. Each path point solves IK again and takes the solution nearest the previous point's, starting from the representative solution judged at the pick pose -- the same branch is followed, never searched for one that misses. A CLOSED KIND-DISCRIMINATED union: `undeclared` = robot.kinematics is not declared, nobody decided the arm's joints, nothing was measured (not 'no hits').
+ */
+export type ArmPath = ArmPathUndeclared | ArmPathMeasured;
 
 /**
  * grasp-search service -> BFF output. Top-N ranking with score breakdown. Wire form uses camelCase.
@@ -39,7 +43,7 @@ export interface GraspSearchResponse {
    */
   candidates: PoseCandidate[];
   /**
-   * Solver-decided facts about the search as a whole (the rejection funnel), so a client can explain an empty or thin result. Contract v4 (ADR-081) widens the funnel to the three validation domains -- visible (Vision) / reachable (Path: reach, IK, interference) / graspable (Grasp). Invariant: candidatesGenerated = rejectedByReach + rejectedByVisibility + rejectedByIk + rejectedByInterference + rejectedByGrasp + feasible (stages are exclusive; the filter short-circuits in the engine's measured cheapest-first order: reach -> IK -> grasp -> visibility -> interference, which decides which single stage a multiply-infeasible candidate is attributed to). Requests that declare no camera / no gripper always report 0 for the corresponding rejection stage. Presentation (wording, colors, meters, ladder-risk mapping, suggestions) is derived client-side and never carried here. Contract v8 (ADR-157) splits rejectedByInterference by motion phase (interferencePhases) and can carry an all-phase analysis (interferenceAnalysis).
+   * Solver-decided facts about the search as a whole (the rejection funnel), so a client can explain an empty or thin result. Contract v4 (ADR-081) widens the funnel to the three validation domains -- visible (Vision) / reachable (Path: reach, IK, interference) / graspable (Grasp). Invariant: candidatesGenerated = rejectedByReach + rejectedByVisibility + rejectedByIk + rejectedByInterference + rejectedByGrasp + feasible (stages are exclusive; the filter short-circuits in the engine's measured cheapest-first order: reach -> IK -> grasp -> visibility -> interference, which decides which single stage a multiply-infeasible candidate is attributed to). Requests that declare no camera / no gripper always report 0 for the corresponding rejection stage. Presentation (wording, colors, meters, ladder-risk mapping, suggestions) is derived client-side and never carried here. Contract v8 (ADR-157) splits rejectedByInterference by motion phase (interferencePhases) and can carry an all-phase analysis (interferenceAnalysis). Contract v10 (ADR-158 PR1) adds the arm measured along the approach / lift paths to the all-phase analysis (interferenceAnalysis.armPath) -- measured, never counted as a rejection.
    */
   diagnostics: {
     candidatesGenerated: number;
@@ -254,4 +258,54 @@ export interface InterferenceAnalysisAllPhases {
       candidates: number;
     }[];
   }[];
+  armPath: ArmPath;
+}
+export interface ArmPathUndeclared {
+  kind: "undeclared";
+}
+export interface ArmPathMeasured {
+  kind: "measured";
+  /**
+   * Points per phase path, both ends included (s = i/(pathSamples-1), progress within the phase -- not seconds).
+   */
+  pathSamples: number;
+  /**
+   * Candidates whose arm touches something at the pick pose -- the same pose the search judges in the approach phase.
+   */
+  atPickPose: {
+    candidates: number;
+    /**
+     * Per obstacle the arm (links + tool segment) touched, how many candidates; most first.
+     */
+    hits: ArmPathHit[];
+  };
+  /**
+   * Evaluated phases with a decided straight path (approach always, lift when declared), in motion order. The pick-pose point is excluded from these rows.
+   */
+  phases: {
+    phase: "approach" | "lift";
+    /**
+     * Candidates whose arm touches something at some path point other than the pick pose (may also touch at the pick pose).
+     */
+    onPath: number;
+    /**
+     * Of onPath, those whose arm is clear at the pick pose -- hits the current judgement does not see.
+     */
+    onPathOnly: number;
+    /**
+     * Candidates with some path point that has no joint solution within limits (the arm cannot follow the straight line there).
+     */
+    noSolutionOnPath: number;
+    /**
+     * Per obstacle the arm (links + tool segment) touched, how many candidates; most first.
+     */
+    hits: ArmPathHit[];
+  }[];
+}
+export interface ArmPathHit {
+  /**
+   * Index into the request's obstacles[].
+   */
+  obstacleIndex: number;
+  candidates: number;
 }

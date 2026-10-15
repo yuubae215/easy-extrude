@@ -423,6 +423,11 @@ test('v8: an unevaluated phase row may not carry a count, and every phase needs 
   analysed.diagnostics.interferenceAnalysis = {
     kind: 'allPhases', candidatesAnalysed: 3,
     phases: [{ phase: 'lift', collided: 2, hits: [{ part: 'held', obstacleIndex: 0, candidates: 2 }] }],
+    armPath: { kind: 'undeclared' },
   }
   assert.deepEqual(validateResponse(analysed), { valid: true, errors: [] })
+  // v10 (ADR-158 PR1): the arm measured along the path is required, and "not measured" is a branch.
+  const unmeasured = structuredClone(analysed)
+  delete unmeasured.diagnostics.interferenceAnalysis.armPath
+  assert.equal(validateResponse(unmeasured).valid, false, 'an arm nobody measured must say so, not be absent')
 })

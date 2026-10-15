@@ -52,7 +52,12 @@ contractVersion は public スキーマの `version: "layout/x.y"` とは別系�
 # `basis`)、エンドユーザ × 大項目の関心、提案の評価 (kind 判別 union: notAsked /
 # evaluated{offerings} / unsatisfiable / noBaseline)。既存エンドポイントの形は変わらないが、
 # contractVersion は全エンドポイント共通の 1 整数なので版を上げる (新しい response 契約)。
-CONTRACT_VERSION = 9
+# v10: 腕を経路に沿って測る (ADR-158 PR1)。全相分析 (`interferenceAnalysis.allPhases`) に
+# **必須**の `armPath` (kind 判別: undeclared / measured{pathSamples, atPickPose, phases})
+# を追加。ピック姿勢で当たるのか途中の経路で当たるのかを、候補数と障害物で答える。
+# **測定であって棄却ではない** — 探索の答え (候補・ファネル・相の内訳) は 1 ビットも
+# 変わらない。閉じた層への必須追加なので版上げ。
+CONTRACT_VERSION = 10
 
 
 class ContractVersionMismatch(ValueError):
