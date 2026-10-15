@@ -117,7 +117,7 @@ artifacts
 
             solution CoverageCensusIsExecuted
             uuid ea578ff4-86c6-46c5-93ee-824ae4fa810d
-            summary "test_the_coverage_table_declares_every_phase_and_part / test_unevaluated_cells_are_counted_exactly (UNEVALUATED_CELLS = 12) / test_the_held_body_moves_only_from_lift_on (携行物の基数 0 → 1 が close → lift)。12 個は DEF-057 (11) と DEF-058 (1) が受ける"
+            summary "test_the_coverage_table_declares_every_phase_and_part / test_unevaluated_cells_are_counted_exactly (UNEVALUATED_CELLS = 11、MEASURED_ONLY_CELLS = 1) / test_the_held_body_moves_only_from_lift_on (携行物の基数 0 → 1 が close → lift)。11 個は DEF-057 が受ける。lift × arm (旧 DEF-058) は 2026-10-15 に ADR-158 PR1 で測るだけ (measuredOnly) と決まった"
             artifacts
             - "core/tests/test_motion_phases.py"
             - "docs/DEFERRAL_LEDGER.md"

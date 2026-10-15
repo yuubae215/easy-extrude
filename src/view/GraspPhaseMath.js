@@ -93,8 +93,10 @@ export function phaseRows(diagnostics) {
  */
 export function analysisSummary(analysis, obstacleLabels) {
   if (analysis?.kind !== 'allPhases') return null
+  const name = (i) => obstacleLabels?.[i] ?? `obstacle #${i}`
   return {
     candidatesAnalysed: analysis.candidatesAnalysed,
+    armPath: armPathSummary(analysis.armPath, name),
     phases: analysis.phases.map(p => ({
       phase: p.phase,
       label: lookup(PHASE_LABEL, p.phase, 'phase'),
@@ -104,11 +106,48 @@ export function analysisSummary(analysis, obstacleLabels) {
         partLabel: lookup(PART_LABEL, h.part, 'part'),
         // An index the labels do not cover is shown as a number, never dropped —
         // a hit with no name is still a hit.
-        obstacle: obstacleLabels?.[h.obstacleIndex] ?? `obstacle #${h.obstacleIndex}`,
+        obstacle: name(h.obstacleIndex),
         candidates: h.candidates,
       })),
     })),
   }
+}
+
+/** Why the arm was not measured along the path (the contract's `armPath.kind`). */
+export const ARM_PATH_UNMEASURED_TEXT = Object.freeze({
+  undeclared: 'arm not measured — declare the robot\'s kinematics so its joints are decided',
+})
+
+/**
+ * The arm measured at the pick pose and along each phase's path (ADR-158 PR1,
+ * contract v10). A MEASUREMENT, not a judgement: a candidate whose arm touches
+ * something only on the path is still returned — the screen says so instead of
+ * painting it like a rejection. `undeclared` is a reason, never zero counts
+ * (0 and "not measured" must not look alike — 原則 #31).
+ *
+ * @param {object} armPath   the wire `interferenceAnalysis.armPath`
+ * @param {(i:number)=>string} name  obstacle index → the body's name
+ */
+function armPathSummary(armPath, name) {
+  if (armPath?.kind === 'measured') {
+    const hits = (list) => list.map(h => ({ obstacle: name(h.obstacleIndex), candidates: h.candidates }))
+    return {
+      measured: true,
+      note: null,
+      pathSamples: armPath.pathSamples,
+      atPickPose: { candidates: armPath.atPickPose.candidates, hits: hits(armPath.atPickPose.hits) },
+      phases: armPath.phases.map(p => ({
+        phase: p.phase,
+        label: lookup(PHASE_LABEL, p.phase, 'phase'),
+        onPath: p.onPath,
+        onPathOnly: p.onPathOnly,
+        noSolutionOnPath: p.noSolutionOnPath,
+        hits: hits(p.hits),
+      })),
+    }
+  }
+  return { measured: false, note: lookup(ARM_PATH_UNMEASURED_TEXT, armPath?.kind, 'armPath kind'),
+    pathSamples: null, atPickPose: null, phases: [] }
 }
 
 /**

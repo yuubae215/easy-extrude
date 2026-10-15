@@ -839,8 +839,47 @@ function InterferenceAnalysisCard({ grasp, analysisState, availability, onRun })
               ))}
             </div>
           ))}
+          <ArmPathMeasurement armPath={summary.armPath} />
         </div>
       )}
+    </div>
+  )
+}
+
+/**
+ * The arm measured at the pick pose and along the path (ADR-158 PR1). Measured,
+ * not judged: "only on the path" is a hit today's search does not see, so those
+ * candidates are still in the list — the words say so rather than colouring it
+ * like a rejection. An unmeasured arm shows its reason, never zeros.
+ */
+function ArmPathMeasurement({ armPath }) {
+  if (!armPath.measured) {
+    return <div style={{ marginTop: '4px', color: COLOR.textSecondary }}>{armPath.note}</div>
+  }
+  return (
+    <div style={{ marginTop: '6px' }}>
+      <div style={{ marginBottom: '3px' }}>arm, measured at {armPath.pathSamples} points per path (not used to reject):</div>
+      <div style={{ color: armPath.atPickPose.candidates > 0 ? COLOR.cautionTone : COLOR.factTone }}>
+        at the pick pose: {armPath.atPickPose.candidates}
+      </div>
+      {armPath.atPickPose.hits.map((h, i) => (
+        <div key={i} style={{ paddingLeft: '10px' }}>· {h.obstacle} — {h.candidates}</div>
+      ))}
+      {armPath.phases.map(p => (
+        <div key={p.phase} style={{ marginTop: '2px' }}>
+          <div style={{ color: p.onPath > 0 ? COLOR.cautionTone : COLOR.factTone }}>
+            on the {p.label.toLowerCase()} path: {p.onPath} (only on the path: {p.onPathOnly})
+          </div>
+          {p.hits.map((h, i) => (
+            <div key={i} style={{ paddingLeft: '10px' }}>· {h.obstacle} — {h.candidates}</div>
+          ))}
+          {p.noSolutionOnPath > 0 && (
+            <div style={{ paddingLeft: '10px', color: COLOR.cautionTone }}>
+              · the arm cannot follow this straight line — {p.noSolutionOnPath}
+            </div>
+          )}
+        </div>
+      ))}
     </div>
   )
 }

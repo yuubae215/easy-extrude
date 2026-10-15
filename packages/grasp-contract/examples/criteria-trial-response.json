@@ -1,5 +1,5 @@
 {
-  "contractVersion": 9,
+  "contractVersion": 10,
   "candidates": [
     {
       "id": "nominal:scara-fast",

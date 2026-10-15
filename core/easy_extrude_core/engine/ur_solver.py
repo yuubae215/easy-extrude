@@ -43,6 +43,7 @@ from .feasibility import IkSolution, JointSolution
 from .pose_codec import frame_axes
 from .ur_kinematics import (
     UrDhParameters,
+    _wrap,
     forward_kinematics,
     inverse_kinematics,
     within_joint_limits,
@@ -133,22 +134,7 @@ class UniversalRobotsIkSolver:
         なく「述べていない」で、その区別を画面に出すのはフロントの責務である —
         向き無しでは解けない以上、core/ は恒等で解くしかない (原則 #31)。
         """
-        target = flange_target(candidate, self.tool_length)
-        if target is None:
-            return None
-        base = robot.base
-        # ベース並進ぶんだけ目標を戻す。
-        local = list(target)
-        local[3] -= base.x
-        local[7] -= base.y
-        local[11] -= base.z
-        if robot.base_orientation is not None:
-            local = _unrotate_into_base(local, robot.base_orientation)
-        solutions = inverse_kinematics(self.dh, tuple(local))
-        if not solutions:
-            return None
-
-        admissible = [q for q in solutions if within_joint_limits(q, self.joint_limits)]
+        admissible = self.admissible_solutions(candidate, robot)
         if not admissible:
             return None
 
@@ -159,6 +145,47 @@ class UniversalRobotsIkSolver:
         best = min(admissible, key=lambda q: (sum(abs(v) for v in q), q))
         # JointSolution = 「描ける 6 関節の配置」という型の主張 (ADR-135)。素朴ソルバの
         # 占位 IkSolution と取り違えられない形にしてある。
+        return JointSolution(joints=tuple(best))
+
+    def admissible_solutions(
+        self, candidate: GraspCandidate, robot: Robot
+    ) -> "list[tuple[float, ...]]":
+        """候補の TCP 姿勢を取る関節解のうち、関節限界の内側にあるもの全部 (純粋)。
+
+        `solve` (代表解を 1 つ選ぶ) と `solve_near` (直前の姿勢に近い解を選ぶ) は
+        どちらもここから選ぶ — 目標をベース座標へ戻す手順を 2 か所に書かない (§1.1)。
+        """
+        target = flange_target(candidate, self.tool_length)
+        if target is None:
+            return []
+        base = robot.base
+        # ベース並進ぶんだけ目標を戻す。
+        local = list(target)
+        local[3] -= base.x
+        local[7] -= base.y
+        local[11] -= base.z
+        if robot.base_orientation is not None:
+            local = _unrotate_into_base(local, robot.base_orientation)
+        solutions = inverse_kinematics(self.dh, tuple(local))
+        return [q for q in solutions if within_joint_limits(q, self.joint_limits)]
+
+    def solve_near(
+        self, candidate: GraspCandidate, robot: Robot, seed: "tuple[float, ...]"
+    ) -> Optional[JointSolution]:
+        """`seed` に最も近い解 (関節空間, 角は畳んだ差) を返す。無ければ None。
+
+        経路に沿って腕を**測る**ための選び方 (ADR-158 PR1)。把持姿勢で判定した
+        代表解から出発して隣の点へ 1 刻みずつ渡すので、腕は判定したのと同じ枝を
+        たどる。当たらない枝を探しには行かない (回避はしない — 当事者合意
+        2026-10-15「測るだけで良い」、代替解の探索は DEF-037)。
+        """
+        admissible = self.admissible_solutions(candidate, robot)
+        if not admissible:
+            return None
+        best = min(
+            admissible,
+            key=lambda q: (sum(abs(_wrap(a - b)) for a, b in zip(q, seed)), q),
+        )
         return JointSolution(joints=tuple(best))
 
     def flange_pose_of(self, joints: "tuple[float, ...]") -> "tuple[float, ...]":

@@ -49,12 +49,18 @@ from ..contract import (
     InterferenceAnalysisAllPhases,
     InterferenceAnalysisFirstCollision,
     InterferenceHitWire,
+    ArmPathAtPickPoseWire,
+    ArmPathHitWire,
+    ArmPathMeasured,
+    ArmPathPhaseWire,
+    ArmPathUndeclared,
     InterferencePhaseAnalysisWire,
     InterferencePhaseEvaluated,
     InterferencePhaseUnevaluated,
 )
 from .candidates import generate_candidates, generate_spec_candidates
 from .feasibility import (
+    HAND_PATH_STEPS,
     CollisionChecker,
     grasp_miss,
     GraspChecker,
@@ -75,8 +81,10 @@ from .feasibility import (
 )
 from .objectives import evaluate_objectives
 from .phases import (
+    ARM_PATH_PHASES,
     PHASE_ORDER,
     ArmModel,
+    arm_segments_along,
     Hit,
     MotionPhase,
     UnevaluatedReason,
@@ -625,6 +633,31 @@ class InterferenceAnalysisReport:
     candidates_analysed: int
     # 評価した相ごとに (相, 当たった候補数, ((部位, 障害物添字, 候補数), ...))。
     phases: "tuple[tuple[MotionPhase, int, tuple[tuple[str, int, int], ...]], ...]"
+    # 腕をピック姿勢と経路の各点で測った結果 (ADR-158 PR1)。None = 運動学が未宣言で
+    # 腕の姿勢を誰も決めていない (測っていない — 「当たらなかった」ではない)。
+    arm_path: "Optional[ArmPathReport]" = None
+
+
+@dataclass(frozen=True)
+class ArmPathPhaseReport:
+    """相 1 つの経路で腕を測った集計 (ADR-158 PR1)。測定であって棄却ではない。"""
+
+    phase: MotionPhase
+    on_path: int
+    on_path_only: int
+    no_solution_on_path: int
+    # (障害物添字, 候補数) — 多い順。
+    hits: "tuple[tuple[int, int], ...]"
+
+
+@dataclass(frozen=True)
+class ArmPathReport:
+    """腕をピック姿勢で測った集計と、経路の相ごとの集計 (ADR-158 PR1)。"""
+
+    path_samples: int
+    at_pick_pose: int
+    pick_hits: "tuple[tuple[int, int], ...]"
+    phases: "tuple[ArmPathPhaseReport, ...]"
 
 
 @dataclass
@@ -649,11 +682,23 @@ class _Funnel:
     analysed: int = 0
     collided_by_phase: "Counter[MotionPhase]" = None  # type: ignore[assignment]
     hits_by_phase: "dict[MotionPhase, Counter[tuple[str, int]]]" = None  # type: ignore[assignment]
+    # 腕を経路に沿って測った累積 (ADR-158 PR1 — 全相分析かつ運動学が宣言されたときだけ)。
+    arm_at_pick_pose: int = 0
+    arm_pick_hits: "Counter[int]" = None  # type: ignore[assignment]
+    arm_on_path: "Counter[MotionPhase]" = None  # type: ignore[assignment]
+    arm_on_path_only: "Counter[MotionPhase]" = None  # type: ignore[assignment]
+    arm_no_solution: "Counter[MotionPhase]" = None  # type: ignore[assignment]
+    arm_path_hits: "dict[MotionPhase, Counter[int]]" = None  # type: ignore[assignment]
 
     def __post_init__(self) -> None:
         self.rejected_by_phase = Counter()
         self.collided_by_phase = Counter()
         self.hits_by_phase = {}
+        self.arm_pick_hits = Counter()
+        self.arm_on_path = Counter()
+        self.arm_on_path_only = Counter()
+        self.arm_no_solution = Counter()
+        self.arm_path_hits = {}
 
 
 @dataclass(frozen=True)
@@ -741,6 +786,37 @@ def search_report(
     analysing = interference_analysis_mode(declaration.model_dump(by_alias=True)) == "allPhases"
 
     funnel = _Funnel()
+    # 腕を経路に沿って測る相 (ADR-158 PR1)。経路が決まっていて評価する相だけ。
+    arm_path_phases = tuple(p for p in ARM_PATH_PHASES if p in evaluated_phases)
+
+    def measure_arm_path(candidate, ik_solution) -> None:
+        """腕をピック姿勢と経路の各点で測って累積する (ADR-158 PR1)。答えには効かない。
+
+        全相分析のときだけ呼ぶ — 通常の探索では 1 刻みごとに IK を解き直す重さを
+        払わない (DEF-038: IK は段の中で最も重い)。
+        """
+        pick: "tuple[int, ...]" = ()
+        for phase in arm_path_phases:
+            samples = arm_segments_along(
+                problem, phase, candidate,
+                pick_solution=ik_solution, solver=solver, arm=arm,
+            )
+            pick = next(x for x in samples if x.at_pick_pose).obstacles
+            path = [x for x in samples if not x.at_pick_pose]
+            on_path = sorted({o for x in path for o in x.obstacles})
+            if on_path:
+                funnel.arm_on_path[phase] += 1
+                if not pick:
+                    funnel.arm_on_path_only[phase] += 1
+                bucket = funnel.arm_path_hits.setdefault(phase, Counter())
+                for o in on_path:
+                    bucket[o] += 1
+            if any(x.joints is None for x in path):
+                funnel.arm_no_solution[phase] += 1
+        if pick:
+            funnel.arm_at_pick_pose += 1
+            for o in pick:
+                funnel.arm_pick_hits[o] += 1
 
     def interference_phase(candidate, ik_solution) -> "Optional[MotionPhase]":
         """最初に当たった相 (ADR-157 D3)。当たらなければ None。
@@ -750,6 +826,8 @@ def search_report(
         """
         if analysing:
             funnel.analysed += 1
+            if arm is not None and isinstance(ik_solution, JointSolution):
+                measure_arm_path(candidate, ik_solution)
         first: Optional[MotionPhase] = None
         for phase in evaluated_phases:
             if phase is MotionPhase.APPROACH and collision_checker is not None:
@@ -935,6 +1013,7 @@ def search_report(
                     )
                     for p in evaluated_phases
                 ),
+                arm_path=_arm_path_report(funnel, arm_path_phases) if arm is not None else None,
             )
             if analysing
             else None
@@ -991,6 +1070,54 @@ def _analysis_wire(report: "Optional[InterferenceAnalysisReport]"):
                 ],
             )
             for p, collided, hits in report.phases
+        ],
+        arm_path=_arm_path_wire(report.arm_path),
+    )
+
+
+def _most_first(counter: "Counter[int]") -> "tuple[tuple[int, int], ...]":
+    """(障害物添字, 候補数) を多い順に。同数は添字順 (探索順に依らない決定的な順)。"""
+    return tuple(sorted(counter.items(), key=lambda kv: (-kv[1], kv[0])))
+
+
+def _arm_path_report(funnel: _Funnel, phases: "tuple[MotionPhase, ...]") -> ArmPathReport:
+    """累積器から腕の経路の集計を組む (純粋)。行は経路を測った相ごとに 1 つ。"""
+    return ArmPathReport(
+        path_samples=HAND_PATH_STEPS,
+        at_pick_pose=funnel.arm_at_pick_pose,
+        pick_hits=_most_first(funnel.arm_pick_hits),
+        phases=tuple(
+            ArmPathPhaseReport(
+                phase=p,
+                on_path=funnel.arm_on_path[p],
+                on_path_only=funnel.arm_on_path_only[p],
+                no_solution_on_path=funnel.arm_no_solution[p],
+                hits=_most_first(funnel.arm_path_hits.get(p, Counter())),
+            )
+            for p in phases
+        ),
+    )
+
+
+def _arm_path_wire(report: "Optional[ArmPathReport]"):
+    """腕の経路の測定をワイヤの union へ (ADR-158 PR1)。None は undeclared の枝。"""
+    if report is None:
+        return ArmPathUndeclared()
+    return ArmPathMeasured(
+        path_samples=report.path_samples,
+        at_pick_pose=ArmPathAtPickPoseWire(
+            candidates=report.at_pick_pose,
+            hits=[ArmPathHitWire(obstacle_index=i, candidates=n) for i, n in report.pick_hits],
+        ),
+        phases=[
+            ArmPathPhaseWire(
+                phase=r.phase.value,
+                on_path=r.on_path,
+                on_path_only=r.on_path_only,
+                no_solution_on_path=r.no_solution_on_path,
+                hits=[ArmPathHitWire(obstacle_index=i, candidates=n) for i, n in r.hits],
+            )
+            for r in report.phases
         ],
     )
 

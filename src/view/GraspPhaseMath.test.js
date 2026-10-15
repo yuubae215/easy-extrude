@@ -9,7 +9,7 @@ import { readFileSync } from 'node:fs'
 
 import {
   MOTION_PHASES, PHASE_LABEL, UNEVALUATED_REASON_TEXT, PART_LABEL,
-  phaseRows, analysisSummary, analysisFreshness, analysisAvailability,
+  phaseRows, analysisSummary, analysisFreshness, analysisAvailability, ARM_PATH_UNMEASURED_TEXT,
 } from './GraspPhaseMath.js'
 
 const schema = JSON.parse(readFileSync(
@@ -51,7 +51,8 @@ test('未宣言の相・理由・部位は throw する', () => {
   assert.throws(() => phaseRows({ interferencePhases: [{ phase: 'hover', kind: 'evaluated', rejected: 0 }] }), /未宣言/)
   assert.throws(() => phaseRows({ interferencePhases: [{ phase: 'lift', kind: 'unevaluated', reason: 'tooHard' }] }), /未宣言/)
   assert.throws(() => analysisSummary({ kind: 'allPhases', candidatesAnalysed: 1,
-    phases: [{ phase: 'lift', collided: 1, hits: [{ part: 'elbow', obstacleIndex: 0, candidates: 1 }] }] }, []), /未宣言/)
+    phases: [{ phase: 'lift', collided: 1, hits: [{ part: 'elbow', obstacleIndex: 0, candidates: 1 }] }],
+    armPath: { kind: 'undeclared' } }, []), /未宣言/)
 })
 
 test('障害物の番号は同じリクエストの障害物の名前へ戻る — 名前が無い番号も捨てない', () => {
@@ -59,11 +60,34 @@ test('障害物の番号は同じリクエストの障害物の名前へ戻る �
     { phase: 'lift', collided: 2, hits: [
       { part: 'held', obstacleIndex: 1, candidates: 2 },
       { part: 'hand', obstacleIndex: 7, candidates: 1 },
-    ] }] }, ['Floor', 'Tray · shell 2/5'])
+    ] }], armPath: { kind: 'undeclared' } }, ['Floor', 'Tray · shell 2/5'])
   assert.equal(s.phases[0].hits[0].obstacle, 'Tray · shell 2/5')
   assert.equal(s.phases[0].hits[0].partLabel, 'held object')
   assert.equal(s.phases[0].hits[1].obstacle, 'obstacle #7')
   assert.equal(analysisSummary({ kind: 'firstCollision' }, []), null)
+})
+
+test('腕の経路の測定: ピック姿勢と経路を分けて名前で返し、測っていない腕は 0 ではなく理由 (ADR-158 PR1)', () => {
+  const armBranches = schema.$defs.armPath.oneOf.map(b => b.properties.kind.const)
+  assert.deepEqual(Object.keys(ARM_PATH_UNMEASURED_TEXT), armBranches.filter(k => k !== 'measured'))
+  const measured = analysisSummary({ kind: 'allPhases', candidatesAnalysed: 36, phases: [], armPath: {
+    kind: 'measured', pathSamples: 6,
+    atPickPose: { candidates: 4, hits: [{ obstacleIndex: 0, candidates: 4 }] },
+    phases: [{ phase: 'approach', onPath: 2, onPathOnly: 1, noSolutionOnPath: 0, hits: [{ obstacleIndex: 9, candidates: 2 }] }],
+  } }, ['Pedestal']).armPath
+  assert.equal(measured.measured, true)
+  assert.deepEqual(measured.atPickPose, { candidates: 4, hits: [{ obstacle: 'Pedestal', candidates: 4 }] })
+  assert.equal(measured.phases[0].label, 'Approach')
+  assert.equal(measured.phases[0].onPathOnly, 1)
+  assert.equal(measured.phases[0].hits[0].obstacle, 'obstacle #9')
+  const unmeasured = analysisSummary({ kind: 'allPhases', candidatesAnalysed: 3, phases: [],
+    armPath: { kind: 'undeclared' } }, []).armPath
+  assert.equal(unmeasured.measured, false)
+  assert.equal(unmeasured.atPickPose, null)   // never { candidates: 0 } — that would read "clear"
+  assert.match(unmeasured.note, /kinematics/)
+  // A kind nobody wrote words for fails loudly (原則 #31).
+  assert.throws(() => analysisSummary({ kind: 'allPhases', candidatesAnalysed: 1, phases: [],
+    armPath: { kind: 'guessed' } }, []), /未宣言/)
 })
 
 test('分析の鮮度はリクエストの同一性から毎回導出する — 探索をやり直せば stale になる', () => {

@@ -295,9 +295,13 @@ def test_the_approach_phase_answers_like_the_composed_checkers():
 
 # --- 被覆表 (D1) — 原則 #31 の ratchet ------------------------------------------
 
-#: 動くのに判定していないセルの個数 (DEF-057 / DEF-058)。減らしたら下げ、増やすなら
+#: 動くのに判定していないセルの個数 (DEF-057)。減らしたら下げ、増やすなら
 #: 理由を ADR に書いてから上げる — 超えても下回っても fail させる (ADR-100 と同形)。
-UNEVALUATED_CELLS = 12
+#: 12 → 11 (2026-10-15, ADR-158 PR1): lift × arm は残し (DEF-058) から決定
+#: `measuredOnly` へ — 経路に沿って測るが判定には使わない (当事者合意)。
+UNEVALUATED_CELLS = 11
+#: 測るだけのセル (判定には使わない — 決定であって残しではない)。
+MEASURED_ONLY_CELLS = 1
 
 
 def test_the_coverage_table_declares_every_phase_and_part():
@@ -310,6 +314,8 @@ def test_the_coverage_table_declares_every_phase_and_part():
 def test_unevaluated_cells_are_counted_exactly():
     n = sum(1 for row in PHASE_COVERAGE.values() for c in row.values() if c is Coverage.UNEVALUATED)
     assert n == UNEVALUATED_CELLS
+    m = sum(1 for row in PHASE_COVERAGE.values() for c in row.values() if c is Coverage.MEASURED_ONLY)
+    assert m == MEASURED_ONLY_CELLS
 
 
 def test_the_held_body_moves_only_from_lift_on():
@@ -351,3 +357,140 @@ def test_the_approach_phase_answers_like_the_composed_checkers_with_the_arm():
         assert old == new
         hits += old
     assert seen > 0 and hits > 0  # 当たる候補と当たらない候補の両方を比べている
+
+
+# --- 腕を経路に沿って測る (ADR-158 PR1 — 測定であって判定ではない) ---------------
+#
+# 当事者合意 (2026-10-15)「測るだけで良い。回避しようとしなくてもいい。ピック姿勢で
+# 当たるか、途中経路で当たるか、測るだけで良い」。固定する性質:
+# - 測定は答え (候補・ファネル・相の内訳) を 1 ビットも変えない。
+# - ピック姿勢の点は判定に使った代表解そのもの (解き直さない)、s は動作の順。
+# - 経路でだけ当たる腕は onPathOnly に数えられ、ピック姿勢の数には入らない。
+# - 運動学が未宣言なら undeclared の枝 (「当たらなかった」と区別する)。
+
+
+def _pedestal_raw(**extra_target) -> dict:
+    import json
+    from pathlib import Path
+
+    raw = json.loads((Path(__file__).resolve().parents[2] / "templates" / "single-arm-pedestal-cell"
+                      / "grasp-search.request.json").read_text(encoding="utf-8"))
+    raw["graspSearch"]["target"].update(extra_target)
+    return raw
+
+
+def _pedestal_problem(raw: dict):
+    from easy_extrude_core.engine.phases import ArmModel
+    from easy_extrude_core.engine.ur_solver import ik_solver_from_declaration
+
+    req = GraspSearchRequest.model_validate(raw)
+    problem = problem_from_declaration(req.grasp_search)
+    solver = ik_solver_from_declaration(req.grasp_search.model_dump(by_alias=True))
+    return problem, solver, ArmModel(dh=solver.dh, tool_length=solver.tool_length)
+
+
+_PEDESTAL_LIFT = {
+    "box": {"center": [0.2, 0.15, 0.92], "halfExtents": [0.07, 0.06, 0.03]},
+    "lift": {"along": "worldUp", "distance": 0.08},
+}
+
+
+def test_the_pick_pose_point_is_the_judged_solution_and_s_runs_in_motion_order():
+    from easy_extrude_core.engine import generate_candidates
+    from easy_extrude_core.engine.phases import arm_segments_along
+
+    problem, solver, arm = _pedestal_problem(_pedestal_raw(**_PEDESTAL_LIFT))
+    c = next(c for c in generate_candidates(problem) if solver.solve(c, problem.robot) is not None)
+    sol = solver.solve(c, problem.robot)
+    for phase, pick_s in ((MotionPhase.APPROACH, 1.0), (MotionPhase.LIFT, 0.0)):
+        samples = arm_segments_along(problem, phase, c, pick_solution=sol, solver=solver, arm=arm)
+        assert [x.s for x in samples] == sorted(x.s for x in samples)
+        assert samples[0].s == 0.0 and samples[-1].s == 1.0
+        picks = [x for x in samples if x.at_pick_pose]
+        assert len(picks) == 1 and picks[0].s == pick_s
+        assert picks[0].joints == sol.joints  # 解き直さない
+        # どの点にも関節解が在る (この候補の直線は腕がたどれる — 置けない点は joints=None)。
+        assert all(x.joints is not None for x in samples)
+
+
+def test_an_arm_that_touches_only_mid_path_is_counted_on_path_only_and_never_rejected():
+    from easy_extrude_core.engine import generate_candidates
+    from easy_extrude_core.engine.feasibility import arm_link_segments
+    from easy_extrude_core.engine.phases import arm_segments_along
+    from easy_extrude_core.engine.feasibility import JointSolution
+    from easy_extrude_core.engine.types import Vec3
+
+    raw = _pedestal_raw()
+    problem, solver, arm = _pedestal_problem(raw)
+    clear = _wire_raw(raw, "allPhases")["diagnostics"]["interferenceAnalysis"]["armPath"]
+    assert clear["kind"] == "measured"
+    # 判定を通る候補の、プリグラスプ (s=0) の腕のリンクの中点 = ピック姿勢から離れた所に
+    # 小さな箱を置く。ピック姿勢の腕からは 3cm 以上離れている点だけを選ぶ。
+    point = None
+    for c in generate_candidates(problem):
+        sol = solver.solve(c, problem.robot)
+        if sol is None:
+            continue
+        samples = arm_segments_along(problem, MotionPhase.APPROACH, c, pick_solution=sol, solver=solver, arm=arm)
+        pick_segments = arm_link_segments(arm.dh, sol, problem.robot, arm.tool_length)
+        start = JointSolution(joints=samples[0].joints)
+        for a, b in arm_link_segments(arm.dh, start, problem.robot, arm.tool_length):
+            m = Vec3((a.x + b.x) / 2, (a.y + b.y) / 2, (a.z + b.z) / 2)
+            if all(_dist_point_segment(m, p, q) > 0.03 for p, q in pick_segments) and \
+                    _dist_point_segment(m, c.pre_grasp, c.pose.position) > 0.03:
+                point = m
+                break
+        if point is not None:
+            break
+    assert point is not None
+    raw["graspSearch"]["obstacles"].append(
+        {"kind": "box", "center": [point.x, point.y, point.z], "halfExtents": [0.005, 0.005, 0.005]})
+    first = _wire_raw(raw, "firstCollision")
+    full = _wire_raw(raw, "allPhases")
+    # 答えは 1 ビットも変わらない — 測った当たりは棄却に数えない。
+    assert full["candidates"] == first["candidates"]
+    assert {k: v for k, v in full["diagnostics"].items() if k != "interferenceAnalysis"} == \
+        {k: v for k, v in first["diagnostics"].items() if k != "interferenceAnalysis"}
+    measured = full["diagnostics"]["interferenceAnalysis"]["armPath"]
+    approach = next(r for r in measured["phases"] if r["phase"] == "approach")
+    new_index = len(raw["graspSearch"]["obstacles"]) - 1
+    assert approach["onPathOnly"] >= 1
+    assert any(h["obstacleIndex"] == new_index for h in approach["hits"])
+    assert all(h["obstacleIndex"] != new_index for h in measured["atPickPose"]["hits"])
+    # 置いた箱がなければ経路でだけ当たる候補は増えない (負の対照)。
+    clear_approach = next(r for r in clear["phases"] if r["phase"] == "approach")
+    assert approach["onPathOnly"] > clear_approach["onPathOnly"]
+
+
+def test_the_lift_path_is_measured_only_when_the_lift_is_declared():
+    without = _wire_raw(_pedestal_raw(), "allPhases")["diagnostics"]["interferenceAnalysis"]["armPath"]
+    assert [r["phase"] for r in without["phases"]] == ["approach"]
+    with_lift = _wire_raw(_pedestal_raw(**_PEDESTAL_LIFT), "allPhases")
+    rows = with_lift["diagnostics"]["interferenceAnalysis"]["armPath"]["phases"]
+    assert [r["phase"] for r in rows] == ["approach", "lift"]
+    for r in rows:
+        assert r["onPathOnly"] <= r["onPath"] <= with_lift["diagnostics"]["interferenceAnalysis"]["candidatesAnalysed"]
+
+
+def test_without_declared_kinematics_the_arm_is_undeclared_not_clear():
+    wire = _wire(**_SCENES["close"], analysis="allPhases")
+    assert wire["diagnostics"]["interferenceAnalysis"]["armPath"] == {"kind": "undeclared"}
+
+
+def _wire_raw(raw: dict, mode: str) -> dict:
+    import copy
+
+    r = copy.deepcopy(raw)
+    r["graspSearch"]["interferenceAnalysis"] = mode
+    wire = search_report(GraspSearchRequest.model_validate(r)).response.model_dump(by_alias=True)
+    Draft202012Validator(load_response_schema()).validate(wire)
+    return wire
+
+
+def _dist_point_segment(p, a, b) -> float:
+    ab = b - a
+    denom = ab.x * ab.x + ab.y * ab.y + ab.z * ab.z
+    t = 0.0 if denom == 0 else max(0.0, min(1.0, ((p - a).x * ab.x + (p - a).y * ab.y + (p - a).z * ab.z) / denom))
+    q = a + ab.scaled(t)
+    d = p - q
+    return math.sqrt(d.x * d.x + d.y * d.y + d.z * d.z)

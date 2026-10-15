@@ -529,11 +529,29 @@ test("response: every motion phase has a row; an unevaluated one carries a reaso
 
 test("response: the all-phase analysis names phase, part and obstacle index — never a name", () => {
   const analysis = { kind: "allPhases", candidatesAnalysed: 4, phases: [
-    { phase: "lift", collided: 2, hits: [{ part: "held", obstacleIndex: 1, candidates: 2 }] }] };
+    { phase: "lift", collided: 2, hits: [{ part: "held", obstacleIndex: 1, candidates: 2 }] }],
+    armPath: { kind: "undeclared" } };
   accepts("grasp-search-response", { candidates: [], diagnostics: { ...diagnostics, interferenceAnalysis: analysis } });
   const named = structuredClone(analysis);
   named.phases[0].hits[0].obstacleName = "tray wall";
   rejects("grasp-search-response", { candidates: [], diagnostics: { ...diagnostics, interferenceAnalysis: named } });
+});
+
+test("response v10: the arm is measured at the pick pose and along the path — measured, closed, never absent (ADR-158 PR1)", () => {
+  const base = { kind: "allPhases", candidatesAnalysed: 4, phases: [] };
+  const measured = { kind: "measured", pathSamples: 6,
+    atPickPose: { candidates: 1, hits: [{ obstacleIndex: 0, candidates: 1 }] },
+    phases: [{ phase: "approach", onPath: 2, onPathOnly: 1, noSolutionOnPath: 0, hits: [{ obstacleIndex: 0, candidates: 2 }] }] };
+  const withArm = (armPath) => ({ candidates: [], diagnostics: { ...diagnostics, interferenceAnalysis: { ...base, armPath } } });
+  accepts("grasp-search-response", withArm(measured));
+  accepts("grasp-search-response", withArm({ kind: "undeclared" }));
+  rejects("grasp-search-response", { candidates: [], diagnostics: { ...diagnostics, interferenceAnalysis: base } });
+  // Only phases with a decided straight path are measured (transit has none — DEF-057).
+  rejects("grasp-search-response", withArm({ ...measured, phases: [{ ...measured.phases[0], phase: "transit" }] }));
+  // Undeclared carries nothing: zero counts would read as "the arm was clear".
+  rejects("grasp-search-response", withArm({ kind: "undeclared", atPickPose: measured.atPickPose }));
+  // Measured is not judged: no rejection count rides here.
+  rejects("grasp-search-response", withArm({ ...measured, phases: [{ ...measured.phases[0], rejected: 1 }] }));
 });
 
 test("request: target.lift is a declared direction + distance, and the analysis mode is closed", () => {

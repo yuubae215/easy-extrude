@@ -218,6 +218,53 @@ class InterferenceAnalysisFirstCollision(_ContractModel):
     kind: Literal["firstCollision"] = "firstCollision"
 
 
+class ArmPathHitWire(_ContractModel):
+    """腕が触れた障害物 1 つと、触れた候補数 (契約 v10, ADR-158 PR1)。"""
+
+    obstacle_index: int = Field(ge=0)
+    candidates: int = Field(ge=1)
+
+
+class ArmPathAtPickPoseWire(_ContractModel):
+    """ピック姿勢 (判定に使った代表解) で腕が当たった候補。探索の進入相の腕の判定と同じ姿勢。"""
+
+    candidates: int = Field(ge=0)
+    hits: list[ArmPathHitWire]
+
+
+class ArmPathPhaseWire(_ContractModel):
+    """相の経路 (ピック姿勢を除く点) で腕を測った結果。**測定であって棄却ではない**。"""
+
+    phase: Literal["approach", "lift"]
+    # 経路のどこかで腕が当たった候補 (ピック姿勢でも当たったものを含む)。
+    on_path: int = Field(ge=0)
+    # 経路でだけ当たり、ピック姿勢では当たらなかった候補 — 今の判定が見ていない当たり。
+    on_path_only: int = Field(ge=0)
+    # 経路のどこかで関節解が限界の内側に無かった候補 (腕がこの直線をたどれない)。
+    no_solution_on_path: int = Field(ge=0)
+    hits: list[ArmPathHitWire]
+
+
+class ArmPathUndeclared(_ContractModel):
+    """`robot.kinematics` が未宣言 — 腕の姿勢を誰も決めていないので測っていない。"""
+
+    kind: Literal["undeclared"] = "undeclared"
+
+
+class ArmPathMeasured(_ContractModel):
+    """腕を経路の各点で測った (契約 v10, ADR-158 PR1)。母集団は candidatesAnalysed。"""
+
+    kind: Literal["measured"] = "measured"
+    # 相ごとの経路の点の数 (始点と終点を含む)。
+    path_samples: int = Field(ge=2)
+    at_pick_pose: ArmPathAtPickPoseWire
+    # 経路が決まっている評価済みの相だけ、動作の順に (approach は常に、lift は宣言時)。
+    phases: list[ArmPathPhaseWire]
+
+
+ArmPath = ArmPathUndeclared | ArmPathMeasured
+
+
 class InterferenceAnalysisAllPhases(_ContractModel):
     """全相分析の結果 (契約 v8, ADR-157 D6)。答え (候補・ファネル) は変えない。"""
 
@@ -226,6 +273,9 @@ class InterferenceAnalysisAllPhases(_ContractModel):
     candidates_analysed: int = Field(ge=0)
     # 評価した相だけを動作の順に (評価しなかった相は interferencePhases が理由を言う)。
     phases: list[InterferencePhaseAnalysisWire]
+    # 腕をピック姿勢と経路の各点で測った結果 (契約 v10, ADR-158 PR1)。測定であって
+    # 棄却ではない — 経路で当たった候補も、ピック姿勢で当たらなければ返る候補に残る。
+    arm_path: ArmPath = Field(discriminator="kind")
 
 
 InterferenceAnalysis = InterferenceAnalysisFirstCollision | InterferenceAnalysisAllPhases

@@ -4,13 +4,13 @@ goal AReplayShowsWhereItHitsFromJudgedSamples
 uuid 0a7730f5-4bfe-431d-b9a5-4dffe4b7c49b
 summary "棄却された候補について、どの相のどの時点で・どの部位が・何に当たるかが再生で見え、当たりとして見えるフレームは core が判定した標本そのものである。再生の長さ・速さ・フレームレートは通信量にも core の負荷にも効かない"
 state UnderReview
-labels adr-158, adr-157, adr-146, adr-150, grasp, replay, principle-29, principle-30, proposed, term-l-blind, change-diagnosis
+labels adr-158, adr-157, adr-146, adr-150, grasp, replay, principle-29, principle-30, accepted, term-l-blind, change-diagnosis
 artifacts
 - "docs/adr/ADR-158-a-replay-draws-the-judged-samples-and-derives-the-frames-between.md"
 
     context Adr158Scope
     uuid a34735da-3513-421e-85c5-9e4919f4893e
-    summary "ADR-158 (Proposed 2026-09-30、段 G-9 未着手): 全相分析を求めたとき判定した標本 (相・s・関節・TCP・当たり) を返し (D1)、間のフレームはクライアントが関節空間の線形補間で導出して判定済みと描き分け (D2)、時間軸は相ごとの s で秒ではなく再生速度とフレームレートはクライアントの設定 (D3)、再生は表示の状態で鮮度は分析から導出 (D4)、動きの役割は Fact で既存の進入スライド (Delight) と別物として描く (D5)"
+    summary "ADR-158 (Accepted 2026-10-15 段階実装 — PR1 で腕を経路に沿って測る。起票 2026-09-30): 全相分析を求めたとき判定した標本 (相・s・関節・TCP・当たり) を返し (D1)、間のフレームはクライアントが関節空間の線形補間で導出して判定済みと描き分け (D2)、時間軸は相ごとの s で秒ではなく再生速度とフレームレートはクライアントの設定 (D3)、再生は表示の状態で鮮度は分析から導出 (D4)、動きの役割は Fact で既存の進入スライド (Delight) と別物として描く (D5)"
 
     context RequirementCameFromTheOwner
     uuid aa40d116-b36d-4a2b-afe0-a7facda403a9
@@ -40,6 +40,20 @@ artifacts
     uuid 9e9d6d81-c2a7-4230-817b-2c2df5246deb
     summary "判定した標本だけを 1 回で受け取り、再生のフレーム・速さ・時間の写像はクライアントの導出にする。描き分けで判定済みと補間を区別し、動きの役割を Fact と宣言して既存の演出と並べる"
 
+        goal TheArmIsMeasuredAtThePickPoseAndAlongThePath
+        uuid a9e9e939-4b7d-4ee1-ba72-ba2e6bc7bcf3
+        summary "全相分析で、腕がピック姿勢で当たる候補と途中の経路で当たる候補 (うち経路でだけ当たる候補) を区別して数える。測定であって判定ではない — 探索の答えは 1 ビットも変わらず、運動学が未宣言なら 0 件ではなく undeclared と言う (PR1、当事者合意 2026-10-15「測るだけで良い」)"
+        labels support-verified
+
+            solution ArmPathIsExecuted
+            uuid 907c9281-d8b8-4c86-9752-585d94f8db3f
+            summary "core/tests/test_motion_phases.py: test_the_pick_pose_point_is_the_judged_solution_and_s_runs_in_motion_order (ピック姿勢の点は判定した代表解そのもの、s は動作の順) / test_an_arm_that_touches_only_mid_path_is_counted_on_path_only_and_never_rejected (プリグラスプの腕の通り道に箱を置くと onPathOnly ≥ 1、候補とファネルは firstCollision と同一、負の対照つき) / test_the_lift_path_is_measured_only_when_the_lift_is_declared / test_without_declared_kinematics_the_arm_is_undeclared_not_clear。契約: packages/grasp-contract の v10 テスト (armPath の欠落・未宣言に数を持たせる・相に transit・rejected の欄はすべて拒否) と server/test/grasp.contract.test.js。画面の語: src/view/GraspPhaseMath.test.js (語の表 = スキーマの枝、未宣言の kind は throw)"
+            artifacts
+            - "core/tests/test_motion_phases.py"
+            - "core/easy_extrude_core/engine/phases.py"
+            - "packages/grasp-contract/test/contract.test.mjs"
+            - "src/view/GraspPhaseMath.test.js"
+
         goal WhatIsDrawnAsAHitWasJudged
         uuid 505d9b54-eb76-4b2c-ab97-f8863f1e1277
         summary "当たりの強調が付くのは core が当たりと判定した標本だけで、補間のフレームには付かない。当たり始めの時刻は標本の分解能でしか言わない"
@@ -56,7 +70,7 @@ artifacts
 
             assumption FrameRateCensusIsPlanned
             uuid 04884584-465a-4503-aaff-b2fe33da5a0d
-            summary "証拠予定: 実装 PR で response スキーマの census (fps / seconds / duration / frameRate の語が欄に無い) と、同じ応答を 2 つの再生速度で描いて標本のフレームが一致するテストを置く。満期=ADR-158"
+            summary "証拠予定: 再生の段の PR で response スキーマの census (fps / seconds / duration / frameRate の語が欄に無い) と、同じ応答を 2 つの再生速度で描いて標本のフレームが一致するテストを置く。満期=PATH:src/view/GraspReplayMath.test.js (2026-10-15 張り替え: 初めの満期 ADR-158 は段階実装の Accepted で先に来たが、PR1 は測定だけで再生を描かない)"
 
         goal TheReplayServesTheScenesItWasDesignedFor
         uuid ec2af048-2832-46ab-a54d-7eed67386447
