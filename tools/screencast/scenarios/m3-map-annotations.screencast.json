@@ -4,7 +4,7 @@
   "meta": {
     "id": "m3-map-annotations",
     "title": "ADR-166 M3 — map annotations as light on the floor",
-    "description": "The M3 record clip (ADR-166 M3a + M3b): a layout template's Zone is light on the floor, read from an oblique angle; selection is the light rising on the land curve (no white box); a delete puts the light out on the exit curve while the voxel dissolve narrates the event; undo replays the entry. Re-shoot against an older tree by overriding app.url to compare. KNOWN LIMIT (ADR-166 M3b): under the virtual clock the render loop's t was observed non-monotonic by about ±0.2 s, which skips the 220 ms exit — check the delete frames before publishing the output.",
+    "description": "The M3 record clip (ADR-166 M3a + M3b): a layout template's Zone is light on the floor, read from an oblique angle; selection is the light rising on the land curve (no white box); a delete puts the light out on the exit curve while the voxel dissolve narrates the event; undo replays the entry. Re-shoot against an older tree by overriding app.url to compare. The exit that ADR-166 M3b could not capture is captured since the clock is paused before it is advanced (ADR-160, 2026-10-18 addendum).",
     "tags": ["motion", "adr-166"]
   },
   "imports": ["../library/easy-extrude.screencast.json"],

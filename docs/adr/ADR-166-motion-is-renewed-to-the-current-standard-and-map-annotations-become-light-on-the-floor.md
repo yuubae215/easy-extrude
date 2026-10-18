@@ -284,7 +284,7 @@ M3 は 2 本に割った (当事者合意 2026-10-12): `exiting` の状態追加
   `check-gsn-debt.mjs` の baseline を 51 → 50 に下げた。
 
 **検証できていないこと:** Route / Boundary の見た目 (M3a と同じく、テンプレに実例が無い)。退場の中間フレームは
-実機で時計を 1/12 に落として静止画で確認した。M3 全体の動画 (M3a で約束した) は仮想時間の録画が退場を飛ばすため未取得 — シナリオ `tools/screencast/scenarios/m3-map-annotations.screencast.json` は残し、道具が単調な時計を保証できたら撮る。
+実機で時計を 1/12 に落として静止画で確認した。M3 全体の動画 (M3a で約束した) は仮想時間の録画が退場を飛ばすため未取得 — シナリオ `tools/screencast/scenarios/m3-map-annotations.screencast.json` は残し、道具が単調な時計を保証できたら撮る。**→ 2026-10-18 に撮れた:** 原因は道具の時計が実時間でも流れていたことで (ADR-160 2026-10-18 追補 — 描画ループは 1 本だった)、止めてから進めると退場の中間フレームが撮れる。評価用の通し動画 `docs/motion/media/adr-166-motion-tour-before-after.mp4` (左 = M2 より前の 6693a47、右 = M4d4 後。シナリオ `tools/screencast/scenarios/adr-166-motion-tour.screencast.json` — Home・起動・斜め/すれすれの床の光・選択/削除/undo・メニュー) と、右側単体の `adr-166-motion-tour.mp4`。ロボットの読み込みの光 (M4d3b) は入れていない — URDF は止めた時計の外 (実ネットワーク) で届くので、待ち時間を動画が正直に見せられない。
 
 **M3a で決めたこと (2026-10-12、当事者合意 — 「M3a からおすすめで」):**
 
