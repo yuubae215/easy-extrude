@@ -4,7 +4,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  REVEAL_SECONDS, BEACON, BASE_DIAMETER, BEACON_CUE, ARM_REVEAL_CUE, beaconFrame, armReveal, robotFootprint,
+  REVEAL_SECONDS, BEACON, BASE_DIAMETER, BEACON_CUE, ARM_REVEAL_CUE, beaconFrame, armReveal,
 } from './RobotRevealMath.js'
 import { CUE_REST, settledCue, retargetCue } from './CueFollowMath.js'
 import { IDLE_PERIOD } from './IdleMotionMath.js'
@@ -81,11 +81,4 @@ test('the arm arrives on `fade` (outQuad) over REVEAL_SECONDS', () => {
 
 test('an arm drawn from birth has nothing to arrive from', () => {
   assert.equal(armReveal(0, settledCue(1)), 1)
-})
-
-test('the arm\'s footprint is its round pedestal at the base frame', () => {
-  const fp = robotFootprint(100, -200, 0)
-  assert.equal(fp.cx, 100); assert.equal(fp.cy, -200)
-  assert.equal(fp.w, BASE_DIAMETER); assert.equal(fp.d, BASE_DIAMETER)
-  assert.ok(fp.zMax > fp.zMin)
 })

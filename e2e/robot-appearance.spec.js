@@ -263,7 +263,7 @@ test('while the first look loads, the base shows WHERE the arm is coming; the li
   expect(Object.values(a.beacons)).toEqual([true])
   expect(Object.values(a.shadows)).toEqual([false])
   release()
-  // Landed: the arm is drawn, the light has gone out (and been released), the arm stands on its shadow.
+  // Landed: the arm is drawn, the light has gone out (and been released), the arm casts the stage light's shadow (ADR-166 M6).
   await expect.poll(async () => Object.values((await appearance(page)).shown).join(), { timeout: 30_000 }).toBe('realistic')
   await expect.poll(async () => Object.values((await appearance(page)).beacons).join()).toBe('false')
   a = await appearance(page)

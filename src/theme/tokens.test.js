@@ -422,7 +422,10 @@ const DECLARED_VOCABULARIES = {
 // React Outliner replaced it — was retired with its 20 literals. Distinct stays
 // 190: every one of its hues still has another user (the React Outliner copied
 // them). Nothing else in M4d4 touched a colour.
-const UNDECLARED_OCCURRENCE_BASELINE = 699
+// 699 → 697 (ADR-166 M6): SceneView's white ambient and white key light left —
+// the one stage light (StageMath.STAGE_LIGHT) is now the only light. Distinct
+// stays 190: white still has other users.
+const UNDECLARED_OCCURRENCE_BASELINE = 697
 const UNDECLARED_DISTINCT_BASELINE   = 190
 
 const HEX_LITERAL = /#[0-9a-fA-F]{6}\b|\b0x[0-9a-fA-F]{6}\b/g

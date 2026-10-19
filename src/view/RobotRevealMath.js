@@ -92,17 +92,3 @@ export function beaconFrame(t, key, seg, reduced = false) {
 export function armReveal(t, seg, reduced = false) {
   return cueLevel(t, seg, ARM_REVEAL_CUE, reduced)
 }
-
-/**
- * The arm's footprint for its ground shadow (`GroundShadowMath`): the round
- * pedestal at the base frame's position. Only the pedestal's BOTTOM matters to
- * a contact shadow, so the top is nominal (one diameter up) — it only has to
- * say "this has volume".
- * @param {number} x base frame world position (mm)
- * @param {number} y
- * @param {number} z
- * @returns {{cx:number, cy:number, w:number, d:number, yaw:number, zMin:number, zMax:number}}
- */
-export function robotFootprint(x, y, z) {
-  return { cx: x, cy: y, w: BASE_DIAMETER, d: BASE_DIAMETER, yaw: 0, zMin: z, zMax: z + BASE_DIAMETER }
-}

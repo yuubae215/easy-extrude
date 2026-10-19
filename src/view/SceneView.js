@@ -41,6 +41,11 @@ export class SceneView {
     this.renderer = new THREE.WebGLRenderer({ antialias: true })
     this.renderer.setSize(innerWidth, innerHeight)
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
+    // Real shadows from the one stage light (ADR-166 M6). Which meshes cast is
+    // decided by their owners (bodies in MeshView, the arm in RobotStage);
+    // the light and the receiving floor are SceneStage's.
+    this.renderer.shadowMap.enabled = true
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap
     // Mount inside #canvas-container so the stacking order is explicit:
     // canvas (z-index:0) → gizmo (z-index:10) → React UI (z-index:100).
     const canvasContainer = document.getElementById('canvas-container') ?? document.body
@@ -101,11 +106,10 @@ export class SceneView {
     }
     this._drawGestureActive = false
 
-    this._setupLighting()
     this._setupGrid()
-    // Ambient stage dressing: the Studio work cell — radial backdrop, the one
-    // stage light as a floor pool + rim (ADR-166 M2 — Tier D; persistent view
-    // owned here).
+    // The Studio work cell — radial backdrop, the one stage light as a floor
+    // pool, and (ADR-166 M6) as the only light in the scene: the key that
+    // casts the shadows plus a weak fill (persistent view owned here).
     this.stage = new SceneStage(this.scene)
     // grasp-search verification aid: one fixed-pose robot skeleton PER ROBOT in
     // the scene (0 / 1 / N — ADR-090). The set owns each stage's lifecycle and is
@@ -123,13 +127,6 @@ export class SceneView {
     this.robotFlangeRestPose = FLANGE_REST_POSE
 
     window.addEventListener('resize', () => this._onResize())
-  }
-
-  _setupLighting() {
-    this.scene.add(new THREE.AmbientLight(0xffffff, 0.5))
-    const dirLight = new THREE.DirectionalLight(0xffffff, 1.5)
-    dirLight.position.set(5, -5, 10)  // front-right, high above (+Z up)
-    this.scene.add(dirLight)
   }
 
   _setupGrid() {
