@@ -3,156 +3,127 @@ import * as THREE from 'three'
 import { buildGeometry } from '../model/CuboidModel.js'
 import { easeOutCubic, easeOutExpo } from './MotionMath.js'
 import {
-  voxelFrame, voxelJitter, glitchGate,
   voxelDelay, localProgress, voxelFlash, voxelEnvelope, sparkScale,
 } from './CommandFeedbackMath.js'
+import {
+  voxelCells, shatterDelay, cellProgress, scatterOffset, shatterFrame, cellHash, VOXEL_FILL,
+} from './ShapeVoxelMath.js'
 
 /**
- * Pick the landing effect for a lifecycle descriptor. A materialize on a real
- * cuboid (8 OBB corners carried on the anchor) is rendered as an OUTLINE
- * CONSTRUCTION — the object's edges draw themselves on and voxel sparks fly in
- * to assemble the form (`WireframeAssembly`), which reads as "a new object was
- * built here" far more clearly than particles condensing to a point (user
- * feedback 2026-07-12). Everything else — every dissolve, and a materialize
- * without cuboid corners (a flat profile) — stays the radial `VoxelBurst`.
+ * Plan the landing effect for one lifecycle transition (ADR-166 M5). The form
+ * follows the entity's declared SHAPE (`controller/lifecycleShape.js`), not a
+ * corner count:
+ *   - a materialize of a real cuboid (`shape.box`) is the OUTLINE CONSTRUCTION
+ *     (`WireframeAssembly` — user feedback 2026-07-12),
+ *   - everything else is the entity cut into its own voxel cells
+ *     (`VoxelShatter`) — a dissolve breaks it apart from where each piece was,
+ *     a materialize flies each piece back to its own place.
+ * Pure (no THREE objects are made here) so the controller can ask "is there
+ * anything to show?" before it spawns: `null` = nothing to cut (a declared
+ * silent shape, or no extent) — honest silence (#11).
  *
- * @param {THREE.Scene} scene
- * @param {{center:{x,y,z}, radius:number, corners?:Array<{x,y,z}>}} anchor
- * @param {{kind:'materialize'|'dissolve', color:number, flash:number, duration:number}} desc
- * @param {{reduced?: boolean}} [opts]
+ * @param {{center:{x,y,z}, radius:number, shape:object|null}} anchor
+ * @param {{kind:'materialize'|'dissolve'}} desc
+ * @returns {{form:'outline', anchor:object}|{form:'shatter', cells:object}|null}
  */
-export function createLandingEffect(scene, anchor, desc, opts = {}) {
-  if (desc.kind === 'materialize' && Array.isArray(anchor.corners) && anchor.corners.length === 8) {
-    return new WireframeAssembly(scene, anchor, desc, opts)
+export function planLandingEffect(anchor, desc) {
+  const shape = anchor?.shape
+  if (!shape) return null
+  if (desc.kind === 'materialize' && shape.box && shape.corners?.length === 8) {
+    return { form: 'outline', anchor: { center: anchor.center, radius: anchor.radius, corners: shape.corners } }
   }
-  return new VoxelBurst(scene, anchor, desc, opts)
+  const cells = voxelCells(shape)
+  return cells && cells.cells.length > 0 ? { form: 'shatter', cells } : null
 }
 
 /**
- * LandingEffects — transient 3D rendering of an entity LIFECYCLE transition
- * (ADR-065 Phase 2, volume revision). RippleEffect lineage: constructor adds
- * to the scene, `tick(t)` returns true when finished, `dispose()` releases.
- * Spawned exclusively through `MotionGovernor.spawn` (budget + reduced-motion).
- *
- * VOLUME DESIGN: this view fires only for appear/vanish transitions
- * (`CommandFeedbackMath.lifecycleDescriptor`) — routine pose operations are
- * silent. The effect itself carries the semantic:
- *   - dissolve: the entity shatters into voxel fragments that fly outward,
- *     tumble and evaporate (the only remaining trace of a deleted entity),
- *   - materialize: the reverse — a glitch-flickering voxel shell converges
- *     onto the just-created entity and evaporates.
- *
- * One InstancedMesh (a single draw call regardless of voxel count — the
- * `_animate` performance guard, same as CelebrationField). Own overlay
- * geometry only — it NEVER touches the entity's material/emissive
- * (`_syncEmissive` stays the sole owner, PHILOSOPHY #4). Sized from the
- * entity's bounds so the cue stays proportionate in mm-scale and m-scale
- * scenes alike (#27). Directions and jitter are deterministic (no
- * Math.random) — a replayed transition looks identical.
+ * @param {THREE.Scene} scene
+ * @param {NonNullable<ReturnType<typeof planLandingEffect>>} plan
+ * @param {{kind:'materialize'|'dissolve', color:number, flash:number, duration:number}} desc
+ * @param {{reduced?: boolean}} [opts]
  */
-export class VoxelBurst {
+export function createLandingEffect(scene, plan, desc, opts = {}) {
+  if (plan.form === 'outline') return new WireframeAssembly(scene, plan.anchor, desc, opts)
+  if (plan.form === 'shatter') return new VoxelShatter(scene, plan.cells, desc, opts)
+  throw new Error(`createLandingEffect: undeclared form ${plan.form}`)
+}
+
+/**
+ * VoxelShatter — the entity, cut into its own surface cells, breaking apart
+ * (dissolve) or being laid down piece by piece (materialize). ADR-166 M5
+ * replaces `VoxelBurst` (40 voxels on a sphere around the centre — coarse on a
+ * large entity, and its materialize gathered into one point that popped as a
+ * white cube; stakeholder, 2026-10-19).
+ *
+ * RippleEffect lineage: the constructor adds to the scene, `tick(t)` returns
+ * true when finished, `dispose()` releases. Spawned only through
+ * `MotionGovernor.spawn` (budget + reduced motion). One InstancedMesh = one
+ * draw call at any cell count. Overlay only — the entity's own material is
+ * never touched (`_syncEmissive` stays its sole owner, PHILOSOPHY #4).
+ *
+ * The voxels are lit, opaque cubes (they stand in the same light as the
+ * entities) with a faint glow of the state tone; the boundary instant lights
+ * each cell toward the one stage light on its own clock (per-instance colour),
+ * so the flash travels with the wave instead of blinking the whole cloud.
+ * Each cell's fade rides its scale (one material, one opacity).
+ */
+export class VoxelShatter {
   /**
    * @param {THREE.Scene} scene
-   * @param {{center:{x:number,y:number,z:number}, radius:number}} bounds
-   *   from `CommandFeedbackMath.boundsOf` (the appearing/vanishing entity's
-   *   world corners, captured at the domain event)
+   * @param {ReturnType<typeof voxelCells>} cut from `ShapeVoxelMath.voxelCells`
    * @param {{kind:'materialize'|'dissolve', color:number, flash:number, duration:number}} desc
-   *   from `CommandFeedbackMath.lifecycleDescriptor` (duration in seconds)
-   * @param {{reduced?: boolean}} [opts] supplied by MotionGovernor.spawn
+   * @param {{reduced?: boolean}} [opts]
    */
-  constructor(scene, bounds, desc, { reduced = false } = {}) {
+  constructor(scene, cut, desc, { reduced = false } = {}) {
     this._scene    = scene
     this._kind     = desc.kind
     this._reduced  = reduced
     this._duration = desc.duration
     this._start    = performance.now() / 1000
-    this._center   = new THREE.Vector3(bounds.center.x, bounds.center.y, bounds.center.z)
-    this._maxDist  = Math.max(bounds.radius * 1.7, 0.32)
+    this._cells    = cut.cells
+    this._edge     = cut.pitch * VOXEL_FILL
+    this._tone     = new THREE.Color(desc.color)
+    this._light    = new THREE.Color(desc.flash)
 
-    const count = 40 // richer cloud; still ONE draw call (InstancedMesh)
-    this._count = count
-    const size  = Math.max(bounds.radius * 0.11, 0.018)
-    const geo   = new THREE.BoxGeometry(size, size, size)
-    this._baseColor = new THREE.Color(desc.color)
-    this._flashColor = new THREE.Color(desc.flash)
-    const mat   = new THREE.MeshBasicMaterial({
-      color:       this._baseColor.clone(),
-      transparent: true,
-      opacity:     0.92,
-      depthTest:   false,
-      blending:    THREE.AdditiveBlending, // fragments glow where they overlap
+    const geo = new THREE.BoxGeometry(1, 1, 1)
+    const mat = new THREE.MeshStandardMaterial({
+      roughness: 0.45, metalness: 0.05,   // colour per instance (setColorAt) — the material stays the default white so it does not tint it
+      emissive: this._tone.clone(), emissiveIntensity: 0.35,
     })
-    this._mesh = new THREE.InstancedMesh(geo, mat, count)
+    this._mesh = new THREE.InstancedMesh(geo, mat, this._cells.length)
     this._mesh.renderOrder = 3
+    this._mesh.frustumCulled = false   // instances fly outside the unit box's bounds
 
-    // Deterministic directions on a spiral-sphere fan with per-voxel radius
-    // jitter and a per-voxel stagger delay — a voxel cloud that detaches in a
-    // wave, not a perfect shell moving in lockstep (no Math.random).
-    this._dirs = []
-    this._jitters = []
-    this._delays = []
-    for (let i = 0; i < count; i++) {
-      const phi   = Math.acos(1 - 2 * (i + 0.5) / count)
-      const theta = Math.PI * (1 + Math.sqrt(5)) * i
-      this._dirs.push(new THREE.Vector3(
-        Math.sin(phi) * Math.cos(theta),
-        Math.sin(phi) * Math.sin(theta),
-        Math.cos(phi),
-      ))
-      this._jitters.push(voxelJitter(i))
-      this._delays.push(voxelDelay(i))
-    }
+    const center = cut.center
+    this._offsets = this._cells.map((c, i) => scatterOffset(c, center, cut.reach, cut.pitch, i))
+    this._delays  = this._cells.map((c, i) => shatterDelay(c, center, cut.reach, i))
+    this._axes    = this._cells.map((_, i) => new THREE.Vector3(cellHash(i, 6) - 0.5, cellHash(i, 7) - 0.5, cellHash(i, 8) - 0.5).normalize())
 
     this._applyFrame(0)
     scene.add(this._mesh)
   }
 
-  /** Write one frame into the instance matrices from the pure curves. */
+  /** Write one frame into the instance matrices and colours from the pure curves. */
   _applyFrame(progress) {
     const m = new THREE.Matrix4()
     const pos = new THREE.Vector3()
     const quat = new THREE.Quaternion()
-    const euler = new THREE.Euler()
     const scl = new THREE.Vector3()
-    for (let i = 0; i < this._count; i++) {
-      const jitter = this._jitters[i]
-      // Per-voxel LOCAL progress (the stagger): reduced motion holds the shell
-      // at a single frame, so it ignores the offset (static held cue #30).
-      const lp = this._reduced ? progress : localProgress(progress, this._delays[i])
-      const f = voxelFrame(this._kind, lp, this._reduced)
-      pos.copy(this._dirs[i])
-        .multiplyScalar(f.dist * jitter * this._maxDist)
-        .add(this._center)
-      // Deterministic per-voxel tumble around alternating signed axes so
-      // fragments rotate independently.
-      euler.set(
-        f.spin * (i % 2 === 0 ? 1 : -1),
-        f.spin * jitter,
-        f.spin * ((i % 3) - 1),
-      )
-      quat.setFromEuler(euler)
-      // One shared material = one opacity, so BOTH the per-voxel fade and the
-      // glitch flicker ride per-instance scale: size folds in the voxel's own
-      // opacity (staggered evaporation) × the glitch gate (materialize only).
-      const gate = (this._kind === 'materialize' && !this._reduced)
-        ? glitchGate(i, lp)
-        : 1
-      const visible = this._reduced ? f.scale : f.scale * f.opacity
-      scl.setScalar(Math.max(visible * gate, 0.001))
+    const col = new THREE.Color()
+    for (let i = 0; i < this._cells.length; i++) {
+      const lp = this._reduced ? 0 : cellProgress(progress, this._delays[i])
+      const f = shatterFrame(this._kind, lp, this._reduced)
+      const c = this._cells[i].p, o = this._offsets[i]
+      pos.set(c.x + o.x * f.travel, c.y + o.y * f.travel, c.z + o.z * f.travel)
+      quat.setFromAxisAngle(this._axes[i], f.spin)
+      scl.setScalar(Math.max(this._edge * f.size, 1e-6))
       m.compose(pos, quat, scl)
       this._mesh.setMatrixAt(i, m)
+      col.copy(this._tone).lerp(this._light, f.flash)
+      this._mesh.setColorAt(i, col)
     }
     this._mesh.instanceMatrix.needsUpdate = true
-    // Whole-cloud alpha envelope + boundary flash (colour → the one stage
-    // light at the break / assembly instant — ADR-166 M4d3). Reduced motion: fixed low-opacity, no flash.
-    if (this._reduced) {
-      this._mesh.material.color.copy(this._baseColor)
-      this._mesh.material.opacity = 0.4
-    } else {
-      const flash = voxelFlash(this._kind, progress)
-      this._mesh.material.color.copy(this._baseColor).lerp(this._flashColor, flash * 0.8)
-      this._mesh.material.opacity = voxelEnvelope(progress)
-    }
+    if (this._mesh.instanceColor) this._mesh.instanceColor.needsUpdate = true
   }
 
   /**
@@ -162,7 +133,7 @@ export class VoxelBurst {
   tick(t) {
     const progress = (t - this._start) / this._duration
     if (progress >= 1) return true
-    if (this._reduced) return false // static held cue — constructed frame stands
+    if (this._reduced) return false // static held cue — the constructed frame stands
     this._applyFrame(progress)
     return false
   }

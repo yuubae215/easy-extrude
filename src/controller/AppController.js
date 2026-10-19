@@ -79,7 +79,8 @@ import { BootReveal }                 from '../view/BootReveal.js'
 import { MIN_FRAME_RADIUS, EMPTY_SCENE_RADIUS, BOOT_VIEW_RADIUS } from '../view/CameraMath.js'
 import { CameraFlight }               from '../view/CameraFlight.js'
 import { frustumForDistance }         from '../view/CameraMath.js'
-import { createLandingEffect }        from '../view/LandingEffects.js'
+import { createLandingEffect, planLandingEffect } from '../view/LandingEffects.js'
+import { lifecycleShapeOf }           from './lifecycleShape.js'
 import { lifecycleDescriptor, boundsOf } from '../view/CommandFeedbackMath.js'
 import { SnapFlash }                  from '../view/SnapFlash.js'
 import { CelebrationField }           from '../view/CelebrationField.js'
@@ -264,15 +265,10 @@ export class AppController {
     // ── Domain event subscriptions — keep View in sync with domain state ──
     this._service.on('objectAdded',   obj       => {
       this._exitingAnnotations.delete(obj)
+      // The lifecycle voxels are cut from the entity's declared shape
+      // (ADR-166 M5 — by type, not by corner count).
       const lifecycleBounds = boundsOf(obj.corners)
-      if (lifecycleBounds) {
-        // Carry the actual 8 OBB corners for a Solid so the materialize effect
-        // can build the object's outline (WireframeAssembly). Non-cuboid
-        // entities (profiles, etc.) keep bounds only → radial fallback.
-        this._lifecycleAnchors.added = obj.corners?.length === 8
-          ? { ...lifecycleBounds, corners: obj.corners.map(c => ({ x: c.x, y: c.y, z: c.z })) }
-          : lifecycleBounds
-      }
+      if (lifecycleBounds) this._lifecycleAnchors.added = { ...lifecycleBounds, shape: lifecycleShapeOf(obj) }
       const type = obj instanceof ImportedMesh
         ? 'imported'
         : obj instanceof MeasureLine
@@ -352,7 +348,7 @@ export class AppController {
     })
     this._service.on('objectRemoved', (id, obj) => {
       const lifecycleBounds = boundsOf(obj?.corners)
-      if (lifecycleBounds) this._lifecycleAnchors.removed = lifecycleBounds
+      if (lifecycleBounds) this._lifecycleAnchors.removed = { ...lifecycleBounds, shape: lifecycleShapeOf(obj) }
       if ((obj instanceof AnnotatedPoint || obj instanceof AnnotatedLine || obj instanceof AnnotatedRegion)
           && obj.meshView?.drawn) {
         this._exitingAnnotations.add(obj)
@@ -4394,10 +4390,10 @@ export class AppController {
     this._lifecycleAnchors = { added: null, removed: null } // consumed per landing
     const desc = lifecycleDescriptor(landing)
     if (!desc) return
-    const bounds = anchors[desc.direction]
-    if (!bounds) return
+    const plan = planLandingEffect(anchors[desc.direction], desc)
+    if (!plan) return
     this._motion.spawn(reduced =>
-      createLandingEffect(this._sceneView.scene, bounds, desc, { reduced }))
+      createLandingEffect(this._sceneView.scene, plan, desc, { reduced }))
   }
 
   /**
