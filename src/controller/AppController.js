@@ -1106,6 +1106,8 @@ export class AppController {
       // the screencast recorder's `{ world: [x,y,z] }` target (ADR-160): a
       // scenario that names a world point keeps working when the boot camera
       // changes, where a canvas fraction would silently land elsewhere.
+      /** Shadow-map redraws so far (ADR-166 M6 — e2e: a still scene must not grow it). */
+      shadowRedraws: () => this._sceneView.shadowRedraws,
       worldToScreen: (x, y, z) => {
         const v = new THREE.Vector3(x, y, z).project(this._sceneView.camera)
         const r = this._sceneView.renderer.domElement.getBoundingClientRect()

@@ -270,3 +270,22 @@ test('while the first look loads, the base shows WHERE the arm is coming; the li
   expect(Object.values(a.shadows)).toEqual([true])
   expect(errors).toEqual([])
 })
+
+test('a still cell does not redraw its shadow — only something that moves does (ADR-166 M6)', async ({ page }) => {
+  // The pick & place cell links its bodies (fixed joints re-asserted every frame)
+  // and carries the realistic arm: the shape that redrew the shadow map — and
+  // rebuilt the linked bodies' geometry — 60× a second while nothing moved.
+  const errors = []
+  page.on('pageerror', (e) => errors.push(e.message))
+  await page.addInitScript(() => { try { localStorage.setItem('ee_tour', 'dismissed') } catch { /* storage denied */ } })
+  await page.goto('/easy-extrude/')
+  await page.getByText('Single-arm pick & place cell', { exact: true }).click()
+  await expect.poll(async () => Object.values((await appearance(page)).shown).join(), { timeout: 60_000 }).toBe('realistic')
+  await page.waitForTimeout(2500)   // the boot flight and the arm's arrival have landed
+  const redraws = () => page.evaluate(() => window.__easyExtrude.shadowRedraws())
+  const before = await redraws()
+  expect(before).toBeGreaterThan(0)   // the shadow was drawn at all
+  await page.waitForTimeout(1500)
+  expect(await redraws()).toBe(before)
+  expect(errors).toEqual([])
+})

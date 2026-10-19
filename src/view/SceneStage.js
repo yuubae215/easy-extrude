@@ -89,16 +89,17 @@ export class SceneStage {
     scene.add(this._fill)
 
     // ④ The floor that receives the shadows: invisible except where a shadow
-    //    falls. Just under Z=0 (above the pool) so it never fights the grid or
-    //    the floor-light annotations, and it darkens the pool where it lies.
-    const reach = STAGE_LIGHT.pool.radius * STAGE_LIGHT.shadow.reach
+    //    falls, and only as large as the casters' shadows can reach
+    //    (`fitShadowFloor` — under software GL every receiving pixel pays for
+    //    the shadow lookup). Just under Z=0 so it never fights the grid or the
+    //    floor-light annotations. In world units (not in the scaled group).
     this._shadowFloor = new THREE.Mesh(
-      new THREE.PlaneGeometry(reach * 2.4, reach * 2.4),
+      new THREE.PlaneGeometry(1, 1),
       new THREE.ShadowMaterial({ opacity: 0.42, depthWrite: false }))
     this._shadowFloor.receiveShadow = true
-    this._shadowFloor.position.z = -0.005
     this._shadowFloor.renderOrder = -1
-    this._group.add(this._shadowFloor)
+    this._shadowFloor.visible = false   // nothing casts yet
+    scene.add(this._shadowFloor)
     this._placeKey()
 
     scene.add(this._group)
@@ -116,6 +117,20 @@ export class SceneStage {
     this._scale = s
     this._group.scale.setScalar(s)
     this._placeKey()
+  }
+
+  /**
+   * Size the receiving floor to where the casters' shadows can fall
+   * (`StageMath.shadowFloorRect`). `null` = nothing casts: no floor (0 shadows).
+   * Called by SceneView when the shadow map is redrawn.
+   * @param {{cx:number, cy:number, w:number, h:number}|null} rect
+   */
+  fitShadowFloor(rect) {
+    const f = this._shadowFloor
+    f.visible = !!rect
+    if (!rect) return
+    f.position.set(rect.cx, rect.cy, -0.005 * this._scale)
+    f.scale.set(rect.w, rect.h, 1)
   }
 
   /** Aim the key and fit its shadow box to the current scale (StageMath — #27). */
@@ -174,7 +189,7 @@ export class SceneStage {
   dispose() {
     this._unsubReduced()
     this._scene.remove(this._group)
-    this._scene.remove(this._key, this._key.target, this._fill)
+    this._scene.remove(this._key, this._key.target, this._fill, this._shadowFloor)
     this._key.dispose()
     this._fill.dispose()
     this._pool.geometry.dispose()

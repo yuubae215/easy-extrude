@@ -5,7 +5,7 @@ import { join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { COLOR, DURATION } from '../theme/tokens.js'
 import {
-  STAGE, STAGE_LIGHT, BACKDROP, GRID_FADE, gridFade, lightOn, poolBreath, stageLightFrame, flightFrame, keyLightPlacement,
+  STAGE, STAGE_LIGHT, BACKDROP, GRID_FADE, gridFade, lightOn, poolBreath, stageLightFrame, flightFrame, keyLightPlacement, shadowFloorRect,
 } from './StageMath.js'
 
 // ── one light (ADR-166 M2 — §1.1) ───────────────────────────────────────────
@@ -194,4 +194,21 @@ test('the key placement keeps the direction and scales with the stage (原則 #2
   for (const k of ['half', 'near', 'far', 'normalBias']) assert.ok(Math.abs(b[k] / a[k] - 1000) < 1e-9, k)
   assert.ok(a.half >= STAGE_LIGHT.pool.radius * 0.5, 'the shadow reaches across the lit cell')
   assert.deepEqual(keyLightPlacement(NaN), keyLightPlacement(1))
+})
+
+test('the receiving floor covers the casters and their shadows, and nothing when nothing casts (M6)', () => {
+  assert.equal(shadowFloorRect(null), null, '0 casters → 0 shadows → no floor')
+  const box = { minX: -100, minY: -100, maxX: 100, maxY: 100, maxZ: 1000 }
+  const r = shadowFloorRect(box)
+  const [x, y, z] = STAGE_LIGHT.from
+  // the top of the box's shadow lands 1000·(−x/z, −y/z) away — inside the rect
+  const tipX = -(x / z) * 1000, tipY = -(y / z) * 1000
+  for (const [px, py] of [[100 + tipX, 100 + tipY], [-100, -100], [100, 100]]) {
+    assert.ok(Math.abs(px - r.cx) <= r.w / 2 && Math.abs(py - r.cy) <= r.h / 2, `(${px}, ${py}) inside`)
+  }
+  // far smaller than the cell-wide floor it replaced at mm scale
+  assert.ok(r.w * r.h < (keyLightPlacement(1000).half * 2) ** 2 / 10)
+  // the same picture in m (原則 #27)
+  const m = shadowFloorRect({ minX: -0.1, minY: -0.1, maxX: 0.1, maxY: 0.1, maxZ: 1 })
+  assert.ok(Math.abs(r.w / m.w - 1000) < 1e-6 && Math.abs(r.h / m.h - 1000) < 1e-6)
 })

@@ -83,6 +83,33 @@ export function keyLightPlacement(scale) {
 }
 
 /**
+ * The floor rectangle that can receive the casters' shadows (ADR-166 M6):
+ * their footprint, stretched away from the light by the length of the tallest
+ * shadow, plus a margin for the soft edge. The receiving floor is sized to
+ * this instead of the whole cell — under software GL every receiving pixel
+ * pays for the shadow lookup, and a cell-wide floor cost ~20% of the frame.
+ *
+ * @param {{minX:number, minY:number, maxX:number, maxY:number, maxZ:number}|null} casters
+ *   world bounds of everything that casts (null = nothing casts)
+ * @returns {{cx:number, cy:number, w:number, h:number}|null} null = no floor (0 casters, 0 shadows)
+ */
+export function shadowFloorRect(casters) {
+  if (!casters || ![casters.minX, casters.minY, casters.maxX, casters.maxY, casters.maxZ].every(Number.isFinite)) return null
+  const [x, y, z] = STAGE_LIGHT.from
+  const height = Math.max(casters.maxZ, 0)
+  // The shadow of a point at height h lands h·(x,y)/z away from it, opposite the light.
+  const dx = -(x / z) * height, dy = -(y / z) * height
+  let minX = casters.minX, maxX = casters.maxX, minY = casters.minY, maxY = casters.maxY
+  if (dx < 0) minX += dx; else maxX += dx
+  if (dy < 0) minY += dy; else maxY += dy
+  const margin = 0.1 * Math.max(maxX - minX, maxY - minY, height, 1e-9)
+  return {
+    cx: (minX + maxX) / 2, cy: (minY + maxY) / 2,
+    w: maxX - minX + 2 * margin, h: maxY - minY + 2 * margin,
+  }
+}
+
+/**
  * Radial backdrop stops `[at, colour]`, centre → edge. The centre sits a
  * little above the middle of the frame, where the default camera puts the
  * cell — the ground is lit where the work is.

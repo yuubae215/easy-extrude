@@ -22,7 +22,8 @@ const GRID_BASE_SPAN = mm(20)
 const GRID_DIVISIONS = 20
 import { orbitControlsTouches } from './CameraGestures.js'
 import { COLOR, hexNumber } from '../theme/tokens.js'
-import { GRID_FADE } from './StageMath.js'
+import { GRID_FADE, shadowFloorRect } from './StageMath.js'
+import { ShadowCasterWatch } from './ShadowCasterWatch.js'
 
 /**
  * The projection axis (ADR-103). Two values, cardinality exactly 1 — there is no
@@ -46,6 +47,13 @@ export class SceneView {
     // the light and the receiving floor are SceneStage's.
     this.renderer.shadowMap.enabled = true
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap
+    // Redrawn only when a caster (or the light) moved, changed shape or was
+    // shown/hidden — not every frame (ShadowCasterWatch; under software GL the
+    // per-frame shadow pass cost ~40% of the frame).
+    this.renderer.shadowMap.autoUpdate = false
+    this._shadowWatch = new ShadowCasterWatch()
+    this._shadowRedraws = 0   // read-only count for e2e (a still scene must not grow it)
+    this._drawnObjects = []   // reused each frame — no per-frame allocation
     // Mount inside #canvas-container so the stacking order is explicit:
     // canvas (z-index:0) → gizmo (z-index:10) → React UI (z-index:100).
     const canvasContainer = document.getElementById('canvas-container') ?? document.body
@@ -313,9 +321,40 @@ export class SceneView {
   }
 
   /** Updates controls and renders the scene (call from the animation loop) */
+  /** How many times the shadow map has been redrawn (read-only — e2e). */
+  get shadowRedraws() { return this._shadowRedraws }
+
+  /**
+   * World XY bounds and top of every drawn mesh that casts, or null when none
+   * does. Read only when the shadow is stale (ShadowCasterWatch).
+   * @param {THREE.Object3D[]} drawn
+   */
+  _casterBounds(drawn) {
+    const box = this._casterBox ??= new THREE.Box3()
+    const part = this._casterPart ??= new THREE.Box3()
+    box.makeEmpty()
+    for (const o of drawn) {
+      if (!o.isMesh || !o.castShadow || !o.geometry) continue
+      if (!o.geometry.boundingBox) o.geometry.computeBoundingBox()
+      part.copy(o.geometry.boundingBox).applyMatrix4(o.matrixWorld)
+      box.union(part)
+    }
+    if (box.isEmpty()) return null
+    return { minX: box.min.x, minY: box.min.y, maxX: box.max.x, maxY: box.max.y, maxZ: box.max.z }
+  }
+
   render() {
     this.controls.update()
     if (this._projection === PROJECTION.ORTHOGRAPHIC) this._syncOrthoCamera()
+    this.scene.updateMatrixWorld()
+    const drawn = this._drawnObjects
+    drawn.length = 0
+    this.scene.traverseVisible(o => { drawn.push(o) })
+    if (this._shadowWatch.changed(drawn)) {
+      this.renderer.shadowMap.needsUpdate = true
+      this.stage.fitShadowFloor(shadowFloorRect(this._casterBounds(drawn)))
+      this._shadowRedraws++
+    }
     this.renderer.render(this.scene, this.activeCamera)
   }
 }
