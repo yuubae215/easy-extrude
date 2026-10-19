@@ -1,0 +1,67 @@
+{
+  "$schema": "../schema/screencast-1.0.schema.json",
+  "version": "screencast/1.0",
+  "meta": {
+    "id": "adr-166-motion-tour",
+    "title": "ADR-166 — the motion renewal, one walk through",
+    "description": "The evaluation walk for ADR-166 (M3a, M3b, M4c, M4d4): the launch Home with a card under the stage light, the boot flight, map annotations as light on the floor from an oblique and a grazing angle, select / delete / undo (the light lands, goes out on the exit curve, comes back), and a menu growing from its trigger. Shoot the before tree with --url (a worktree of 6693a47, the last commit before M2, served on another port) and --out-dir, then stack the two side by side. The robot's loading light (M4d3b) is not in this walk: the URDF arrives over the real network while the clock is paused, so its wait is not a time the video can show honestly.",
+    "tags": ["motion", "adr-166", "before-after"]
+  },
+  "imports": ["../library/easy-extrude.screencast.json"],
+  "app": {
+    "url": "http://localhost:5173/easy-extrude/",
+    "server": { "command": "pnpm dev --port 5173 --strictPort" },
+    "viewport": { "width": 1280, "height": 720 },
+    "deviceScaleFactor": 1,
+    "storage": { "ee_tour": "dismissed" },
+    "ready": { "text": "Start from a process layout" },
+    "settleMs": 800,
+    "probes": { "worldToScreen": "window.__easyExtrude.worldToScreen" }
+  },
+  "capture": { "fps": 30, "clock": "virtual", "format": "png" },
+  "style": {
+    "accent": "#ff7d2e",
+    "cursor": { "visible": true, "size": 22, "trail": true },
+    "keys": { "visible": true, "holdMs": 1200, "anchor": "bottom-center", "inset": [90, 58] },
+    "captions": { "anchor": "bottom-left", "inset": [212, 58] }
+  },
+  "outputs": [
+    { "format": "mp4", "path": "../../../docs/motion/media/adr-166-motion-tour.mp4", "width": 1280, "fps": 30, "quality": "standard" }
+  ],
+  "steps": [
+    { "do": "caption", "index": 1, "text": "Home: a card under the stage light" },
+    { "do": "move", "to": { "text": "Straight conveyor line", "exact": true }, "duration": 900 },
+    { "do": "wait", "duration": 1200, "note": "the hovered card lights and its floor plan's pool brightens (M4c)" },
+    { "do": "click", "target": { "text": "Straight conveyor line", "exact": true }, "duration": 500 },
+    { "do": "caption", "index": 2, "text": "Launch: the cell lights up" },
+    { "do": "move", "to": { "viewport": [0.62, 0.86] }, "duration": 600, "note": "out of the way: the landed cell would light a hover label under the cursor" },
+    { "do": "wait", "duration": 2000, "note": "the boot flight lands and the stage light comes on" },
+
+    { "do": "caption", "index": 3, "text": "Light on the floor, any angle" },
+    { "do": "use", "macro": "ee/orbit", "with": { "dx": 220, "dy": -40, "duration": 2000 } },
+    { "do": "wait", "duration": 500 },
+    { "do": "use", "macro": "ee/orbit", "with": { "dx": 0, "dy": 70, "duration": 1600 }, "note": "down toward the floor — the hatch of the Blueprint device flattened into stripes here" },
+    { "do": "wait", "duration": 700 },
+
+    { "do": "caption", "index": 4, "text": "Select: the light lands" },
+    { "do": "click", "target": { "text": "Transport lane footprint", "exact": true }, "duration": 800 },
+    { "do": "wait", "duration": 900 },
+    { "do": "move", "to": { "viewport": [0.62, 0.86] }, "duration": 600, "note": "step off the outliner row so the row hover clears" },
+    { "do": "wait", "duration": 300 },
+
+    { "do": "caption", "index": 5, "text": "Delete: the light goes out" },
+    { "do": "key", "keys": "Delete" },
+    { "do": "wait", "duration": 1300 },
+
+    { "do": "caption", "index": 6, "text": "Undo: it comes back" },
+    { "do": "key", "keys": "Control+z", "show": true },
+    { "do": "wait", "duration": 1400 },
+
+    { "do": "caption", "index": 7, "text": "Menus grow from their trigger" },
+    { "do": "click", "target": { "role": "button", "name": "Start ▾" }, "duration": 800 },
+    { "do": "wait", "duration": 1200 },
+    { "do": "key", "keys": "Escape" },
+    { "do": "caption", "text": null },
+    { "do": "wait", "duration": 600 }
+  ]
+}

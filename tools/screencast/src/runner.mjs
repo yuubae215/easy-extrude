@@ -69,6 +69,11 @@ export async function record({ program, actions, baseDir }, opts = {}) {
     const storage = program.app.storage
     await page.addInitScript(entries => { for (const [k, v] of Object.entries(entries)) { try { localStorage.setItem(k, v) } catch { /* denied */ } } }, storage)
     await page.clock.install({ time: EPOCH })
+    // install() alone leaves the clock flowing with REAL time; runFor() then
+    // fast-forwards on top of it, and the page sees both — performance.now()
+    // stepped back by ~0.2 s and ran ~1.7× fast (ADR-166 M3b's skipped exit).
+    // Pausing makes runFor() the only thing that moves time.
+    await page.clock.pauseAt(EPOCH + 1)
     await page.goto(program.app.url)
 
     let cursor = { x: vp.width / 2, y: vp.height * 0.62 }
@@ -99,6 +104,7 @@ export async function record({ program, actions, baseDir }, opts = {}) {
     const begun = new Set()
     let down = null
     const frames = []
+    let lastNow = null
     const t0 = Date.now()
 
     for (let f = 0; f < frameCount; f++) {
@@ -127,7 +133,13 @@ export async function record({ program, actions, baseDir }, opts = {}) {
       }
 
       await page.clock.runFor(dt)
-      await page.evaluate(s => window.__screencast.render(s), state)
+      const now = await page.evaluate(s => (window.__screencast.render(s), performance.now()), state)
+      // The page clock must move by exactly one frame — anything else means real
+      // time leaked in and the video would show motion that never happened.
+      if (lastNow != null && Math.abs(now - lastNow - dt) > 1) {
+        throw new Error(`page clock moved ${(now - lastNow).toFixed(1)}ms in a ${dt.toFixed(1)}ms frame at ${Math.round(t)}ms — the virtual clock is not the only source of time`)
+      }
+      lastNow = now
 
       if (!stills || stills.has(f)) {
         const cam = state.camera

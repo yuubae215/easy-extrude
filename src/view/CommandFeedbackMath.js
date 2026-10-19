@@ -25,11 +25,13 @@
  * silence, never a guessed celebration (#11).
  *
  * Pure and THREE-free (`node --test`): the view (`LandingEffects.js`) renders
- * descriptors; per-frame shape comes from `voxelFrame` so the animation curve
- * itself is unit-testable.
+ * descriptors. The shattering voxels are cut from the entity's own shape and
+ * their per-cell curve lives in `ShapeVoxelMath.js` (ADR-166 M5); the curves
+ * left here drive the outline construction (`WireframeAssembly`) and the
+ * celebration's stagger.
  */
 import { COLOR, DURATION, hexNumber } from '../theme/tokens.js'
-import { clamp01, easeOutCubic, easeOutExpo, easeOutBack, easeOutQuad } from './MotionMath.js'
+import { clamp01, easeOutExpo, easeOutQuad } from './MotionMath.js'
 import { STAGE_LIGHT } from './StageMath.js'
 
 /**
@@ -117,56 +119,6 @@ export function boundsOf(points) {
 }
 
 /**
- * Per-frame shape of ONE lifecycle voxel at its OWN local progress. The whole
- * animation is this pure curve; the view remaps global progress → per-voxel
- * local progress (`localProgress`, driven by `voxelDelay`) so fragments
- * detach/converge in a staggered wave (never in lockstep — the anti-vanilla
- * "no simultaneous motion" rule), then composes `{dist, opacity, scale, spin}`
- * into instance matrices.
- *
- * Attribute-specific easing (a single curve per attribute reads as machinery;
- * differing curves read as craft):
- *   - dissolve: fragments LAUNCH outward on an expo burst (dist 0.15 → 1),
- *     tumble hard, shrink and fade — the entity shatters into voxels that
- *     evaporate (the "SAO" scatter). The loudest lifecycle cue (#30 corollary:
- *     nothing is left to look at after a delete).
- *   - materialize: the reverse — a voxel shell CONVERGES on an expo curve
- *     (dist 1 → 0.1) and lands with a back-eased scale pop (overshoot then
- *     settle), then evaporates revealing the real object already underneath.
- * Reduced motion: a static held cue — a frozen mid-transition shell, low
- * opacity — information preserved ("an entity just appeared/vanished here"),
- * movement dropped (#30/#11).
- *
- * @param {'materialize'|'dissolve'} kind
- * @param {number} progress ∈ [0,1] — the voxel's LOCAL progress (post-stagger)
- * @param {boolean} [reduced]
- * @returns {{dist: number, opacity: number, scale: number, spin: number}}
- */
-export function voxelFrame(kind, progress, reduced = false) {
-  if (reduced) {
-    return kind === 'dissolve'
-      ? { dist: 0.55, opacity: 0.4, scale: 0.8, spin: 0 }
-      : { dist: 0.35, opacity: 0.4, scale: 0.8, spin: 0 }
-  }
-  const p = clamp01(progress)
-  if (kind === 'dissolve') {
-    return {
-      dist:    0.15 + 0.85 * easeOutExpo(p),         // expo launch — a burst, not a drift
-      opacity: p < 0.3 ? 0.9 : 0.9 * (1 - (p - 0.3) / 0.7),
-      scale:   1 - 0.7 * easeOutCubic(p),            // shrink as it flies
-      spin:    3.0 * easeOutExpo(p),                 // hard tumble
-    }
-  }
-  // materialize
-  return {
-    dist:    1 - 0.9 * easeOutExpo(p),               // expo convergence — snaps in
-    opacity: p < 0.3 ? 0.9 * (p / 0.3) : p < 0.75 ? 0.9 : 0.9 * (1 - (p - 0.75) / 0.25),
-    scale:   0.4 + 0.6 * easeOutBack(p),             // lands with an overshoot pop
-    spin:    -1.4 * easeOutCubic(p),
-  }
-}
-
-/**
  * Per-voxel timeline offset ∈ [0, STAGGER_SPREAD): the deterministic golden-
  * ratio scatter that turns a lockstep shell into a staggered wave (the anti-
  * vanilla "no simultaneous motion" rule — animation-fx §2). Golden-ratio so
@@ -236,34 +188,6 @@ export function voxelFlash(kind, progress) {
 export function voxelEnvelope(progress) {
   const p = clamp01(progress)
   return p < 0.85 ? 0.92 : 0.92 * (1 - easeOutQuad((p - 0.85) / 0.15))
-}
-
-/**
- * Deterministic per-voxel radius jitter ∈ [0.55, 1) — breaks the perfect
- * sphere shell into a voxel-cloud silhouette without Math.random (a replayed
- * effect looks identical; tests stay reproducible).
- *
- * @param {number} index
- * @returns {number}
- */
-export function voxelJitter(index) {
-  return 0.55 + 0.45 * ((index * 0.6180339887) % 1)
-}
-
-/**
- * Deterministic glitch flicker gate for the materialize shell: a per-voxel
- * square wave that momentarily collapses some voxels' scale (InstancedMesh
- * shares one material, so flicker rides scale, not opacity). Returns 1 (shown)
- * or 0.25 (glitch-dimmed). Never used under reduced motion (the static held
- * cue does not flicker).
- *
- * @param {number} index
- * @param {number} progress ∈ [0,1]
- * @returns {number}
- */
-export function glitchGate(index, progress) {
-  const step = Math.floor(clamp01(progress) * 24)
-  return ((index * 7 + step) % 6) === 0 ? 0.25 : 1
 }
 
 /**

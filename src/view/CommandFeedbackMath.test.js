@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  lifecycleDescriptor, boundsOf, voxelFrame, voxelJitter, glitchGate,
+  lifecycleDescriptor, boundsOf,
   voxelDelay, localProgress, voxelFlash, voxelEnvelope, STAGGER_SPREAD, sparkScale,
 } from './CommandFeedbackMath.js'
 import { STAGE_LIGHT } from './StageMath.js'
@@ -79,49 +79,6 @@ test('boundsOf degrades malformed input to null', () => {
   assert.equal(boundsOf('corners'), null)
 })
 
-test('voxelFrame dissolve: fragments fly OUT, shrink, and fade to zero', () => {
-  const f0 = voxelFrame('dissolve', 0)
-  const fMid = voxelFrame('dissolve', 0.5)
-  const f1 = voxelFrame('dissolve', 1)
-  assert.ok(Math.abs(f0.dist - 0.15) < 1e-9 && Math.abs(f0.scale - 1) < 1e-9)
-  assert.ok(fMid.dist > f0.dist && f1.dist > fMid.dist)
-  assert.ok(Math.abs(f1.dist - 1) < 1e-9)
-  assert.ok(f1.opacity < 1e-9)
-  assert.ok(fMid.scale < f0.scale && f1.scale < fMid.scale)
-  assert.ok(f1.spin > 0)
-})
-
-test('voxelFrame materialize: the reverse — shell converges IN, then evaporates', () => {
-  const f0 = voxelFrame('materialize', 0)
-  const fMid = voxelFrame('materialize', 0.5)
-  const f1 = voxelFrame('materialize', 1)
-  assert.ok(Math.abs(f0.dist - 1) < 1e-9)
-  assert.ok(fMid.dist < f0.dist && f1.dist < fMid.dist)
-  assert.ok(Math.abs(f1.dist - 0.1) < 1e-9)
-  assert.ok(f0.opacity < 1e-9)                    // fades in from nothing…
-  assert.ok(fMid.opacity > 0.8)                   // …fully present mid-flight…
-  assert.ok(f1.opacity < 1e-9)                    // …evaporates at the end
-})
-
-test('voxelFrame under reduced motion is a static held cue at every progress (#30)', () => {
-  for (const kind of ['dissolve', 'materialize']) {
-    const held = voxelFrame(kind, 0, true)
-    for (const p of [0, 0.3, 0.99]) {
-      assert.deepEqual(voxelFrame(kind, p, true), held)
-    }
-    assert.equal(held.spin, 0)
-    assert.ok(held.opacity > 0)                   // information preserved, never nothing
-  }
-})
-
-test('voxelJitter is deterministic and within [0.55, 1)', () => {
-  for (let i = 0; i < 64; i++) {
-    const j = voxelJitter(i)
-    assert.ok(j >= 0.55 && j < 1)
-    assert.equal(j, voxelJitter(i))               // replay-identical
-  }
-})
-
 test('voxelDelay is deterministic, within [0, SPREAD), and scatters neighbours apart', () => {
   let adjacentTogether = 0
   for (let i = 0; i < 64; i++) {
@@ -171,21 +128,6 @@ test('voxelEnvelope holds high then fades out over the final 15%', () => {
   assert.ok(Math.abs(voxelEnvelope(1)) < 1e-9)            // faded to nothing, never popped
   assert.ok(voxelEnvelope(0.925) < 0.92 && voxelEnvelope(0.925) > 0)
 })
-
-test('glitchGate is a deterministic two-level gate', () => {
-  const seen = new Set()
-  for (let i = 0; i < 24; i++) {
-    for (const p of [0, 0.25, 0.5, 0.75]) {
-      const g = glitchGate(i, p)
-      assert.ok(g === 1 || g === 0.25)
-      assert.equal(g, glitchGate(i, p))
-      seen.add(g)
-    }
-  }
-  assert.deepEqual([...seen].sort(), [0.25, 1])   // both levels actually occur
-})
-
-// ── ADR-166 M4d3: the one stage light, the `fade` role ──────────────────────
 
 test('the boundary flash lights toward the ONE stage light, not a private white (M4d3)', () => {
   for (const label of ['Add "Box"', 'Delete "Box"']) {

@@ -18,8 +18,6 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { shellCornerSets } from '../domain/hollowBody.js'
 import { geometryEngine } from '../service/GeometryEngine.js'
 import { EntityLabel } from './EntityLabel.js'
-import { GroundShadow } from './GroundShadow.js'
-import { footprintOf } from './GroundShadowMath.js'
 import { COLOR, hexNumber, dim } from '../theme/tokens.js'
 import { SUBELEMENT_COLORS } from '../theme/semantic.js'
 import { prefersReducedMotion, onReducedMotionChange } from '../theme/motion.js'
@@ -105,17 +103,18 @@ export class MeshView {
     this._shell = null
     /** @type {import('three').Vector3[]|null} last corners drawn — re-drawn when the shell changes */
     this._lastCorners = null
+    /** @type {{shell: object|null, xyz: Float64Array}|null} what `updateGeometry` last drew (memo — not a second source: it is compared, never read as geometry) */
+    this._drawnCorners = null
 
-    // ── Ground shadow (ADR-166 M4d3b) ──────────────────────────────────────
-    // One per body, born here and released in dispose (原則 #9). Its footprint
-    // is read off the geometry actually drawn — every geometry path (sync,
-    // worker, extruded profile, shell) replaces `cuboid.geometry`, so the one
-    // reader in `_writeShadow` follows all of them without a hook in each.
-    this._shadow = new GroundShadow(scene)
-    /** @type {THREE.BufferGeometry|null} the geometry `_footprint` was read from */
-    this._shadowGeo = null
-    /** @type {ReturnType<typeof footprintOf>} */
-    this._footprint = null
+    // ── Shadow (ADR-166 M6) ────────────────────────────────────────────────
+    // The body casts and receives the one stage light's real shadow. It
+    // replaced the painted ground shadow of M4d3b (a decal straight below,
+    // which disagreed with the light once the light had a direction). A
+    // hidden body casts nothing (three skips invisible meshes). The material
+    // is double-sided, so it casts from its back faces — no self-shadow acne.
+    this.cuboid.castShadow = true
+    this.cuboid.receiveShadow = true
+    this.cuboidMat.shadowSide = THREE.BackSide
 
     // ── Floating name/class label (ADR-070 決定1) ─────────────────────────
     // Staged disclosure: shown while selected or hovered (never always-on —
@@ -395,9 +394,16 @@ export class MeshView {
     return merged
   }
 
-  /** Rebuilds geometry from the corner array and applies it to the mesh */
+  /**
+   * Rebuilds geometry from the corner array and applies it to the mesh — unless
+   * the corners (and the shell) are exactly the ones already drawn. Some callers
+   * re-assert a pose every frame (`SceneService._updateFixedJointFrames` for a
+   * linked body), and a rebuild there replaced the geometry 60× a second for
+   * nothing — and made the shadow map look stale every frame (ADR-166 M6).
+   */
   updateGeometry(corners) {
     this._lastCorners = corners
+    if (this._isDrawn(corners)) return
     const newGeo = this._bodyGeometry(corners)
     this.cuboid.geometry.dispose()
     this.cuboid.geometry = newGeo
@@ -407,6 +413,18 @@ export class MeshView {
     this.boxHelper.geometry.dispose()
     this.boxHelper.geometry = new THREE.EdgesGeometry(newGeo, 1)
     this._updateLabelAnchor(corners)
+    this._drawnCorners = { shell: this._shell, xyz: Float64Array.from(corners.flatMap(c => [c.x, c.y, c.z])) }
+  }
+
+  /** Whether `corners` + the current shell are exactly what `updateGeometry` last drew. */
+  _isDrawn(corners) {
+    const d = this._drawnCorners
+    if (!d || d.shell !== this._shell || !corners || d.xyz.length !== corners.length * 3) return false
+    for (let i = 0; i < corners.length; i++) {
+      const c = corners[i], k = i * 3
+      if (d.xyz[k] !== c.x || d.xyz[k + 1] !== c.y || d.xyz[k + 2] !== c.z) return false
+    }
+    return true
   }
 
   /**
@@ -441,6 +459,7 @@ export class MeshView {
     // The shell is five boxes the worker does not know; draw it on the sync path.
     if (this._shell) { this.updateGeometry(corners); return }
     this._lastCorners = corners
+    this._drawnCorners = null   // the worker path draws; the sync path's memo no longer describes the mesh
     const { positions, normals, indices } = await geometryEngine.computeCuboid(corners)
     const newGeo = new THREE.BufferGeometry()
     newGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3))
@@ -483,6 +502,7 @@ export class MeshView {
         this._hasLabelAnchor = true
       }
     }
+    this._drawnCorners = null
     const { positions, normals, indices } = await geometryEngine.computeExtrudedProfile(vertices2d, height)
     const newGeo = new THREE.BufferGeometry()
     newGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3))
@@ -600,22 +620,6 @@ export class MeshView {
    */
   tick(t) {
     this._syncEmissive(t)
-    this._writeShadow()
-  }
-
-  /**
-   * Sole writer of this body's ground shadow (ADR-166 M4d3b, 原則 #4). The
-   * footprint is re-read only when the drawn geometry has been replaced; a
-   * hidden body casts nothing.
-   */
-  _writeShadow() {
-    const geo = this.cuboid.geometry
-    if (geo !== this._shadowGeo) {
-      this._shadowGeo = geo
-      const pos = geo.attributes?.position
-      this._footprint = pos ? footprintOf(pos.array) : null
-    }
-    this._shadow.write(this._footprint, { visible: this.cuboid.visible })
   }
 
   /**
@@ -994,7 +998,6 @@ export class MeshView {
   dispose(scene) {
     this._unsubReduced?.()
     this._unsubReduced = null
-    this._shadow.dispose()
     if (this._label) {
       this._label.dispose()
       this._label = null

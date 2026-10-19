@@ -12,7 +12,7 @@
  * robots (ADR-149) in a sci-fi void instead of a room.
  *
  * ONE LIGHT (§1.1): `STAGE_LIGHT` is the single source of the stage light's
- * colour, direction and strengths. The light pool and the rim light read it
+ * colour, direction and strengths. The light pool and the key light read it
  * here, and the floor-light annotations of ADR-166 M3 will read it from here
  * too — nothing else reads `COLOR.stageLight` (`StageMath.test.js` counts).
  *
@@ -26,19 +26,88 @@ import { clamp01, easeOutCubic, easeOutExpo } from './MotionMath.js'
 
 /**
  * The one stage light (world units at grid scale 1 — `SceneStage.setScale`
- * multiplies the pool per PHILOSOPHY #27).
- *   color        — the third colour of the motion identity (warm work light)
- *   rimFrom      — where the rim light comes FROM (high, behind-left): it
- *                  separates MeshStandardMaterial bodies from the dark ground
- *   rimIntensity — DirectionalLight intensity once the light is on
- *   pool         — the light lying on the cell floor (additive radial disc)
+ * multiplies the pool and the shadow's reach per PHILOSOPHY #27).
+ *
+ * ADR-166 M6: this is the light that LIGHTS the scene, not only a light drawn
+ * on the floor. Before M6 the bodies and the robot were lit by a white ambient
+ * and a white key from front-right (`SceneView`), while the warm stage light
+ * lived only in the floor pool and a weak rim — the floor said one light, the
+ * bodies said another (stakeholder: "it does not look like the same space as
+ * the photographed robot"; the lab comparison chose one light + real shadows).
+ *   color       — the third colour of the motion identity (warm work light)
+ *   from        — where the light comes FROM (high, behind-left of the default
+ *                 view), so its shadows fall toward the viewer and stay
+ *                 readable. Fixed in the world: orbiting the camera moves the
+ *                 shadow on screen, as a real light would
+ *   intensity   — the key once the light is on
+ *   fill        — a weak sky/ground fill so the faces turned away from the
+ *                 light are dark but not black. Weaker than the key and with no
+ *                 direction of its own: a fill that out-lights the key (the
+ *                 lab's environment map) lit the faces the shadow said were in
+ *                 shade, and read as wrong at once
+ *   shadow      — reach: half-width of the shadowed square as a fraction of
+ *                 the pool; mapSize: texels; softness: PCF radius
+ *   pool        — the light lying on the cell floor (additive radial disc)
  */
 export const STAGE_LIGHT = Object.freeze({
   color: COLOR.stageLight,
-  rimFrom: Object.freeze([-6, 5, 3]),
-  rimIntensity: 0.45,
+  from: Object.freeze([-0.66, -0.23, 1.2]),
+  intensity: 2.8,
+  fill: Object.freeze({ ground: COLOR.backdropEdge, intensity: 0.7 }),
+  shadow: Object.freeze({ reach: 0.55, mapSize: 2048, softness: 3 }),
   pool: Object.freeze({ radius: 10.5, opacity: 0.16 }),
 })
+
+/**
+ * The key light's placement for a stage scale: a directional light shines
+ * along `position − target`, so only the direction is a fact; the distance and
+ * the shadow box only have to contain the cell. Everything scales with the
+ * grid (PHILOSOPHY #27 — the same picture in mm and m scenes).
+ *
+ * @param {number} scale the stage scale (power of 10, ≥ 1)
+ * @returns {{position:[number,number,number], half:number, near:number, far:number, normalBias:number}}
+ */
+export function keyLightPlacement(scale) {
+  const s = Number.isFinite(scale) && scale >= 1 ? scale : 1
+  const [x, y, z] = STAGE_LIGHT.from
+  const l = Math.hypot(x, y, z)
+  const half = STAGE_LIGHT.pool.radius * STAGE_LIGHT.shadow.reach * s
+  const dist = 3 * half
+  return {
+    position: [(x / l) * dist, (y / l) * dist, (z / l) * dist],
+    half,
+    near: 0.05 * half,
+    far: 6 * half,
+    normalBias: 0.0012 * half,
+  }
+}
+
+/**
+ * The floor rectangle that can receive the casters' shadows (ADR-166 M6):
+ * their footprint, stretched away from the light by the length of the tallest
+ * shadow, plus a margin for the soft edge. The receiving floor is sized to
+ * this instead of the whole cell — under software GL every receiving pixel
+ * pays for the shadow lookup, and a cell-wide floor cost ~20% of the frame.
+ *
+ * @param {{minX:number, minY:number, maxX:number, maxY:number, maxZ:number}|null} casters
+ *   world bounds of everything that casts (null = nothing casts)
+ * @returns {{cx:number, cy:number, w:number, h:number}|null} null = no floor (0 casters, 0 shadows)
+ */
+export function shadowFloorRect(casters) {
+  if (!casters || ![casters.minX, casters.minY, casters.maxX, casters.maxY, casters.maxZ].every(Number.isFinite)) return null
+  const [x, y, z] = STAGE_LIGHT.from
+  const height = Math.max(casters.maxZ, 0)
+  // The shadow of a point at height h lands h·(x,y)/z away from it, opposite the light.
+  const dx = -(x / z) * height, dy = -(y / z) * height
+  let minX = casters.minX, maxX = casters.maxX, minY = casters.minY, maxY = casters.maxY
+  if (dx < 0) minX += dx; else maxX += dx
+  if (dy < 0) minY += dy; else maxY += dy
+  const margin = 0.1 * Math.max(maxX - minX, maxY - minY, height, 1e-9)
+  return {
+    cx: (minX + maxX) / 2, cy: (minY + maxY) / 2,
+    w: maxX - minX + 2 * margin, h: maxY - minY + 2 * margin,
+  }
+}
 
 /**
  * Radial backdrop stops `[at, colour]`, centre → edge. The centre sits a
@@ -129,20 +198,23 @@ export function poolBreath(t) {
 }
 
 /**
- * One frame of the stage light: pool opacity and rim intensity. Under reduced
+ * One frame of the stage light: pool opacity and key intensity. Under reduced
  * motion the light is simply ON — no coming-on, no breath — the static lit
  * cell (a static styled cue, never nothing — #30).
  *
  * @param {number} tSinceStart seconds since the stage was created
  * @param {boolean} reduced
- * @returns {{poolOpacity:number, rimIntensity:number}}
+ * The fill does not come on — it is there from the first frame, so the cell is
+ * readable before the work light lands (the light coming on is the key).
+ *
+ * @returns {{poolOpacity:number, keyIntensity:number}}
  */
 export function stageLightFrame(tSinceStart, reduced) {
-  if (reduced) return { poolOpacity: STAGE_LIGHT.pool.opacity, rimIntensity: STAGE_LIGHT.rimIntensity }
+  if (reduced) return { poolOpacity: STAGE_LIGHT.pool.opacity, keyIntensity: STAGE_LIGHT.intensity }
   const on = lightOn(tSinceStart)
   return {
     poolOpacity: STAGE_LIGHT.pool.opacity * on * poolBreath(tSinceStart),
-    rimIntensity: STAGE_LIGHT.rimIntensity * on,
+    keyIntensity: STAGE_LIGHT.intensity * on,
   }
 }
 

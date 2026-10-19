@@ -11,9 +11,11 @@
 //   --frames-dir DIR     where frames go (default: a fresh temp dir)
 //   --keep-frames        do not delete the frames after encoding
 //   --only gif|mp4|webm  encode just one output lane
+//   --url URL            point app.url at another tree (e.g. a worktree of an older commit on :5174)
+//   --out-dir DIR        write the outputs into DIR (basenames kept) instead of their declared paths
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { basename, join, resolve } from 'node:path'
 import { parseArgs } from 'node:util'
 import { loadScenario } from '../src/load.mjs'
 import { plan } from '../src/plan.mjs'
@@ -23,19 +25,21 @@ const { values: o, positionals } = parseArgs({
   options: {
     stills: { type: 'string' }, fps: { type: 'string' }, pace: { type: 'string' },
     'frames-dir': { type: 'string' }, 'keep-frames': { type: 'boolean' }, only: { type: 'string' },
+    url: { type: 'string' }, 'out-dir': { type: 'string' },
   },
 })
 const [cmd, file] = positionals
 const log = msg => process.stderr.write(`[screencast] ${msg}\n`)
 
 if (!cmd || !file || !['validate', 'plan', 'record'].includes(cmd)) {
-  console.error('usage: screencast <validate|plan|record> <scenario.json> [--stills ms,ms] [--fps N] [--pace X] [--frames-dir DIR] [--keep-frames] [--only FORMAT]')
+  console.error('usage: screencast <validate|plan|record> <scenario.json> [--stills ms,ms] [--fps N] [--pace X] [--frames-dir DIR] [--keep-frames] [--only FORMAT] [--url URL] [--out-dir DIR]')
   process.exit(2)
 }
 
 try {
   const loaded = await loadScenario(file)
   const { program, actions, baseDir } = loaded
+  if (o.url) program.app.url = o.url
   const pace = o.pace ? Number(o.pace) : program.capture.pace
   const p = plan(program.steps, actions, program.style, pace)
 
@@ -59,7 +63,7 @@ try {
     } else {
       const outputs = program.outputs
         .filter(out => !o.only || out.format === o.only)
-        .map(out => ({ ...out, path: resolve(baseDir, out.path) }))
+        .map(out => ({ ...out, path: o['out-dir'] ? resolve(o['out-dir'], basename(out.path)) : resolve(baseDir, out.path) }))
       const ext = program.capture.format === 'jpeg' ? 'jpg' : 'png'
       const { encode } = await import('../src/encode.mjs')
       encode(outputs, { framesDir, ext, fps: res.fps, srcWidth: res.size.width, srcHeight: res.size.height, count: res.frames.length }, log)

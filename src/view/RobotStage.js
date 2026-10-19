@@ -13,10 +13,9 @@ import { COLOR } from '../theme/tokens.js'
 import { prefersReducedMotion, onReducedMotionChange } from '../theme/motion.js'
 import { CUE_REST, settledCue, retargetCue } from './CueFollowMath.js'
 import {
-  ARM_REVEAL_CUE, BEACON, BEACON_CUE, armReveal, beaconFrame, robotFootprint,
+  ARM_REVEAL_CUE, BEACON, BEACON_CUE, armReveal, beaconFrame,
 } from './RobotRevealMath.js'
 import { radialSprite } from './DecalTextures.js'
-import { GroundShadow } from './GroundShadow.js'
 
 /**
  * How much of its own opacity the skeleton keeps while it draws a CLIENT
@@ -93,8 +92,8 @@ function sameHand(a, b) {
  * stage light lies on the base frame's floor and breathes (`unresolved`), so the
  * empty base says "an arm is coming HERE" — the DOM notice says why. When the
  * look lands, the arm comes in on `fade` and the light goes out on `exit` in
- * the same instant (`RobotRevealMath`). The arm also lays a contact shadow on
- * the floor (`GroundShadow`), like every body.
+ * the same instant (`RobotRevealMath`). Once solid, the arm casts the one
+ * stage light's real shadow, like every body (ADR-166 M6).
  */
 export class RobotStage {
   /**
@@ -207,7 +206,8 @@ export class RobotStage {
       this._beacon.position.z = 0.01   // on the base frame's floor, a hair above it
       this._group.add(this._beacon)
     }
-    this._shadow = new GroundShadow(scene)
+    /** Whether the arm casts the stage light's shadow — written by `_writeLook` only. */
+    this._casting = false
 
     this._attachRobot(this._buildSkeletonRobot())
     this.previewSolution(null)
@@ -661,12 +661,26 @@ export class RobotStage {
       }
       material.opacity = opacity * k
     }
+    // The arm casts once it is SOLID (ADR-166 M6): a ghost — arriving, or the
+    // unverified look (ADR-144 D4) — casting a full shadow would claim a
+    // solidity the look itself denies. Same writer as the look, so the two
+    // can never disagree. Walked on every look write (a few dozen meshes, and
+    // the look is written on events and during the 0.3 s arrival only), so a
+    // swapped-in arm or a newly bolted tool is covered without its own hook.
+    this._casting = solid
+    if (this.robot) {
+      this.robot.traverse(child => {
+        if (!child.isMesh) return
+        child.castShadow = solid
+        child.receiveShadow = solid
+      })
+    }
   }
 
   /**
    * Per-frame motion (ADR-166 M4d3b) — called once per frame by the owner
    * (`RobotStageSet.tick`). The arm's arrival and the waiting light follow the
-   * first-look fact; the ground shadow follows the base.
+   * first-look fact.
    * @param {number} t loop clock (seconds)
    */
   tick(t) {
@@ -687,19 +701,13 @@ export class RobotStage {
         this._beacon.scale.setScalar(f.scale)
       }
     }
-    const p = this._group.position
-    this._shadow.write(robotFootprint(p.x, p.y, p.z), {
-      visible: this._group.visible && !!this.robot?.visible,
-      round: Infinity,             // a pedestal is round
-      strength: this._revealLevel, // the shadow arrives with the arm
-    })
   }
 
   /** Whether the waiting light is on this stage (read-only — e2e, ADR-166 M4d3b). */
   get beaconPresent() { return this._beacon !== null }
 
-  /** Whether the arm's ground shadow is drawn (read-only — e2e). */
-  get shadowDrawn() { return this._shadow.drawn }
+  /** Whether the arm casts its shadow (read-only — e2e). Hidden arms cast nothing (three skips them). */
+  get shadowDrawn() { return this._casting && this._group.visible && !!this.robot?.visible }
 
   /** The release paired with the waiting light's creation in the constructor (原則 #9). */
   _releaseBeacon() {
@@ -816,7 +824,6 @@ export class RobotStage {
     this._unsubReduced?.()
     this._unsubReduced = null
     this._releaseBeacon()
-    this._shadow.dispose()
     this._tcpLabel?.dispose()
     this._tcpLabel = null
     RobotStage._disposeTree(this.robot)

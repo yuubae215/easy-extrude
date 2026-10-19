@@ -9,6 +9,7 @@ pnpm screencast validate tools/screencast/scenarios/hero-sketch-extrude.screenca
 pnpm screencast plan     tools/screencast/scenarios/hero-sketch-extrude.screencast.json   # timeline, no browser
 pnpm screencast record   tools/screencast/scenarios/hero-sketch-extrude.screencast.json --stills 2500,7000
 pnpm screencast record   tools/screencast/scenarios/hero-sketch-extrude.screencast.json   # full render + encode
+pnpm screencast record   <scenario> --url http://localhost:5174/easy-extrude/ --out-dir /tmp/before   # another tree
 pnpm test:screencast     # schema ⇄ registry drift, macros, planner (no browser)
 ```
 
@@ -22,6 +23,14 @@ The page clock (`Date`, timers, `requestAnimationFrame`) is installed by
 page that needs a second to draw a frame still produces a perfect 30 fps video,
 and every run is frame-identical. Cost: ≈1 s of wall time per frame here
 (15 s video ≈ 10 min). Use `--stills` to review composition in minutes.
+
+The clock is **paused** right after install (`install()` alone keeps it flowing with
+real time, and the page would see that on top of each `runFor`), and every frame
+checks that `performance.now()` moved by exactly one frame — a leak of real time
+fails the recording instead of shipping motion that never happened.
+
+To shoot the same scenario against another tree (before / after), serve that tree
+on another port and pass `--url http://localhost:5174/easy-extrude/ --out-dir DIR`.
 
 ## Layout
 

@@ -5,7 +5,7 @@ import { join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { COLOR, DURATION } from '../theme/tokens.js'
 import {
-  STAGE, STAGE_LIGHT, BACKDROP, GRID_FADE, gridFade, lightOn, poolBreath, stageLightFrame, flightFrame,
+  STAGE, STAGE_LIGHT, BACKDROP, GRID_FADE, gridFade, lightOn, poolBreath, stageLightFrame, flightFrame, keyLightPlacement, shadowFloorRect,
 } from './StageMath.js'
 
 // ── one light (ADR-166 M2 — §1.1) ───────────────────────────────────────────
@@ -126,15 +126,15 @@ test('poolBreath stays in [1 − depth, 1], returns to 1 each period, and never 
 // ── reduced motion ───────────────────────────────────────────────────────────
 
 test('stageLightFrame under reduced motion is the static lit cell — same frame at every t', () => {
-  const lit = { poolOpacity: STAGE_LIGHT.pool.opacity, rimIntensity: STAGE_LIGHT.rimIntensity }
+  const lit = { poolOpacity: STAGE_LIGHT.pool.opacity, keyIntensity: STAGE_LIGHT.intensity }
   for (const t of [0, 0.5, 3, 100, NaN]) assert.deepEqual(stageLightFrame(t, true), lit)
 })
 
 test('stageLightFrame with motion: dark at boot, fully lit after landing, breath only on the pool', () => {
-  assert.deepEqual(stageLightFrame(0, false), { poolOpacity: 0, rimIntensity: 0 })
+  assert.deepEqual(stageLightFrame(0, false), { poolOpacity: 0, keyIntensity: 0 })
   const after = STAGE.lightOn.delay + STAGE.lightOn.seconds
   const f = stageLightFrame(after, false)
-  assert.equal(f.rimIntensity, STAGE_LIGHT.rimIntensity, 'the rim does not breathe — bodies must not flicker')
+  assert.equal(f.keyIntensity, STAGE_LIGHT.intensity, 'the key does not breathe — bodies and shadows must not flicker')
   assert.ok(f.poolOpacity <= STAGE_LIGHT.pool.opacity && f.poolOpacity > 0)
 })
 
@@ -173,4 +173,42 @@ test('flight attributes ease on different curves (per-attribute easing, not one 
   const dollyNorm = f.dolly / STAGE.flight.dolly
   const orbitNorm = f.orbit / STAGE.flight.orbit
   assert.ok(Math.abs(dollyNorm - orbitNorm) > 0.02, 'expo dolly must lead the cubic swing')
+})
+
+// ── ADR-166 M6: the stage light lights the scene ─────────────────────────────
+
+test('the one light comes from high behind-left, and the fill is weaker than the key (M6)', () => {
+  const [x, y, z] = STAGE_LIGHT.from
+  const elevation = Math.atan2(z, Math.hypot(x, y)) * 180 / Math.PI
+  assert.ok(elevation > 45 && elevation < 75, `elevation ${elevation}° — high enough to read as a work light, low enough to cast a readable shadow`)
+  assert.ok(x < 0, 'from behind the default view, so the shadow falls toward the viewer')
+  assert.ok(STAGE_LIGHT.fill.intensity < STAGE_LIGHT.intensity / 3,
+    'a fill that rivals the key lights the faces the shadow says are in shade (the lab BE2U failure)')
+})
+
+test('the key placement keeps the direction and scales with the stage (原則 #27)', () => {
+  const a = keyLightPlacement(1), b = keyLightPlacement(1000)
+  const dir = p => { const l = Math.hypot(...p); return p.map(v => v / l) }
+  dir(a.position).forEach((v, i) => assert.ok(Math.abs(v - dir(STAGE_LIGHT.from)[i]) < 1e-12))
+  dir(b.position).forEach((v, i) => assert.ok(Math.abs(v - dir(a.position)[i]) < 1e-12))
+  for (const k of ['half', 'near', 'far', 'normalBias']) assert.ok(Math.abs(b[k] / a[k] - 1000) < 1e-9, k)
+  assert.ok(a.half >= STAGE_LIGHT.pool.radius * 0.5, 'the shadow reaches across the lit cell')
+  assert.deepEqual(keyLightPlacement(NaN), keyLightPlacement(1))
+})
+
+test('the receiving floor covers the casters and their shadows, and nothing when nothing casts (M6)', () => {
+  assert.equal(shadowFloorRect(null), null, '0 casters → 0 shadows → no floor')
+  const box = { minX: -100, minY: -100, maxX: 100, maxY: 100, maxZ: 1000 }
+  const r = shadowFloorRect(box)
+  const [x, y, z] = STAGE_LIGHT.from
+  // the top of the box's shadow lands 1000·(−x/z, −y/z) away — inside the rect
+  const tipX = -(x / z) * 1000, tipY = -(y / z) * 1000
+  for (const [px, py] of [[100 + tipX, 100 + tipY], [-100, -100], [100, 100]]) {
+    assert.ok(Math.abs(px - r.cx) <= r.w / 2 && Math.abs(py - r.cy) <= r.h / 2, `(${px}, ${py}) inside`)
+  }
+  // far smaller than the cell-wide floor it replaced at mm scale
+  assert.ok(r.w * r.h < (keyLightPlacement(1000).half * 2) ** 2 / 10)
+  // the same picture in m (原則 #27)
+  const m = shadowFloorRect({ minX: -0.1, minY: -0.1, maxX: 0.1, maxY: 0.1, maxZ: 1 })
+  assert.ok(Math.abs(r.w / m.w - 1000) < 1e-6 && Math.abs(r.h / m.h - 1000) < 1e-6)
 })
