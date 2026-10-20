@@ -24,6 +24,8 @@
  */
 import * as THREE from 'three'
 import URDFLoader from 'urdf-loader'
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
+import { lodMeshUrl, restoreLodScene } from './robotMeshLod.js'
 import { createSharedAsset } from '../domain/robotVisualStyle.js'
 import {
   realisticPackages, realisticUrdfUrl, REALISTIC_BASE_YAW_CORRECTION,
@@ -37,6 +39,14 @@ async function loadTemplate() {
   })
   const loader = new URDFLoader(manager)
   loader.packages = realisticPackages()
+  // The arm's visuals are drawn from the derived, simplified meshes (ADR-166
+  // M8 — `robotMeshLod`); anything else loads the default way.
+  const gltf = new GLTFLoader(manager)
+  loader.loadMeshCb = (path, mgr, material, done) => {
+    const lod = lodMeshUrl(path)
+    if (!lod) return loader.defaultMeshLoader(path, mgr, material, done)
+    gltf.load(lod, g => done(restoreLodScene(g.scene)), undefined, err => done(null, err))
+  }
   const text = await fetch(realisticUrdfUrl()).then(r => {
     if (!r.ok) throw new Error(`realisticRobotAsset: failed to fetch realistic URDF (${r.status})`)
     return r.text()

@@ -43,6 +43,7 @@
 | 重心の世界座標 | 物体座標の宣言点を物体の姿勢で回して位置を足す。`assumedHomogeneous` は箱の中心 (ADR-121) | `src/domain/targetMass.js: centerOfMassWorld` | front (公知の閉形式・宣言の写像) |
 | 推薦 (propose) | embedding 類似度 | `core/recommendation/` | **core のみ (アイデア)** |
 | 判定基準の満たされ具合 J・関心・差し出すもの | J = Σ_u Σ_c 比重share × 平均_e(重み × clip(余裕/scale, −1, 1))、期待値は可行の境界。関心 = 人 u の大項目 c を probe だけ緩めた線での J'(x\*') − J'(x\*) を最大で正規化 (シャドウプライスの有限差分)、差し出すもの = 提案後の線で解き直した案との余裕の減り (ADR-165 §PR4 の俯瞰 4) | `core/…/criteria/assessment.py` (係数は `catalog.py`、案は `cells.py` の `CellSource` — naive 既定は名目セル表) | **core のみ (アイデア — ADR-165 D6)** |
+| ロボットの見た目のメッシュの簡略化 | 位置で頂点を溶接し、meshoptimizer の辺縮約 (二次誤差) を絶対誤差 0.2 mm で、開いた縁は固定 (ADR-166 M8)。元は平面シェーディングなので法線は保存せず、実行時に面法線を作り直す | `scripts/simplify-robot-meshes.mjs` (オフライン・作者の手元で 1 回) → `public/…/visual_lod/*.glb`。実行時の復元は `src/view/robotMeshLod.js` | オフライン (反復・探索なので閲覧者の端末では走らせない — 軸 2。front は導出物を読むだけ、`RobotMeshLod.test.js` が源の SHA-256 で導出を問う) |
 | 期待値と実態の差の顔 (☺ ○ ☹ ?) | `op` の向きの余裕の符号、余裕 < 期待値の 10 % で ○、実態の幅が期待値をまたげば ? (重みを読まない) | `src/view/CriteriaGapMath.js: gapOf` | front (公知の閉形式・表示 — `CriteriaIndicatorCensus.test.js` が重みを読まないことを問う) |
 
 **両方 (導出)** の行だけが `src/` に写しを持つ。その 3 行は ADR-146 D3 の条件

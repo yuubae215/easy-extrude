@@ -47,6 +47,7 @@ import { LineMaterial }  from 'three/addons/lines/LineMaterial.js'
 import { getPlaceTypeEntry } from '../domain/PlaceTypeRegistry.js'
 import { prefersReducedMotion, onReducedMotionChange } from '../theme/motion.js'
 import { EntityLabel } from './EntityLabel.js'
+import { idleClock } from './MotionMath.js'
 import { lightCurtain } from './FloorLightGeometry.js'
 import {
   phaseFor, routeFlowFrame, boundaryLightFrame, floorLightGains, lightTint,
@@ -457,7 +458,7 @@ export class AnnotatedLineView {
       // Reduced motion parks the dashes; the dash PATTERN (the information) stays.
       if (!this._reduced) {
         const cycle = BOUNDARY_DASH_SIZE + BOUNDARY_GAP_SIZE
-        this._lineMat.dashOffset = -((t * BOUNDARY_DASH_SPD) % cycle)
+        this._lineMat.dashOffset = -((idleClock(t) * BOUNDARY_DASH_SPD) % cycle)   // an idle loop (ADR-166 M7)
       }
       this._wallMat.opacity = WALL_PEAK * floorLightGains(elevation).curtain * gain * entry.opacity
       this._writeWall(t)

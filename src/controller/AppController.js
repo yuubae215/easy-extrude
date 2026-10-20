@@ -1108,6 +1108,8 @@ export class AppController {
       // changes, where a canvas fraction would silently land elsewhere.
       /** Shadow-map redraws so far (ADR-166 M6 — e2e: a still scene must not grow it). */
       shadowRedraws: () => this._sceneView.shadowRedraws,
+      /** Frames drawn so far (ADR-166 M7 — e2e: a still cell draws a few per second, not 60). */
+      framesDrawn: () => this._sceneView.framesDrawn,
       worldToScreen: (x, y, z) => {
         const v = new THREE.Vector3(x, y, z).project(this._sceneView.camera)
         const r = this._sceneView.renderer.domElement.getBoundingClientRect()

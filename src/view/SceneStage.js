@@ -2,8 +2,9 @@
 import * as THREE from 'three'
 import { COLOR, hexNumber } from '../theme/tokens.js'
 import { prefersReducedMotion, onReducedMotionChange } from '../theme/motion.js'
-import { STAGE_LIGHT, BACKDROP, stageLightFrame, keyLightPlacement } from './StageMath.js'
+import { STAGE_LIGHT, BACKDROP, stageLightFrame, keyLightPlacement, shadowMapSize } from './StageMath.js'
 import { radialSprite } from './DecalTextures.js'
+import { idleClock } from './MotionMath.js'
 
 /**
  * SceneStage — the viewport's ambient stage dressing: the Studio work cell of
@@ -38,8 +39,9 @@ import { radialSprite } from './DecalTextures.js'
 export class SceneStage {
   /**
    * @param {THREE.Scene} scene
+   * @param {{shadowTier?: string}} [opts] the device's shadow tier (`StageMath.shadowTier` — M6b)
    */
-  constructor(scene) {
+  constructor(scene, { shadowTier = 'full' } = {}) {
     this._scene = scene
     this._scale = 1
     this._start = null          // loop-clock seconds at first tick
@@ -78,7 +80,8 @@ export class SceneStage {
     //    in the scene (SceneView no longer adds its white ambient and key).
     this._key = new THREE.DirectionalLight(hexNumber(STAGE_LIGHT.color), 0)
     this._key.castShadow = true
-    this._key.shadow.mapSize.set(STAGE_LIGHT.shadow.mapSize, STAGE_LIGHT.shadow.mapSize)
+    const mapSize = shadowMapSize(shadowTier)
+    this._key.shadow.mapSize.set(mapSize, mapSize)
     this._key.shadow.radius = STAGE_LIGHT.shadow.softness
     this._key.shadow.bias = -0.0002
     this._key.target.position.set(0, 0, 0)
@@ -150,7 +153,9 @@ export class SceneStage {
    * @param {number} t loop-clock seconds (performance.now()/1000)
    */
   tick(t) {
-    if (this._start === null) this._start = t
+    // Start on an idle step, so the pool's breath (which steps on the idle
+    // clock of `t − start`) steps with every other idle loop (ADR-166 M7).
+    if (this._start === null) this._start = idleClock(t)
     this._apply(stageLightFrame(t - this._start, this._reduced))
   }
 

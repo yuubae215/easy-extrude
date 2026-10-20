@@ -289,3 +289,33 @@ test('a still cell does not redraw its shadow — only something that moves does
   expect(await redraws()).toBe(before)
   expect(errors).toEqual([])
 })
+
+test('a still cell is not redrawn every frame — only when the picture changes (ADR-166 M7)', async ({ page }) => {
+  // Under reduced motion nothing in a still cell moves, so the only frames drawn
+  // are the safety net's (DURATION.staleCap = 500 ms → ~2/s). Before M7 every
+  // tick drew: OrbitControls' round-off, frame axes rewriting the same vertices
+  // and three's own two-pass transparency all looked like changes.
+  const errors = []
+  page.on('pageerror', (e) => errors.push(e.message))
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await page.addInitScript(() => { try { localStorage.setItem('ee_tour', 'dismissed') } catch { /* storage denied */ } })
+  await page.goto('/easy-extrude/')
+  await page.getByText('Single-arm pick & place cell', { exact: true }).click()
+  await expect.poll(async () => Object.values((await appearance(page)).shown).join(), { timeout: 60_000 }).toBe('realistic')
+  await page.waitForTimeout(2500)
+  const drawn = () => page.evaluate(() => window.__easyExtrude.framesDrawn())
+  const before = await drawn()
+  await page.waitForTimeout(3000)
+  const still = (await drawn()) - before
+  expect(still).toBeGreaterThan(0)       // the safety net still draws
+  expect(still).toBeLessThanOrEqual(9)   // ~6 in 3 s; every tick would be far more on a real GPU
+  // A camera move is drawn at once, not at the safety net's pace.
+  const box = await page.locator('#canvas-container canvas').boundingBox()
+  const b2 = await drawn()
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+  await page.mouse.down()
+  for (let i = 0; i < 6; i++) await page.mouse.move(box.x + box.width / 2 + i * 20, box.y + box.height / 2)
+  await page.mouse.up()
+  await expect.poll(async () => (await drawn()) - b2, { timeout: 5000 }).toBeGreaterThan(2)
+  expect(errors).toEqual([])
+})

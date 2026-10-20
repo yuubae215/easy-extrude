@@ -1,6 +1,8 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { clamp01, easeOutCubic, easeInCubic, easeOutExpo, easeOutBack, breathe, springStep, staggerProgress } from './MotionMath.js'
+import { clamp01, easeOutCubic, easeInCubic, easeOutExpo, easeOutBack, breathe, springStep, staggerProgress, idleClock } from './MotionMath.js'
+import { DURATION } from '../theme/tokens.js'
+import { IDLE_PERIOD } from './IdleMotionMath.js'
 
 test('clamp01 clamps and absorbs NaN', () => {
   assert.equal(clamp01(-1), 0)
@@ -92,4 +94,19 @@ test('staggerProgress delays item i by i·step and clamps', () => {
   assert.equal(staggerProgress(10, 3, opts), 1)         // long past → clamped
   assert.equal(staggerProgress(NaN, 0, opts), 0)
   assert.equal(staggerProgress(1, 0, { duration: 0 }), 0)
+})
+
+test('the idle clock steps at DURATION.idleStep, and every declared idle period is whole steps (ADR-166 M7)', () => {
+  const step = DURATION.idleStep / 1000
+  assert.equal(idleClock(0), 0)
+  assert.equal(idleClock(step * 0.99), 0, 'between steps the clock — and so the picture — does not move')
+  assert.ok(Math.abs(idleClock(step * 1.01) - step) < 1e-12)
+  assert.ok(Number.isNaN(idleClock(NaN)), 'a malformed clock stays malformed (callers hold the static frame)')
+  for (const p of [...Object.values(IDLE_PERIOD), 6]) {
+    const n = p / step
+    assert.ok(Math.abs(n - Math.round(n)) < 1e-9, `period ${p} s is ${n} steps`)
+  }
+  // Far from zero (performance.now() after hours) the steps stay whole.
+  const t = 86_400.0371
+  assert.ok(idleClock(t) <= t && t - idleClock(t) < step)
 })

@@ -1,0 +1,64 @@
+{
+  "generator": "scripts/simplify-robot-meshes.mjs",
+  "lod": {
+    "error": 0.0002
+  },
+  "meshes": {
+    "base.dae": {
+      "lod": "base.glb",
+      "sourceSha256": "a7d37bb19bd062ca80ea00dfcd758b1145455c5cfad87d41756b101ac5b2a8a4",
+      "triangles": {
+        "source": 4838,
+        "lod": 2452
+      }
+    },
+    "forearm.dae": {
+      "lod": "forearm.glb",
+      "sourceSha256": "6cb2f094ffba59f124f70881cabea985abfd399f2fbbe76fba7c18d2ece943b9",
+      "triangles": {
+        "source": 15058,
+        "lod": 6015
+      }
+    },
+    "shoulder.dae": {
+      "lod": "shoulder.glb",
+      "sourceSha256": "b2b58abbef50ce03d4704465d3b619a7da5b2ecb2efc236eadfd221116cbbef0",
+      "triangles": {
+        "source": 23290,
+        "lod": 5310
+      }
+    },
+    "upperarm.dae": {
+      "lod": "upperarm.glb",
+      "sourceSha256": "6486526456e11585a41080958b97a0c8821da856e93b2059c74b07f8102bf6cd",
+      "triangles": {
+        "source": 40124,
+        "lod": 11376
+      }
+    },
+    "wrist1.dae": {
+      "lod": "wrist1.glb",
+      "sourceSha256": "c36649cf4deec6da427d72d45163a059dcb668eb61aac760d5f2f979948fa13a",
+      "triangles": {
+        "source": 17288,
+        "lod": 4756
+      }
+    },
+    "wrist2.dae": {
+      "lod": "wrist2.glb",
+      "sourceSha256": "c99f5538357a7b42a9b207a12e52e713dd3eb7e587645144bde7ab31c1cfc76b",
+      "triangles": {
+        "source": 20280,
+        "lod": 4583
+      }
+    },
+    "wrist3.dae": {
+      "lod": "wrist3.glb",
+      "sourceSha256": "9f5d4f544ae72698a41f75ed4897a76386a91b814dff22e30e93a5bd105a717c",
+      "triangles": {
+        "source": 911,
+        "lod": 855
+      }
+    }
+  }
+}

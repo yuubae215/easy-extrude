@@ -34,7 +34,7 @@
  * Malformed clocks collapse to the静 (static) frame rather than NaN geometry:
  * honest stillness over a corrupted transform (#11 / P12).
  */
-import { clamp01, easeOutCubic, easeOutBack, easeOutExpo, easeInCubic, breathe } from './MotionMath.js'
+import { clamp01, easeOutCubic, easeOutBack, easeOutExpo, easeInCubic, breathe, idleClock } from './MotionMath.js'
 import { STAGE_LIGHT } from './StageMath.js'
 import { CUE_REST, SELECT_LAND, ANNOTATION_SELECTION_CUE, cueLevel, retargetCue } from './CueFollowMath.js'
 
@@ -517,6 +517,7 @@ const HUB_PING_PEAK_URGENT  = 0.70
  *   "there is a broadcast here" cue survives, the movement does not — #30/#11).
  */
 export function hubPingFrame(t, phase, index, { urgent = false, reduced = false } = {}) {
+  t = idleClock(t)   // an idle loop: it steps on the idle clock (ADR-166 M7)
   const peak = urgent ? HUB_PING_PEAK_URGENT : HUB_PING_PEAK
   if (reduced || badClock(t)) {
     // Held frame: the outermost ring parked mid-flight, dimmer for the calm case.
@@ -542,6 +543,7 @@ export function hubPingFrame(t, phase, index, { urgent = false, reduced = false 
  * @returns {{scale: number, haloOpacity: number, haloScale: number}}
  */
 export function hubCoreFrame(t, phase, { urgent = false, reduced = false } = {}) {
+  t = idleClock(t)   // an idle loop: it steps on the idle clock (ADR-166 M7)
   const base = urgent ? 0.34 : 0.17
   if (reduced || badClock(t)) return { scale: 1, haloOpacity: base, haloScale: 1 }
   const s = livePulse(t, phase, { a1: 0.035, f1: 1.7, a2: 0.02, f2: 2.9 })
@@ -573,6 +575,7 @@ export const ANCHOR_PERIOD_URGENT = 1.0
  * @returns {{scale: number, haloOpacity: number}}
  */
 export function anchorFrame(t, phase, { urgent = false, reduced = false } = {}) {
+  t = idleClock(t)   // an idle loop: it steps on the idle clock (ADR-166 M7)
   if (reduced || badClock(t)) return { scale: 1, haloOpacity: urgent ? 0.4 : 0.22 }
   const period = urgent ? ANCHOR_PERIOD_URGENT : ANCHOR_PERIOD
   const p = cycle(t, period, phase)
@@ -616,6 +619,7 @@ const ZONE_RIM_REACH  = 0.11               // rim grows 1.0 → 1.11 ×
  * @returns {{opacity: number}}
  */
 export function zoneFillFrame(t, phase, { selected = false, reduced = false } = {}) {
+  t = idleClock(t)   // an idle loop: it steps on the idle clock (ADR-166 M7)
   const lo = selected ? ZONE_FILL_MIN + 0.08 : ZONE_FILL_MIN
   if (reduced || badClock(t)) return { opacity: (lo + ZONE_FILL_MAX) * 0.5 }
   const period = selected ? ZONE_BREATH_CYCLE * 0.45 : ZONE_BREATH_CYCLE
@@ -636,6 +640,7 @@ export function zoneFillFrame(t, phase, { selected = false, reduced = false } = 
  * @returns {{scale: number, opacity: number}}
  */
 export function zoneRimFrame(t, phase, index, { period = ZONE_RIM_PERIOD, reduced = false } = {}) {
+  t = idleClock(t)   // an idle loop: it steps on the idle clock (ADR-166 M7)
   if (reduced || badClock(t)) {
     return index === 0 ? { scale: 1 + ZONE_RIM_REACH * 0.5, opacity: ZONE_RIM_PEAK * 0.45 } : { scale: 1, opacity: 0 }
   }
@@ -682,6 +687,7 @@ const ROUTE_TRAIL_GAP  = 0.016       // arc-fraction between trail beads
  *   their spawn offsets (the channel still reads as populated and directional).
  */
 export function routeFlowFrame(t, head, seg, phase, { direction = 1, reduced = false } = {}) {
+  t = idleClock(t)   // an idle loop: it steps on the idle clock (ADR-166 M7)
   const dir  = direction < 0 ? -1 : 1
   const base = (head / ROUTE_HEADS + phase) % 1
   const lag  = seg * ROUTE_TRAIL_GAP * dir
@@ -725,6 +731,7 @@ const BOUNDARY_WAVE_WIDTH  = 0.22           // arc-fraction lit at once
  *   under reduced motion.
  */
 export function boundaryLightFrame(t, arcFrac, phase, reduced = false) {
+  t = idleClock(t)   // an idle loop: it steps on the idle clock (ADR-166 M7)
   const a = Number.isFinite(arcFrac) ? arcFrac : 0
   if (reduced || badClock(t)) return 0.55
   const crest = cycle(t, BOUNDARY_WAVE_PERIOD, phase)

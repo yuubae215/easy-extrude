@@ -22,7 +22,7 @@
  * reloaded stage looks identical, and the unit lane can pin exact values.
  */
 import { COLOR, DURATION } from '../theme/tokens.js'
-import { clamp01, easeOutCubic, easeOutExpo } from './MotionMath.js'
+import { clamp01, easeOutCubic, easeOutExpo, idleClock } from './MotionMath.js'
 
 /**
  * The one stage light (world units at grid scale 1 — `SceneStage.setScale`
@@ -46,7 +46,8 @@ import { clamp01, easeOutCubic, easeOutExpo } from './MotionMath.js'
  *                 lab's environment map) lit the faces the shadow said were in
  *                 shade, and read as wrong at once
  *   shadow      — reach: half-width of the shadowed square as a fraction of
- *                 the pool; mapSize: texels; softness: PCF radius
+ *                 the pool; softness: PCF radius; tiers: the shadow map's
+ *                 texels per device tier (`shadowMapSize` — ADR-166 M6b)
  *   pool        — the light lying on the cell floor (additive radial disc)
  */
 export const STAGE_LIGHT = Object.freeze({
@@ -54,7 +55,11 @@ export const STAGE_LIGHT = Object.freeze({
   from: Object.freeze([-0.66, -0.23, 1.2]),
   intensity: 2.8,
   fill: Object.freeze({ ground: COLOR.backdropEdge, intensity: 0.7 }),
-  shadow: Object.freeze({ reach: 0.55, mapSize: 2048, softness: 3 }),
+  shadow: Object.freeze({
+    reach: 0.55,
+    softness: 3,
+    tiers: Object.freeze({ full: Object.freeze({ mapSize: 2048 }), lite: Object.freeze({ mapSize: 1024 }) }),
+  }),
   pool: Object.freeze({ radius: 10.5, opacity: 0.16 }),
 })
 
@@ -107,6 +112,32 @@ export function shadowFloorRect(casters) {
     cx: (minX + maxX) / 2, cy: (minY + maxY) / 2,
     w: maxX - minX + 2 * margin, h: maxY - minY + 2 * margin,
   }
+}
+
+/**
+ * The device tier of the shadow (ADR-166 M6b): `lite` on a device whose
+ * primary pointer is coarse (a phone or tablet — the GPUs that pay most for
+ * the map's fill and memory), `full` otherwise. Decided once at boot from the
+ * device, not from a measured frame rate: a quality that follows the frame
+ * rate feeds its own result back into its input (原則 #24) and would make the
+ * same scene look different from run to run.
+ *
+ * @param {{coarsePointer:boolean}} device
+ * @returns {'full'|'lite'}
+ */
+export function shadowTier({ coarsePointer }) {
+  return coarsePointer ? 'lite' : 'full'
+}
+
+/**
+ * Shadow map texels for a tier. An undeclared tier throws (原則 #31 — a
+ * fall-through default would hide a tier nobody decided).
+ * @param {string} tier
+ */
+export function shadowMapSize(tier) {
+  const t = Object.hasOwn(STAGE_LIGHT.shadow.tiers, tier) ? STAGE_LIGHT.shadow.tiers[tier] : null
+  if (!t) throw new Error(`shadowMapSize: undeclared shadow tier "${tier}"`)
+  return t.mapSize
 }
 
 /**
@@ -194,7 +225,8 @@ export function lightOn(tSinceStart) {
 export function poolBreath(t) {
   if (!Number.isFinite(t)) return 1
   const { period, depth } = STAGE.breath
-  return 1 - depth * (1 - Math.cos((2 * Math.PI * t) / period)) / 2
+  // An idle loop: it steps on the idle clock (ADR-166 M7).
+  return 1 - depth * (1 - Math.cos((2 * Math.PI * idleClock(t)) / period)) / 2
 }
 
 /**
