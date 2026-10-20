@@ -50,6 +50,7 @@ import { LineMaterial }  from 'three/addons/lines/LineMaterial.js'
 import { getPlaceTypeEntry } from '../domain/PlaceTypeRegistry.js'
 import { prefersReducedMotion, onReducedMotionChange } from '../theme/motion.js'
 import { EntityLabel } from './EntityLabel.js'
+import { idleClock } from './MotionMath.js'
 import { edgeBand, lightCurtain } from './FloorLightGeometry.js'
 import {
   phaseFor, zoneFillFrame, zoneRimFrame, floorLightGains, lightTint,
@@ -358,7 +359,7 @@ export class AnnotatedRegionView {
     // Pending boundary: scroll dashOffset for "marching ants" flow.
     // dashOffset is a shader uniform — no needsUpdate required.
     if (this._isPending && this._lineMat.dashed && !reduced) {
-      this._lineMat.dashOffset = -(t * 2.0)
+      this._lineMat.dashOffset = -(idleClock(t) * 2.0)   // an idle loop (ADR-166 M7)
     }
     // Entry/exit: the ring fades up and swells past its target once; on the
     // way out it dims and contracts with the light (one envelope, P9).

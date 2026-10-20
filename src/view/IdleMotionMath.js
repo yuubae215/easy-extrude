@@ -6,7 +6,9 @@
  * else, so every one of them obeys the same three rules (CLAUDE.md
  * 「モーション・アイデンティティ」— 時間スケール / 振付パターン, 原則 #30):
  *
- *   - CLOCK, NOT FRAMES. The value is a function of the loop clock `t` alone, so
+ *   - CLOCK, NOT FRAMES. The value is a function of the loop clock `t` alone
+ *     (read in 20 fps steps — `MotionMath.idleClock`, ADR-166 M7 — so a waiting
+ *     thing changes the picture 20 times a second, not 60), so
  *     the same `t` always draws the same frame — at 30 or 144 fps, and however
  *     many times a frame is asked for. (The marching ants of a grabbed link used
  *     to advance `+= 0.018` per CALL: their speed was the frame rate, and an
@@ -26,7 +28,7 @@
  * Pure and THREE-free (bare `node --test`).
  */
 
-import { breathe } from './MotionMath.js'
+import { breathe, idleClock } from './MotionMath.js'
 import { phaseFor } from './MapVisualMath.js'
 
 /**
@@ -52,7 +54,7 @@ export const IDLE_PERIOD = Object.freeze({
  */
 export function idleBreath(t, key, period, reduced = false) {
   if (reduced || !Number.isFinite(t) || !(period > 0)) return 0
-  const cycle = t / period + phaseFor(key)
+  const cycle = idleClock(t) / period + phaseFor(key)
   return breathe(cycle - Math.floor(cycle))
 }
 

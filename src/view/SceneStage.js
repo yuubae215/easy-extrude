@@ -4,6 +4,7 @@ import { COLOR, hexNumber } from '../theme/tokens.js'
 import { prefersReducedMotion, onReducedMotionChange } from '../theme/motion.js'
 import { STAGE_LIGHT, BACKDROP, stageLightFrame, keyLightPlacement, shadowMapSize } from './StageMath.js'
 import { radialSprite } from './DecalTextures.js'
+import { idleClock } from './MotionMath.js'
 
 /**
  * SceneStage — the viewport's ambient stage dressing: the Studio work cell of
@@ -152,7 +153,9 @@ export class SceneStage {
    * @param {number} t loop-clock seconds (performance.now()/1000)
    */
   tick(t) {
-    if (this._start === null) this._start = t
+    // Start on an idle step, so the pool's breath (which steps on the idle
+    // clock of `t − start`) steps with every other idle loop (ADR-166 M7).
+    if (this._start === null) this._start = idleClock(t)
     this._apply(stageLightFrame(t - this._start, this._reduced))
   }
 

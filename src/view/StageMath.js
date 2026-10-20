@@ -22,7 +22,7 @@
  * reloaded stage looks identical, and the unit lane can pin exact values.
  */
 import { COLOR, DURATION } from '../theme/tokens.js'
-import { clamp01, easeOutCubic, easeOutExpo } from './MotionMath.js'
+import { clamp01, easeOutCubic, easeOutExpo, idleClock } from './MotionMath.js'
 
 /**
  * The one stage light (world units at grid scale 1 — `SceneStage.setScale`
@@ -225,7 +225,8 @@ export function lightOn(tSinceStart) {
 export function poolBreath(t) {
   if (!Number.isFinite(t)) return 1
   const { period, depth } = STAGE.breath
-  return 1 - depth * (1 - Math.cos((2 * Math.PI * t) / period)) / 2
+  // An idle loop: it steps on the idle clock (ADR-166 M7).
+  return 1 - depth * (1 - Math.cos((2 * Math.PI * idleClock(t)) / period)) / 2
 }
 
 /**

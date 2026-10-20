@@ -187,6 +187,8 @@ export const DURATION = Object.freeze({
   selectPulse:   360, // ADR-068 selection "tap" outline pulse (overlay-only, entity-sized)
   popoverEnter:  150, // ADR-080 Phase 1 popover/menu scale-fade entry (Tier A)
   menuStagger:    24, // ADR-080 Phase 1 per-item entry delay step (anti-lockstep)
+  idleStep:       50, // ADR-166 M7 idle loops step at 20 fps (MotionMath.idleClock) — only waiting moves at this rate
+  staleCap:      500, // ADR-166 M7 the longest the viewport goes undrawn (a change PictureWatch cannot see is late, never lost)
 })
 
 /**

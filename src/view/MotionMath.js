@@ -10,6 +10,8 @@
  * here (ADR-065 § Library selection).
  */
 
+import { DURATION } from '../theme/tokens.js'
+
 /** Clamp to [0, 1]. NaN clamps to 0 (a malformed progress must not propagate). */
 export function clamp01(x) {
   return Number.isFinite(x) ? Math.min(1, Math.max(0, x)) : 0
@@ -116,3 +118,18 @@ export function staggerProgress(t, i, { step = 0.06, duration }) {
   if (!Number.isFinite(t) || !Number.isFinite(duration) || duration <= 0) return 0
   return clamp01((t - i * step) / duration)
 }
+
+/**
+ * The clock an idle loop reads: the loop clock in steps of `DURATION.idleStep`
+ * (20 fps — ADR-166 M7). A loop with a 2–6 s period moves too little between
+ * steps to see, and between steps it does not change the picture at all, so
+ * the viewport is not redrawn for it (`PictureWatch`). Everything that is not
+ * waiting (cues, flights, arrivals, the hand) reads the unstepped clock.
+ * @param {number} t loop clock (seconds)
+ */
+export function idleClock(t) {
+  return Math.floor(t * IDLE_STEPS_PER_SECOND) / IDLE_STEPS_PER_SECOND
+}
+
+/** Whole steps per second, so every declared idle period (2–6 s) is a whole number of steps. */
+const IDLE_STEPS_PER_SECOND = Math.round(1000 / DURATION.idleStep)

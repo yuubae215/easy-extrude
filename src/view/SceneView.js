@@ -21,9 +21,10 @@ import { mm } from '../domain/worldUnits.js'
 const GRID_BASE_SPAN = mm(20)
 const GRID_DIVISIONS = 20
 import { orbitControlsTouches } from './CameraGestures.js'
-import { COLOR, hexNumber } from '../theme/tokens.js'
+import { COLOR, DURATION, hexNumber } from '../theme/tokens.js'
 import { GRID_FADE, shadowFloorRect, shadowTier } from './StageMath.js'
 import { ShadowCasterWatch } from './ShadowCasterWatch.js'
+import { PictureWatch } from './PictureWatch.js'
 
 /**
  * The projection axis (ADR-103). Two values, cardinality exactly 1 — there is no
@@ -54,6 +55,12 @@ export class SceneView {
     this._shadowWatch = new ShadowCasterWatch()
     this._shadowRedraws = 0   // read-only count for e2e (a still scene must not grow it)
     this._drawnObjects = []   // reused each frame — no per-frame allocation
+    // A frame is drawn only when the picture may have changed (ADR-166 M7 —
+    // PictureWatch), and at least every DURATION.staleCap ms.
+    this._pictureWatch = new PictureWatch()
+    this._lastDrawnAt = -Infinity
+    this._framesDrawn = 0     // read-only count for e2e (a still cell draws ~2/s, not 60)
+    this._frameInputs = [0, 0, 0]
     // Mount inside #canvas-container so the stacking order is explicit:
     // canvas (z-index:0) → gizmo (z-index:10) → React UI (z-index:100).
     const canvasContainer = document.getElementById('canvas-container') ?? document.body
@@ -327,6 +334,9 @@ export class SceneView {
   /** How many times the shadow map has been redrawn (read-only — e2e). */
   get shadowRedraws() { return this._shadowRedraws }
 
+  /** How many frames have been drawn (read-only — e2e, ADR-166 M7). */
+  get framesDrawn() { return this._framesDrawn }
+
   /**
    * World XY bounds and top of every drawn mesh that casts, or null when none
    * does. Read only when the shadow is stale (ShadowCasterWatch).
@@ -353,6 +363,13 @@ export class SceneView {
     const drawn = this._drawnObjects
     drawn.length = 0
     this.scene.traverseVisible(o => { drawn.push(o) })
+    const now = performance.now()
+    const size = this.renderer.domElement, inputs = this._frameInputs
+    inputs[0] = size.width; inputs[1] = size.height; inputs[2] = this.activeCamera === this.camera ? 0 : 1
+    const changed = this._pictureWatch.changed(this.activeCamera, drawn, inputs)
+    if (!changed && now - this._lastDrawnAt < DURATION.staleCap) return
+    this._lastDrawnAt = now
+    this._framesDrawn++
     if (this._shadowWatch.changed(drawn)) {
       this.renderer.shadowMap.needsUpdate = true
       this.stage.fitShadowFloor(shadowFloorRect(this._casterBounds(drawn)))
