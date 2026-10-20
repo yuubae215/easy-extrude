@@ -22,7 +22,7 @@ const GRID_BASE_SPAN = mm(20)
 const GRID_DIVISIONS = 20
 import { orbitControlsTouches } from './CameraGestures.js'
 import { COLOR, hexNumber } from '../theme/tokens.js'
-import { GRID_FADE, shadowFloorRect } from './StageMath.js'
+import { GRID_FADE, shadowFloorRect, shadowTier } from './StageMath.js'
 import { ShadowCasterWatch } from './ShadowCasterWatch.js'
 
 /**
@@ -118,7 +118,10 @@ export class SceneView {
     // The Studio work cell — radial backdrop, the one stage light as a floor
     // pool, and (ADR-166 M6) as the only light in the scene: the key that
     // casts the shadows plus a weak fill (persistent view owned here).
-    this.stage = new SceneStage(this.scene)
+    // The shadow's device tier is read here once, at boot (ADR-166 M6b).
+    this.stage = new SceneStage(this.scene, {
+      shadowTier: shadowTier({ coarsePointer: !!globalThis.matchMedia?.('(pointer: coarse)').matches }),
+    })
     // grasp-search verification aid: one fixed-pose robot skeleton PER ROBOT in
     // the scene (0 / 1 / N — ADR-090). The set owns each stage's lifecycle and is
     // reconciled from the roster by AppController._syncRobotStage; a robot-less

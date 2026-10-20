@@ -5,7 +5,7 @@ import { join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { COLOR, DURATION } from '../theme/tokens.js'
 import {
-  STAGE, STAGE_LIGHT, BACKDROP, GRID_FADE, gridFade, lightOn, poolBreath, stageLightFrame, flightFrame, keyLightPlacement, shadowFloorRect,
+  STAGE, STAGE_LIGHT, BACKDROP, GRID_FADE, gridFade, lightOn, poolBreath, stageLightFrame, flightFrame, keyLightPlacement, shadowFloorRect, shadowTier, shadowMapSize,
 } from './StageMath.js'
 
 // ── one light (ADR-166 M2 — §1.1) ───────────────────────────────────────────
@@ -211,4 +211,15 @@ test('the receiving floor covers the casters and their shadows, and nothing when
   // the same picture in m (原則 #27)
   const m = shadowFloorRect({ minX: -0.1, minY: -0.1, maxX: 0.1, maxY: 0.1, maxZ: 1 })
   assert.ok(Math.abs(r.w / m.w - 1000) < 1e-6 && Math.abs(r.h / m.h - 1000) < 1e-6)
+})
+
+test('the shadow map is lighter on a coarse-pointer device, and an undeclared tier throws (M6b)', () => {
+  assert.equal(shadowTier({ coarsePointer: false }), 'full')
+  assert.equal(shadowTier({ coarsePointer: true }), 'lite')
+  assert.equal(shadowMapSize('full'), 2048)
+  assert.ok(shadowMapSize('lite') < shadowMapSize('full'), 'a phone draws fewer shadow texels')
+  // Every tier shadowTier can return is declared (原則 #31 — no fall-through default).
+  for (const coarsePointer of [false, true]) assert.ok(shadowMapSize(shadowTier({ coarsePointer })) > 0)
+  assert.throws(() => shadowMapSize('ultra'), /undeclared shadow tier/)
+  assert.throws(() => shadowMapSize('toString'), /undeclared shadow tier/)
 })
