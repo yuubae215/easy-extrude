@@ -20,3 +20,15 @@ to numerically agree in `src/RobotVisualStyleAgreement.test.js`; kinematics,
 the TCP seed, and the reach envelope keep deriving solely from
 `skeleton_arm.urdf` (ADR-088) — this directory contributes geometry only, so
 there is still exactly one source of truth for "where is this arm's flange".
+
+## Derived files (modified)
+
+`meshes/ur5e/visual_lod/*.glb` are **modified** versions of the `.dae` files
+above, produced by `scripts/simplify-robot-meshes.mjs` (ADR-166 M8): the same
+surfaces with fewer triangles (meshoptimizer, at most 0.2 mm from the source),
+positions only (the source is flat-shaded, so the app rebuilds its face
+normals), with the Collada's Phong values kept in each material's `extras`.
+`manifest.json` records the SHA-256 of each source file they were derived
+from; `src/view/RobotMeshLod.test.js` fails if a source changes without the
+derived files being regenerated. The app draws the derived files; the `.dae`
+files remain the source.
