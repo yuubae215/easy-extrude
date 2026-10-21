@@ -1,0 +1,161 @@
+{
+  "$schema": "../schema/screencast-1.0.schema.json",
+  "version": "screencast/1.0",
+  "meta": {
+    "id": "m5b-box-appear-vanish",
+    "title": "ADR-166 M5b — a box appears from and vanishes into its own pieces",
+    "description": "Add a box, delete it, undo: appear and vanish are one picture run both ways.",
+    "tags": [
+      "motion",
+      "adr-166"
+    ]
+  },
+  "imports": [
+    "../library/easy-extrude.screencast.json"
+  ],
+  "app": {
+    "url": "http://localhost:5173/easy-extrude/",
+    "server": {
+      "command": "pnpm dev --port 5173 --strictPort"
+    },
+    "viewport": {
+      "width": 1280,
+      "height": 720
+    },
+    "deviceScaleFactor": 1,
+    "storage": {
+      "ee_tour": "dismissed"
+    },
+    "ready": {
+      "text": "Start from a process layout"
+    },
+    "settleMs": 800,
+    "probes": {
+      "worldToScreen": "window.__easyExtrude.worldToScreen"
+    }
+  },
+  "capture": {
+    "fps": 30,
+    "clock": "virtual",
+    "format": "png"
+  },
+  "style": {
+    "accent": "#ff7d2e",
+    "cursor": {
+      "visible": true,
+      "size": 22,
+      "trail": true
+    },
+    "keys": {
+      "visible": true,
+      "holdMs": 1200,
+      "anchor": "bottom-center",
+      "inset": [
+        90,
+        58
+      ]
+    },
+    "captions": {
+      "anchor": "bottom-left",
+      "inset": [
+        212,
+        58
+      ]
+    }
+  },
+  "outputs": [
+    {
+      "format": "mp4",
+      "path": "../../../docs/motion/media/adr-166-m5b-box-appear-vanish.mp4",
+      "width": 1280,
+      "fps": 30,
+      "quality": "standard"
+    }
+  ],
+  "steps": [
+    {
+      "do": "click",
+      "target": {
+        "viewport": [
+          0.772,
+          0.089
+        ]
+      },
+      "duration": 900,
+      "note": "close the launch Home onto the default scene"
+    },
+    {
+      "do": "wait",
+      "duration": 600
+    },
+    {
+      "do": "caption",
+      "index": 1,
+      "text": "Add: the box gathers from its pieces"
+    },
+    {
+      "do": "move",
+      "to": {
+        "world": [
+          0,
+          0,
+          0
+        ]
+      },
+      "duration": 500
+    },
+    {
+      "do": "use",
+      "macro": "ee/add",
+      "with": {
+        "item": "Box"
+      }
+    },
+    {
+      "do": "move",
+      "to": {
+        "viewport": [
+          0.62,
+          0.86
+        ]
+      },
+      "duration": 300
+    },
+    {
+      "do": "wait",
+      "duration": 1000
+    },
+    {
+      "do": "caption",
+      "index": 2,
+      "text": "Delete: it breaks into the same pieces"
+    },
+    {
+      "do": "key",
+      "keys": "Delete",
+      "show": true
+    },
+    {
+      "do": "wait",
+      "duration": 1300
+    },
+    {
+      "do": "caption",
+      "index": 3,
+      "text": "Undo: they come back"
+    },
+    {
+      "do": "key",
+      "keys": "Control+z",
+      "show": true
+    },
+    {
+      "do": "wait",
+      "duration": 1200
+    },
+    {
+      "do": "caption",
+      "text": null
+    }
+  ]
+}

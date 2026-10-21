@@ -2,10 +2,9 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   lifecycleDescriptor, boundsOf,
-  voxelDelay, localProgress, voxelFlash, voxelEnvelope, STAGGER_SPREAD, sparkScale,
+  voxelDelay, localProgress, STAGGER_SPREAD,
 } from './CommandFeedbackMath.js'
 import { STAGE_LIGHT } from './StageMath.js'
-import { easeOutQuad } from './MotionMath.js'
 import { COLOR, DURATION, hexNumber } from '../theme/tokens.js'
 
 test('entity-lifecycle labels map to materialize (appear) / dissolve (vanish)', () => {
@@ -104,31 +103,6 @@ test('localProgress: every voxel spans [delay, delay+(1−SPREAD)] and lands by 
   assert.equal(localProgress(NaN, 0), 0)
 })
 
-test('voxelFlash spikes once at the transition instant, then decays to zero', () => {
-  // dissolve: bright crack at the very start, gone by ~18%
-  assert.ok(Math.abs(voxelFlash('dissolve', 0) - 1) < 1e-9)
-  assert.equal(voxelFlash('dissolve', 0.5), 0)
-  assert.equal(voxelFlash('dissolve', 1), 0)
-  // materialize: silent inbound, charges + flashes as the shell lands
-  assert.equal(voxelFlash('materialize', 0.2), 0)
-  assert.ok(voxelFlash('materialize', 0.72) > 0.9)       // peak at assembly
-  assert.equal(voxelFlash('materialize', 1), 0)
-  // bounded and never a strobe (single-humped)
-  for (const kind of ['dissolve', 'materialize']) {
-    for (let p = 0; p <= 1.0001; p += 0.05) {
-      const v = voxelFlash(kind, p)
-      assert.ok(v >= 0 && v <= 1)
-    }
-  }
-})
-
-test('voxelEnvelope holds high then fades out over the final 15%', () => {
-  assert.ok(Math.abs(voxelEnvelope(0) - 0.92) < 1e-9)
-  assert.ok(Math.abs(voxelEnvelope(0.85) - 0.92) < 1e-9)
-  assert.ok(Math.abs(voxelEnvelope(1)) < 1e-9)            // faded to nothing, never popped
-  assert.ok(voxelEnvelope(0.925) < 0.92 && voxelEnvelope(0.925) > 0)
-})
-
 test('the boundary flash lights toward the ONE stage light, not a private white (M4d3)', () => {
   for (const label of ['Add "Box"', 'Delete "Box"']) {
     const d = lifecycleDescriptor({ phase: 'push', label })
@@ -138,17 +112,3 @@ test('the boundary flash lights toward the ONE stage light, not a private white 
   }
 })
 
-test('the flash, the envelope tail and the spark evaporation decay on `fade`, not a line (M4d3)', () => {
-  // dissolve crack: 1 → 0 over [0, 0.18] read as outQuad
-  assert.ok(Math.abs(voxelFlash('dissolve', 0.09) - (1 - easeOutQuad(0.5))) < 1e-12)
-  // materialize: charge rises as outQuad, decays as outQuad read 1 → 0
-  assert.ok(Math.abs(voxelFlash('materialize', 0.635) - easeOutQuad(0.5)) < 1e-12)
-  assert.ok(Math.abs(voxelFlash('materialize', 0.82) - (1 - easeOutQuad(0.5))) < 1e-12)
-  // a line would sit at the midpoint of its segment at the half-way point — fade does not
-  assert.ok(voxelFlash('materialize', 0.82) < 0.5)
-  assert.ok(voxelEnvelope(0.925) < 0.92 * 0.5)
-  assert.ok(Math.abs(voxelEnvelope(1)) < 1e-12)
-  assert.ok(sparkScale(0.85) < 0.5)
-  assert.ok(Math.abs(sparkScale(1)) < 1e-12)
-  assert.ok(sparkScale(0.6) > sparkScale(0.1), 'grows on approach')
-})

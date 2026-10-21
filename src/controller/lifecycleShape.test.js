@@ -4,6 +4,7 @@ import { readdirSync, readFileSync } from 'node:fs'
 import { SHAPE_BY_TYPE, lifecycleShapeOf } from './lifecycleShape.js'
 import { AnnotatedRegion } from '../domain/AnnotatedRegion.js'
 import { AnnotatedPoint } from '../domain/AnnotatedPoint.js'
+import { Solid } from '../domain/Solid.js'
 import { voxelCells } from '../view/ShapeVoxelMath.js'
 import { planLandingEffect } from '../view/LandingEffects.js'
 
@@ -36,7 +37,6 @@ test('an eight-vertex Zone is a sheet, not a box (the corner-count route drew it
   })
   const shape = lifecycleShapeOf(zone)
   assert.equal(shape.kind, 'surface')
-  assert.ok(!shape.box)
   const plan = planLandingEffect({ center: { x: 0, y: 0, z: 0 }, radius: 1000, shape }, { kind: 'materialize' })
   assert.equal(plan.form, 'shatter')
   assert.ok(voxelCells(shape).cells.every(c => c.p.z > 0))
@@ -46,4 +46,24 @@ test('a point is declared silent: no cloud is invented around it (#11)', () => {
   const pt = Object.create(AnnotatedPoint.prototype)
   assert.equal(lifecycleShapeOf(pt), null)
   assert.equal(planLandingEffect({ center: { x: 0, y: 0, z: 0 }, radius: 0, shape: null }, { kind: 'dissolve' }), null)
+})
+
+test('appear and vanish are one picture run both ways: every shape plans the same cells for both (ADR-166 M5b)', () => {
+  // The cuboid's appear used to be a different picture (an outline + 28 sparks
+  // that landed on the edges and evaporated) while its vanish broke the box
+  // into its own cells — the create never gathered into what the delete broke.
+  const box = Object.create(Solid.prototype)
+  Object.defineProperty(box, 'corners', { value: [
+    { x: 1, y: -1, z: 0 }, { x: 1, y: 1, z: 0 }, { x: -1, y: 1, z: 0 }, { x: -1, y: -1, z: 0 },
+    { x: 1, y: -1, z: 2 }, { x: 1, y: 1, z: 2 }, { x: -1, y: 1, z: 2 }, { x: -1, y: -1, z: 2 },
+  ] })
+  const zone = Object.create(AnnotatedRegion.prototype)
+  zone.vertices = [[0, 0], [4, 0], [4, 1], [0, 1]].map(([x, y]) => ({ position: { x, y, z: 0 } }))
+  for (const entity of [box, zone]) {
+    const anchor = { center: { x: 0, y: 0, z: 1 }, radius: 2, shape: lifecycleShapeOf(entity) }
+    const appear = planLandingEffect(anchor, { kind: 'materialize' })
+    const vanish = planLandingEffect(anchor, { kind: 'dissolve' })
+    assert.equal(appear.form, vanish.form, entity.constructor.name)
+    assert.deepEqual(appear.cells, vanish.cells, `${entity.constructor.name}: the same pieces both ways`)
+  }
 })

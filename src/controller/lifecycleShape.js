@@ -44,8 +44,8 @@ function aabbFaces(points) {
 
 /** Declarations, one row per entity type that can enter the scene. */
 export const SHAPE_BY_TYPE = Object.freeze([
-  // A real cuboid: its 6 faces; `box` lets the materialize draw its outline.
-  [Solid,           obj => obj.corners?.length === 8 ? { kind: 'surface', box: true, corners: obj.corners.map(plain), polygons: boxFaces(obj.corners) } : null],
+  // A real cuboid: its 6 faces (appear and vanish both cut them — ADR-166 M5b).
+  [Solid,           obj => obj.corners?.length === 8 ? { kind: 'surface', polygons: boxFaces(obj.corners) } : null],
   // An imported mesh's 8 corners are a synthetic bounding box — break the box.
   [ImportedMesh,    obj => obj.corners?.length >= 2 ? { kind: 'surface', polygons: aabbFaces(obj.corners) } : null],
   // A sketch and a Zone are one sheet lying on (or near) the floor.
