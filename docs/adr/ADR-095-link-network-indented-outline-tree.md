@@ -1,9 +1,9 @@
 # 095. LINK NETWORK を「1 ノード 1 行」のインデントツリーへ — 希少な軸に可変量を割り当てるのをやめる
 
-- Status: Accepted (実装済み — `src/view/LinkNetworkLayout.js` + `LinkNetworkView.js`。証拠は §Consequences 検証)
+- Status: Superseded by ADR-167 (2026-10-21 — 幾何割当を置き換え。Goal G1・G2 と「縮退はリンクが払う」向きは ADR-167 が継承。§受け入れるコストの『兄弟が見比べにくくなる』は当事者の実利用で反証された)。旧: Accepted (実装済み — `src/view/LinkNetworkLayout.js` + `LinkNetworkView.js`)
 - Date: 2026-07-26
 - Deciders: yuubae215, Claude (pairing)
-- Supersedes / Superseded by: なし (ADR-048 §2.1 の *幾何割当* と ADR-094 の行/列配置を改訂。ノード集合・辺クラス・決定性・データ契約は ADR-094 から無改変で継承)
+- Supersedes / Superseded by: Superseded by ADR-167 (幾何割当)。ADR-048 §2.1 の *幾何割当* と ADR-094 の行/列配置を改訂。ノード集合・辺クラス・決定性・データ契約は ADR-094 から無改変で継承)
 
 ## Context — Goal と力学 (§1.2 Goal)
 

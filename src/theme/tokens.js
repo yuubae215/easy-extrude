@@ -184,7 +184,6 @@ export const DURATION = Object.freeze({
   snapFlash:     260, // ADR-065 Phase 2 snap engagement flash (micro band ≤300 — machine-tested)
   bootReveal:   1800, // ADR-067 boot camera fly-in (Tier D — one occasion per session)
   cameraFocus:   620, // ADR-068 focus/frame fly-to-selection (interruptible; user always wins)
-  selectPulse:   360, // ADR-068 selection "tap" outline pulse (overlay-only, entity-sized)
   popoverEnter:  150, // ADR-080 Phase 1 popover/menu scale-fade entry (Tier A)
   menuStagger:    24, // ADR-080 Phase 1 per-item entry delay step (anti-lockstep)
   idleStep:       50, // ADR-166 M7 idle loops step at 20 fps (MotionMath.idleClock) — only waiting moves at this rate

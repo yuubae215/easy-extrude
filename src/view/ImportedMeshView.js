@@ -233,6 +233,10 @@ export class ImportedMeshView {
     const badge = this._ifcEntry ? ` · ${this._ifcEntry.label}` : ''
     this._label.setText(`${this._name}${badge}`)
     if (this._ifcEntry) this._label.setAccent(this._ifcEntry.color)
+    // Selected reads the same on every kind's label: the map annotations and
+    // CoordinateFrames highlight theirs on selection, so a body's label does
+    // too — without it a selected label and a hovered one looked identical.
+    this._label.setHighlighted(this._selected)
     this._label.setWanted(Boolean(this._name) && this.cuboid.visible && (this._selected || this._hovered))
   }
 

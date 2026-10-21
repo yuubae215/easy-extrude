@@ -24,8 +24,9 @@
  * @property {string} category    — grouping label (e.g. 'Process Layout')
  * @property {{kind:'example', file:string}|{kind:'empty'}} source
  *           — how the scene is obtained: a bundled Layout DSL example resolved by
- *             the controller's import map, or the empty escape hatch (no scene
- *             replacement — keeps the default boot scene).
+ *             the controller's import map, or the empty escape hatch (replaces
+ *             the scene with the default one — the same starter cube boot seeds;
+ *             keeping what is loaded is the ✕ button's meaning, not this card's).
  */
 
 /** @type {LayoutTemplateMeta[]} */
@@ -58,12 +59,12 @@ export const LAYOUT_TEMPLATE_CATALOG = [
     category:    'Process Layout',
     source:      { kind: 'example', file: 'factory_layout.json' },
   },
-  // The escape hatch: start from the default boot scene (no replacement). Kept
+  // The escape hatch: start over from the default boot scene. Kept
   // last so the guided, populated options are the front door (ADR-089).
   {
     id:          'empty',
     name:        'Empty project',
-    description: 'Start modeling straight from the default scene (no template is loaded).',
+    description: 'Start over from the default scene — one cube, no template.',
     category:    'Blank',
     source:      { kind: 'empty' },
   },

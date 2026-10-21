@@ -23,7 +23,7 @@ import { COLOR, DURATION, EASING, rgba } from '../../theme/tokens.js'
  * from a literal here. Sole writer AppController via `claimStage`/`releaseStage`.
  * This component only reads and fires callbacks:
  *   onSelectLayoutTemplate(id) — load a layout template (scene replacement)
- *   onStartEmptyProject()      — close onto the default boot scene (Empty card)
+ *   onStartEmptyProject()      — replace the scene with the default one (Empty card)
  *   onToggleHomeSkip(bool)     — persist the Blender-style skip preference
  *   onCloseHome()              — ✕ (close onto whatever scene is loaded)
  *
@@ -115,7 +115,7 @@ export function HomeScreen() {
           </div>
           <button
             onClick={close}
-            title="Close (start with the default scene)"
+            title="Close (keep the current scene)"
             style={{
               marginLeft: 'auto', background: 'transparent', border: 'none',
               color: COLOR.textSecondary, cursor: 'pointer', fontSize: '20px', lineHeight: 1,

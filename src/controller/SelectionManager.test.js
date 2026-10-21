@@ -435,18 +435,17 @@ test('refreshFrameContext with nothing selected releases the claim', () => {
   assert.equal(ctrl.contextual.size, 0)
 })
 
-// ── 選択の演出 (ADR-068 / #30) ────────────────────────────────────────────────
+// ── 選択の演出 (ADR-068 → ADR-166 M9 で退役) ─────────────────────────────────
 
-test('選択パルスは選択へ入る遷移でだけ鳴る (再選択churn では鳴らない)', () => {
-  const solid = makeSolid('a')
-  solid.corners = Array.from({ length: 8 }, () => ({ x: 0, y: 0, z: 0 }))
-  const ctrl = makeCtrl([solid, makeSolid('b')])
+test('選択は演出を 1 つも生まない — 頻繁に選び直すほど合図はうるさくなる (ADR-166 M9)', () => {
+  const ctrl = makeCtrl([makeSolid('a'), makeSolid('b')])
   const mgr = new SelectionManager(ctrl)
-  // Solid の instanceof を通さないと発火しないので、この stub では 0 のまま —
-  // 問うているのは「復帰 (fx:false) が決して鳴らさない」側。
-  mgr.selectOnly('a', { fx: false })
-  mgr.selectOnly('a', { fx: false })
-  assert.equal(ctrl.pulses, 0, '復帰は「いま選ばれた」ではないので鳴らしてはいけない')
+  mgr.selectOnly('a')
+  mgr.selectOnly('b')
+  mgr.selectOnly('a')
+  mgr.clearSelection()
+  mgr.selectOnly('b')
+  assert.equal(ctrl.pulses, 0, '選択の状態は輪郭と自発光が運ぶ。遷移ごとの合図は退役した')
 })
 
 // ── 5. 要素の種が 2 つになる (ADR-107) ────────────────────────────────────────

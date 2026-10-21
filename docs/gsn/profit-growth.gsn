@@ -287,7 +287,7 @@ labels meta-goal, term-profit
                                 uuid 9e5a3f21-4c7d-4b8e-a2f6-1d3c8b7e0a45
                                 summary "モバイルで唯一の常設構造ビュー (LINK NETWORK パネル) が、TF ツリー上の位置と制約の相手を同時に読ませる。当事者はモバイルで見ていることが多く Outliner はドロワー・NodeEditor はほぼ未使用なので、この 220x160px が構造理解の全帯域である — 読めないことは採用障壁そのもの"
                                 state ToBeReviewed
-                                groups adr-094, adr-095
+                                groups adr-094, adr-095, adr-167
 
                                     solution LinkNetworkTfTreeRegression
                                     uuid 7f2c6b48-3e91-4a5d-9c07-52b8d1e4f6a3
@@ -304,6 +304,12 @@ labels meta-goal, term-profit
                                     - "docs/gsn/adr-095-link-network-indented-outline.gsn"
                                     - "src/view/LinkNetworkLayout.test.js"
                                     - "docs/dogfooding/2026-07-26-link-network-indented-outline.md"
+
+                                    solution Adr167Tree
+                                    uuid a81e019d-32c4-42de-aefe-c4fb0796be84
+                                    summary "ADR-167 の論証木 (top goal TheTfTreeIsSeenBranchingTopDown) を吊る。LINK NETWORK を上から下への木に戻し、x をスクロールさせてラベル幅を定数に保つ — ADR-095 の幾何を置き換え、その Goal (ラベルが読める・深さが分かる) は継承。この木の goal ごとの証拠と鮮度の正本は木の側 — ここは寄与する項だけを持つ (ADR-153 D2)"
+                                    artifacts
+                                    - "docs/gsn/adr-167-link-network-is-a-top-down-tree.gsn"
 
                                 goal ScreenSaysWhatIsTrue
                                 uuid 8d481452-c13d-41e7-84b2-335b4aa831bd
