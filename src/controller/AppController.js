@@ -90,7 +90,7 @@ import { startTour, nextTourState }   from '../view/TourMath.js'
 // metadata; the controller owns the file → DSL import map (a static JSON import
 // side effect, PHILOSOPHY #3), and the load opens the DSL as a Context
 // document — the same loadContext path as any document (ADR-162, §1.1).
-import { docFromLayout }              from '../context/DocBuilder.js'
+import { docFromLayout, createBlankDoc } from '../context/DocBuilder.js'
 import { getLayoutTemplateMeta }      from '../layout/LayoutTemplateCatalog.js'
 import { layoutPlanOf }               from '../view/LayoutPlanMath.js'
 import layoutPickPlace                from '../../examples/layout_pick_place_cell.json'
@@ -1000,14 +1000,7 @@ export class AppController {
     // follow-up): the default cube was a 2 m box centred on the origin, so half
     // of it sank below the ground plane and it read as oversized. Rest a modest
     // 1 m cube on the ground (base at z=0) instead.
-    this._addObject()
-    this._restStarterCube()
-    // Boot is a "frame the scene" entry point like any other (ADR-137). Without
-    // this the camera keeps its constructed pose, which is a THIRD source for
-    // "how big is the world" beside the starter cube and the unit authority —
-    // and the one ADR-136 left in metres. The minimum radius keeps the opening
-    // shot the one this app has always had (see BOOT_VIEW_RADIUS).
-    this._frameScene(BOOT_VIEW_RADIUS)
+    this._seedStarterScene()
     // NO robot is seeded here (ADR-132 D5). This line used to ask the scene
     // service to seed the boot scene's one robot, and that robot was created
     // HIDDEN because "a lone arm standing 2.8 m off with nothing around it reads
@@ -1455,6 +1448,23 @@ export class AppController {
    * exactly the defect this tidy exists to prevent. Size now has one owner
    * (`DEFAULT_HALF_EXTENT`) and this method only places it (ADR-137).
    */
+  /**
+   * THE default scene: one starter cube resting on the ground, framed with the
+   * opening shot. Boot and the Home "Empty project" card both start here, so
+   * "the default scene" has one definition — the Empty card used to just close
+   * Home and keep whatever was loaded, which matched this only on first boot.
+   */
+  _seedStarterScene() {
+    this._addObject()
+    this._restStarterCube()
+    // Boot is a "frame the scene" entry point like any other (ADR-137). Without
+    // this the camera keeps its constructed pose, which is a THIRD source for
+    // "how big is the world" beside the starter cube and the unit authority —
+    // and the one ADR-136 left in metres. The minimum radius keeps the opening
+    // shot the one this app has always had (see BOOT_VIEW_RADIUS).
+    this._frameScene(BOOT_VIEW_RADIUS)
+  }
+
   _restStarterCube() {
     const solid = this._activeObj
     if (!(solid instanceof Solid)) return
@@ -2865,10 +2875,8 @@ export class AppController {
     if (mode === 'object') {
       // Restore selection state when returning from Edit Mode — the active
       // object is still valid but the selection was dropped on Edit entry.
-      // `fx:false`: this re-asserts a selection the user never let go of, and
-      // the select pulse means "this just became selected" (#30).
       if (this._activeObj && !this._objSelected) {
-        this._selMgr.selectOnly(this._scene.activeId, { fx: false })
+        this._selMgr.selectOnly(this._scene.activeId)
       }
       this._refreshObjectModeStatus()
       this._uiView.updateMode('object')
@@ -4547,7 +4555,7 @@ export class AppController {
   _openHomeIfNeeded() {
     const { registerCallback } = useUIStore.getState().actions
     registerCallback('onSelectLayoutTemplate', (id) => this._selectLayoutTemplate(id))
-    registerCallback('onStartEmptyProject',    ()   => this._closeHome())
+    registerCallback('onStartEmptyProject',    ()   => this._startEmptyProject())
     registerCallback('onToggleHomeSkip',       (on) => this._persistHomeFlag(on ? 'skip' : null))
     registerCallback('onCloseHome',            ()   => this._closeHome())
     registerCallback('onOpenHome',             ()   => this._openHome())
@@ -4600,9 +4608,63 @@ export class AppController {
   }
 
   /**
+   * The Empty card: replace whatever is loaded with the default scene. It used
+   * to only close Home, which kept the CURRENT scene — the default one on first
+   * boot, but a template's cell once one had been picked, so "Empty" did not
+   * mean one thing. ✕ is the "keep what is loaded" exit; this card is a
+   * replacement like every other card.
+   *
+   * Replacing discards work, so the ADR-134 gate applies: with an undoable edit
+   * since the last project-open boundary the user confirms first; an unedited
+   * scene has nothing to lose and proceeds without friction.
+   */
+  _startEmptyProject() {
+    const name = getLayoutTemplateMeta('empty')?.name ?? 'Empty project'
+    if (this._commandStack.canUndo) {
+      this._uiView.showConfirmDialog(
+        `Replace the current scene with "${name}"? Your unsaved changes will be lost.`,
+        (confirmed) => { if (confirmed) this._loadEmptyProject(name) },
+        { title: 'Replace Scene', confirmLabel: 'Replace', danger: true },
+      )
+      return
+    }
+    this._loadEmptyProject(name)
+  }
+
+  /**
+   * Adopt a blank document (the one document-load path — ADR-162: a template
+   * seeds the DOCUMENT, and the empty template seeds an empty one), then seed
+   * the default scene on the cleared stage. Adoption is a project-open boundary
+   * (`_onContextLoaded` clears undo); seeding the cube is not a user edit
+   * either, so the stack is cleared again after it — same as boot.
+   * @param {string} name
+   * @returns {Promise<boolean>} true on success
+   */
+  async _loadEmptyProject(name) {
+    const viewContext = {
+      camera:    this._camera,
+      renderer:  this._sceneView.renderer,
+      container: document.body,
+    }
+    try {
+      await this._ctxService.adoptDoc(createBlankDoc(name), viewContext)
+    } catch (err) {
+      this._uiView.showToast(`Empty project failed: ${err.message}`, { type: 'error' })
+      console.error('[AppController] empty project', err)
+      return false
+    }
+    this._seedStarterScene()
+    this._commandStack.clear()
+    this._refreshUndoRedoState()
+    this._closeHome()
+    return true
+  }
+
+  /**
    * Resolve a Home template id to its Layout DSL and load it (scene
    * replacement), then close the overlay. The Empty card fires
-   * `onStartEmptyProject` instead, so it never reaches here; an unknown id or a
+   * `onStartEmptyProject` (`_startEmptyProject`) instead, so it never reaches
+   * here; an unknown id or a
    * missing DSL is surfaced, never a silent no-op (PHILOSOPHY #11).
    * @param {string} id
    */

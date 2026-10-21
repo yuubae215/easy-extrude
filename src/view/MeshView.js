@@ -143,7 +143,7 @@ export class MeshView {
     // The steady selection outline — one of the six selection painters ADR-100
     // collapsed onto `accent`. It was cyan; cyan also meant "active tool".
     // Its opacity is the selection cue's level (ADR-166 M4d2): it lands with
-    // the emissive and `SelectPulse` in one instant, and fades when let go.
+    // the emissive in one instant, and fades when let go.
     // Sole writer: `_writeOutline` (原則 #4).
     this.boxHelper = new THREE.LineSegments(
       new THREE.BufferGeometry(),
@@ -562,6 +562,10 @@ export class MeshView {
     const badge = this._ifcEntry ? ` · ${this._ifcEntry.label}` : ''
     this._label.setText(`${this._name}${badge}`)
     this._label.setAccent(this._ifcEntry ? this._ifcEntry.color : COLOR.accent)
+    // Selected reads the same on every kind's label: the map annotations and
+    // CoordinateFrames highlight theirs on selection, so a body's label does
+    // too — without it a selected label and a hovered one looked identical.
+    this._label.setHighlighted(this._selected)
     this._label.setWanted(Boolean(this._name) && this.cuboid.visible && (this._selected || this._hovered))
   }
 

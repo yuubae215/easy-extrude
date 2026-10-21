@@ -490,6 +490,40 @@ test('launch Home screen loads a process-layout template (ADR-089)', async ({ pa
   expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
 })
 
+test('Home "Empty project" replaces a loaded template with the default scene', async ({ page }) => {
+  // The defect: the Empty card only closed Home, so after a template it kept the
+  // template's cell — "Empty" meant the default scene only on first boot.
+  const errors = []
+  page.on('pageerror', (e) => errors.push(e.message))
+  await page.goto('/easy-extrude/')
+  const names = () => page.evaluate(() => window.__easyExtrude.visibilityState()
+    .filter(o => !o.isFrame).map(o => o.name).sort())
+
+  await page.getByText('Straight conveyor line', { exact: true }).click()
+  await expect(page.getByText('Infeed station', { exact: true }).first()).toBeVisible()
+
+  // Unedited template → nothing to lose → no confirm.
+  await page.getByRole('button', { name: /Start/ }).click()
+  await page.getByText('From a layout template', { exact: true }).click()
+  await page.getByText('Empty project', { exact: true }).click()
+  await expect(page.getByText('Start from a process layout')).not.toBeVisible()
+  await expect.poll(names).toEqual(['Cube'])
+
+  // Twice, with an edit in between: the result is the same default scene, and
+  // the edit is not discarded without asking (ADR-134).
+  await page.locator('#canvas-container canvas').click()
+  await page.keyboard.press('Shift+A')
+  await page.getByText('Box', { exact: true }).click()
+  await expect.poll(async () => (await names()).length).toBe(2)
+  await page.getByRole('button', { name: /Start/ }).click()
+  await page.getByText('From a layout template', { exact: true }).click()
+  await page.getByText('Empty project', { exact: true }).click()
+  await page.locator('button:text-is("Replace")').click()
+  await expect.poll(names).toEqual(['Cube'])
+
+  expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
+})
+
 test('experience layer renders under prefers-reduced-motion (degraded, not dead)', async ({ page }) => {
   // Emulate the OS motion-reduction preference for the whole page.
   await page.emulateMedia({ reducedMotion: 'reduce' })

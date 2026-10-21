@@ -107,6 +107,11 @@ const CENSUS_REGISTRY = [
     why: '母集団 = SELECTION_KIND の枝。3D の姿を宣言する種と、宣言しない理由つきの '
        + '対象外 (empty) に分割する。枝を足して行を足さなければ落ちる' },
 
+  // ── 名札の選択強調 (2026-10-21) ──
+  { file: 'src/view/LabelSelectionCensus.test.js', table: 'LABELS_WITHOUT_SELECTION', kind: KIND.DERIVED_PARTITION,
+    why: '母集団 = `new EntityLabel(` を書くファイル。選択を名札に載せる view と、載せない理由を '
+       + '宣言した view に分割する。名札を作って選択を載せない 8 つ目は落ちる' },
+
   // ── 選択可能種の住所 (ADR-111) ──
   { file: 'src/NavigatorAddressCensus.test.js', table: 'KINDS_WITHOUT_AN_ADDRESS', kind: KIND.DERIVED_PARTITION,
     why: '母集団 = SELECTABLE_KINDS の枝。ナビゲータに住所を持つ種と、持たないと理由つきで '

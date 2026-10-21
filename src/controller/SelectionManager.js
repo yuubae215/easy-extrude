@@ -81,9 +81,7 @@
 
 import * as THREE from 'three'
 import { CoordinateFrame } from '../domain/CoordinateFrame.js'
-import { Solid }           from '../domain/Solid.js'
 import { projectToScreen } from './snap/SnapSystem.js'
-import { SelectPulse }     from '../view/SelectPulse.js'
 import { COLOR, rgba }     from '../theme/tokens.js'
 import { CONTEXTUAL }      from '../view/VisibilityAxes.js'
 import { shapeForKind }    from '../view/SelectionKinds.js'
@@ -130,8 +128,6 @@ export class SelectionManager {
      * @type {{kind: string, ids?: Set<string>, refs?: Set<string>}}
      */
     this._sel = EMPTY_SELECTION
-    /** Last entity that got a select pulse — keeps re-selection churn quiet (#30). */
-    this._lastFxId = null
     /**
      * The painters the declared 3-D shapes (`SELECTION_SHAPE_BY_KIND`) name. ALL
      * of them run on every transition with the whole selection, so leaving a
@@ -190,15 +186,12 @@ export class SelectionManager {
    * `variableRef(ref)` token. Widening the kind did not add a verb.
    *
    * @param {string|{ns:string,ref:string}} target — entity id, or `variableRef(ref)`
-   * @param {{fx?: boolean}} [opts]  `fx:false` for a RESTORE (returning from Edit
-   *   Mode re-asserts a selection the user never dropped, so it must not fire the
-   *   select pulse again — the pulse means "this just became selected").
    */
-  selectOnly(target, { fx = true } = {}) {
+  selectOnly(target) {
     if (target == null) return
     this._normalizeMode()
     const sel = makeSelection([target])
-    this._apply(sel, this._activeIdFor(sel, target), { fx })
+    this._apply(sel, this._activeIdFor(sel, target))
   }
 
   /**
@@ -222,7 +215,7 @@ export class SelectionManager {
     const sel = makeSelection(list)
     // No pulse for a bulk selection: the pulse answers "which one did I just
     // pick", and with N it answers nothing while costing N effects (#30).
-    this._apply(sel, activeId ?? this._activeIdFor(sel, list[0]), { fx: false })
+    this._apply(sel, activeId ?? this._activeIdFor(sel, list[0]))
   }
 
   /**
@@ -230,7 +223,7 @@ export class SelectionManager {
    * the mode machinery keep talking about it, exactly as before ADR-099.
    */
   clearSelection() {
-    this._apply(EMPTY_SELECTION, this._ctrl._scene.activeId ?? null, { fx: false })
+    this._apply(EMPTY_SELECTION, this._ctrl._scene.activeId ?? null)
   }
 
   /**
@@ -240,7 +233,7 @@ export class SelectionManager {
    */
   activateWithinSelection(id) {
     if (!this.has(id)) { this.selectOnly(id); return }
-    this._apply(this._sel, id, { fx: false })
+    this._apply(this._sel, id)
   }
 
   /**
@@ -310,9 +303,8 @@ export class SelectionManager {
    *   the selection AFTER this transition, built by `makeSelection` (the only
    *   constructor — which is what makes a mixed selection unreachable from here)
    * @param {string|null} activeId
-   * @param {{fx?: boolean}} [opts]
    */
-  _apply(next, activeId, { fx = false } = {}) {
+  _apply(next, activeId) {
     const ctrl = this._ctrl
     const nextIds = entityIdsOf(next)
 
@@ -355,17 +347,11 @@ export class SelectionManager {
     ctrl._linkNetworkView?.setSelection(nextIds)
     ctrl._uiView?.setSelectionSummary?.(selectionSummary(next))
 
-    // 7. Presentation of the transition itself (ADR-068). Only on entering the
-    //    selection of a Solid, never on re-selection churn (#30 volume discipline).
-    const activeObj = activeId != null ? ctrl._scene.getObject(activeId) : null
-    if (fx && nextIds.has(activeId) && activeObj instanceof Solid &&
-        activeId !== this._lastFxId && activeObj.corners?.length === 8) {
-      const corners = activeObj.corners
-      ctrl._motion.spawn(reduced => new SelectPulse(ctrl._sceneView.scene, corners, { reduced }))
-      this._lastFxId = activeId
-    } else if (selectionSize(next) === 0) {
-      this._lastFxId = null
-    }
+    // 7. There is no transition flourish. A one-shot "tap" pulse lived here
+    //    (ADR-068) and was retired by ADR-166 M9: selecting is the most frequent
+    //    act in the editor, and a cue fired on every pick reads as noise exactly
+    //    when the user works fastest. The steady outline + emissive (MeshView,
+    //    landing on SELECTION_CUE) already say "this one".
 
     // 8. Everything downstream that reads the selection.
     ctrl._refreshObjectModeStatus()

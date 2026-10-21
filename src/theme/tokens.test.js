@@ -231,11 +231,8 @@ const SELECTION_PAINTERS = [
   { kind: 'Mobile toolbar active tool',       file: 'src/components/Toolbar/ToolbarButton.jsx' },
   { kind: 'Entity floating label',            file: 'src/view/EntityLabel.js' },
   { kind: 'Rubber-band rectangle select',     file: 'src/controller/SelectionManager.js' },
-  // Found by ADR-102's denominator, not by reading: the selection "tap" cue
-  // (ADR-068) paints exactly this meaning — "this is the thing you just picked"
-  // — and was missing from the nine ADR-100 enumerated. A list with no
-  // population to check against cannot report what is absent from it.
-  { kind: 'Selection tap pulse (Tier A/F)',   file: 'src/view/SelectPulse.js' },
+  // (A tenth row, the selection "tap" pulse `src/view/SelectPulse.js`, was found
+  // by ADR-102's denominator and retired with its file by ADR-166 M9.)
   // ADR-107: a shared design variable became the SECOND selectable kind, so the
   // floor's matrix header now paints "what you are operating on" too. It reaches
   // for the same token rather than a second blue by hand — which is the whole
