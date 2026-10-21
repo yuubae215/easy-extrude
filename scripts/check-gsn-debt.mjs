@@ -401,7 +401,9 @@ const SUPPORT_LABELS = new Map([
 // 2026-10-21: 50 → 55。ADR-168 (Proposed — 関係を向き・接触・可動性の 3 軸で言う語彙) を起票し、
 // 実装前の 5 goal を exploring で宣言した。満期はどれも機械可読 (満期=ADR-168 — Accepted で発火) なので
 // 分子 (G3) は動かない。S1〜S3 の実装で support-verified へ上がるたびに下げる。
-const DEBT_BASELINE = 55
+// 2026-10-21 (同日): 55 → 56。O3 の決着 (見る人 ≠ 主張した人 — ADR-168 D5) で goal EachClaimKeepsItsClaimant を
+// exploring で足した (満期=ADR-168 — 機械可読なので G3 は動かない)。
+const DEBT_BASELINE = 56
 
 /**
  * G3 — 満期 trigger を持たない exploring goal の個数 (実測値)。

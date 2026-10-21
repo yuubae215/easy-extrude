@@ -10,7 +10,7 @@ artifacts
 
     context Adr168Scope
     uuid 9a8970be-0306-4bf4-83d5-028a996e407b
-    summary "ADR-168 (Proposed 2026-10-21): above / adjacent を退役し、関係を『接触・向き・可動性』の 3 軸の組として新しい型 (仮称 Arrangement、subject + 側 1..2) で言う。可動性は既存の jointType、面は ADR-152 の語彙を使う。主張は state (配置から導出)・宣言 (文書)・status (軸ごとの離散の照合) の 3 欄。実装は S1 (型とスキーマ) → S2 (推論と移行) → S3 (LINK NETWORK の木)"
+    summary "ADR-168 (Proposed 2026-10-21): above / adjacent を退役し、関係を『接触・向き・可動性』の 3 軸の組として新しい型 Arrangement (主張した人 by + subject + 側 1..2) で言う。概念モデルの正本は docs/SPATIAL_RELATION_MODEL.md。可動性は既存の jointType、面は ADR-152 の語彙を使う。主張は state (配置から導出)・宣言 (文書)・status (軸ごとの離散の照合) の 3 欄。実装は S1 (型とスキーマ) → S2 (推論と移行) → S3 (LINK NETWORK の木)"
     artifacts
     - "src/domain/SpatialLink.js"
     - "src/service/SemanticInferencer.js"
@@ -33,9 +33,9 @@ artifacts
     uuid 53d83d83-1797-4854-ac9c-f455a7babd1b
     summary "可動性は jointType が既に言っている (fixed / revolute / prismatic / floating …)。新しい型に可動性の欄を持たせると、同じ事実を SpatialLink と新しい型の 2 か所に書ける構造になる (§1.1)。リンクが 0 本 = 宣言なし、floating = 自由、と読めば『自由』と『何も言っていない』も区別できる"
 
-    assumption ViewerIsNotThePersona
+    justification ViewerIsNotThePersona
     uuid 1582cbaf-7113-4c08-8b8a-d6d620a4d0af
-    summary "反証されうる前提 (ADR-168 O3): 『見る人』(位置と正面 — 幾何) と『主張した人』(PersonaProjection の by) は別の事実である。当事者の読み『宣言は見る人の主張』では一致するので、S1 で当事者に問う。一致するなら見る人は persona の属性になり、D2 の形が変わる"
+    summary "O3 決着 (当事者 2026-10-21):『一人だったらそうなんだけど、複数人いたら一致しない場合もある』。見る人 (幾何 — CoordinateFrame の役割 viewer) と主張した人 (by — Context DSL の actors) は別の事実として持つ。1 人なら同じ人を指しうるが推論しない (ADR-168 D5)"
 
     strategy ByAxesSlotsAndOneType
     uuid d81c7874-3878-49a4-8744-f05a2af9bcb4
@@ -80,6 +80,16 @@ artifacts
             assumption StatusCensusPlanned
             uuid b979d675-4449-4b7b-8e6b-87e554324674
             summary "証拠予定 (S1): 満期=ADR-168 。state 関数の閉形式テスト (接触の許容値の正本が 1 か所 / 上下の符号 / 内在の面) と、status の値域が 3 値であることの census。将来 core/ が同じ接触判定を持つなら fixtures/cross-language/ の準拠テストを同じ PR で置く (CLAUDE.md §AI 向けガード 軸 3)"
+
+        goal EachClaimKeepsItsClaimant
+        uuid 0d6f3b8e-91a2-4c57-b3e4-7a8c2f5d1e90
+        summary "宣言はどれも主張した人 (by) を持ち、相対の向きはそれとは別に見る人 (viewer) を持つ。同じ対について人ごとの宣言を上書きせず並べ、同じ軸で食い違えば『主張どうしの衝突』として名指す (配置との status とは別の事実。どちらが正しいかは決めない)。人ごとの言い方は QUOTIENT_TABLE で正規形へ落とす"
+        state ToBeDeveloped
+        labels support-exploring
+
+            assumption ClaimantTestsPlanned
+            uuid 6e2a9c41-3b7d-4f85-a0c6-d18e5b7f2a34
+            summary "証拠予定 (S1): 満期=ADR-168 。バリデータのテスト — by の無い Arrangement はエラー / by と viewer を推論で結ばない (1 人のシーンでも viewer 未指定の相対の向きはエラーのまま) / 2 人が同じ対の同じ軸で食い違う fixture で衝突が両者を between に名指し、どちらの宣言も残る / 『奥』が back に落ちる辞書の行"
 
         goal HangingIsDerivedFromTheAxes
         uuid 5c1e2a40-7d3b-4f8e-9a61-2b0c4d7e8f13
