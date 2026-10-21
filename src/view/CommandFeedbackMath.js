@@ -26,12 +26,12 @@
  *
  * Pure and THREE-free (`node --test`): the view (`LandingEffects.js`) renders
  * descriptors. The shattering voxels are cut from the entity's own shape and
- * their per-cell curve lives in `ShapeVoxelMath.js` (ADR-166 M5); the curves
- * left here drive the outline construction (`WireframeAssembly`) and the
- * celebration's stagger.
+ * their per-cell curve lives in `ShapeVoxelMath.js` (ADR-166 M5); the stagger
+ * left here drives the celebration (the outline construction's flash, envelope
+ * and spark curves retired with it in M5b).
  */
 import { COLOR, DURATION, hexNumber } from '../theme/tokens.js'
-import { clamp01, easeOutExpo, easeOutQuad } from './MotionMath.js'
+import { clamp01 } from './MotionMath.js'
 import { STAGE_LIGHT } from './StageMath.js'
 
 /**
@@ -148,60 +148,4 @@ export function voxelDelay(index) {
 export function localProgress(progress, delay) {
   const d = Number.isFinite(delay) ? Math.min(Math.max(delay, 0), STAGGER_SPREAD) : 0
   return clamp01((clamp01(progress) - d) / (1 - STAGGER_SPREAD))
-}
-
-/**
- * Edge/boundary flash intensity ∈ [0,1] — the "境目こそ主役" accent the view
- * lerps the (shared) material colour toward the descriptor's `flash` (the one
- * stage light — ADR-166 M4d3; it was a private white) by. The flash marks the one
- * instant the transition is legible: for dissolve, the BREAK at t≈0 (the entity
- * cracks apart); for materialize, the ASSEMBLY as the shell lands (~55–90%,
- * the moment the object snaps into being). A single spike each, decayed — never
- * a strobe. Zero under reduced motion (the view skips it). Both slopes are the
- * `fade` role (colour — outQuad): the charge rises as outQuad, the decay reads
- * outQuad from 1 to 0, i.e. (1 − x)² (ADR-166 M4d3 — they were linear ramps).
- *
- * @param {'materialize'|'dissolve'} kind
- * @param {number} progress global progress ∈ [0,1]
- * @returns {number}
- */
-export function voxelFlash(kind, progress) {
-  const p = clamp01(progress)
-  if (kind === 'dissolve') {
-    return p < 0.18 ? 1 - easeOutQuad(p / 0.18) : 0     // bright crack at the start
-  }
-  if (p < 0.55) return 0                                // shell still inbound
-  if (p < 0.72) return easeOutQuad((p - 0.55) / 0.17)   // charge as it lands
-  if (p < 0.92) return 1 - easeOutQuad((p - 0.72) / 0.20) // flash + decay
-  return 0
-}
-
-/**
- * Whole-cloud alpha envelope for the shared InstancedMesh material (a single
- * material has a single opacity — per-voxel fade rides scale). Held high, then
- * a soft fade-out over the final 15% so the burst never pops out of existence
- * (the `fade` role — outQuad read 1 → 0; ADR-166 M4d3, was linear).
- *
- * @param {number} progress global progress ∈ [0,1]
- * @returns {number} material opacity ∈ [0, 0.92]
- */
-export function voxelEnvelope(progress) {
-  const p = clamp01(progress)
-  return p < 0.85 ? 0.92 : 0.92 * (1 - easeOutQuad((p - 0.85) / 0.15))
-}
-
-/**
- * Size of one assembly spark at its LOCAL progress (`WireframeAssembly` layer 2
- * — the fade rides scale because one shared material has one opacity). It
- * grows on approach with the `land` role (outExpo — the same curve that flies
- * it in) and evaporates after landing with the `fade` role (outQuad read
- * 1 → 0). Before ADR-166 M4d3 the evaporation was a linear ramp.
- *
- * @param {number} lp local progress ∈ [0,1]
- * @returns {number} ∈ [0,1]
- */
-export function sparkScale(lp) {
-  const p = clamp01(lp)
-  if (p < 0.7) return 0.35 + 0.65 * easeOutExpo(p)
-  return 1 - easeOutQuad((p - 0.7) / 0.3)
 }
