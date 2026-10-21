@@ -1668,7 +1668,7 @@ test('画面を占める面は同時に 1 枚 — 起動ホームと New Project
 
   // 起動ホームを閉じてから Unexamined → New Project (報告 1 行目の経路)。
   // title で引く: ✕ ボタンのアクセシブル名は本文の「✕」なので name では引けない。
-  await page.locator('button[title="Close (start with the default scene)"]').click()
+  await page.locator('button[title="Close (keep the current scene)"]').click()
   await expect(homeHeading).toHaveCount(0)
 
   await page.getByRole('button', { name: /^Unexamined/ }).click()

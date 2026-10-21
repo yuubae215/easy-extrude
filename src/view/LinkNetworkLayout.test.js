@@ -1,8 +1,9 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  computeLayout, layoutSignature, laneX, gutterX,
-  PANEL_W, MIN_PANEL_H, MAX_PANEL_H, LEGEND_H, ROW_H, MAX_INDENT_DEPTH, MAX_LANES,
+  computeLayout, layoutSignature, treeSegments, arcPath, labelLines, estimateTextWidth,
+  LABEL_LINES, PANEL_W, MIN_PANEL_H, MAX_PANEL_H, LEGEND_H, MAX_LANES,
+  SLOT_W, LEVEL_H, LABEL_PAD, NODE_R, STEM_DY,
   NODE_SIGNATURE_FIELDS, NODE_PRESENTATION_IRRELEVANT,
   EDGE_SIGNATURE_FIELDS, EDGE_PRESENTATION_IRRELEVANT, PANEL_SIGNATURE_FIELDS,
 } from './LinkNetworkLayout.js'
@@ -14,29 +15,23 @@ import { ORIGIN_FRAME_NAME } from '../domain/originFrame.js'
  *
  * ADR-094's three:
  *
- *  1. "The Y axis means TF depth and nothing else." Before ADR-094 row 0 held
- *     Solids — entities that are not TF frames at all — so the axis meant a mix
- *     of TF depth and containment depth. It is asserted here as a property over
- *     the whole node set. ADR-095 moved the *axis* (depth is now x) but not the
- *     invariant: a child still renders after its parent, and these tests did not
- *     have to change to say so.
- *  2. "Same scene → same pixels." ADR-048 promised determinism in 2026-06 and
- *     never had a test, because the layout mutated `this` inside a DOM view.
- *     ADR-095 adds a second thing that must be order-independent: the LANE a
- *     cotree edge lands in.
- *  3. Cardinality (原則 #31). Lane collisions, indent saturation and scrolling
- *     appear only with N entities; the 0-link case is a legal state that hides
- *     the whole panel and must not be reached by an empty canvas. A single
- *     fixture sees neither — the blind spot ADR-093 hit with lockstep.
+ *  1. "The vertical axis means TF depth and nothing else." Before ADR-094 the
+ *     top tier held Solids — entities that are not TF frames at all. ADR-095
+ *     moved depth to the indent; ADR-167 moves it back to y, where the person
+ *     reading the panel wanted it. The invariant never changed: a child renders
+ *     below its parent.
+ *  2. "Same scene → same pixels." Determinism, including the LANE a cotree edge
+ *     lands in — order-independent of the caller's link list.
+ *  3. Cardinality (原則 #31). Lane collisions and scrolling appear only with N
+ *     entities; the 0-link case is a legal state that hides the whole panel and
+ *     must not be reached by an empty canvas.
  *
- * And ADR-095's one, which is the reason for the geometry swap:
+ * ADR-095's goal, kept through ADR-167's geometry change:
  *
- *  4. **Degradation runs the other way now.** A label's width must not divide by
- *     the sibling count, and crowding must be paid for by the arcs (lanes →
- *     "+N") instead. `denseMode` — the flag that spelled out "when information
- *     grows, give up on knowing who" — must not come back, so its absence is
- *     asserted rather than assumed (台帳 §既知の負債 3: retired states that stay
- *     in the enum).
+ *  4. **A label's width divides by nothing.** In the old layered drawing it was
+ *     `196 / siblings` and degraded to a dot strip (`denseMode`). Now every node
+ *     owns a fixed slot and the CONTENT grows and scrolls instead — so the label
+ *     width is asserted to be a constant, and `denseMode` is asserted ABSENT.
  */
 
 // ── Fixtures ────────────────────────────────────────────────────────────────
@@ -81,7 +76,7 @@ function nSolidScene(n) {
   return { infos, links }
 }
 
-/** A CF chain `depth` levels below one Solid — the only way to saturate indent. */
+/** A CF chain `depth` levels below one Solid — the scene that grows the tree downward. */
 function deepChainScene(depth) {
   const infos = new Map()
   const userFrames = []
@@ -93,11 +88,9 @@ function deepChainScene(depth) {
 }
 
 /**
- * One Solid with k sibling CFs linked consecutively. Adjacent row intervals
+ * One Solid with k sibling CFs linked consecutively. Adjacent column intervals
  * always alternate between two lanes, so this varies the SIBLING count while
- * holding lane usage — and therefore the gutter — fixed. That separation is the
- * point: ADR-095 claims label width is independent of siblings, not that it is
- * independent of link crowding (a busy gutter does cost width, boundedly).
+ * holding lane usage fixed.
  */
 function siblingChainScene(k) {
   const infos = new Map()
@@ -110,7 +103,7 @@ function siblingChainScene(k) {
 }
 
 /**
- * One Solid with 2·k CFs and k links, arranged so every link's row interval
+ * One Solid with 2·k CFs and k links, arranged so every link's column interval
  * overlaps every other's — the only shape that can exhaust the lane budget.
  */
 function interleavedScene(k) {
@@ -126,7 +119,7 @@ function interleavedScene(k) {
   return { infos, links }
 }
 
-// ── 1. TF invariants — a child still renders after its parent ───────────────
+// ── 1. TF invariants — a child renders below its parent ────────────────────
 
 test('every non-root node sits strictly below its TF parent', () => {
   const { infos, links } = nSolidScene(4)
@@ -168,7 +161,7 @@ test('tree edges lead every node to exactly one root', () => {
 test('the graph contains no entity that is not a coordinate frame position', () => {
   // Every node either fuses a Solid with its body frame, or is a frame/annotation
   // root that has no body frame. No node stands for a Solid *alongside* its frame,
-  // which is the category error that made the Y axis meaningless (ADR-094 D1).
+  // which is the category error that made the depth axis meaningless (ADR-094 D1).
   const { infos, links, originA, originB } = twoSolidScene()
   const { nodes } = computeLayout(infos, links)
 
@@ -223,10 +216,10 @@ test('a Solid→body-frame link collapses instead of drawing a self-loop', () =>
   assert.deepEqual([...edges.keys()], ['real'])
 })
 
-test('the body-frame row is gone: user CFs sit one indent below the Solid', () => {
-  // ADR-094 D2 — the row of identical body-frame labels alone pushed the depth
-  // to 3. ADR-095 keeps that win and renames where it is visible: depth is the
-  // indent now, so it is `depth`, not `rows`, that must read 2.
+test('the body-frame tier is gone: user CFs sit one level below the Solid', () => {
+  // ADR-094 D2 — the tier of identical body-frame labels alone pushed the depth
+  // to 3. That win is kept: depth reads 2, and the child is LOWER (ADR-167),
+  // directly under its parent.
   const { infos, links } = twoSolidScene()
   const { nodes, depth, svgH } = computeLayout(infos, links)
 
@@ -234,24 +227,23 @@ test('the body-frame row is gone: user CFs sit one indent below the Solid', () =
   assert.equal(svgH, MIN_PANEL_H)
   assert.equal(nodes.get('solidA').layer, 0)
   assert.equal(nodes.get('cfA').layer, 1)
-  assert.ok(nodes.get('cfA').x > nodes.get('solidA').x, 'the child is indented, not lowered a tier')
+  assert.equal(nodes.get('cfA').y - nodes.get('solidA').y, LEVEL_H)
+  assert.equal(nodes.get('cfA').x, nodes.get('solidA').x, 'an only child sits straight under its parent')
 })
 
-test('a CF under a user CF still reaches three levels — and no longer grows the panel', () => {
-  // The depth rule is not deleted, only disconnected from the panel height:
-  // ADR-095 pays for depth in x (indent), so 4 rows of real depth fit at the
-  // minimum height instead of forcing the maximum.
+test('a CF under a user CF reaches three levels and still fits the minimum panel', () => {
   const infos = new Map()
   solidWithFrames(infos, {
     id: 'solidA', name: 'Base',
     userFrames: [{ id: 'cf1', name: 'Mount' }, { id: 'cf2', name: 'Tip', parentId: 'cf1' }],
   })
   solidWithFrames(infos, { id: 'solidB', name: 'Arm' })
-  const { nodes, depth, rows, svgH } = computeLayout(infos, [link('l1', 'cf2', 'solidB')])
+  const { nodes, depth, svgH, scrollY } = computeLayout(infos, [link('l1', 'cf2', 'solidB')])
 
   assert.equal(depth, 3)
-  assert.equal(rows, 4)                       // one row per node, not per tier
+  assert.equal(nodes.size, 4)
   assert.equal(svgH, MIN_PANEL_H)
+  assert.equal(scrollY, false)
   assert.equal(nodes.get('cf2').layer, 2)
 })
 
@@ -279,6 +271,18 @@ test('an orphaned body frame keeps its own node rather than vanishing', () => {
   assert.equal(edges.size, 1)
 })
 
+test('a parentId cycle still places every member — as roots, never dropped', () => {
+  const infos = new Map()
+  infos.set('a', { name: 'A', type: 'frame', parentId: 'b' })
+  infos.set('b', { name: 'B', type: 'frame', parentId: 'a' })
+  infos.set('pt', { name: 'P', type: 'annot-point', parentId: null })
+  const { nodes, depth } = computeLayout(infos, [link('l1', 'a', 'pt')])
+
+  assert.ok(nodes.has('a') && nodes.has('b') && nodes.has('pt'))
+  assert.ok(depth <= 2, `a cycle must not grow the tree downward (depth ${depth})`)
+  for (const [, nd] of nodes) assert.ok(Number.isFinite(nd.x) && Number.isFinite(nd.y))
+})
+
 // ── 3. Cardinality: 0 / 1 / N (原則 #31) ────────────────────────────────────
 
 test('0 links — an empty result, not an empty canvas', () => {
@@ -287,17 +291,23 @@ test('0 links — an empty result, not an empty canvas', () => {
 
   assert.equal(out.nodes.size, 0)
   assert.equal(out.edges.size, 0)
-  assert.equal(out.rows, 0)          // the caller hides the whole panel
+  assert.equal(out.columns, 0)       // the caller hides the whole panel
   assert.equal(out.svgH, MIN_PANEL_H)
 })
 
-test('0 cotree lanes reserve 0 gutter — an absent thing is not pre-allocated', () => {
-  // 原則 #31 / the Yellow Card on defaults: "no links" must not silently reserve
-  // a gutter-sized strip the labels then pay for.
+test('0 cotree lanes reserve 0 arc headroom — an absent thing is not pre-allocated', () => {
+  // 原則 #31 / the Yellow Card on defaults: "no arcs" must not silently push the
+  // tree down by the height of bows that do not exist.
   const out = computeLayout(new Map(), [])
   assert.equal(out.lanes, 0)
-  assert.equal(out.gutterW, 0)
   assert.equal(out.dropped, 0)
+
+  const { infos, links } = twoSolidScene()
+  const one = computeLayout(infos, links)
+  assert.equal(one.lanes, 1)
+  const topY = Math.min(...[...one.nodes.values()].map(nd => nd.y))
+  // With one lane in use the top level sits below exactly one lane of headroom.
+  assert.ok(topY > NODE_R && topY < NODE_R + 30, `top level at y=${topY}`)
 })
 
 test('0 links because every endpoint is missing from the scene', () => {
@@ -312,55 +322,60 @@ test('no entities at all — every accessor still answers', () => {
   assert.equal(out.nodes.size, 0)
   assert.equal(out.nodeIdByEntity.size, 0)
   assert.equal(out.graphH, MIN_PANEL_H - LEGEND_H)
+  assert.equal(out.contentW, PANEL_W)
 })
 
 test('missing inputs collapse to the empty result instead of throwing', () => {
   for (const out of [computeLayout(null, null), computeLayout(undefined, undefined)]) {
     assert.equal(out.nodes.size, 0)
-    assert.equal(out.rows, 0)
+    assert.equal(out.columns, 0)
   }
 })
 
-test('1 node pair — a two-row outline places both rows inside the canvas', () => {
+test('1 node pair — parent over child, both inside the content, nothing scrolls', () => {
   const infos = new Map()
   solidWithFrames(infos, { id: 'solidA', name: 'Base', userFrames: [{ id: 'cfA', name: 'Mount' }] })
-  const { nodes, contentH, rows, scrollable } = computeLayout(infos, [link('l1', 'solidA', 'cfA')])
+  const { nodes, contentW, contentH, columns, scrollX, scrollY } =
+    computeLayout(infos, [link('l1', 'solidA', 'cfA')])
 
   assert.equal(nodes.size, 2)
-  assert.equal(rows, 2)
-  assert.equal(scrollable, false)
+  assert.equal(columns, 1)
+  assert.equal(scrollX, false)
+  assert.equal(scrollY, false)
   for (const [, nd] of nodes) {
-    assert.ok(nd.y >= 0 && nd.y <= contentH, 'nodes stay inside the outline')
-    assert.ok(Number.isFinite(nd.x) && Number.isFinite(nd.y))
+    assert.ok(nd.x >= 0 && nd.x <= contentW, 'nodes stay inside the content')
+    assert.ok(nd.y >= 0 && nd.y <= contentH, 'nodes stay inside the content')
   }
 })
 
-test('1 cotree edge — exactly one lane, and the gutter is sized for one', () => {
+test('1 cotree edge — exactly one lane', () => {
   const { infos, links } = twoSolidScene()
   const out = computeLayout(infos, links)
   assert.equal(out.edges.size, 1)
   assert.equal(out.lanes, 1)
   assert.equal([...out.edges.values()][0].lane, 0)
   assert.equal(out.dropped, 0)
-  assert.ok(out.gutterW > 0 && out.gutterW < PANEL_W / 4, 'one lane is a sliver, not a column')
 })
 
-test('N Solids — every node owns a row and no two rows coincide', () => {
-  // The defect class that only exists at N: rows crowd, labels collide, x values
-  // pile up at the margins. One Solid can never show it.
+test('N Solids — no two nodes on one level are closer than one slot', () => {
+  // The defect class that only exists at N: siblings crowd and labels collide.
+  // A one-Solid fixture can never show it.
   const { infos, links } = nSolidScene(6)
-  const { nodes, contentH, rows } = computeLayout(infos, links)
+  const { nodes, contentW, contentH } = computeLayout(infos, links)
 
   assert.equal(nodes.size, 12)
-  assert.equal(rows, 12)
-  const seenRows = new Set()
+  const byLevel = new Map()
   for (const [, nd] of nodes) {
-    assert.ok(nd.x >= 0 && nd.x <= PANEL_W, `x=${nd.x} escaped the panel`)
-    assert.ok(nd.y >= 0 && nd.y <= contentH, `y=${nd.y} escaped the outline`)
-    assert.ok(!seenRows.has(nd.row), 'two nodes must not share a row')
-    seenRows.add(nd.row)
+    assert.ok(nd.x >= 0 && nd.x <= contentW, `x=${nd.x} escaped the content`)
+    assert.ok(nd.y >= 0 && nd.y <= contentH, `y=${nd.y} escaped the content`)
+    byLevel.set(nd.layer, [...(byLevel.get(nd.layer) ?? []), nd.x])
   }
-  assert.deepEqual([...seenRows].sort((a, b) => a - b), [...Array(12).keys()])
+  for (const [level, xs] of byLevel) {
+    xs.sort((a, b) => a - b)
+    for (let i = 1; i < xs.length; i++) {
+      assert.ok(xs[i] - xs[i - 1] >= SLOT_W, `level ${level}: two nodes ${xs[i] - xs[i - 1]}px apart`)
+    }
+  }
 })
 
 test('N Solids keep the fusion 1:1 — one node per Solid, none for its frame', () => {
@@ -371,53 +386,39 @@ test('N Solids keep the fusion 1:1 — one node per Solid, none for its frame', 
   const fusedCount = [...nodes.values()].filter(nd => nd.fused).length
   assert.equal(fusedCount, N)
   assert.equal([...nodes.keys()].filter(id => id.endsWith('_origin')).length, 0)
-  // Labels are the Solids' — N identical body-frame labels are what ADR-094 removed.
   const labels = [...nodes.values()].filter(nd => nd.fused).map(nd => nd.label).sort()
   assert.deepEqual(labels, ['Part0', 'Part1', 'Part2', 'Part3', 'Part4'])
 })
 
-// ── 4. G1 — labels never degrade, and never divide by the sibling count ─────
+// ── 4. G1 — a label's width divides by nothing ──────────────────────────────
 
-test('the width a label may use does not depend on how many siblings exist', () => {
-  // THE ADR-095 claim, stated precisely. Before: usable width was
-  // `196 / maxRowCount`, so the sibling count was the divisor. After: width is
-  // `PANEL_W − indent − gutter`, in which the sibling count does not appear.
-  // The two scenes below differ ONLY in how many siblings they hold — lane
-  // usage is held fixed, because the gutter legitimately does cost width.
+test('the width a label may use is a constant — not siblings, not depth', () => {
+  // THE claim ADR-095 made and ADR-167 keeps under a top-down geometry. The old
+  // layered drawing gave `196 / siblings`; the slot width does not divide.
+  for (const scene of [siblingChainScene(3), siblingChainScene(10), deepChainScene(6), nSolidScene(12)]) {
+    for (const [, nd] of computeLayout(scene.infos, scene.links).nodes) {
+      assert.equal(nd.labelW, SLOT_W - LABEL_PAD, `${nd.label} got ${nd.labelW}px`)
+    }
+  }
+  assert.ok(SLOT_W - LABEL_PAD > 2 * 22, 'the slot is well above the old dot-strip threshold (DENSE_SLOT = 22)')
+})
+
+test('a wider scene widens the content and scrolls — it never narrows a slot', () => {
   const few  = siblingChainScene(3)
   const many = siblingChainScene(10)
   const a = computeLayout(few.infos,  few.links)
   const b = computeLayout(many.infos, many.links)
 
-  assert.equal(b.rows, a.rows + 7, 'the fixtures must really differ in sibling count')
-  assert.equal(a.lanes, b.lanes, 'lane usage is the controlled variable here')
-
-  const widthByDepth = (out) => {
-    const m = new Map()
-    for (const [, nd] of out.nodes) {
-      const prev = m.get(nd.layer)
-      if (prev != null) assert.equal(prev, nd.labelW, 'same depth ⇒ same label width')
-      m.set(nd.layer, nd.labelW)
-    }
-    return m
+  assert.equal(b.columns, a.columns + 7, 'the fixtures must really differ in sibling count')
+  assert.equal(a.scrollX, false)
+  assert.equal(b.scrollX, true)
+  assert.ok(b.contentW > PANEL_W)
+  const pitch = (out) => {
+    const xs = [...out.nodes.values()].filter(nd => nd.layer === 1).map(nd => nd.x).sort((p, q) => p - q)
+    return xs[1] - xs[0]
   }
-  const wa = widthByDepth(a), wb = widthByDepth(b)
-  assert.deepEqual([...wa.keys()].sort(), [...wb.keys()].sort())
-  for (const [depth, w] of wa) assert.equal(wb.get(depth), w, `depth ${depth}`)
-})
-
-test('a crowded scene keeps a readable label column where the old rule left 16px', () => {
-  // The floor, in absolute terms. `DENSE_SLOT = 22` said: below 22px per node,
-  // stop drawing labels. Twelve Solids put the old layout at 16px — that line
-  // firing is exactly the complaint ADR-095 answers.
-  const { infos, links } = nSolidScene(12)
-  const out = computeLayout(infos, links)
-
-  const oldSlot = (PANEL_W - 24) / 12
-  assert.ok(oldSlot < 22, `the old rule degraded here (${oldSlot.toFixed(1)}px per node)`)
-  for (const [, nd] of out.nodes) {
-    assert.ok(nd.labelW > 8 * oldSlot, `${nd.label} got ${nd.labelW}px`)
-  }
+  assert.equal(pitch(a), SLOT_W)
+  assert.equal(pitch(b), SLOT_W, 'sibling pitch is constant regardless of scene size')
 })
 
 test('denseMode is gone — no scene of any size brings the dot strip back', () => {
@@ -428,63 +429,103 @@ test('denseMode is gone — no scene of any size brings the dot strip back', () 
     const out = computeLayout(infos, links)
     assert.equal('denseMode' in out, false, `denseMode came back at n=${n}`)
     for (const [, nd] of out.nodes) {
-      assert.ok(nd.labelW > 0, `every row keeps a label column at n=${n}`)
+      assert.ok(nd.labelW > 0, `every node keeps a label at n=${n}`)
     }
   }
 })
 
-// ── 5. G2 — depth is the indent, and the indent is bounded ──────────────────
+test('a two-word name wraps instead of being cut — "Robot pedestal", not "Robot ped…"', () => {
+  const W = SLOT_W - LABEL_PAD
+  assert.deepEqual(labelLines('Robot pedestal', W), ['Robot', 'pedestal'])
+  assert.deepEqual(labelLines('Workbench', W), ['Workbench'])
+  assert.deepEqual(labelLines('Cube', W), ['Cube'])
+})
 
-test('x is a function of TF depth and of nothing else', () => {
+test('a label never exceeds its lines or its width — the loss is one visible ellipsis', () => {
+  const W = SLOT_W - LABEL_PAD
+  for (const label of [
+    'Supply bin A', 'Robot mounting plate on pedestal', 'Infeed station',
+    'averyveryverylongsinglewordname', '工程レイアウトの台座', '', 'a b c d e f g h i j k l m n',
+  ]) {
+    const lines = labelLines(label, W)
+    assert.ok(lines.length >= 1 && lines.length <= LABEL_LINES, `${label} → ${lines.length} lines`)
+    for (const line of lines) assert.ok(estimateTextWidth(line) <= W, `"${line}" overflows its slot`)
+    const shown = lines.join(' ').replace(/…$/, '')
+    if (!lines.join('').endsWith('…')) assert.equal(shown, label.split(/\s+/).filter(Boolean).join(' '))
+  }
+  assert.ok(labelLines('Robot mounting plate on pedestal', W).at(-1).endsWith('…'))
+  assert.ok(labelLines('averyveryverylongsinglewordname', W)[0].endsWith('…'))
+})
+
+// ── 5. G2 — depth is the vertical position ──────────────────────────────────
+
+test('y is a function of TF depth and of nothing else', () => {
   const { infos, links } = nSolidScene(8)
   const { nodes } = computeLayout(infos, links)
 
-  const xByDepth = new Map()
+  const yByDepth = new Map()
   for (const [, nd] of nodes) {
-    if (xByDepth.has(nd.layer)) assert.equal(xByDepth.get(nd.layer), nd.x)
-    else xByDepth.set(nd.layer, nd.x)
+    if (yByDepth.has(nd.layer)) assert.equal(yByDepth.get(nd.layer), nd.y)
+    else yByDepth.set(nd.layer, nd.y)
   }
-  const depths = [...xByDepth.keys()].sort((a, b) => a - b)
+  const depths = [...yByDepth.keys()].sort((a, b) => a - b)
   for (let i = 1; i < depths.length; i++) {
-    assert.ok(xByDepth.get(depths[i]) > xByDepth.get(depths[i - 1]),
-      'x must be strictly increasing in depth below saturation')
+    assert.equal(yByDepth.get(depths[i]) - yByDepth.get(depths[i - 1]), LEVEL_H)
   }
 })
 
-test('a child is never left of its parent', () => {
+test('a parent is centred over its first and last child', () => {
+  const { infos, links } = siblingChainScene(5)
+  const { nodes } = computeLayout(infos, links)
+  const kids = [...nodes.values()].filter(nd => nd.parentId === 'solidA').map(nd => nd.x)
+  assert.equal(kids.length, 5)
+  assert.equal(nodes.get('solidA').x, (Math.min(...kids) + Math.max(...kids)) / 2)
+})
+
+test('a deep chain grows downward and scrolls rather than squeezing levels', () => {
   const { infos, links } = deepChainScene(6)
-  const { nodes } = computeLayout(infos, links)
-  let checked = 0
-  for (const [, nd] of nodes) {
-    if (nd.parentId == null) continue
-    assert.ok(nd.x >= nodes.get(nd.parentId).x, `${nd.label} drifted left of its parent`)
-    checked++
-  }
-  assert.ok(checked > 0)
+  const out = computeLayout(infos, links)
+  assert.equal(out.depth, 7)
+  assert.equal(out.scrollY, true)
+  assert.ok(out.contentH > out.graphH)
+  assert.ok(out.svgH <= MAX_PANEL_H)
 })
 
-test('indentation saturates and the depth badge states the real depth', () => {
-  // x is finite too. Pouring an unbounded quantity into it is exactly the
-  // mistake ADR-095 removed from the sibling axis — so it stops, and the number
-  // is written out rather than implied by equal x values.
-  const { infos, links } = deepChainScene(MAX_INDENT_DEPTH + 2)
+// ── 6. Tree segments — the skeleton the view draws ──────────────────────────
+
+test('every child hangs from its parent: one drop per child, one stem per parent', () => {
+  const { infos, links } = siblingChainScene(4)
   const { nodes } = computeLayout(infos, links)
+  const segs = treeSegments(nodes)
 
-  const atCap  = [...nodes.values()].filter(nd => nd.layer === MAX_INDENT_DEPTH)
-  const beyond = [...nodes.values()].filter(nd => nd.layer > MAX_INDENT_DEPTH)
-  assert.ok(atCap.length > 0 && beyond.length > 0, 'fixture must cross the cap')
+  const parent = nodes.get('solidA')
+  const kids = [...nodes.values()].filter(nd => nd.parentId === 'solidA')
+  const stems = segs.filter(s => s.x1 === parent.x && s.y1 === parent.y + STEM_DY)
+  assert.equal(stems.length, 1, 'one stem below the parent\'s label')
+  for (const k of kids) {
+    const drops = segs.filter(s => s.x1 === k.x && s.x2 === k.x && s.y2 < k.y && s.y2 > parent.y)
+    assert.equal(drops.length, 1, `${k.label} must have exactly one drop`)
+  }
+  // The bar spans exactly the children.
+  const bars = segs.filter(s => s.y1 === s.y2)
+  assert.equal(bars.length, 1)
+  assert.equal(Math.min(bars[0].x1, bars[0].x2), Math.min(...kids.map(k => k.x)))
+  assert.equal(Math.max(bars[0].x1, bars[0].x2), Math.max(...kids.map(k => k.x)))
+})
 
-  for (const nd of atCap)  assert.equal(nd.depthSaturated, false)
-  for (const nd of beyond) {
-    assert.equal(nd.depthSaturated, true)
-    assert.equal(nd.x, atCap[0].x, 'indent stops at the cap')
-    assert.equal(nd.indentDepth, MAX_INDENT_DEPTH)
-    // The badge value is the node's real depth — the whole point of the badge.
-    assert.ok(nd.layer > MAX_INDENT_DEPTH)
+test('the stem starts below the parent\'s label, never through it', () => {
+  const { infos, links } = twoSolidScene()
+  const { nodes } = computeLayout(infos, links)
+  for (const seg of treeSegments(nodes)) {
+    for (const [, nd] of nodes) {
+      const crossesLabel = seg.x1 === nd.x && seg.x2 === nd.x &&
+        Math.min(seg.y1, seg.y2) < nd.y + STEM_DY && Math.max(seg.y1, seg.y2) > nd.y + NODE_R
+      assert.equal(crossesLabel, false, `a tree line crosses ${nd.label}'s label`)
+    }
   }
 })
 
-// ── 6. Cotree lanes — crowding is paid for HERE, not by the labels ──────────
+// ── 7. Cotree lanes — crowding is paid for HERE, not by the labels ──────────
 
 test('lanes are assigned so that two edges sharing a lane never overlap', () => {
   const { infos, links } = interleavedScene(3)
@@ -494,8 +535,8 @@ test('lanes are assigned so that two edges sharing a lane never overlap', () => 
   const byLane = new Map()
   for (const [, e] of edges) {
     if (e.dropped) continue
-    const a = Math.min(nodes.get(e.source).row, nodes.get(e.target).row)
-    const b = Math.max(nodes.get(e.source).row, nodes.get(e.target).row)
+    const a = Math.min(nodes.get(e.source).slot, nodes.get(e.target).slot)
+    const b = Math.max(nodes.get(e.source).slot, nodes.get(e.target).slot)
     for (const other of byLane.get(e.lane) ?? []) {
       assert.ok(b < other.a || a > other.b,
         `lane ${e.lane} holds overlapping intervals [${a},${b}] and [${other.a},${other.b}]`)
@@ -504,10 +545,18 @@ test('lanes are assigned so that two edges sharing a lane never overlap', () => 
   }
 })
 
+test('a higher lane bows higher — overlapping arcs do not draw on top of each other', () => {
+  const { infos, links } = interleavedScene(3)
+  const { edges } = computeLayout(infos, links)
+  const byLane = [...edges.values()].filter(e => !e.dropped).sort((p, q) => p.lane - q.lane)
+  for (let i = 1; i < byLane.length; i++) {
+    assert.ok(byLane[i].cy < byLane[i - 1].cy, 'lane l+1 must sit above lane l')
+  }
+})
+
 test('lane assignment does not depend on the order the links arrive in', () => {
-  // The defect ADR-094 actually hit with edge z-order, now one layer deeper: the
-  // caller's link list is ordered by scene mutation history, so deleting and
-  // re-adding an unrelated link must not re-shuffle the gutter.
+  // The caller's link list is ordered by scene mutation history, so deleting and
+  // re-adding an unrelated link must not re-shuffle the bows.
   const { infos, links } = interleavedScene(3)
   const laneMap = (ls) => {
     const out = {}
@@ -520,7 +569,7 @@ test('lane assignment does not depend on the order the links arrive in', () => {
 
 test('links past the lane budget become a counted badge, never a silent drop', () => {
   // 原則 #11: the degradation is visible arithmetic. Every dropped edge is
-  // counted on BOTH of its endpoint rows, so "there is more here" is answerable
+  // counted on BOTH of its endpoints, so "there is more here" is answerable
   // from either end.
   const k = MAX_LANES + 1
   const { infos, links } = interleavedScene(k)
@@ -531,57 +580,52 @@ test('links past the lane budget become a counted badge, never a silent drop', (
 
   const droppedEdges = [...edges.values()].filter(e => e.dropped)
   assert.equal(droppedEdges.length, dropped)
-  for (const e of droppedEdges) assert.equal(e.lane, null)
+  for (const e of droppedEdges) {
+    assert.equal(e.lane, null)
+    assert.equal(e.cx, null)
+  }
 
   const badgeTotal = [...nodes.values()].reduce((s, nd) => s + nd.overflow, 0)
   assert.equal(badgeTotal, dropped * 2, 'each dropped link is counted at both ends')
-  for (const e of droppedEdges) {
-    assert.ok(nodes.get(e.source).overflow > 0 && nodes.get(e.target).overflow > 0)
+})
+
+test('every drawn bow stays inside the content — headroom is reserved for the lanes in use', () => {
+  for (const scene of [interleavedScene(MAX_LANES), twoSolidScene(), nSolidScene(6)]) {
+    const { nodes, edges, contentW } = computeLayout(scene.infos, scene.links)
+    for (const [, e] of edges) {
+      if (e.dropped) continue
+      const u = nodes.get(e.source), v = nodes.get(e.target)
+      // Quadratic Bézier midpoint = the bow's extreme for a symmetric bow.
+      const midY = (u.y + 2 * e.cy + v.y) / 4
+      const midX = (u.x + 2 * e.cx + v.x) / 4
+      assert.ok(midY >= 0, `bow apex at y=${midY} escaped the top`)
+      assert.ok(midX >= 0 && midX <= contentW, `bow apex at x=${midX} escaped the sides`)
+    }
   }
 })
 
-test('the gutter and its lanes stay inside the panel', () => {
-  const { infos, links } = interleavedScene(MAX_LANES)
-  const { lanes, gutterW } = computeLayout(infos, links)
-  assert.ok(gutterX(gutterW) > PANEL_W / 2, 'the gutter must not eat the label column')
-  for (let l = 0; l < lanes; l++) {
-    const x = laneX(l, lanes)
-    assert.ok(x > gutterX(gutterW) && x < PANEL_W, `lane ${l} at x=${x} escaped the gutter`)
-  }
-})
-
-// ── 7. Scrolling — the row height is what must NOT degrade ──────────────────
-
-test('the outline scrolls past the cap instead of compressing its rows', () => {
-  // The cost ADR-095 accepts: "the whole graph at a glance" becomes "the depth at
-  // a glance". What must not happen is rows shrinking to fake the former.
-  const s2 = nSolidScene(2), s12 = nSolidScene(12)
-  const small = computeLayout(s2.infos,  s2.links)
-  const big   = computeLayout(s12.infos, s12.links)
-
-  assert.equal(small.scrollable, false)
-  assert.equal(big.scrollable, true)
-  assert.ok(big.contentH > big.graphH, 'the outline is taller than its viewport')
-
-  const pitch = (out) => {
-    const ys = [...out.nodes.values()].sort((a, b) => a.row - b.row).map(nd => nd.y)
-    return ys[1] - ys[0]
-  }
-  assert.equal(pitch(big), pitch(small), 'row pitch is constant regardless of scene size')
-  assert.equal(pitch(big), ROW_H)
+test('an arc meets each dot at its rim, so the arrowhead lands on the target', () => {
+  const { infos, links } = twoSolidScene()
+  const { nodes, edges } = computeLayout(infos, links)
+  const e = [...edges.values()][0]
+  const u = nodes.get(e.source), v = nodes.get(e.target)
+  const nums = arcPath(e, u, v).match(/-?\d+(\.\d+)?/g).map(Number)
+  const [x0, y0] = nums, [x1, y1] = nums.slice(-2)
+  assert.ok(Math.abs(Math.hypot(x0 - u.x, y0 - u.y) - (NODE_R + 1)) < 0.05)
+  assert.ok(Math.abs(Math.hypot(x1 - v.x, y1 - v.y) - (NODE_R + 1.5)) < 0.05)
 })
 
 // ── 8. Determinism — ADR-048's core property, machine-held ──────────────────
 
-/** Node/edge geometry in a comparable shape — lanes included since ADR-095. */
+/** Node/edge geometry in a comparable shape — lanes and bows included. */
 function snapshot(out) {
   return {
     nodes: [...out.nodes].map(([id, nd]) =>
-      [id, nd.layer, nd.row, nd.x, nd.y, nd.labelX, nd.labelW, nd.label, nd.parentId]),
+      [id, nd.layer, nd.slot, nd.x, nd.y, nd.labelW, nd.label, nd.parentId, nd.overflow]),
     edges: [...out.edges].map(([id, e]) =>
-      [id, e.source, e.target, e.directed, e.kinematic, e.lane, e.dropped]),
-    rows: out.rows, depth: out.depth, lanes: out.lanes, gutterW: out.gutterW,
-    svgH: out.svgH, contentH: out.contentH,
+      [id, e.source, e.target, e.directed, e.kinematic, e.lane, e.dropped, e.cx, e.cy]),
+    columns: out.columns, depth: out.depth, lanes: out.lanes,
+    svgH: out.svgH, contentH: out.contentH, contentW: out.contentW,
   }
 }
 
@@ -721,13 +765,13 @@ test('レイアウトを変える変更はすべて署名を変える (DOM が�
   const original = sig(() => {})
 
   const mutations = {
-    'ラベルの変更 (行のテキスト)': (infos) => {
+    'ラベルの変更 (ノードのテキスト)': (infos) => {
       infos.set('solidA', { ...infos.get('solidA'), name: 'Renamed' })
     },
     '実体種の変更 (ドットの色)': (infos) => {
       infos.set('solidA', { ...infos.get('solidA'), type: 'imported' })
     },
-    'ノードの追加 (行が増える)': (infos, links) => {
+    'ノードの追加 (列が増える)': (infos, links) => {
       infos.set('solidC', { name: 'Extra', type: 'cuboid', parentId: null })
       links.push(link('l2', 'cfA', 'solidC'))
     },

@@ -1,0 +1,91 @@
+GOALS adr167_link_network_is_a_top_down_tree
+
+goal TheTfTreeIsSeenBranchingTopDown
+uuid ba3880a9-356c-42a1-927e-8253ac73f275
+summary "LINK NETWORK パネルで、TF ツリーの親子が上から下への枝分かれとして見える。ラベルは兄弟の数で縮まず (ADR-095 G1)、深さは辺を辿らずに分かる (G2)"
+state ToBeReviewed
+labels adr-167, adr-095, link-network, term-p-operate, change-presentation
+artifacts
+- "docs/adr/ADR-167-link-network-is-a-top-down-tree-that-scrolls.md"
+
+    context Adr167Scope
+    uuid 7943ebfd-03bf-422f-a734-c8a05af10ff5
+    summary "ADR-167 (Accepted 2026-10-21): computeLayout() の幾何を『行 = ノード / x = 深さ / 右ガターのレーン』から『y = 深さ / x = 固定幅の列スロット / 木の上の弓』へ替え、パネル内を 2 軸でスクロールさせる。ノード集合・融合・辺の 2 クラス・決定性・データ契約・update() は無改変"
+    artifacts
+    - "src/view/LinkNetworkLayout.js"
+    - "src/view/LinkNetworkView.js"
+
+    context RequestCameTwice
+    uuid 61f55eb6-c9ee-4c7b-af22-7d73dc9f6ae4
+    summary "当事者の言葉 (2026-10-21):『やっぱり、何回も見直してるけど LINK NETWORK の階層図は上から下へツリー構造になってるのが見えるのが一番見やすいと思った』。ADR-095 の発端も『Mermaid のトップダウン記法みたいに』だった。ADR-095 の木の仮説 SiblingComparisonLossIsAcceptable はこれで反証された"
+    artifacts
+    - "docs/gsn/adr-095-link-network-indented-outline.gsn"
+
+    context BusinessTreeAttachPoint
+    uuid 22bde8bd-2a22-4ac5-98ff-743762aec7e6
+    summary "事業木へ接続 (2026-10-21, ADR-153): profit-growth.gsn の goal MobileStructureViewIsReadable (ADR-094 / ADR-095 が吊った枝) の下に solution Adr167Tree として吊る"
+    artifacts
+    - "docs/gsn/profit-growth.gsn"
+
+    justification WhyScrollNotWidenOrZoom
+    uuid 166ac80a-1f1b-48ea-b7e8-9f9cf94c2762
+    summary "却下案 B (パネルを広げる) と C (縮小 + 選択周辺の拡大) への反証: B は左端の占有を再計算させ、広がったパネルがビューポートを覆う。C は縮小部分のラベルを読めなくする (G1 を部分的に捨てる)。当事者は 3 択から A (横スクロール) を選んだ。ADR-095 が上から下の木を却下した理由は x 固定という前提で、その前提はスクロールで外れる"
+
+    assumption ScrollingIsAnAcceptableCost
+    uuid f80c8e5f-b3f4-428e-8c2f-32e0c0427e28
+    summary "反証されうる仮説: 220px で同時に見える列は約 3.4 本で、全体を眺めるには横スクロールが要る。3D で選んだ実体へは自動でスクロールするので『探す』コストは小さいと見込むが、当事者の実利用でしか反証できない。反証されたら別窓に出す形 (当事者の付記 — Blender の分離ウィンドウ) を住所を動かす ADR として起こす"
+
+    strategy ByMakingXScrollableNotDividing
+    uuid e3ae7862-25e5-4a4b-acec-0b10c8e3b341
+    summary "x をスクロール可能にして、兄弟数が幅を割るのではなく増やすようにする。ラベル幅を定数にし (G1)、深さを縦位置そのものにし (G2)、混雑のコストは弓 (レーンと +N) が払う。4 つの下位 goal は苦情 (枝分かれが見えない) と ADR-095 の 2 つの Goal から遡って同定した必要条件"
+
+        goal ParentsSitAboveTheirChildren
+        uuid e6e6b121-9932-40dc-9b69-a6d8b0cabe3c
+        summary "y は TF 深さだけの関数で、子は親の 1 段下にある。親は最初と最後の子の中央に立ち、木辺は親のラベルの下から子へ組織図の肘で降りる"
+        labels support-verified
+
+            solution TopDownGeometryTests
+            uuid e2447259-0490-4da3-a051-0a7b0980844e
+            summary "node --test src/view/LinkNetworkLayout.test.js — 48/48 pass (2026-10-21)。y は深さだけの関数で段の差は LEVEL_H / 非根ノードは親より下 / 親は子の両端の中央 / 一人っ子は親の真下 / 子ごとに垂線ちょうど 1 本・親ごとに幹 1 本・横棒は子の両端に一致 / 幹は親のラベルを横切らない / 深い鎖は段を詰めずに縦スクロール / parentId の循環は根として置き、木を下へ伸ばさない"
+            artifacts
+            - "src/view/LinkNetworkLayout.test.js"
+            - "src/view/LinkNetworkLayout.js"
+
+        goal LabelWidthDividesByNothing
+        uuid ea7ad7f6-7746-45c8-b02d-dc29eff26c71
+        summary "ラベル幅は SLOT_W − LABEL_PAD の定数で、兄弟数にも深さにも依存しない。同じ段の 2 ノードは 1 スロット以上離れるので衝突しない。名前は語単位で 2 行まで折り返し、失うのは省略記号 1 つだけ。denseMode は不在のまま"
+        labels support-verified
+
+            solution LabelConstantTests
+            uuid 8c6400ae-ee3c-4d98-ae9f-6a295863bcfa
+            summary "node --test src/view/LinkNetworkLayout.test.js — pass。兄弟 3 / 10・深い鎖・Solid 12 のどれでも labelW は同じ定数 / 兄弟 10 は内容が広がり scrollX になるが兄弟のピッチは SLOT_W のまま / Solid 6 で同じ段の 2 ノードは SLOT_W 以上離れる / 'Robot pedestal' → ['Robot', 'pedestal'] / 長い名前・単語 1 つ・CJK・空でも LABEL_LINES 行以内・各行が幅以内 / denseMode が返り値に無い (n = 2..24)"
+            artifacts
+            - "src/view/LinkNetworkLayout.test.js"
+
+            solution RealSceneStills
+            uuid 29372891-83a0-436c-9bf0-e47cb0e7e071
+            summary "実アプリ (vite dev + Playwright, deviceScaleFactor 2) で pick & place / 工場セル / パレタイズのテンプレを読み、パネルを撮った。名前は 2 行で切られず ('Power inlet (100V)'・'Robot pedestal')、台座 → 取付板の親子が幹で縦に繋がる。Outliner で robot_base を選ぶとパネルが scrollLeft 366 まで寄って robot_base が強調される。画像は PR に添付 (リポジトリには置かない)"
+
+        goal CotreeCrowdingIsPaidByTheArcs
+        uuid 82087190-dfc6-4209-9d5d-04a1e44235df
+        summary "SpatialLink は x 区間の決定的な区間彩色でレーンを持ち、レーンが弓の高さを決める。上限 MAX_LANES を超えた辺は両端の +N に数え、無言で消さない。レーン 0 本なら弓の余白も 0"
+        labels support-verified
+
+            solution LaneTests
+            uuid 0071f503-6386-4d1a-8718-c0c4163b7fa8
+            summary "node --test src/view/LinkNetworkLayout.test.js — pass。同じレーンの 2 辺の列区間は重ならない / 上のレーンほど高く反る / リンク列の順序を変えてもレーンが動かない / 上限超過の本数とバッジ合計が 1:2 / 弓の頂点は内容の内側 / レーン 0 本で lanes=0・dropped=0 / 弓の端は点の縁 (NODE_R+1 / NODE_R+1.5) で切れる"
+            artifacts
+            - "src/view/LinkNetworkLayout.test.js"
+
+        goal ContractsSurviveAndScrollHasTwoWriters
+        uuid 23dae3c8-df44-4bfd-816e-a90456ea2942
+        summary "computeLayout は純粋・決定的・入力順非依存のまま、データ契約と update() は無改変。署名の欄は勘定が合う。スクロール位置の書き手は利用者と _revealSelection (選択が変わったときだけ) の 2 つで、権威は DOM 要素 1 つ"
+        labels support-verified
+
+            solution ContractRegressionGreen
+            uuid cdd30066-24d0-4da0-9b14-51c781e6cf7f
+            summary "pnpm test 全件 pass・pnpm typecheck 緑 (2026-10-21)。決定性 (同一シーン → 同一スナップショット / 列挙順非依存)・純粋性・融合・基数 0 の各本は意味を変えずに通る。署名の欄の勘定 (未分類 0 個、両向き) と『レイアウトを変える変更はすべて署名を変える』が通る。e2e の LINK NETWORK ↔ ビューポートの選択往復 (ADR-099) は smoke.spec.js で実行"
+            artifacts
+            - "src/view/LinkNetworkLayout.test.js"
+            - "e2e/smoke.spec.js"
+            - "docs/STATE_LEDGER.md"

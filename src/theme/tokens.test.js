@@ -422,7 +422,10 @@ const DECLARED_VOCABULARIES = {
 // 699 → 697 (ADR-166 M6): SceneView's white ambient and white key light left —
 // the one stage light (StageMath.STAGE_LIGHT) is now the only light. Distinct
 // stays 190: white still has other users.
-const UNDECLARED_OCCURRENCE_BASELINE = 697
+// 697 → 696 (ADR-167): the LINK NETWORK's depth badge (`#6f6f6f`) left with
+// the indented outline — a top-down tree states depth by position. Distinct
+// stays 190: that grey still has another user.
+const UNDECLARED_OCCURRENCE_BASELINE = 696
 const UNDECLARED_DISTINCT_BASELINE   = 190
 
 const HEX_LITERAL = /#[0-9a-fA-F]{6}\b|\b0x[0-9a-fA-F]{6}\b/g
