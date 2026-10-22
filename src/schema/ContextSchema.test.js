@@ -1,7 +1,7 @@
 /**
  * Context DSL schema conformance + drift binding (ADR-064 Phase 2).
  *
- * The schema (schema/context-0.6.schema.json) is the SHAPE contract for the
+ * The schema (schema/context-0.7.schema.json) is the SHAPE contract for the
  * Context DSL — a closed, versioned JSON Schema artifact (PHILOSOPHY #29).
  * This suite proves:
  *
@@ -45,7 +45,7 @@ const here = dirname(fileURLToPath(import.meta.url))
 const root = join(here, '..', '..')
 const readJson = (p) => JSON.parse(readFileSync(join(root, p), 'utf8'))
 
-const schema = readJson('schema/context-0.6.schema.json')
+const schema = readJson('schema/context-0.7.schema.json')
 const ajv = new Ajv2020({ allErrors: true, strict: false })
 const validate = ajv.compile(schema)
 
@@ -60,7 +60,7 @@ const EXAMPLES = [
 // ── 1. Conformance: every bundled context example passes ─────────────────────
 
 for (const f of EXAMPLES) {
-  test(`${f} conforms to context-0.6 schema`, () => {
+  test(`${f} conforms to context-0.7 schema`, () => {
     const valid = validate(readJson(`examples/${f}`))
     assert.equal(valid, true, JSON.stringify(validate.errors, null, 2))
   })
@@ -317,4 +317,40 @@ test('a context/0.6 doc with hearing trials conforms; a stored "afterTrial" is r
     version: 'context/0.6',
     criteriaHearing: { trials: [{ actor: 'a', line }] },
   }), false, '`seen` is required — no candidates shown is a declared [] (原則 #31)')
+})
+
+// ── ADR-168 S1: arrangements (context/0.7) ───────────────────────────────────
+
+import { CONTACTS, FACE_TOWARD, ABSOLUTE_TOWARD, RELATIVE_DIRS, MIN_SIDES, MAX_SIDES } from '../domain/arrangement.js'
+import { FRAME_ROLES } from '../domain/viewerFrame.js'
+
+const arrangementDoc = (arr) => ({ version: 'context/0.7', actors: [{ ref: 'ann' }], arrangements: [arr] })
+const okArr = { ref: 'a1', by: 'ann', subject: 'work', sides: [{ of: 'bin', contact: 'touching', toward: '+z' }] }
+
+test('a context/0.7 doc with a two-thing and a between arrangement conforms', () => {
+  assert.equal(validate(arrangementDoc(okArr)), true, JSON.stringify(validate.errors))
+  assert.equal(validate(arrangementDoc({ ref: 'a2', by: 'ann', subject: 'work', sides: [
+    { of: 'jawL', contact: 'apart', toward: { dir: 'left', viewer: 'operator' } },
+    { of: 'jawR', contact: 'apart', toward: { dir: 'right', viewer: 'operator' } },
+  ] })), true, JSON.stringify(validate.errors))
+})
+
+test('an arrangement without a claimant, with 0 or 3 sides, or a relative direction without a viewer is rejected by shape', () => {
+  const { by, ...noBy } = okArr
+  assert.equal(validate(arrangementDoc(noBy)), false)
+  assert.equal(validate(arrangementDoc({ ...okArr, sides: [] })), false)
+  assert.equal(validate(arrangementDoc({ ...okArr, sides: [{ of: 'a' }, { of: 'b' }, { of: 'c' }] })), false)
+  assert.equal(validate(arrangementDoc({ ...okArr, sides: [{ of: 'bin', toward: { dir: 'left' } }] })), false)
+  assert.equal(validate(arrangementDoc({ ...okArr, sides: [{ of: 'bin', toward: 'on top' }] })), false)
+  assert.equal(validate(arrangementDoc({ ...okArr, sides: [{ of: 'bin', mobility: 'fixed' }] })), false, 'mobility is looked up, not declared')
+})
+
+test('schema arrangement enums match domain/arrangement.js and viewerFrame.js', () => {
+  const sideSchema = schema.$defs.arrangementSide.properties
+  assert.deepEqual(sideSchema.contact.enum, [...CONTACTS])
+  assert.deepEqual(sideSchema.toward.oneOf[0].enum, [...FACE_TOWARD, ...ABSOLUTE_TOWARD])
+  assert.deepEqual(sideSchema.toward.oneOf[1].properties.dir.enum, [...RELATIVE_DIRS])
+  assert.equal(schema.$defs.arrangement.properties.sides.minItems, MIN_SIDES)
+  assert.equal(schema.$defs.arrangement.properties.sides.maxItems, MAX_SIDES)
+  assert.deepEqual(schema.$defs.hydratedEntity.properties.frameRole.enum, [...FRAME_ROLES])
 })

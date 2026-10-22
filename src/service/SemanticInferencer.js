@@ -18,7 +18,12 @@ import { Box3, Vector3 } from 'three'
 import { Solid }           from '../domain/Solid.js'
 import { AnnotatedRegion } from '../domain/AnnotatedRegion.js'
 
-/** Face-gap (units) below which two faces are considered "touching". */
+/**
+ * Face-gap (units) below which two faces are considered "touching".
+ * In the mm world (ADR-136) this reads as 0.15 mm — a metre-era value. Moving
+ * onto `domain/arrangementGeometry.CONTACT_TOLERANCE_MM` is 未実装 until
+ * ADR-168 S2 (DEF-071).
+ */
 const CONTACT_THRESHOLD = 0.15
 
 /**

@@ -100,18 +100,26 @@
  *                           existing `criterion` — no new layer (ADR-165 D2).
  *                           Which criteria element a requirement answers is its
  *                           `kpi.name` against CriteriaCatalog.js.
+ *
+ * context/0.7 (ADR-168 S1) additive field (optional, backward compatible):
+ *   arrangements[]          declared relations between things: who claims
+ *                           (`by` — an actor), the subject, 1..2 sides with
+ *                           optional contact / toward. Read against the layout
+ *                           by layout/ArrangementReport.js; shape and meaning
+ *                           live in domain/arrangement.js (R15 asks it).
+ *                           Concept model: docs/SPATIAL_RELATION_MODEL.md.
  */
 
 import { PROPOSAL_STATE, PROPOSAL_REF_PREFIX } from './Proposal.js'
 import { AGENDA_STATE, AGENDA_REF_PREFIX } from './Agenda.js'
 
-export const CONTEXT_DSL_VERSION = 'context/0.6'
+export const CONTEXT_DSL_VERSION = 'context/0.7'
 
 /**
  * Accepted input versions — each is an additive superset of the prior, except
  * that 0.6 stops *writing* the legacy role below (it is still read).
  */
-export const SUPPORTED_VERSIONS = ['context/0.1', 'context/0.2', 'context/0.3', 'context/0.4', 'context/0.5', 'context/0.6']
+export const SUPPORTED_VERSIONS = ['context/0.1', 'context/0.2', 'context/0.3', 'context/0.4', 'context/0.5', 'context/0.6', 'context/0.7']
 
 /**
  * Actor job functions (職能 — "who is this person"). Whether the actor stands

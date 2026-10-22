@@ -39,6 +39,11 @@
  * relation verbs the narrator needs. It is an extension point — adding a row
  * widens the quotient without touching either bridge.
  *
+ * One surface term folds onto ONE key across the whole table, whatever its `cat`.
+ * That is why the spatial words of ADR-168 (`above`, `below`, `between` — already
+ * operator synonyms here) are 未実装 in this table: adding them would silently
+ * change how the operators read. A per-category lookup comes first (DEF-070).
+ *
  * @type {ReadonlyArray<{key:string, en:string, ja:string, cat:string, synonyms:string[]}>}
  */
 export const QUOTIENT_TABLE = Object.freeze([

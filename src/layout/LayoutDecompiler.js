@@ -215,6 +215,9 @@ export function decompileLayout(sceneJson) {
         // must survive Scene → DSL → Scene. Omitted when null, keeping ordinary
         // frames byte-identical to pre-ADR-090 output.
         if (o.robotRole) entity.robotRole = o.robotRole
+        // ADR-168 D2: a declared viewer — dropping it would orphan every
+        // front/back/left/right that names it.
+        if (o.frameRole) entity.frameRole = o.frameRole
         // ADR-151: the tcp's position/rotation are the tool mount (tool0 → tcp).
         if (o.mountedOn) entity.mountedOn = o.mountedOn
         // ADR-152 D3: what the robot grasps with — the tcp's hand.

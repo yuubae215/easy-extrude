@@ -1,11 +1,11 @@
 # 168. 2 つの物の関係は 1 語ではなく軸の組で言う — 向き・接触・可動性、主張は 3 つの欄に
 
-- Status: Proposed (2026-10-21 起票 — 当事者との俯瞰で D1〜D4 の向きに合意。同日 O1〜O3 を当事者が決定し D5 と概念モデル `docs/SPATIAL_RELATION_MODEL.md` を足した。実装 S1〜S3 は未着手)
+- Status: Accepted (2026-10-22 — 当事者が「ここまで ok です。進んでください」で採択。**段階実装: S1 実装済み** (型・スキーマ context/0.7・state・status・主張どうしの衝突・R15・`frameRole` の往復 — 下の「実装メモ (S1)」)。S1b・S2・S3 は未着手で、それぞれの満期は論証木と `docs/DEFERRAL_LEDGER.md` DEF-070〜072 が持つ) — 起票時: Proposed (2026-10-21 — 俯瞰で D1〜D4 の向きに合意、同日 O1〜O3 を当事者が決定し D5 と概念モデル `docs/SPATIAL_RELATION_MODEL.md` を足した)
 - Date: 2026-10-21
 - Deciders: yuubae215 (要求: 「above が載っている、なのは語彙のイメージと合わない — 離れて上方にあるイメージ」/「上下左右どっちにあるのか、くっついてるのか離れてるのか、動くのか固定なのかを表す語彙はほしくない？」/「2 つの間にワークがあるのか、挟んでいるのか」/ 参照枠の規則 / state・宣言・status の読み / 「新たな型を作りましょう」/「宣言された見る人も要りそう — 前後左右はかなり主観的」/ O1「CoordinateFrame の役割で」・O2「Arrangement でいい」・O3「一人だったらそうなんだけど、複数人いたら一致しない場合もある」/「語彙が主観で変化するだろうから、データ構造か概念モデルで残しておいたほうが良い」), Claude (起票)
-- 状態台帳: `docs/STATE_LEDGER.md` §提案中の実体 の「2 つの物の関係」「見る人」行 (Accepted・実装済みで上の台帳へ移す)
+- 状態台帳: `docs/STATE_LEDGER.md` の「2 つの物の関係」「見る人」行 (S1 の実装で §提案中の実体 から台帳本体へ移した)
 - 段: なし (IA 再設計の順序表には載せない — 画面の住所を動かさない。実装の段は本 ADR の §段 が持つ)
-- Retires: GREP:src/domain/SpatialLink.js::above\s+— Source is vertically above · GREP:src/domain/SpatialLink.js::adjacent\s+— Source and target share a boundary · GREP:src/service/SemanticInferencer.js::semanticType:\s+'above' — 向きと接触を 1 語に潰した 2 つの semanticType と、それを提案する推論。Accepted の時点でこれらが残っていれば、語は割られずに足されただけ (第二の源) になる
+- Retires: なし — 退役させる `above` / `adjacent` (2 つの semanticType と、それを提案する推論) は S2 で消える。Accepted (S1) の時点では消せないので、退役ではなく**残し**として `docs/DEFERRAL_LEDGER.md` DEF-071 に降ろした (ADR-125 — 起票時はここに 3 番地を書いていた)。S2 が入ったとき DEF-071 が発火し、消えていなければ語は割られずに足されただけ (第二の源) になる
 - Supersedes / Superseded by: ADR-038 の semanticType 語彙のうち `above` / `adjacent` の 2 語を置き換える (他の語は無改変)。ADR-041 のヒューリスティック A/B の出力先を新しい型へ移す。ADR-048 §2.2.1 の「CF ツリー = 運動学的全域木」の前提を §段 S3 で見直す (ADR-094 / ADR-167 の幾何は継承)
 
 ---
@@ -110,7 +110,7 @@ flowchart TD
 
 | 軸 | 値 | 正本 |
 |---|---|---|
-| **接触** | `touching` / `apart` (隙間 mm は任意) / 宣言なし | 新しい型 (D3) |
+| **接触** | `touching` / `apart` / 宣言なし (隙間 mm の宣言は DEF-072 — 実装メモ) | 新しい型 (D3) |
 | **向き** | 接しているとき: 相手の面 `+x … -z` (内在 — **ADR-152 の面語彙を使い、新しい語を足さない**)。離れているとき: `above` / `below` (絶対) と、見る人を名指した `front` / `back` / `left` / `right` (相対 — D2) / 宣言なし | 新しい型 (D3) |
 | **可動性** | **既存の `jointType`** をそのまま使う。subject と相手の間の SpatialLink の `jointType` が可動性の宣言。リンクが 0 本 = 宣言なし、1 本 = その値 (`floating` = 自由)、運動学リンクが 2 本以上 = 矛盾 (バリデータのエラー) | `SpatialLink.jointType` (無改変 — 第二の源を作らない) |
 
@@ -139,7 +139,7 @@ Arrangement {
   subject: <ref>                       // 関係の主語 (例: ワーク)
   sides:   1..2 × {
     of:      <ref>                     // 相手
-    contact: touching | apart(gap?)    // D1 — 省略 = 宣言なし
+    contact: touching | apart          // D1 — 省略 = 宣言なし (隙間 mm は DEF-072)
     toward:  <face> | above | below
              | { dir: front|back|left|right, viewer: <ref> }   // D1 / D2 — 省略 = 宣言なし
   }
@@ -197,9 +197,37 @@ Arrangement {
 
 | 段 | 内容 | Accepted 条件への寄与 |
 |---|---|---|
-| **S1** | `Arrangement` と `viewer` 役割の欄をスキーマへ入れる (置き場所は `actors` を持つ文書 — Layout を内包する Context 文書 (ADR-162)。正確な座席は S1 で決める)、domain の型、state の純粋関数、status (配置との照合) と主張どうしの衝突 | D1〜D5 |
+| **S1** ✓ | `Arrangement` と `viewer` 役割の欄をスキーマへ入れる (座席は Context 文書の最上位 `arrangements[]` — 主張した人 `actors` と同じ文書に住む。見る人は Layout の `frameRole`)、domain の型、state の純粋関数、status (配置との照合) と主張どうしの衝突 | D1〜D5 |
+| **S1b** | **語が指す先を画面で確かめる手段** (原則 #33-4 — 概念モデル §3 の右端の列): 接している面を光らせる / 見る人の位置と正面の矢印 / status の不一致と主張どうしの衝突を画面に出す。置き場所 `src/view/ArrangementStatusView.js` (予定の番地 — 論証木の満期が読む) | D4 の「不一致は画面で必ず見える」 |
 | **S2** | `SemanticInferencer` の A/B を新しい型の提案へ移し、テンプレの `above` を移行する (bin・tray・pedestal → `touching` で作業台の `+z` 面)。scene ファイルの旧 `above` / `adjacent` は読み込み時に無損失で移行 (先例: ADR-152 の `faces` → `specs`) | Retires の 3 番地を消す |
 | **S3** | LINK NETWORK の木を軸から導く: 親 = subject を**固定** (`jointType: fixed`) する相手、または subject を**下から支える**相手 (`touching` かつ 相手の上向きの面)。候補が 2 つ以上なら固定が支えに優先し、残りは弧 (無言で消さない)。循環は 1 本を弧に回す | 発端の苦情 |
+
+## 実装メモ (S1 — 2026-10-22)
+
+実装で決めたこと・見つけたこと (俯瞰との食い違いは隠さず書く — 原則 #19):
+
+- **座席:** `Arrangement` は Context 文書の最上位 `arrangements[]` (context/0.7 — 加算。版上げは
+  0.5 → 0.6 と同じく schema ファイルの改名で行った)。主張した人 (`actors`) と同じ文書に住むので
+  `by` が参照で閉じる。Layout DSL は幾何の事実だけを持ち、見る人は `frameRole: "viewer"` として
+  そこに載る (scene JSON・保存・逆コンパイルまで往復)。
+- **欄の名前:** `frameRole` (`robotRole` に相乗りしない)。値の解釈は `src/domain/viewerFrame.js`
+  1 箇所で、`IDENTITY_RULES` に登録した。見る人はロボットのフレーム・視覚カメラ・TF の子にはなれない
+  (カメラは +Z が視線で、見る人は +X が正面 — 同じフレームが両方だと片方の語が別の軸を指す。TF の子は
+  親が動くと「左」が動くので、まだ決めていない)。
+- **state の幾何 (閉形式):** 相手の座標系で subject の 8 頂点の区間を取り、軸ごとの符号付き分離から
+  接触・面を読む。容器 (ADR-155) は `hollowBody.shellParts` の床と壁で読むので、ビンの中のワークは
+  **内側の床の +z** に接して見える (外箱で読むと「めり込み」になる)。回転した subject は区間で
+  外接するので、縁では接触寄りに読む (近似は `arrangementGeometry.js` の冒頭に明記)。
+  観測の接触には宣言できない値 `overlapping` (めり込み) がある。
+- **接触の許容値は mm で宣言した** (`CONTACT_TOLERANCE_MM = 1`)。既存の
+  `SemanticInferencer.CONTACT_THRESHOLD = 0.15` は単位が「units」で、mm の世界 (ADR-136) では
+  0.15 mm を意味する — メートル時代の残り。推論をこの定数へ移すのは S2 (DEF-071)。
+- **見つけた衝突: 同義語辞書の 1 語は辞書全体で 1 つの鍵にしか落ちない。** `QUOTIENT_TABLE` は
+  `above` / `below` / `between` を既に比較演算子の同義語として持っているので、空間の語を足すと
+  演算子の読みが黙って変わる。D5 の「人ごとの言い方を辞書で正規形へ」は、分類ごとに引ける辞書を
+  決めてから行う (DEF-070)。1 語 1 事実 (原則 #33-1) が辞書の層にも在った例。
+- **隙間の宣言 (`apart` + mm) は S1 に入れていない。** 観測の `gap` は相手の軸に沿った分離の
+  **下界**で、真の距離ではないので、宣言の mm と照合すると嘘の一致・不一致を出す (DEF-072)。
 
 ## Consequences — Evidence と tradeoff (§1.2 Evidence)
 
@@ -214,7 +242,11 @@ Arrangement {
   **`core/` (Python) は semanticType を一切読まない** (`grep -rn "above\|adjacent" core/` —
   テストのカメラ名のみ。2026-10-21 確認) ので、grasp 契約と contractVersion には触らない。
 - 検証 (証拠): goal ごとの支えの正本は論証木 `docs/gsn/adr-168-a-spatial-relation-is-three-axes.gsn`
-  (起票時点ではすべて未支持で、証拠予定を `assumption` に名指ししてある)。
+  (S1 で 3 つの goal が support-verified に上がった。残りは S1b / S2 / S3 の番地を満期に持つ)。
+  S1 で実行したもの: `node --test src/domain/arrangement.test.js` (16) · `src/domain/arrangementGeometry.test.js` (12) ·
+  `src/layout/ArrangementReport.test.js` (14 — テンプレの実数値で bin / ワーク / 見る人、R15、往復) ·
+  `src/schema/ContextSchema.test.js` / `LayoutSchema.test.js` (形と語彙の両向きピン留め) ·
+  `src/IdentityContainment.test.js` (`frameRole` の解釈の所有者)。`pnpm test` 全件・`pnpm typecheck`・`pnpm build`。
 
 ## 未決 (O) — 2026-10-21 にすべて当事者が決定
 

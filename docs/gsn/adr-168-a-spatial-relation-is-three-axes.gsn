@@ -10,8 +10,12 @@ artifacts
 
     context Adr168Scope
     uuid 9a8970be-0306-4bf4-83d5-028a996e407b
-    summary "ADR-168 (Proposed 2026-10-21): above / adjacent を退役し、関係を『接触・向き・可動性』の 3 軸の組として新しい型 Arrangement (主張した人 by + subject + 側 1..2) で言う。概念モデルの正本は docs/SPATIAL_RELATION_MODEL.md。可動性は既存の jointType、面は ADR-152 の語彙を使う。主張は state (配置から導出)・宣言 (文書)・status (軸ごとの離散の照合) の 3 欄。実装は S1 (型とスキーマ) → S2 (推論と移行) → S3 (LINK NETWORK の木)"
+    summary "ADR-168 (Accepted 2026-10-22・段階実装 — S1 実装済み): above / adjacent を退役し、関係を『接触・向き・可動性』の 3 軸の組として新しい型 Arrangement (主張した人 by + subject + 側 1..2) で言う。概念モデルの正本は docs/SPATIAL_RELATION_MODEL.md。可動性は既存の jointType、面は ADR-152 の語彙を使う。主張は state (配置から導出)・宣言 (文書)・status (軸ごとの離散の照合) の 3 欄。実装は S1 (型とスキーマ — 実装済み) → S1b (語が指す先を画面で確かめる) → S2 (推論と移行) → S3 (LINK NETWORK の木)"
     artifacts
+    - "src/domain/arrangement.js"
+    - "src/domain/arrangementGeometry.js"
+    - "src/domain/viewerFrame.js"
+    - "src/layout/ArrangementReport.js"
     - "src/domain/SpatialLink.js"
     - "src/service/SemanticInferencer.js"
 
@@ -49,27 +53,32 @@ artifacts
 
             assumption AxisSchemaPlanned
             uuid 6091cd88-857c-4865-8684-c707c59842db
-            summary "証拠予定 (S1/S2): 満期=ADR-168 。新しい型のスキーマとバリデータのテスト — 軸ごとの省略が『宣言なし』として往復する / 運動学リンク 2 本以上は矛盾エラー / 旧 above・adjacent を含む scene が移行後に同じ向き・接触を言う (先例 ADR-152 の faces → specs)。ADR の Retires 3 番地を pnpm test:adr が Accepted で問う"
+            summary "証拠予定 (S2): 満期=GREP:src/service/SemanticInferencer.js::arrangementGeometry.js 。S1 で半分は立った (軸ごとの省略が『宣言なし』のまま status に出る / 運動学リンク 2 本以上は矛盾エラー — arrangement.test.js)。残りは S2: 旧 above・adjacent を含む scene が移行後に同じ向き・接触を言う (先例 ADR-152 の faces → specs) と、2 語の定義と推論が消えること (DEF-071)"
 
         goal HorizontalDirectionNamesItsViewer
         uuid a1dca7a3-32e0-4875-a0d1-2b966145fb41
         summary "接しているときの向きは相手の面 (内在)、離れているときの上下は重力 (絶対)、前後左右は宣言された見る人 (相対) で言う。見る人を名指さない相対の向きは書けず、カメラ相対の左右は表示の導出にとどまり文書にも照合にも入らない"
-        state ToBeDeveloped
-        labels support-exploring
+        labels support-verified
 
-            assumption ViewerRuleTestsPlanned
+            solution ViewerRuleTests
             uuid 83fbf0aa-d5ad-415c-b82f-fa00e9778acb
-            summary "証拠予定 (S1): 満期=ADR-168 。バリデータのテスト — viewer の無い front/back/left/right はエラー、見る人が 1 人でも暗黙に選ばない、接触中の関係に相対の向きを書くとエラー。state 関数のテスト — 見る人を Z 回りに 180° 回すと left と right が入れ替わり、カメラを動かしても state は変わらない"
+            summary "node --test (2026-10-22) — arrangement.test.js: viewer の無い front/back/left/right はエラー (見る人が 1 人でも) / 宣言されていない見る人はエラー / 接触中に above・相対の向き、離れて面を書くとエラー。arrangementGeometry.test.js: 見る人を Z 回りに 180° 回すと left↔right・front↔back が入れ替わる / 相手を回すと面の名前が回る (内在) / 接していることは above ではない。state の関数はカメラを入力に取らない (引数の形がそれを言う)。ArrangementReport.test.js: テンプレのセルの前に立つ見る人から、ビンはトレイの左。LayoutValidator は見る人がロボットのフレーム・視覚カメラ・TF の子であることを拒む"
+            artifacts
+            - "src/domain/arrangement.test.js"
+            - "src/domain/arrangementGeometry.test.js"
+            - "src/layout/ArrangementReport.test.js"
 
         goal TwoSidesSayBetweenAndClamped
         uuid 9175d98c-0b7f-4513-bb57-add3844eb5b8
         summary "1 つの型で 2 者関係 (側 1) と 3 者関係 (側 2) を言え、側 2 の接触の組で『挟まれている / 間にある / 片側に寄っている』が区別される。側 0 は表現不能、3 以上は未決として宣言されている"
-        state ToBeDeveloped
-        labels support-exploring
+        labels support-verified
 
-            assumption BetweenTestsPlanned
+            solution BetweenTests
             uuid 8e98d686-f24c-4aa5-b521-23fe354ec982
-            summary "証拠予定 (S1): 満期=ADR-168 。スキーマが sides の minItems 1 / maxItems 2 を持つ / 2 側の向きが逆でない組はエラー / グリッパの 2 本の爪に挟まれたワークの fixture で state が両側 touching を返す"
+            summary "node --test (2026-10-22) — ContextSchema.test.js: sides の minItems 1 / maxItems 2 が domain の MIN_SIDES / MAX_SIDES と一致、0 と 3 は形で拒否。arrangement.test.js: 2 側の向きが逆でない組・片側だけの向き・違う見る人の左右はエラー / 2 本の爪に挟まれたワークの fixture で両側が touching かつ向きが一致し、片方の爪を 10 mm 開くとその側だけが不一致になる"
+            artifacts
+            - "src/schema/ContextSchema.test.js"
+            - "src/domain/arrangement.test.js"
 
         goal StatusIsDiscreteAndVisible
         uuid 45dae2e0-7b76-4bc1-8fbe-c566d287ca95
@@ -79,17 +88,20 @@ artifacts
 
             assumption StatusCensusPlanned
             uuid b979d675-4449-4b7b-8e6b-87e554324674
-            summary "証拠予定 (S1): 満期=ADR-168 。state 関数の閉形式テスト (接触の許容値の正本が 1 か所 / 上下の符号 / 内在の面) と、status の値域が 3 値であることの census。将来 core/ が同じ接触判定を持つなら fixtures/cross-language/ の準拠テストを同じ PR で置く (CLAUDE.md §AI 向けガード 軸 3)"
+            summary "証拠予定 (S1b): 満期=PATH:src/view/ArrangementStatusView.js 。前半 (離散で保存しない) は S1 で立った — arrangementGeometry.test.js の閉形式テスト (接触の許容値は CONTACT_TOLERANCE_MM の 1 か所 / 上下の符号 / 内在の面 / 容器は内側の床) と arrangement.test.js の status の値域 3 値。残りは『不一致は画面で必ず見える』で、S1b の画面が立てる。将来 core/ が同じ接触判定を持つなら fixtures/cross-language/ の準拠テストを同じ PR で置く (CLAUDE.md §AI 向けガード 軸 3)"
 
         goal EachClaimKeepsItsClaimant
         uuid 0d6f3b8e-91a2-4c57-b3e4-7a8c2f5d1e90
-        summary "宣言はどれも主張した人 (by) を持ち、相対の向きはそれとは別に見る人 (viewer) を持つ。同じ対について人ごとの宣言を上書きせず並べ、同じ軸で食い違えば『主張どうしの衝突』として名指す (配置との status とは別の事実。どちらが正しいかは決めない)。人ごとの言い方は QUOTIENT_TABLE で正規形へ落とす"
-        state ToBeDeveloped
-        labels support-exploring
+        summary "宣言はどれも主張した人 (by) を持ち、相対の向きはそれとは別に見る人 (viewer) を持つ。同じ対について人ごとの宣言を上書きせず並べ、同じ軸で食い違えば『主張どうしの衝突』として名指す (配置との status とは別の事実。どちらが正しいかは決めない)。(人ごとの言い方を QUOTIENT_TABLE で正規形へ落とす部分は、辞書の 1 語が辞書全体で 1 鍵という形との衝突が S1 で見つかったので、この goal から外して DEF-070 に降ろした)"
+        labels support-verified
 
-            assumption ClaimantTestsPlanned
+            solution ClaimantTests
             uuid 6e2a9c41-3b7d-4f85-a0c6-d18e5b7f2a34
-            summary "証拠予定 (S1): 満期=ADR-168 。バリデータのテスト — by の無い Arrangement はエラー / by と viewer を推論で結ばない (1 人のシーンでも viewer 未指定の相対の向きはエラーのまま) / 2 人が同じ対の同じ軸で食い違う fixture で衝突が両者を between に名指し、どちらの宣言も残る / 『奥』が back に落ちる辞書の行"
+            summary "node --test (2026-10-22) — arrangement.test.js: by の無い Arrangement・存在しない actor はエラー / 同じ人が同じ対を 2 度言うとエラー、別の人なら並ぶ / 違う見る人の left と right は衝突でなく、同じ見る人なら衝突 / 衝突の between は決定的に整列。ArrangementReport.test.js: テンプレのビンで 2 人の食い違いが 1 件の衝突として両方の主張を残し、R15 は衝突を error ではなく arrangementConflicts に返す。by と viewer は推論で結ばない (1 人の見る人でも viewer 未指定の相対の向きはエラー)"
+            artifacts
+            - "src/domain/arrangement.test.js"
+            - "src/layout/ArrangementReport.test.js"
+            - "src/context/ContextValidator.js"
 
         goal HangingIsDerivedFromTheAxes
         uuid 5c1e2a40-7d3b-4f8e-9a61-2b0c4d7e8f13
@@ -99,4 +111,4 @@ artifacts
 
             assumption HangingRegressionPlanned
             uuid 3f9d7b21-6a4e-4c80-b5d2-e1a7c9f04b68
-            summary "証拠予定 (S3): 満期=ADR-168 。LinkNetworkLayout.test.js にテンプレの事実で回帰 — ワークの親が供給ビン側のノード / 根 2 個 / dropped 0。親候補 2 つのワーク・循環する固定の fixture (基数 N)。2026-10-21 の試算 (fastened と支えを木辺にした what-if) は根 9 → 2、深さ 1 → 4、弧 8 → 1、dropped 3 → 0。見た目として読めるかは当事者の実画面でしか測れない (docs/dogfooding/)"
+            summary "証拠予定 (S3): 満期=GREP:src/view/LinkNetworkLayout.js::mobilityBetween 。LinkNetworkLayout.test.js にテンプレの事実で回帰 — ワークの親が供給ビン側のノード / 根 2 個 / dropped 0。親候補 2 つのワーク・循環する固定の fixture (基数 N)。2026-10-21 の試算 (fastened と支えを木辺にした what-if) は根 9 → 2、深さ 1 → 4、弧 8 → 1、dropped 3 → 0。見た目として読めるかは当事者の実画面でしか測れない (docs/dogfooding/)"

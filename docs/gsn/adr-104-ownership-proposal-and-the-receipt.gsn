@@ -13,7 +13,7 @@ artifacts
     uuid 249e3bb5-3166-43a0-a95c-1dfba0799cff
     summary "ADR-104 (Accepted 2026-08-02, 実装 = IA 再設計 Phase 4): 権限を鍵の集合 (0..N) として持ち、実体ごとに所有者を宣言し、鍵の無い編集ジェスチャを提案 (差分 + 理由) に変え、承認で主張の更新と証憑の追記を 1 つの undoable command として行う。Context DSL は 0.5 へ加算 (proposals[] / agenda[] / requirement.owner / decision.keyCardinalityAtDecision)。フロントの宣言と表示に閉じ、契約パッケージ・BFF・core は不変 — 鍵は誤操作防止であって認証ではない (D6)"
     artifacts
-    - "schema/context-0.6.schema.json"
+    - "schema/context-0.7.schema.json"
     - "docs/STATE_TRANSITIONS.md"
 
     context TheAppHadNoNotionOfWhoYouAre

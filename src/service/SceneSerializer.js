@@ -152,6 +152,9 @@ export function serializeScene(scene) {
         // the save file — otherwise a reloaded scene falls back to the legacy
         // name path and any robot but the first loses its identity.
         robotRole:  obj.robotRole ?? null,
+        // A declared viewer (ADR-168 D2). Without it a reloaded scene would lose
+        // the standpoint every relative direction names.
+        frameRole:  obj.frameRole ?? null,
         // What the tcp's transform is measured from (ADR-151). Without it a
         // reloaded tcp would read as the pre-ADR-151 base-relative shape and be
         // reset to the default mount — the user's mount would not survive a save.

@@ -15,6 +15,7 @@ import {
   VALID_SEMANTIC_TYPES,
 } from './LayoutDslSchema.js'
 import { hollowBodyGap, trayNormalFormGap } from '../domain/hollowBody.js'
+import { viewerFrameGap } from '../domain/viewerFrame.js'
 
 export function validateLayoutDsl(dsl) {
   const errors = []
@@ -142,6 +143,13 @@ export function validateLayoutDsl(dsl) {
     } else if (!entityRefs.has(entity.parentRef)) {
       errors.push(`entities[${i}] (CoordinateFrame "${entity.ref}") "parentRef" "${entity.parentRef}" does not match any entity ref`)
     }
+  }
+
+  // A declared viewer (ADR-168 D2): the frame a relative direction is seen
+  // from. The shapes it cannot take are named in one place (viewerFrame.js).
+  for (const entity of dsl.entities) {
+    const gap = entity && typeof entity === 'object' ? viewerFrameGap(entity) : null
+    if (gap) errors.push(gap)
   }
 
   // All resolvable refs: entity refs + frame refs + implicit <ref>_origin for Solids

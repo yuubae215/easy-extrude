@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://easy-extrude.dev/schema/context-0.6.json",
+  "$id": "https://easy-extrude.dev/schema/context-0.7.json",
   "title": "ContextDSL",
-  "description": "Public schema for Context DSL up to context/0.6 (ADR-046, ADR-049, ADR-053, ADR-104, ADR-165). This is the SHAPE contract: closed field sets + enum vocabularies. The MEANING contract (R1-R13: orphan-spec, conflicts, negotiation clusters, blocked acceptance, stated->derived promotion, role-KPI obligations, undeclared ownership, proposal/agenda integrity, unheard criteria, undeclared job function) stays in ContextValidator.js (ADR-064 Phase 2). Each context/0.x is an additive superset of the prior, so 0.1-0.6 docs all conform here (0.6 stops writing the legacy role value `endUser`, which is still accepted on input and rejected by the validator in a 0.6 doc — ADR-165 D1); `version` is bound to SUPPORTED_VERSIONS by the drift test. Domain-open bags (Fact.attrs, constraint.properties, meta.baseline) are kept open on purpose, mirroring the grasp-contract discipline (PHILOSOPHY #29).",
+  "description": "Public schema for Context DSL up to context/0.7 (ADR-046, ADR-049, ADR-053, ADR-104, ADR-165, ADR-168). This is the SHAPE contract: closed field sets + enum vocabularies. The MEANING contract (R1-R13: orphan-spec, conflicts, negotiation clusters, blocked acceptance, stated->derived promotion, role-KPI obligations, undeclared ownership, proposal/agenda integrity, unheard criteria, undeclared job function, arrangement integrity R15) stays in ContextValidator.js (ADR-064 Phase 2). Each context/0.x is an additive superset of the prior, so 0.1-0.6 docs all conform here (0.6 stops writing the legacy role value `endUser`, which is still accepted on input and rejected by the validator in a 0.6 doc — ADR-165 D1); `version` is bound to SUPPORTED_VERSIONS by the drift test. Domain-open bags (Fact.attrs, constraint.properties, meta.baseline) are kept open on purpose, mirroring the grasp-contract discipline (PHILOSOPHY #29).",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -17,7 +17,8 @@
         "context/0.3",
         "context/0.4",
         "context/0.5",
-        "context/0.6"
+        "context/0.6",
+        "context/0.7"
       ]
     },
     "meta": {
@@ -63,6 +64,13 @@
       "type": "array",
       "items": {
         "$ref": "#/$defs/requirement"
+      }
+    },
+    "arrangements": {
+      "description": "ADR-168 (context/0.7): declared relations between things — who claims (by), what (subject) and against what (1..2 sides: 1 = two things, 2 = between / clamped). Each axis of a side is optional; an omitted axis is NOT declared (never defaulted). Mobility is not a field: it is the jointType of the specification.layout constraints between subject and side, looked up. One claim per (pair x claimant); claims by different actors are kept side by side and a disagreement is reported as a claim conflict, not overwritten. Concept model: docs/SPATIAL_RELATION_MODEL.md.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/arrangement"
       }
     },
     "decisions": {
@@ -1007,6 +1015,12 @@
             "tcp"
           ]
         },
+        "frameRole": {
+          "description": "ADR-168 D2: a CoordinateFrame's declared role outside any robot. 'viewer' = a person's standpoint that front/back/left/right are seen from (+X its front, +Y its left). Mirrors layout-1.0 `entity.frameRole`. Absent = an ordinary frame.",
+          "enum": [
+            "viewer"
+          ]
+        },
         "mountedOn": {
           "description": "ADR-151: what a robot tcp's `position`/`rotation` are measured from. 'flange' = they ARE the tool mount (tool0 -> tcp) — the end effector's own fact and the interface the robot and its end effector share; the world pose is derived (base ∘ flange-at-rest ∘ mount), never stored. Absent on a pre-ADR-151 tcp, whose base-relative value the importer replaces with the default mount and announces (the entity and every relation to it survive). Mirrors layout-1.0 `entity.mountedOn`.",
           "enum": [
@@ -1862,6 +1876,96 @@
           }
         }
       ]
+    },
+    "arrangement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ref",
+        "by",
+        "subject",
+        "sides"
+      ],
+      "properties": {
+        "ref": {
+          "type": "string"
+        },
+        "by": {
+          "description": "ADR-168 D5: the actor ref of WHO claims this relation. A separate fact from the viewer a relative direction is seen from (toward.viewer) — one person may speak from another's standpoint, and with several people the two do not coincide.",
+          "type": "string"
+        },
+        "subject": {
+          "description": "The Solid ref (specification.layout) the relation is about.",
+          "type": "string"
+        },
+        "sides": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 2,
+          "items": {
+            "$ref": "#/$defs/arrangementSide"
+          }
+        }
+      }
+    },
+    "arrangementSide": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "of"
+      ],
+      "properties": {
+        "of": {
+          "description": "The Solid ref (specification.layout) on this side.",
+          "type": "string"
+        },
+        "contact": {
+          "description": "ADR-168 D1: touching | apart. Absent = not declared.",
+          "enum": [
+            "touching",
+            "apart"
+          ]
+        },
+        "toward": {
+          "description": "ADR-168 D1/D2: where the subject is. Touching -> the partner's face (+x..-z, ADR-152, intrinsic). Apart -> above/below (gravity) or {dir, viewer} (front/back/left/right as seen by a declared viewer frame). Absent = not declared.",
+          "oneOf": [
+            {
+              "enum": [
+                "+x",
+                "-x",
+                "+y",
+                "-y",
+                "+z",
+                "-z",
+                "above",
+                "below"
+              ]
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "dir",
+                "viewer"
+              ],
+              "properties": {
+                "dir": {
+                  "enum": [
+                    "front",
+                    "back",
+                    "left",
+                    "right"
+                  ]
+                },
+                "viewer": {
+                  "description": "Layout ref of a CoordinateFrame with frameRole 'viewer' (+X its front, +Y its left — REP-103).",
+                  "type": "string"
+                }
+              }
+            }
+          ]
+        }
+      }
     }
   }
 }
