@@ -127,6 +127,17 @@ lane — 動詞境界 ADR-056/077)」と促すこと。lane は真偽値 (等価
 「憲法に従って」より狭く名指しした要求のほうが通る (原則 #20) ので、その狭い要求を
 コマンドとして常備したもの。
 
+### ADR の段の実装 — 俯瞰を先に出し、合意を待つ
+
+ADR の段 (`S1b` / `M5b` / `PR2` …) の実装を頼まれたら、**コードを 1 行も書く前に** `/whiteboard` の
+§0〜§6 を出し、**当事者の合意を待ってから**実装に入る。依頼が「進めてください」の 1 行でも同じ。
+ADR が何を作るかを決めていても、どう読むか (曖昧な決定の読み方・何から導出するか・既存の規律を
+外すか) は段ごとに残り、それは当事者が決める。事後に出した俯瞰は作ったものの説明にしかならない —
+2026-10-24、ADR-168 S1b は実装・push の後に俯瞰が出され、3 つの判断が一人で決まっていたため
+当事者が実装をすべて取り消した (`.claude/kernel-log.md`)。
+問い所 = `.claude/hooks/stage-whiteboard-nudge.sh` (UserPromptSubmit — 依頼が入った瞬間に助言する。
+発火と非発火の両方を `src/StageWhiteboardNudge.test.js` が走らせて問う)。
+
 Create a new ADR when a design choice is non-obvious or hard to reverse.
 Update `docs/adr/README.md` index whenever an ADR is added or superseded.
 
