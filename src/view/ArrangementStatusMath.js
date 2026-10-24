@@ -223,8 +223,12 @@ function zRange(body) {
  *         | {kind: 'verticalGuide', tone: string, from: number[], to: number[], caption: string}
  *         | {kind: 'viewerAxes', tone: string, viewer: number[], facing: number[],
  *            lines: number[][][], quadrantLabels: Array<{text: string, at: number[]}>}
- *         | {kind: 'caption', tone: string, text: string, at: number[], row: number}} PictureItem
+ *         | {kind: 'caption', segments: Array<{text: string, tone: string}>, text: string, at: number[], row: number}} PictureItem
  *
+ * A caption is a run of segments, each in its own role, so only the mark of a
+ * mismatch (✗) or the word "conflict" is coloured and the rest stays plain text
+ * (C4 — the party, 2026-10-24: "3D でも印だけ塗る"). `text` is the segments
+ * joined, for reading and tests.
  * A caption's `at` is the top of the thing it is about; `row` stacks the
  * captions of one thing upward in SCREEN units (the view's label height), so
  * they neither overlap when zoomed out nor drift apart when zoomed in (原則 #27).
@@ -290,14 +294,13 @@ export function arrangementPicture(result, focusRefs) {
       }
 
       // One caption per side, at the subject: who said it and how it stands.
-      const marks = `contact ${STATUS_MARK[side.status.contact]} · direction ${STATUS_MARK[side.status.toward]}`
-      items.push({
-        kind: 'caption',
-        tone: hasMismatch({ sides: [side] }) ? STATUS_TONE[AXIS_STATUS.MISMATCH] : STATUS_TONE[AXIS_STATUS.MATCH],
-        text: `${report.by}: ${report.subject} → ${side.of}  ${marks}`,
-        at: [subject.center.x, subject.center.y, top],
-        row: nextRow(report.subject),
-      })
+      // Only each axis's MARK carries its status tone (C4).
+      items.push(captionItem([
+        plain(`${report.by}: ${report.subject} → ${side.of}  contact `),
+        markSegment(side.status.contact),
+        plain(' · direction '),
+        markSegment(side.status.toward),
+      ], [subject.center.x, subject.center.y, top], nextRow(report.subject)))
     })
   }
 
@@ -307,14 +310,24 @@ export function arrangementPicture(result, focusRefs) {
     if (!c.between.some(ref => shownRefs.has(ref))) continue
     const subject = bodies[c.subject]
     if (!subject) continue
-    items.push({
-      kind: 'caption', tone: CONFLICT_TONE,
-      text: `conflict on ${c.axis}: ${c.claims.map(k => `${k.by} says ${claimText(c.axis, k.value)}`).join(' / ')}`,
-      at: [subject.center.x, subject.center.y, zRange(subject).max],
-      row: nextRow(c.subject),
-    })
+    // The word "conflict" is the mark here; the claims stay plain text (C4).
+    items.push(captionItem([
+      { text: 'conflict', tone: CONFLICT_TONE },
+      plain(` on ${c.axis}: ${c.claims.map(k => `${k.by} says ${claimText(c.axis, k.value)}`).join(' / ')}`),
+    ], [subject.center.x, subject.center.y, zRange(subject).max], nextRow(c.subject)))
   }
   return { items, extent }
+}
+
+/** A plain-text caption segment. @param {string} text */
+const plain = (text) => ({ text, tone: STATUS_TONE[AXIS_STATUS.MATCH] })
+
+/** A status mark as a segment, in its status tone. @param {string} status */
+const markSegment = (status) => ({ text: STATUS_MARK[status], tone: toneFor(status) })
+
+/** @param {Array<{text: string, tone: string}>} segments @param {number[]} at @param {number} row */
+function captionItem(segments, at, row) {
+  return { kind: 'caption', segments, text: segments.map(g => g.text).join(''), at, row }
 }
 
 /**

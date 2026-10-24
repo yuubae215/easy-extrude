@@ -137,7 +137,11 @@ test('a mismatched axis keeps its picture neutral; the mark says it, in the mism
   // The bin stands on the bench: it touches, so `apart` and `above` both fail.
   for (const item of pic.items.filter(i => i.kind !== 'caption')) assert.equal(item.tone, PICTURE_TONE, item.kind)
   const caption = pic.items.find(i => i.kind === 'caption')
-  assert.equal(caption.tone, toneFor(AXIS_STATUS.MISMATCH))
+  // Only the marks are coloured — the 3D caption too (party 2026-10-24).
+  const coloured = caption.segments.filter(g => g.tone === toneFor(AXIS_STATUS.MISMATCH))
+  assert.deepEqual(coloured.map(g => g.text), ['✗', '✗'])
+  assert.ok(caption.segments.filter(g => g.text.length > 1).every(g => g.tone === STATUS_TONE.match), 'the words stay plain')
+  assert.equal(caption.text, caption.segments.map(g => g.text).join(''))
   assert.match(caption.text, /contact ✗ · direction ✗/)
 })
 
@@ -163,7 +167,7 @@ test('with nothing selected, exactly the mismatched and the conflicting relation
   const conflict = pic.items.find(i => i.kind === 'caption' && /^conflict/.test(i.text))
   assert.ok(conflict, 'the claim conflict is named on screen')
   assert.match(conflict.text, /ann says touching \/ ben says apart/)
-  assert.equal(conflict.tone, CONFLICT_TONE)
+  assert.deepEqual(conflict.segments.filter(g => g.tone === CONFLICT_TONE).map(g => g.text), ['conflict'])
 })
 
 test('with nothing broken and nothing selected, nothing is drawn', () => {

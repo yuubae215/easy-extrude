@@ -74,7 +74,9 @@ test('関係の宣言が画面に出る — 不一致は何も選ばなくても
   // `bin_left` says RIGHT, but seen from the operator the bin is on the tray's left.
   // The picture stays neutral (C4); the caption's mark carries the mismatch.
   expect(s.picture.items.some(i => i.kind === 'viewerAxes' && i.tone === 'entityDefault')).toBe(true)
-  expect(s.picture.items.some(i => i.kind === 'caption' && /bin_left|direction ✗/.test(i.text) && i.tone === 'cautionTone')).toBe(true)
+  expect(s.picture.items.some(i => i.kind === 'caption' && /direction ✗/.test(i.text)
+    && i.segments.some(g => g.text === '✗' && g.tone === 'cautionTone')
+    && i.segments.every(g => g.text === '✗' || g.tone !== 'cautionTone'))).toBe(true)
 
   // Select the workpiece through the section's own name link.
   await page.evaluate(() => window.__ui.getState().callbacks.onSelectRelationEntity('work_1'))

@@ -49,7 +49,8 @@ export class ArrangementStatusView {
     this._clear()
     if (!pic) { this._group.visible = false; return }
     for (const item of pic.items) {
-      const m = this._mat(item.tone)
+      // A caption has no single tone — its segments carry theirs (C4).
+      const m = item.kind === 'caption' ? null : this._mat(item.tone)
       switch (item.kind) {
         case 'contactPatch':
           this._quad(item.corners, m.fill)
@@ -57,25 +58,25 @@ export class ArrangementStatusView {
           break
         case 'separation':
           this._dashed([item.from, item.to], m.dashed)
-          this._label(item.caption, item.from.map((v, k) => (v + item.to[k]) / 2), LABEL.small, item.tone)
+          this._label([{ text: item.caption, tone: item.tone }], item.from.map((v, k) => (v + item.to[k]) / 2), LABEL.small)
           break
         case 'facePaint':
           this._quad(item.corners, m.faint)
           this._loop(item.corners, m.edge)
-          this._label(item.caption, item.at, LABEL.small, item.tone)
+          this._label([{ text: item.caption, tone: item.tone }], item.at, LABEL.small)
           break
         case 'verticalGuide':
           this._lines([item.from, item.to], m.line)
-          this._label(item.caption, item.from.map((v, k) => (v + item.to[k]) / 2), LABEL.small, item.tone)
+          this._label([{ text: item.caption, tone: item.tone }], item.from.map((v, k) => (v + item.to[k]) / 2), LABEL.small)
           break
         case 'viewerAxes':
           this._marker(item.viewer, pic.extent * 0.08, m.fill)
           this._arrow(item.viewer, item.facing, COLOR[item.tone], pic.extent * 0.12)
           for (const line of item.lines) this._dashed(line, m.dashed)
-          for (const q of item.quadrantLabels) this._label(q.text, q.at, LABEL.small, item.tone)
+          for (const q of item.quadrantLabels) this._label([{ text: q.text, tone: item.tone }], q.at, LABEL.small)
           break
         case 'caption':
-          this._label(item.text, item.at, LABEL.caption, item.tone, item.row)
+          this._label(item.segments, item.at, LABEL.caption, item.row)
           break
         default:
           // A primitive this view does not know is not drawn as nothing (原則 #31).
@@ -154,25 +155,33 @@ export class ArrangementStatusView {
   }
 
   /**
-   * A screen-sized text sprite at a world point. `row` lifts it by that many
-   * label heights above the point (stacked captions — the sprite's own anchor,
-   * so the stack is in screen units).
+   * A screen-sized text sprite at a world point, written as a run of segments
+   * each in its own colour role — so a caption can colour only its mark (C4).
+   * `row` lifts it by that many label heights above the point (stacked
+   * captions — the sprite's own anchor, so the stack is in screen units).
+   * @param {Array<{text: string, tone: string}>} segments
    */
-  _label(text, position, height, tone, row = 0) {
+  _label(segments, position, height, row = 0) {
     if (typeof document === 'undefined') return
     const canvas = document.createElement('canvas')
     const font = 'bold 40px sans-serif'
     const probe = canvas.getContext('2d')
     if (!probe) return
     probe.font = font
-    canvas.width = Math.min(2048, Math.ceil(probe.measureText(text).width) + 32)
+    const widths = segments.map(g => probe.measureText(g.text).width)
+    const total = widths.reduce((a, b) => a + b, 0)
+    canvas.width = Math.min(2048, Math.ceil(total) + 32)
     canvas.height = 64
     const ctx = canvas.getContext('2d')
     ctx.font = font
-    ctx.textAlign = 'center'
+    ctx.textAlign = 'left'
     ctx.textBaseline = 'middle'
-    ctx.fillStyle = COLOR[tone] ?? COLOR.textPrimary
-    ctx.fillText(text, canvas.width / 2, 34)
+    let x = (canvas.width - total) / 2
+    segments.forEach((g, k) => {
+      ctx.fillStyle = COLOR[g.tone] ?? COLOR.textPrimary
+      ctx.fillText(g.text, x, 34)
+      x += widths[k]
+    })
     const texture = new THREE.CanvasTexture(canvas)
     const material = new THREE.SpriteMaterial({ map: texture, transparent: true, depthWrite: false, depthTest: false, sizeAttenuation: false })
     const sprite = new THREE.Sprite(material)
