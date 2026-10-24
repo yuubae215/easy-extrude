@@ -73,6 +73,7 @@ import { buildWhyTree, recoverProvenance, entityRefsConstrainedByVariable } from
 import { narrateProvenance, narrateWhyTree } from '../context/ProvenanceNarrative.js'
 import { compileLayout, buildRefMap, linkIdForConstraint } from '../layout/LayoutCompiler.js'
 import { SCENE_JSON_VERSION } from '../layout/LayoutDslSchema.js'
+import { reportArrangements } from '../layout/ArrangementReport.js'
 
 /** Decision statuses that count as "approved" for the persona-projection gate. */
 const APPROVED_STATUS = new Set(['agreed', 'signed'])
@@ -730,6 +731,25 @@ export class ContextService extends EventEmitter {
         predicate:  check?.predicate ?? null,
       }
     })
+  }
+
+  /**
+   * The document's declared relations read against its own layout (ADR-168 S1b):
+   * per side the state, the per-axis status and the looked-up mobility, the
+   * claim conflicts, and the poses they were read from. `null` until a document
+   * is loaded — "no document" and "no relations" are different answers (原則 #31).
+   *
+   * Read from the COMPILED layout, the same one the scene was projected from, so
+   * the status and its picture agree with the document; a mesh moved on screen
+   * afterwards is not re-read here (the document is the authority — ADR-050).
+   */
+  arrangementReport() {
+    if (!this._doc) return null
+    return reportArrangements(
+      this._compiled?.layoutDsl ?? { entities: [] },
+      this._doc.arrangements ?? [],
+      this._doc.actors ?? [],
+    )
   }
 
   // ── Why-rooted 5W1H tree / φ⁻¹ provenance recovery (ADR-052) ────────────────

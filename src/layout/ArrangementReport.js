@@ -69,36 +69,48 @@ export function arrangementWorldOf(layout, actors) {
  * to a question that was not asked); they are returned in `errors` instead, so
  * nothing is dropped silently (原則 #11).
  *
+ * `bodies` / `viewers` are the resolved poses the states were read from, keyed
+ * by ref, so a picture of a report (ADR-168 S1b — `view/ArrangementStatusMath.js`)
+ * is drawn from the SAME poses its status was decided on and never re-resolves
+ * the layout (§1.1).
+ *
  * @param {object} layoutDsl  resolved layout/1.0
  * @param {object[]} arrangements
  * @param {object[]} actors
- * @returns {{errors: string[], reports: object[], conflicts: object[]}}
+ * @returns {{errors: string[], reports: object[], conflicts: object[],
+ *            bodies: Record<string, object>, viewers: Record<string, object>}}
  */
 export function reportArrangements(layoutDsl, arrangements, actors) {
   const list = arrangements ?? []
   const errors = arrangementIssues(list, arrangementWorldOf(layoutDsl, actors))
-  if (list.length === 0) return { errors, reports: [], conflicts: [] }
-  if (errors.length > 0) return { errors, reports: [], conflicts: [] }
+  if (list.length === 0) return { errors, reports: [], conflicts: [], bodies: {}, viewers: {} }
+  if (errors.length > 0) return { errors, reports: [], conflicts: [], bodies: {}, viewers: {} }
 
   const world = arrangementWorldOf(layoutDsl, actors)
   const scene = compileLayout(layoutDsl)
   const refMap = buildRefMap(layoutDsl.entities)
   const byId = new Map(scene.objects.map(o => [o.id, o]))
 
+  /** @type {Record<string, object>} */
+  const bodies = {}
+  /** @type {Record<string, object>} */
+  const viewers = {}
   /** @param {string} ref */
   const bodyOf = (ref) => {
+    if (bodies[ref]) return bodies[ref]
     const o = byId.get(refMap.get(ref))
-    return {
+    return (bodies[ref] = {
       center:   o.position,
       size:     sizeOfCorners(o.localCorners),
       rotation: o.orientation,
       inner:    o.innerDimensions ?? null,
-    }
+    })
   }
   /** @param {string} ref */
   const viewerOf = (ref) => {
+    if (viewers[ref]) return viewers[ref]
     const o = byId.get(refMap.get(ref))
-    return { position: o.translation, rotation: o.rotation }
+    return (viewers[ref] = { position: o.translation, rotation: o.rotation })
   }
 
   const reports = list.map(arr => {
@@ -116,6 +128,7 @@ export function reportArrangements(layoutDsl, arrangements, actors) {
           relative: (viewerRef) => observeRelative(subject, partner, viewerOf(viewerRef)),
         }
         const viewerRef = side.toward && typeof side.toward === 'object' ? side.toward.viewer : null
+        if (viewerRef) viewerOf(viewerRef)
         return {
           of: side.of,
           declared: { contact: side.contact, toward: side.toward },
@@ -132,5 +145,5 @@ export function reportArrangements(layoutDsl, arrangements, actors) {
       }),
     }
   })
-  return { errors, reports, conflicts: claimConflicts(list) }
+  return { errors, reports, conflicts: claimConflicts(list), bodies, viewers }
 }

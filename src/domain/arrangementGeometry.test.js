@@ -5,7 +5,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  observeContact, observeVertical, observeRelative,
+  observeContact, observeVertical, observeRelative, contactPatches,
   CONTACT_TOLERANCE_MM, OBSERVED_CONTACT,
 } from './arrangementGeometry.js'
 
@@ -100,4 +100,50 @@ test('several relative directions can hold at once, and none inside the dead ban
   const viewer = { position: { x: -2000, y: 0, z: 1600 } }
   assert.deepEqual(observeRelative(diag, b, viewer), ['front', 'left'])
   assert.deepEqual(observeRelative(b, b, viewer), [])
+})
+
+// ── contactPatches — WHERE `touching` points (ADR-168 S1b) ──────────────────
+
+const near = (a, b) => Math.abs(a - b) < 1e-6
+const spanOf = (corners, k) => [Math.min(...corners.map(c => c[k])), Math.max(...corners.map(c => c[k]))]
+
+test('the patch of a bin on the workbench lies on the bench top, under the bin\'s footprint', () => {
+  const [p, ...rest] = contactPatches(bin, workbench)
+  assert.equal(rest.length, 0)
+  assert.equal(p.face, '+z')
+  assert.ok(p.corners.every(c => near(c.z, 800)), 'on the +z face of the bench (z = 800)')
+  assert.deepEqual(spanOf(p.corners, 'x'), [100, 300])
+  assert.deepEqual(spanOf(p.corners, 'y'), [75, 225])
+})
+
+test('a workpiece in the bin is patched on the INNER floor, not on the rim', () => {
+  const patches = contactPatches(work1, bin)
+  assert.deepEqual(patches.map(p => p.face), ['+z'])
+  // floor top = bin bottom (800) + floor thickness ((150 − 140) / 2 … the shell decides) — read it, do not restate it
+  const z = patches[0].corners[0].z
+  assert.ok(patches[0].corners.every(c => near(c.z, z)))
+  assert.ok(z < 875 - 150 / 2 + 15, `the patch sits at the floor (z = ${z}), far below the rim (z = 950)`)
+  assert.ok(near(z, 822.5 - 12.5), 'and exactly where the workpiece\'s bottom is')
+})
+
+test('the partner\'s rotation turns the patch with it', () => {
+  const rot90 = { x: 0, y: 0, z: Math.SQRT1_2, w: Math.SQRT1_2 }
+  const a = box({ x: 0, y: 0, z: 0 }, { x: 100, y: 100, z: 100 }, { rotation: rot90 })
+  // b sits on a's local +x side; with a turned 90° about Z that is world +y.
+  const b = box({ x: 0, y: 100, z: 0 }, { x: 100, y: 100, z: 100 })
+  const [p] = contactPatches(b, a)
+  assert.equal(p.face, '+x')
+  assert.ok(p.corners.every(c => near(c.y, 50)), 'the local +x face is the world plane y = 50')
+})
+
+test('apart and overlapping have no patch — a picture is never drawn for a contact that is not there', () => {
+  const lifted = { ...work1, center: { ...work1.center, z: work1.center.z + 10 } }
+  assert.deepEqual(contactPatches(lifted, bin), [])
+  assert.deepEqual(contactPatches(work1, { ...bin, inner: null }), [])
+})
+
+test('the patch and the read contact agree on every face (one reading, two uses)', () => {
+  for (const [s, p] of [[bin, workbench], [workbench, bin], [work1, bin]]) {
+    assert.deepEqual([...new Set(contactPatches(s, p).map(x => x.face))].sort(), observeContact(s, p).faces)
+  }
 })

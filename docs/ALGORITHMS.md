@@ -46,6 +46,7 @@
 | ロボットの見た目のメッシュの簡略化 | 位置で頂点を溶接し、meshoptimizer の辺縮約 (二次誤差) を絶対誤差 0.2 mm で、開いた縁は固定 (ADR-166 M8)。元は平面シェーディングなので法線は保存せず、実行時に面法線を作り直す | `scripts/simplify-robot-meshes.mjs` (オフライン・作者の手元で 1 回) → `public/…/visual_lod/*.glb`。実行時の復元は `src/view/robotMeshLod.js` | オフライン (反復・探索なので閲覧者の端末では走らせない — 軸 2。front は導出物を読むだけ、`RobotMeshLod.test.js` が源の SHA-256 で導出を問う) |
 | 期待値と実態の差の顔 (☺ ○ ☹ ?) | `op` の向きの余裕の符号、余裕 < 期待値の 10 % で ○、実態の幅が期待値をまたげば ? (重みを読まない) | `src/view/CriteriaGapMath.js: gapOf` | front (公知の閉形式・表示 — `CriteriaIndicatorCensus.test.js` が重みを読まないことを問う) |
 | 2 つの物の関係の state (接触・面) | 相手の座標系で subject の 8 頂点の区間を取り、相手の箱 (容器は `shellParts` の床と壁) ごとに軸 a の符号付き分離 `d_a = max(s_a.min − (c_a+h_a), (c_a−h_a) − s_a.max)`。`max_a d_a ∈ [−ε, ε]` で接触、`< −ε` でめり込み、`> ε` で離れている (ε = `CONTACT_TOLERANCE_MM` = 1 mm)。面 = `|d_a| ≤ ε` の軸に subject の側の符号。回転した subject は区間で外接するので縁では接触寄り (ADR-168 D4) | `src/domain/arrangementGeometry.js: observeContact` | front (公知の閉形式 — 判定ではなく宣言の照合。どれだけ外れたかの連続量は作らない — 軸 1) |
+| 2 つの物の関係の接触面 (S1b の絵) | `observeContact` と同じ分離の読み (`partReadings`) で接触した箱・軸を取り、面の平面 `c_a ± h_a` 上に、残り 2 軸の区間の重なり `[max(s.min, c−h), min(s.max, c+h)]` の矩形を置いて相手の姿勢で世界へ戻す (ADR-168 S1b) | `src/domain/arrangementGeometry.js: contactPatches` | front (公知の閉形式・表示) |
 | 2 つの物の関係の state (向き) | 上下 = 世界 z の区間の差 (> 1 mm の不感帯)、前後左右 = 中心の差を宣言された見る人の座標系 (+X 前・+Y 左 — REP-103) へ回した x / y の符号 (ADR-168 D1/D2) | `src/domain/arrangementGeometry.js: observeVertical / observeRelative` | front (公知の閉形式) |
 
 **両方 (導出)** の行だけが `src/` に写しを持つ。その 3 行は ADR-146 D3 の条件

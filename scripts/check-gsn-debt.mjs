@@ -407,7 +407,9 @@ const SUPPORT_LABELS = new Map([
 // EachClaimKeepsItsClaimant が support-verified へ (arrangement / arrangementGeometry / ArrangementReport の
 // node --test)。ADR-168 が Accepted になり満期=ADR-168 が発火するので、残る 3 goal の満期は S1b / S2 / S3 の
 // 番地へ張り替えた (どれも機械可読 — G3 は動かない)。
-const DEBT_BASELINE = 53
+// 2026-10-24: 53 → 52。ADR-168 S1b で StatusIsDiscreteAndVisible が support-verified へ
+// (ArrangementConfirmation / ArrangementController の node --test + e2e/arrangement-status.spec.js)。
+const DEBT_BASELINE = 52
 
 /**
  * G3 — 満期 trigger を持たない exploring goal の個数 (実測値)。
