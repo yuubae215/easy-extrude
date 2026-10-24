@@ -104,8 +104,6 @@ import { GraspController }            from './GraspController.js'
 import { GraspGhostView }             from '../view/GraspGhostView.js'
 import { GraspSampleView }            from '../view/GraspSampleView.js'
 import { GraspDeclarationView }       from '../view/GraspDeclarationView.js'
-import { ArrangementStatusView }      from '../view/ArrangementStatusView.js'
-import { ArrangementController }      from './ArrangementController.js'
 import { ROBOT_KINEMATICS, ROBOT_REACH_ENVELOPE, ROBOT_MODEL_LABEL } from '../view/robotSkeleton.js'
 import { SHIPPED_ROBOT_MODEL_ID }     from '../domain/robotModel.js'
 import { ContextService }             from '../service/ContextService.js'
@@ -576,22 +574,6 @@ export class AppController {
     // A newly loaded document is not the same scene: ids it reuses are not the
     // entities that were selected, so nothing is restored across it.
     this._ctxService.on('contextLoaded', () => { this._selectionBeforeProjection = null })
-
-    // ── Declared relations on screen (ADR-168 S1b) ────────────────────────
-    // Re-reads on the document edge itself; the focus follows the selection
-    // through `_syncArrangementFocus` (SelectionManager step 8). App lifetime.
-    this._arrangementCtrl = new ArrangementController({
-      ctxService: this._ctxService,
-      store:      useUIStore,
-      createView: () => new ArrangementStatusView(this._sceneView.scene),
-    })
-    // A name in the Relations section selects that thing — through the public
-    // verb (原則 #1). A ref the projection made no entity for says so (#11).
-    useUIStore.getState().actions.registerCallback('onSelectRelationEntity', (ref) => {
-      const id = this._ctxService.sceneIdForRef(ref)
-      if (id) this._selMgr.selectOnly(id)
-      else this._uiView.showToast(`"${ref}" has no object in the scene`, { type: 'warn' })
-    })
 
     // ── Production Context-first overlay (ADR-050 Phase 2) ─────────────────
     // Persistent overlay coordinator (not a setMode FSM state) consuming the
@@ -1294,8 +1276,6 @@ export class AppController {
       // labels with their world words, whether a face is painted, which of the
       // focused spec's pictures are drawn. The e2e guard for "+x — where is that?".
       graspDeclaration: () => this._graspCtrl?.declarationSnapshot() ?? null,
-      // ADR-168 S1b — the Relations section's model and the drawn picture.
-      arrangements: () => this._arrangementCtrl?.snapshot() ?? null,
       addRobot:  () => this._addRobot(),
       addCamera: () => this._addCamera(),
       // Load a Layout DSL through the same path a Home template takes — so an
@@ -2289,16 +2269,6 @@ export class AppController {
   // and some instead of it, some normalised the mode and some did not, and the
   // one that did the least was the newest one. Every caller now says
   // `this._selMgr.selectOnly(id)`, which is the same procedure by construction.
-
-  /**
-   * Tell the Relations section and its picture which entity they are about
-   * (ADR-168 S1b): the one selected entity's layout ref, or null for none / many.
-   * The ref — not the scene id — so the focus survives a re-projection.
-   */
-  _syncArrangementFocus() {
-    const id = (this._objSelected && this._selectedIds.size === 1) ? this._scene.activeId : null
-    this._arrangementCtrl?.setFocus(id != null ? this._ctxService.refForSceneId(id) : null)
-  }
 
   /**
    * Push the current single-selection's Why provenance to the context overlay

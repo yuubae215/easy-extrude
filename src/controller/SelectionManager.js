@@ -358,7 +358,6 @@ export class SelectionManager {
     ctrl._updateNPanel()
     ctrl._updateMobileToolbar()
     ctrl._syncContextProvenance?.()
-    ctrl._syncArrangementFocus?.()
   }
 
   // ── The declared painters (ADR-107 D4) ──────────────────────────────────────

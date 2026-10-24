@@ -5,7 +5,6 @@ import { NPanelLink }    from './NPanelLink.jsx'
 import { NPanelVariable } from './NPanelVariable.jsx'
 import { RelationDeclarations } from './declarations/GraspDeclarations.jsx'
 import { EntityChecks }  from './EntityChecks.jsx'
-import { EntityRelations } from './EntityRelations.jsx'
 import { GraspSearchPanel } from '../Grasp/GraspSearchPanel.jsx'
 import { ParametricAssetPanel } from '../Context/ParametricAssetPanel.jsx'
 import { BOTTOM_TIER, bottomEdgeOffset } from '../../view/EdgeOccupancy.js'
@@ -136,11 +135,6 @@ export function NPanel() {
             constructible, which is what closes the door on a second selection
             surface growing inside the panel (ADR-110 §力学 3). */}
         <EntityChecks />
-
-        {/* The declared relations (ADR-168 S1b) — also a permanent slot: with
-            nothing selected it lists every relation and its counts, so a
-            mismatch is readable without knowing what to click (D4). */}
-        <EntityRelations />
 
         {/* Grasp-search results, beside the robot they are about (ADR-105 D5 /
             ADR-106 D3). This was the `grasp` tab of the floor, which meant

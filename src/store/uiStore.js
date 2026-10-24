@@ -268,12 +268,6 @@ export const useUIStore = create((set, get) => ({
     // 'none-declared' / 'all-pass' / 'failing'. "No checks declared" and
     // "everything passed" are different facts with different next moves.
     checksSummary: { kind: 'unexamined' },
-    // ADR-168 S1b: the declared relations read against the layout, as the
-    // Relations section's model (`ArrangementStatusMath.arrangementPanel`). A
-    // `kind`-discriminated union like the two above — 'no-document' /
-    // 'none-declared' / 'invalid' / 'listed' — so "nobody declared a relation"
-    // never reads as "every relation holds". Sole writer ArrangementController.
-    arrangements: { kind: 'no-document', focusRef: null, rows: [], conflicts: [], errors: [], summary: null },
     // ADR-165 D3: the slice of the document the criteria hearing reads —
     // `{actors, requirements, criteriaAgreement, criteriaHearing}` — projected
     // on the DOCUMENT edge (the hearing lives in the document intake, outside
@@ -714,11 +708,6 @@ export const useUIStore = create((set, get) => ({
     // writer GraspController).
     contextSetGraspRelations: (graspRelations) => set(state => ({
       context: { ...state.context, graspRelations },
-    })),
-    // ADR-168 S1b — replace the Relations section's model wholesale (sole writer
-    // ArrangementController; the document is the authority, this is the read-model).
-    contextSetArrangements: (arrangements) => set(state => ({
-      context: { ...state.context, arrangements },
     })),
     // ADR-164 D1 — merge a patch into one arm's reach declaration (sole writer).
     contextSetReachDeclaration: (robotId, patch) => set(state => ({
