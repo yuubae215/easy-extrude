@@ -57,7 +57,7 @@ artifacts
 
             assumption PairedTestsWillSettleIt
             uuid 76caa00b-9856-4e09-8ad1-34cc3f58039d
-            summary "未着手。決着させる検査は 2 本で対にする — ロボット宣言なしの pickable が 200 で返ること、かつ grasp-search はロボット無しで依然 no-robot で止まること。後者が無いと、ゲートを緩めて実現していないことを示せない"
+            summary "未着手。決着させる検査は 2 本で対にする — ロボット宣言なしの pickable が 200 で返ること、かつ grasp-search はロボット無しで依然 no-robot で止まること。後者が無いと、ゲートを緩めて実現していないことを示せない 満期=GREP:core/easy_extrude_core/api/app.py::/pickable (pickable の経路が core に立ったとき)"
 
         goal TheYieldLaneIsUnderContractAndReachable
         uuid b2c5ecb9-a10b-4884-b738-858ba30d0a44
@@ -66,7 +66,7 @@ artifacts
 
             assumption NeutralSchemaConformanceWillSettleIt
             uuid 5fc94b51-576d-47eb-9bd9-06372debd7e0
-            summary "未着手。決着させる検査は中立スキーマに対する準拠テストを core と BFF の双方に置くこと。いまは片側 (core の pydantic) だけが契約を持っている状態で、原則 #29 の二状態のどちらでもない"
+            summary "未着手。決着させる検査は中立スキーマに対する準拠テストを core と BFF の双方に置くこと。いまは片側 (core の pydantic) だけが契約を持っている状態で、原則 #29 の二状態のどちらでもない 満期=PATH:packages/grasp-contract/schema/pick-sequence-request.schema.json (中立正本が現れたとき)"
 
         goal PlacementIsDerivedNotDeclared
         uuid 29bf2424-3415-4d6f-ac95-cc118deecd0f
@@ -75,5 +75,5 @@ artifacts
 
             assumption SchemaCensusWillSettleIt
             uuid 1627aa28-9249-4c22-94ce-464fd1dc1d79
-            summary "未着手。決着させる検査は契約スキーマに配置ラベルの欄が無いことを数える census。「足さなかった」は不在なのでノードを持たず、在るものを辿る検査では出てこない (原則 #31)"
+            summary "未着手。決着させる検査は契約スキーマに配置ラベルの欄が無いことを数える census。「足さなかった」は不在なのでノードを持たず、在るものを辿る検査では出てこない (原則 #31) 満期=PATH:packages/grasp-contract/schema/pick-sequence-request.schema.json (数える相手のスキーマが現れたとき)"
 

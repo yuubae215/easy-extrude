@@ -63,33 +63,33 @@ artifacts
         goal NoProvisionalDeclarationSurvivesTheDecision
         uuid 8f678a1e-fd23-486b-80d9-89fe84d7a5ba
         summary "決着後、repo 内に PROVISIONAL_UNTIL を名乗る宣言が 0 個である。7 箇所の写しが 1 つ残らず畳まれる"
-        state ToBeDeveloped
-        labels support-exploring
+        labels support-verified
 
-            assumption TheReverseCheckCountsTheLeftovers
+            solution TheReverseCheckCountsTheLeftovers
             uuid ed9c1d7f-3ab7-4b7e-a89e-2dd13dd6c7c4
-            summary "実測 (2026-08-05, pnpm test:deferrals): 期限の定数・画面の但し書き・guard のメッセージ・RETIRED_FLOOR_TABS の注記・台帳の欄をすべて畳み、src/ から当該の語彙が 0 個になった。箇所は手で列挙せず語彙から導出している。副作用として登録簿の DEF-001/002/003 が片付き、覆う粒度がファイル単位であるため宣言外の実測値が 31 → 71 へ上がった — 検査に合わせて散文を書き換えるのではなく実測値を焼いた (ADR-100 の ratchet と同じ姿勢)"
+            summary "pnpm test:deferrals OK (再実行 2026-10-24, commit bea37cf) — 暫定の語彙 (PROVISIONAL_UNTIL ほか) は src/ に 0 個で、箇所は手で列挙せず語彙から導出している。2026-08-05 の初回実測で期限の定数・画面の但し書き・guard のメッセージ・RETIRED_FLOOR_TABS の注記・台帳の欄を畳み、DEF-001/002/003 が片付いた"
+            artifacts
+            - "scripts/check-deferrals.mjs"
 
         goal TheCoverageRuleHasOneOwner
         uuid 8835e43c-19ea-4960-bb35-24ca193eeb6a
         summary "一時オーバーレイが覆ってよい面が 1 箇所で宣言され、未宣言の面では throw する。呼び出し箇所ごとのパッチが 0 個"
-        state ToBeDeveloped
-        labels support-exploring
+        labels support-verified
 
-            assumption RoleNotNameIsTheStableKey
+            solution RoleNotNameIsTheStableKey
             uuid b95229b0-1a4d-4a01-ba7e-f97b156122e4
-            summary "証拠の予定: src/view/DocIntake.js の宣言表に『覆ってよい面の役割』を置き、unit で未宣言の面が throw することを問う。面の名前 (Outliner) を鍵にすると ADR-111 の後に破綻するので、鍵は役割 (いま入力しているものを映しているか) にする。ADR-090 が badge の鍵を名前から宣言された role へ変えたのと同型 — 名前は N が増えた日に一意でなくなる"
+            summary "node --test src/DocIntakeAddressCensus.test.js pass (再実行 2026-10-24, commit bea37cf) — 覆ってよい面の規則は src/view/DocIntake.js の OVERLAY_COVERAGE_BY_ROLE 1 か所 (規則を持つファイルが 1 個)、鍵は面の名前ではなく役割 SURFACE_ROLE、未宣言の役割は mayCoverRole が throw、描き手は名前で分岐していない (ADR-112 D2)"
             artifacts
+            - "src/DocIntakeAddressCensus.test.js"
             - "src/view/DocIntake.js"
 
         goal TheEntranceStaysWhereAdr108PutIt
         uuid 00147d28-e3bd-4cc9-90bf-f1f2c938e471
         summary "器の住所を恒久化しても入口は増えない。START の GUIDED_INTAKE 行は不変で、ヘッダの入口の個数 (desktop 7 / mobile 7) も動かない"
-        state ToBeDeveloped
-        labels support-exploring
+        labels support-verified
 
-            assumption ContainerAndEntranceStayIndependent
+            solution ContainerAndEntranceStayIndependent
             uuid 34779c58-c621-43fc-9b7a-b4d7a93c0156
-            summary "証拠の予定: HeaderEntranceCensus.test.js を書き換えずに通す。『器が動いても入口は増えない』は ADR-106 と ADR-108 の接点として既に宣言されており (HeaderEntrances.js の GUIDED_INTAKE 行の why)、恒久化はその接点を動かさない。書き換えが要ったら、それは器の決着に入口の決定を混ぜた証拠になる"
+            summary "node --test src/HeaderEntranceCensus.test.js pass (再実行 2026-10-24, commit bea37cf) — ADR-112 の実装 (2026-08-05) で書き換えずに通った。入口の個数は宣言の上限と両方向で一致し、START の種は宣言された入口を 1 つずつ持つ。器の住所の恒久化は入口の決定と混ざっていない"
             artifacts
             - "src/HeaderEntranceCensus.test.js"

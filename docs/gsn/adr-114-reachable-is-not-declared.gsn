@@ -126,7 +126,7 @@ artifacts
 
             assumption NoCallSiteReintroducesTheRawExpression
             uuid 8a17d3f6-4b90-42e1-9c85-30e6b7f8a294
-            summary "証拠予定: 現在は grep で raw な window.innerWidth < 768 が src/ から消えていることを手で確認しているだけで、機械が問う場所が無い。次に狭レイアウト述語のコピーが 1 つでも戻った事例を踏んだら、IdentityContainment.test.js の IDENTITY_RULES へ『狭いか』の述語を登録して母集団を src/ 全体から導出させる (ADR-102 の方式)。今回登録を見送ったのは、pointer:coarse を読む正当な call site が 3 つ残っており、両者を構文だけで判別する規則がまだ書けていないため — 未宣言の 0 を作らないよう、ここに保留として残す"
+            summary "証拠予定: 現在は grep で raw な window.innerWidth < 768 が src/ から消えていることを手で確認しているだけで、機械が問う場所が無い。次に狭レイアウト述語のコピーが 1 つでも戻った事例を踏んだら、IdentityContainment.test.js の IDENTITY_RULES へ『狭いか』の述語を登録して母集団を src/ 全体から導出させる (ADR-102 の方式)。今回登録を見送ったのは、pointer:coarse を読む正当な call site が 3 つ残っており、両者を構文だけで判別する規則がまだ書けていないため — 未宣言の 0 を作らないよう、ここに保留として残す 満期=GREP:src/IdentityContainment.test.js::innerWidth (狭さの述語が IDENTITY_RULES に登録されたとき)"
             artifacts
             - "src/IdentityContainment.test.js"
             - "src/view/Viewport.js"
