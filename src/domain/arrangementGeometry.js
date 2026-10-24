@@ -110,12 +110,37 @@ function partnerParts(partner) {
 }
 
 /**
+ * The one reading `observeContact` and `contactPatches` share: the subject's
+ * corner interval in the partner's frame and, per partner box and axis a, the
+ * signed separation
+ *   d_a = max(s_a.min − (c_a + h_a),  (c_a − h_a) − s_a.max)
+ * (> 0: a gap along a; < 0: the intervals overlap along a), with the side of the
+ * box the subject lies on. Kept in one place so the drawn patch and the read
+ * contact can never disagree about what "touching" means (§1.1).
+ */
+function partReadings(subject, partner) {
+  const inv = conj(partner.rotation ?? IDENTITY)
+  const local = worldCorners(subject).map(c => rotateVec3(sub(c, partner.center), inv))
+  const s = intervals(local)
+  const parts = partnerParts(partner).map(part => {
+    const d = {}
+    const side = {}
+    for (const a of AXES) {
+      const above = s[a].min - (part.center[a] + part.half[a])
+      const below = (part.center[a] - part.half[a]) - s[a].max
+      d[a] = Math.max(above, below)
+      side[a] = above >= below ? '+' : '-'
+    }
+    return { part, d, side, worst: Math.max(d.x, d.y, d.z) }
+  })
+  return { s, parts }
+}
+
+/**
  * Contact between `subject` and `partner`, read in the partner's frame.
  *
- * Per partner box and axis a, the signed separation is
- *   d_a = max(s_a.min − (c_a + h_a),  (c_a − h_a) − s_a.max)
- * (> 0: a gap along a; < 0: the intervals overlap along a). The box is touched
- * when max_a d_a ∈ [−ε, ε], penetrated when max_a d_a < −ε, and apart otherwise.
+ * Per partner box (separations as in `partReadings`), the box is touched when
+ * max_a d_a ∈ [−ε, ε], penetrated when max_a d_a < −ε, and apart otherwise.
  * The touched faces are the axes with |d_a| ≤ ε, signed by which side the
  * subject lies on.
  *
@@ -127,24 +152,11 @@ function partnerParts(partner) {
  *          gap is 未実装 until the true distance is measured (DEF-072).
  */
 export function observeContact(subject, partner) {
-  const inv = conj(partner.rotation ?? IDENTITY)
-  const local = worldCorners(subject).map(c => rotateVec3(sub(c, partner.center), inv))
-  const s = intervals(local)
   const eps = CONTACT_TOLERANCE_MM
-
   let overlapping = false
   let gap = Infinity
   const faces = new Set()
-  for (const part of partnerParts(partner)) {
-    const d = {}
-    const side = {}
-    for (const a of AXES) {
-      const above = s[a].min - (part.center[a] + part.half[a])
-      const below = (part.center[a] - part.half[a]) - s[a].max
-      d[a] = Math.max(above, below)
-      side[a] = above >= below ? '+' : '-'
-    }
-    const worst = Math.max(d.x, d.y, d.z)
+  for (const { d, side, worst } of partReadings(subject, partner).parts) {
     if (worst < -eps) { overlapping = true; continue }
     if (worst > eps) { gap = Math.min(gap, worst); continue }
     for (const a of AXES) if (Math.abs(d[a]) <= eps) faces.add(`${side[a]}${a}`)
@@ -152,6 +164,50 @@ export function observeContact(subject, partner) {
   if (overlapping) return { contact: OBSERVED_CONTACT.OVERLAPPING, faces: [], gap: null }
   if (faces.size > 0) return { contact: OBSERVED_CONTACT.TOUCHING, faces: [...faces].sort(), gap: null }
   return { contact: OBSERVED_CONTACT.APART, faces: [], gap }
+}
+
+/**
+ * WHERE the subject touches the partner (ADR-168 S1b — the picture of the word
+ * `touching`): one rectangle per touched face of a partner box, lying on that
+ * face, covering the overlap of the face with the subject's interval. World
+ * coordinates (mm), 4 corners in loop order. Empty unless `observeContact` says
+ * touching — overlapping and apart have no patch.
+ *
+ * For a container the rectangle lies on the part that is touched (the inner
+ * floor, a wall), not on the outer box — the same shell `observeContact` reads.
+ *
+ * @param {Body} subject
+ * @param {Body} partner
+ * @returns {Array<{face: string, corners: Vec3[]}>}
+ */
+export function contactPatches(subject, partner) {
+  if (observeContact(subject, partner).contact !== OBSERVED_CONTACT.TOUCHING) return []
+  const eps = CONTACT_TOLERANCE_MM
+  const q = partner.rotation ?? IDENTITY
+  const toWorld = (p) => {
+    const r = rotateVec3(p, q)
+    return { x: partner.center.x + r.x, y: partner.center.y + r.y, z: partner.center.z + r.z }
+  }
+  const { s, parts } = partReadings(subject, partner)
+  const out = []
+  for (const { part, d, side, worst } of parts) {
+    if (worst < -eps || worst > eps) continue
+    for (const a of AXES) {
+      if (Math.abs(d[a]) > eps) continue
+      const plane = part.center[a] + (side[a] === '+' ? part.half[a] : -part.half[a])
+      const [b, c] = AXES.filter(k => k !== a)
+      const span = (k) => {
+        const lo = Math.max(s[k].min, part.center[k] - part.half[k])
+        const hi = Math.min(s[k].max, part.center[k] + part.half[k])
+        return lo <= hi ? [lo, hi] : [hi, lo]   // an edge contact within ε: a sliver, never a negative span
+      }
+      const [b0, b1] = span(b)
+      const [c0, c1] = span(c)
+      const at = (vb, vc) => toWorld({ [a]: plane, [b]: vb, [c]: vc })
+      out.push({ face: `${side[a]}${a}`, corners: [at(b0, c0), at(b1, c0), at(b1, c1), at(b0, c1)] })
+    }
+  }
+  return out
 }
 
 /**
