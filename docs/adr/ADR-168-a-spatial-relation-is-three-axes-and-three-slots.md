@@ -1,6 +1,6 @@
 # 168. 2 つの物の関係は 1 語ではなく軸の組で言う — 向き・接触・可動性、主張は 3 つの欄に
 
-- Status: Accepted (2026-10-22 — 当事者が「ここまで ok です。進んでください」で採択。**段階実装: S1 実装済み** (型・スキーマ context/0.7・state・status・主張どうしの衝突・R15・`frameRole` の往復 — 下の「実装メモ (S1)」)。2026-10-24 に**辞書を整備** (同義語辞書に分類 `spatial` — 下の「実装メモ (辞書)」)。S1b・S2・S3 は未着手で、それぞれの満期は論証木と `docs/DEFERRAL_LEDGER.md` DEF-071・072 が持つ) — 起票時: Proposed (2026-10-21 — 俯瞰で D1〜D4 の向きに合意、同日 O1〜O3 を当事者が決定し D5 と概念モデル `docs/SPATIAL_RELATION_MODEL.md` を足した)
+- Status: Accepted (2026-10-22 — 当事者が「ここまで ok です。進んでください」で採択。**段階実装: S1 実装済み** (型・スキーマ context/0.7・state・status・主張どうしの衝突・R15・`frameRole` の往復 — 下の「実装メモ (S1)」)。2026-10-24 に**辞書を整備** (同義語辞書に分類 `spatial` — 下の「実装メモ (辞書)」)。同日 **S1b 実装** (語が指す先を画面で確かめる — 下の「実装メモ (S1b)」)。S2・S3 は未着手で、それぞれの満期は論証木と `docs/DEFERRAL_LEDGER.md` DEF-071・072 が持つ) — 起票時: Proposed (2026-10-21 — 俯瞰で D1〜D4 の向きに合意、同日 O1〜O3 を当事者が決定し D5 と概念モデル `docs/SPATIAL_RELATION_MODEL.md` を足した)
 - Date: 2026-10-21
 - Deciders: yuubae215 (要求: 「above が載っている、なのは語彙のイメージと合わない — 離れて上方にあるイメージ」/「上下左右どっちにあるのか、くっついてるのか離れてるのか、動くのか固定なのかを表す語彙はほしくない？」/「2 つの間にワークがあるのか、挟んでいるのか」/ 参照枠の規則 / state・宣言・status の読み / 「新たな型を作りましょう」/「宣言された見る人も要りそう — 前後左右はかなり主観的」/ O1「CoordinateFrame の役割で」・O2「Arrangement でいい」・O3「一人だったらそうなんだけど、複数人いたら一致しない場合もある」/「語彙が主観で変化するだろうから、データ構造か概念モデルで残しておいたほうが良い」), Claude (起票)
 - 状態台帳: `docs/STATE_LEDGER.md` の「2 つの物の関係」「見る人」行 (S1 の実装で §提案中の実体 から台帳本体へ移した)
@@ -198,7 +198,7 @@ Arrangement {
 | 段 | 内容 | Accepted 条件への寄与 |
 |---|---|---|
 | **S1** ✓ | `Arrangement` と `viewer` 役割の欄をスキーマへ入れる (座席は Context 文書の最上位 `arrangements[]` — 主張した人 `actors` と同じ文書に住む。見る人は Layout の `frameRole`)、domain の型、state の純粋関数、status (配置との照合) と主張どうしの衝突 | D1〜D5 |
-| **S1b** | **語が指す先を画面で確かめる手段** (原則 #33-4 — 概念モデル §3 の右端の列): 接している面を光らせる / 見る人の位置と正面の矢印 / status の不一致と主張どうしの衝突を画面に出す。置き場所 `src/view/ArrangementStatusView.js` (予定の番地 — 論証木の満期が読む) | D4 の「不一致は画面で必ず見える」 |
+| **S1b** ✓ | **語が指す先を画面で確かめる手段** (原則 #33-4 — 概念モデル §3 の右端の列): 接している面を光らせる / 見る人の位置と正面の矢印 / status の不一致と主張どうしの衝突を画面に出す。置き場所 `src/view/ArrangementStatusView.js` (絵の導出は `ArrangementStatusMath.js`、パネルは N パネルの Relations 節) | D4 の「不一致は画面で必ず見える」 |
 | **S2** | `SemanticInferencer` の A/B を新しい型の提案へ移し、テンプレの `above` を移行する (bin・tray・pedestal → `touching` で作業台の `+z` 面)。scene ファイルの旧 `above` / `adjacent` は読み込み時に無損失で移行 (先例: ADR-152 の `faces` → `specs`) | Retires の 3 番地を消す |
 | **S3** | LINK NETWORK の木を軸から導く: 親 = subject を**固定** (`jointType: fixed`) する相手、または subject を**下から支える**相手 (`touching` かつ 相手の上向きの面)。候補が 2 つ以上なら固定が支えに優先し、残りは弧 (無言で消さない)。循環は 1 本を弧に回す | 発端の苦情 |
 
@@ -247,6 +247,41 @@ S1b / S2 に入る前に辞書を整えた。
   話し手に代わって選ぶ (上 = 離れて above か、接して +z か)。辞書は落とさず `null` を返し、話し手に問う。
 - **書く瞬間の問い所。** `/whiteboard` §0 に「辞書を先に整備する」を足した (語が決まったら機構より先に
   辞書の行と概念モデルの行を置く)。機械側の問い所は上の census と辞書の読み込み時の throw。
+
+## 実装メモ (S1b — 2026-10-24)
+
+語が実物のどこを指すかを、走らせる前に画面で見る (原則 #33-4 — 概念モデル §3 の右端の列)。
+
+- **語ごとの絵は表 1 つ** (`CONFIRMATION_BY_WORD` — `src/view/ArrangementStatusMath.js`)。母集団は domain の語彙
+  (`CONTACTS` ∪ 面 ∪ `above`/`below` ∪ 前後左右) で、絵の行が無い語の個数 0 と、domain に無い語の行の個数 0 を
+  `src/view/ArrangementConfirmation.test.js` が両向きに問う (先例: ADR-152 の `CONFIRMATION_BY_FIELD`)。
+  `touching` = 接している面の矩形 (容器は内側の床に — `arrangementGeometry.contactPatches`。`observeContact` と
+  同じ分離の読み `partReadings` を共有するので、描いた面と読んだ接触は食い違えない)、`apart` = 2 つの中心を結ぶ
+  破線と隙間 (≥ — 下界。DEF-072)、面 = 相手の外箱の該当面、`above`/`below` = 相手の上面 (下面) から subject の
+  下面 (上面) への鉛直線、前後左右 = 見る人の位置と正面 (+X) の矢印、相手の中心を通る見る人の X・Y の 2 本の線
+  (`observeRelative` が読む境界そのもの) と 4 つの側の名前。
+- **status は色で言う。** ADR-152 の確認の絵は当たりを色で言わない (当たるかは core/ の答え) が、ここの status は
+  front が決めた離散の照合 (ADR-146 軸 3) なので、一致 = `factTone`・不一致 = `cautionTone`・宣言なし = 中立の
+  役割で塗る (ADR-100 — 新しい色を足さない)。宣言の無い軸は観測した事実を中立の色で描き、一致に見せない。
+- **「不一致は画面で必ず見える」(D4) の読み方。** 何も選んでいないときは、不一致か主張どうしの衝突を含む関係
+  **だけ**を描く (選ばないと見えない不一致を作らない)。物を選ぶと、その物を subject か側に持つ関係をすべて描く。
+  N パネルに常設の **Relations** 節 (原則 #15) — 文書なし / 宣言なし / 読めない (R15 のエラーを全文) / 一覧 の
+  4 種を kind で言い分け、一覧は軸ごとに `宣言 (layout: 観測)` と status、引いた可動性、衝突を出す。名前を押すと
+  その物を選ぶ (`onSelectRelationEntity` → 公開の `selectOnly`)。
+- **書き手は 1 つ。** `ArrangementController` が文書の辺 (`contextLoaded` / `contextChanged`) で
+  `ContextService.arrangementReport()` を読み直し、選択 (SelectionManager の手順 8) で焦点の ref を受け、
+  `context.arrangements` と 3D の絵の両方を書く。焦点は scene id ではなく layout の ref で持つので再投影を越える。
+- **絵は文書の配置から描く。** status を決めたのと同じ解決済みの姿勢 (`reportArrangements` が返す `bodies` /
+  `viewers`) で描くので、status と絵は食い違わない。読み込んだ後に画面で動かした mesh は読み直さない (文書が
+  権威 — ADR-050。受け入れチェックの `checkResults` と同じ扱い)。
+- **ラベルは画面一定の大きさ** (`sizeAttenuation: false`、原則 #27)。初版は world 単位で、瓶に寄ると画面を
+  覆った (実画面で見つけた)。同じ物のキャプションは画面単位で上へ積む。
+- 検証: `src/domain/arrangementGeometry.test.js` (接触面の矩形 — 内側の床・相手の回転・離れていれば無い・読みと
+  一致) · `src/view/ArrangementConfirmation.test.js` (census と、語が成り立つ配置で絵がその場所に在ること・不一致の
+  色・何も選ばないときに描く関係の集合・パネルの 4 種) · `src/controller/ArrangementController.test.js` (文書の辺と
+  焦点が両方の出力に届く・絵が無ければ mesh を確保しない) · `e2e/arrangement-status.spec.js` (Import した文書の
+  関係が実アプリの Relations 節と viewport に届き、選択で焦点が動く — 接触面は z = 810 の内側の床、面は z = 800 の
+  作業台の上面)。見た目として読めるかは当事者の実画面でしか測れない (docs/dogfooding/)。
 
 ## Consequences — Evidence と tradeoff (§1.2 Evidence)
 

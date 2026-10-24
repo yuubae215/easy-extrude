@@ -1,0 +1,95 @@
+import { useUIStore } from '../../store/uiStore.js'
+import { COLOR } from '../../theme/tokens.js'
+import { Section } from './npanelShared.jsx'
+import { PANEL_KIND, STATUS_MARK, panelHeadline, toneFor } from '../../view/ArrangementStatusMath.js'
+
+/**
+ * EntityRelations — the declared relations (ADR-168 `arrangements`) beside the
+ * selected entity, each axis as `declared → observed` with its status (S1b).
+ *
+ * The 3D picture shows WHERE each word points; this section says the words.
+ * Both are read from the one model `context.arrangements` (sole writer
+ * ArrangementController) — the section derives nothing.
+ *
+ * PERMANENT slot (原則 #15): with nothing selected it lists every relation and
+ * the counts, so a mismatch or a claim conflict is readable without knowing
+ * which entity to click (「不一致は画面で必ず見える」— ADR-168 D4). Which zero it
+ * is (no document / none declared / not readable) is the model's `kind`, and
+ * the headline for each kind is declared in one table (原則 #31).
+ */
+export function EntityRelations() {
+  const model = useUIStore(s => s.context.arrangements)
+  const select = useUIStore(s => s.callbacks.onSelectRelationEntity)
+  const headline = panelHeadline(model)
+  const listed = model.kind === PANEL_KIND.LISTED
+
+  return (
+    <Section title={model.focusRef ? `Relations (${model.focusRef})` : 'Relations'}>
+      <div style={{
+        fontSize: '10px', lineHeight: '1.45',
+        color: listed && (model.summary.mismatched > 0 || model.summary.conflicts > 0) ? COLOR.cautionTone : COLOR.textSecondary,
+        fontWeight: listed ? 'bold' : 'normal',
+      }}>
+        {headline}
+      </div>
+
+      {model.kind === PANEL_KIND.INVALID && model.errors.map((e, i) => (
+        <div key={i} style={{ fontSize: '10px', color: COLOR.cautionTone, marginTop: '3px', lineHeight: '1.35' }}>{e}</div>
+      ))}
+
+      {listed && model.focusRef && model.rows.length === 0 && (
+        <div style={{ fontSize: '10px', color: COLOR.textSecondary, marginTop: '4px' }}>
+          No relation names this entity.
+        </div>
+      )}
+
+      {model.rows.map(row => (
+        <div key={row.ref} style={{ marginTop: '6px', fontSize: '10px', lineHeight: '1.4' }}>
+          <div style={{ color: COLOR.textPrimary }}>
+            <span style={{ color: COLOR.textSecondary }}>{row.by}:</span> <RefLink r={row.subject} select={select} />
+          </div>
+          {row.sides.map((side, i) => (
+            <div key={i} style={{ paddingLeft: '8px', borderLeft: `1px solid ${COLOR.border}`, marginTop: '2px' }}>
+              <div style={{ color: COLOR.textSecondary }}>→ <RefLink r={side.of} select={select} /></div>
+              <AxisLine label="contact"   axis={side.contact} />
+              <AxisLine label="direction" axis={side.toward} />
+              <div style={{ color: COLOR.textSecondary }}>joint: {side.mobility}</div>
+            </div>
+          ))}
+        </div>
+      ))}
+
+      {model.conflicts.map((c, i) => (
+        <div key={`c${i}`} style={{ marginTop: '6px', fontSize: '10px', lineHeight: '1.4', color: COLOR.cautionTone }}>
+          Conflict on {c.axis} of {c.subject} → {c.of}: {c.claims.map(k => `${k.by} says ${k.value}`).join(' / ')}
+        </div>
+      ))}
+    </Section>
+  )
+}
+
+/** A thing named in a relation; pressing it selects that thing. */
+function RefLink({ r, select }) {
+  return (
+    <button
+      onClick={() => select?.(r)}
+      title={`Select ${r}`}
+      style={{
+        padding: 0, background: 'transparent', border: 'none', color: 'inherit',
+        fontSize: 'inherit', fontFamily: 'inherit', cursor: 'pointer', textDecoration: 'underline dotted',
+      }}
+    >
+      {r}
+    </button>
+  )
+}
+
+/** One axis: `mark declared (observed)`. An undeclared axis says so. */
+function AxisLine({ label, axis }) {
+  return (
+    <div style={{ color: COLOR[toneFor(axis.status)] }}>
+      {STATUS_MARK[axis.status]} {label}: {axis.declared ?? 'not declared'}
+      <span style={{ color: COLOR.textSecondary }}> (layout: {axis.observed})</span>
+    </div>
+  )
+}

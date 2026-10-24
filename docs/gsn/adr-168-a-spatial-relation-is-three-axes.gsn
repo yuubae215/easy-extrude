@@ -10,7 +10,7 @@ artifacts
 
     context Adr168Scope
     uuid 9a8970be-0306-4bf4-83d5-028a996e407b
-    summary "ADR-168 (Accepted 2026-10-22・段階実装 — S1 実装済み): above / adjacent を退役し、関係を『接触・向き・可動性』の 3 軸の組として新しい型 Arrangement (主張した人 by + subject + 側 1..2) で言う。概念モデルの正本は docs/SPATIAL_RELATION_MODEL.md。可動性は既存の jointType、面は ADR-152 の語彙を使う。主張は state (配置から導出)・宣言 (文書)・status (軸ごとの離散の照合) の 3 欄。実装は S1 (型とスキーマ — 実装済み) → S1b (語が指す先を画面で確かめる) → S2 (推論と移行) → S3 (LINK NETWORK の木)"
+    summary "ADR-168 (Accepted 2026-10-22・段階実装 — S1 実装済み): above / adjacent を退役し、関係を『接触・向き・可動性』の 3 軸の組として新しい型 Arrangement (主張した人 by + subject + 側 1..2) で言う。概念モデルの正本は docs/SPATIAL_RELATION_MODEL.md。可動性は既存の jointType、面は ADR-152 の語彙を使う。主張は state (配置から導出)・宣言 (文書)・status (軸ごとの離散の照合) の 3 欄。実装は S1 (型とスキーマ — 実装済み) → S1b (語が指す先を画面で確かめる — 実装済み) → S2 (推論と移行) → S3 (LINK NETWORK の木)"
     artifacts
     - "src/domain/arrangement.js"
     - "src/domain/arrangementGeometry.js"
@@ -83,12 +83,23 @@ artifacts
         goal StatusIsDiscreteAndVisible
         uuid 45dae2e0-7b76-4bc1-8fbe-c566d287ca95
         summary "state は配置から導出され保存されない。status は軸ごとに 一致 / 不一致 / 宣言なし の 3 値で、点数・合計・順位を src/ に作らない (連続量のコストは core/ — ADR-146 軸 1)。不一致は画面で必ず見える"
-        state ToBeDeveloped
-        labels support-exploring
+        labels support-verified
 
-            assumption StatusCensusPlanned
+            solution StatusStateTests
             uuid b979d675-4449-4b7b-8e6b-87e554324674
-            summary "証拠予定 (S1b): 満期=PATH:src/view/ArrangementStatusView.js 。前半 (離散で保存しない) は S1 で立った — arrangementGeometry.test.js の閉形式テスト (接触の許容値は CONTACT_TOLERANCE_MM の 1 か所 / 上下の符号 / 内在の面 / 容器は内側の床) と arrangement.test.js の status の値域 3 値。残りは『不一致は画面で必ず見える』で、S1b の画面が立てる。将来 core/ が同じ接触判定を持つなら fixtures/cross-language/ の準拠テストを同じ PR で置く (CLAUDE.md §AI 向けガード 軸 3)"
+            summary "node --test (2026-10-22) — 前半 (離散で保存しない): arrangementGeometry.test.js の閉形式テスト (接触の許容値は CONTACT_TOLERANCE_MM の 1 か所 / 上下の符号 / 内在の面 / 容器は内側の床) と arrangement.test.js の status の値域 3 値。将来 core/ が同じ接触判定を持つなら fixtures/cross-language/ の準拠テストを同じ PR で置く (CLAUDE.md §AI 向けガード 軸 3)"
+            artifacts
+            - "src/domain/arrangementGeometry.test.js"
+            - "src/domain/arrangement.test.js"
+
+            solution MismatchOnScreenTests
+            uuid 7c4e2d19-8a5b-4f36-b0e1-3d9f6a2c8e57
+            summary "S1b (2026-10-24) — 後半 (不一致は画面で必ず見える): ArrangementConfirmation.test.js — 宣言できる語のうち絵の無いものは 0 個 (母集団は domain の語彙)、不一致の軸は cautionTone で描かれキャプションが ✗ を言う、宣言なしの軸は中立の色で一致に見せない、何も選ばないときは不一致と衝突を含む関係だけが描かれる、パネルは文書なし / 宣言なし / 読めない / 一覧 を言い分ける。ArrangementController.test.js — 文書の辺と焦点が絵とパネルの両方に届く。e2e/arrangement-status.spec.js — Import した文書で実アプリの viewport と Relations 節に届く (接触面は z = 810 の内側の床)。見た目として読めるかは当事者の実画面でしか測れない"
+            artifacts
+            - "src/view/ArrangementConfirmation.test.js"
+            - "src/controller/ArrangementController.test.js"
+            - "e2e/arrangement-status.spec.js"
+            - "src/view/ArrangementStatusView.js"
 
         goal EachClaimKeepsItsClaimant
         uuid 0d6f3b8e-91a2-4c57-b3e4-7a8c2f5d1e90
