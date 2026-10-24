@@ -9,7 +9,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  QUOTIENT_TABLE, canonicalize, canonicalKey, localize,
+  QUOTIENT_TABLE, CATEGORY_SCOPE, canonicalize, canonicalKey, canonicalKeyIn, localize,
   localizeOperator, operatorSymbol, synonymsOf,
 } from './SynonymQuotient.js'
 
@@ -82,7 +82,8 @@ describe('quotient structure', () => {
     assert.equal(new Set(keys).size, keys.length, 'keys unique')
     for (const e of QUOTIENT_TABLE) {
       for (const syn of e.synonyms) {
-        assert.equal(canonicalKey(syn), e.key, `${syn} → ${e.key}`)
+        assert.equal(canonicalKeyIn(syn, e.cat), e.key, `${syn} → ${e.key} (in ${e.cat})`)
+        if (CATEGORY_SCOPE[e.cat] === 'global') assert.equal(canonicalKey(syn), e.key, `${syn} → ${e.key}`)
       }
     }
   })
@@ -94,5 +95,38 @@ describe('quotient structure', () => {
 
   it('the table is frozen (immutable dictionary)', () => {
     assert.ok(Object.isFrozen(QUOTIENT_TABLE))
+  })
+})
+
+describe('lookup scope per category (ADR-168)', () => {
+  it('every category of the table declares its scope', () => {
+    for (const e of QUOTIENT_TABLE) assert.ok(CATEGORY_SCOPE[e.cat], `${e.cat} has no scope`)
+  })
+
+  it('the spatial words never reach the category-free lookup — the operators read as before', () => {
+    assert.equal(canonicalKey('above'), 'greater_than')
+    assert.equal(canonicalKey('below'), 'less_than')
+    assert.equal(canonicalKey('between'), 'within')
+    for (const e of QUOTIENT_TABLE.filter(x => x.cat === 'spatial')) {
+      assert.notEqual(canonicalKey(e.key), e.key, `spatial key "${e.key}" leaked into the shared lookup`)
+    }
+  })
+
+  it('a person\'s own words fold onto the spatial values', () => {
+    assert.equal(canonicalKeyIn('奥', 'spatial'), 'back')
+    assert.equal(canonicalKeyIn('手前', 'spatial'), 'front')
+    assert.equal(canonicalKeyIn('くっついてる', 'spatial'), 'touching')
+    assert.equal(canonicalKeyIn('離れて', 'spatial'), 'apart')
+    assert.equal(canonicalKeyIn('上方', 'spatial'), 'above')
+    assert.equal(canonicalKeyIn('上面', 'spatial'), '+z')
+    assert.equal(localize('back', 'ja'), '奥')
+  })
+
+  it('words that say two facts are refused, not decided for the speaker', () => {
+    for (const w of ['上', '横', '載っている', '下']) assert.equal(canonicalKeyIn(w, 'spatial'), null, w)
+  })
+
+  it('asking an undeclared category is an error, not an empty answer', () => {
+    assert.throws(() => canonicalKeyIn('above', 'spacial'), /not declared/)
   })
 })

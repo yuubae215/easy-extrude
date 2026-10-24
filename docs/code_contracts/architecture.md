@@ -1201,6 +1201,12 @@ The desktop onboarding tour (`uiStore.tour`, quest card + anchor pulse) is the o
   round trip compile → scene JSON → save → reload → decompile like `robotRole`.
 - **The model document is checked.** `docs/SPATIAL_RELATION_MODEL.md` §3 and the domain vocabulary are compared in
   both directions by `src/SpatialRelationModelDoc.test.js`.
+- **People's words go through the dictionary, scoped.** Surface words (奥, 手前, くっついてる, top face …) fold onto the
+  canonical values only via `canonicalKeyIn(term, 'spatial')`. The `spatial` category is `scoped` in `CATEGORY_SCOPE`
+  and never reaches the category-free `canonicalKey`, because `above` / `below` / `between` are operator synonyms there
+  (and `CanonicalForm` hashes those keys). Words that say two facts (上, 下, 横, 載っている) are deliberately absent —
+  the caller asks which was meant. Every declarable word has a dictionary row; the census fails otherwise. **Order:
+  the dictionary row comes before the mechanism** (当事者 2026-10-24 — `/whiteboard` §0).
 
 **Why.** `above` meant "vertically above, apart" in its definition and "resting on, touching" in the inferencer and
 the templates — one word, two facts, and each place silently dropped one of them (ADR-168 力学 1).

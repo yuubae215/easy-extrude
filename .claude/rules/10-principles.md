@@ -77,7 +77,7 @@
 - #18: `objectRemoved`/`objectAdded`
 - #22: `CLICK_SCOPE_RANK` / `chooseClickTarget()` (rank → 奥行き) — 問い所 = `src/ClickTargetOwnership.test.js` (優先順位を決める場所の個数。ADR-140。**宣言されていて一度も具体化されていない原則**は、違反を見逃すのではなく「守られていることになっている」 — 原則の行が無いあいだ、3 つの写しは #22 を名乗りながら距離を一度も見ていなかった)
 - #19: ルール台帳 = `docs/CODE_CONTRACTS.md` (+ `docs/code_contracts/*.md`)、原則集 = `docs/PHILOSOPHY.md`
-- #33: 書く瞬間の問い所 = `/whiteboard` §0「語彙の充足」。検査 4 (語 → 確かめる絵) の機械版 = `CONFIRMATION_BY_FIELD` (`src/view/GraspDeclarationConfirmation.test.js` — 母集団はスキーマ)。先例 = ADR-152 (面が進入面と接触面を兼ねていた / 把持仕様・把持戦略に名前が無かった / `+x` が物体のどこか見えなかった)
+- #33: 書く瞬間の問い所 = `/whiteboard` §0「語彙の充足」と「辞書を先に整備する」(語の正規形と言い方を `QUOTIENT_TABLE` に置いてから機構を書く — 当事者 2026-10-24。衝突は辞書の読み込みが throw で問う)。検査 4 (語 → 確かめる絵) の機械版 = `CONFIRMATION_BY_FIELD` (`src/view/GraspDeclarationConfirmation.test.js` — 母集団はスキーマ)。先例 = ADR-152 (面が進入面と接触面を兼ねていた / 把持仕様・把持戦略に名前が無かった / `+x` が物体のどこか見えなかった)
 - #30: motion 削減境界 = `src/theme/motion.js`、transient 所有者 = `MotionGovernor`
 - #32: ADR ヘッダの `Retires:` 欄 (ADR-125 — ADR-125 以降必須、「なし」も宣言)。発火は Status 遷移で `pnpm test:adr` が両方向を問う (Accepted なら在ってはならず、Proposed/Draft なら在らねばならない)。発火事象がまだ ADR として無いときは `docs/DEFERRAL_LEDGER.md` が受け、満期を「その ADR が起票されたとき」にする (DEF-020)。手書きの先例 = `RETIRED_MODE_SHAPES` (ADR-103) / `RETIRED_SELECTION_COLORS` (ADR-100) — 仕組みは在ったが**思い出した人だけが書いていた**
 - #31 (GSN 側): **宣言された未支持ゴールの個数** = `scripts/check-gsn-debt.mjs` (ADR-126)。`pnpm test:gsn` が問うのは*未宣言*のゼロだけで、**宣言済みの未支持は永久に緑**だった — 満期も個数も無く、`report` の集計は走らせていないので印字ですらなかった。数えるときは `support-` prefix ではなく**種を列挙**する (`support-verified` は逆の意味で、prefix 版は 30 を 57 と報告した — prefix は符号を持たない)

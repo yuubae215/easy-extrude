@@ -92,7 +92,7 @@ artifacts
 
         goal EachClaimKeepsItsClaimant
         uuid 0d6f3b8e-91a2-4c57-b3e4-7a8c2f5d1e90
-        summary "宣言はどれも主張した人 (by) を持ち、相対の向きはそれとは別に見る人 (viewer) を持つ。同じ対について人ごとの宣言を上書きせず並べ、同じ軸で食い違えば『主張どうしの衝突』として名指す (配置との status とは別の事実。どちらが正しいかは決めない)。(人ごとの言い方を QUOTIENT_TABLE で正規形へ落とす部分は、辞書の 1 語が辞書全体で 1 鍵という形との衝突が S1 で見つかったので、この goal から外して DEF-070 に降ろした)"
+        summary "宣言はどれも主張した人 (by) を持ち、相対の向きはそれとは別に見る人 (viewer) を持つ。同じ対について人ごとの宣言を上書きせず並べ、同じ軸で食い違えば『主張どうしの衝突』として名指す (配置との status とは別の事実。どちらが正しいかは決めない)。人ごとの言い方は QUOTIENT_TABLE の分類 spatial (分類内でだけ引ける) で正規形へ落とす (2026-10-24 の辞書の整備 — S1 で見つかった辞書全体 1 鍵との衝突を、分類ごとの引き方で解いた)"
         labels support-verified
 
             solution ClaimantTests
@@ -102,6 +102,13 @@ artifacts
             - "src/domain/arrangement.test.js"
             - "src/layout/ArrangementReport.test.js"
             - "src/context/ContextValidator.js"
+
+            solution SpatialDictionaryTests
+            uuid 2c7e91d4-5a83-4b6f-9e20-d4b1a8c3f675
+            summary "node --test (2026-10-24) — SynonymQuotient.test.js: 全分類が引き方を宣言 / 空間の語は分類を問わない引き方に漏れない (above は従来どおり greater_than) / 奥→back・手前→front・くっついてる→touching・上面→+z / 上・下・横・載っているは null (話し手に問う) / 宣言の無い分類を引くと throw。SpatialRelationModelDoc.test.js: 辞書の spatial の鍵と domain の宣言できる語が両向きに一致。CanonicalForm / NlIntake / ProvenanceNarrative の既存テストは無改変で通る (署名は変わらない)"
+            artifacts
+            - "src/context/SynonymQuotient.test.js"
+            - "src/SpatialRelationModelDoc.test.js"
 
         goal HangingIsDerivedFromTheAxes
         uuid 5c1e2a40-7d3b-4f8e-9a61-2b0c4d7e8f13

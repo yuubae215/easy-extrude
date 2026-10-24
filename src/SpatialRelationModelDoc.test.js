@@ -18,6 +18,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { CONTACTS, FACE_TOWARD, ABSOLUTE_TOWARD, RELATIVE_DIRS } from './domain/arrangement.js'
 import { OBSERVED_CONTACT } from './domain/arrangementGeometry.js'
+import { QUOTIENT_TABLE } from './context/SynonymQuotient.js'
 
 const doc = readFileSync(new URL('../docs/SPATIAL_RELATION_MODEL.md', import.meta.url), 'utf8')
 
@@ -52,4 +53,12 @@ test('the observed-only contact values are named by the document as observed-onl
   for (const v of observedOnly) {
     assert.match(doc, new RegExp(`観測だけに在る値[^\\n]*\`${v}\``), `"${v}" is observable but the document does not say it is observed-only`)
   }
+})
+
+test('the dictionary has a class for every declarable word, and no spatial class the code cannot declare', () => {
+  // 辞書を整備してから進める (当事者 2026-10-24): a word added to the domain
+  // without its dictionary row fails here, at the moment it is written.
+  const spatial = QUOTIENT_TABLE.filter(e => e.cat === 'spatial').map(e => e.key)
+  assert.deepEqual(DECLARABLE.filter(w => !spatial.includes(w)), [], 'declarable words without a dictionary row (QUOTIENT_TABLE cat "spatial")')
+  assert.deepEqual(spatial.filter(k => !DECLARABLE.includes(k)), [], 'dictionary rows for words the code cannot declare')
 })
