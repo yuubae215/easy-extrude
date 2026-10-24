@@ -398,7 +398,16 @@ const SUPPORT_LABELS = new Map([
 // 2026-10-14: 51 → 50。ADR-166 M4d4 (DOM の開閉と既定曲線の禁止) で最後の exploring goal
 // (RemainingSubStagesCloseTheirRows → DomOpensAndClosesOnTheVocabulary) が support-verified へ
 // (MotionIdentity.test.js / NodeEditorFlash.test.js の node --test)。ADR-166 の木に未支持の goal は 0。
-const DEBT_BASELINE = 50
+// 2026-10-21: 50 → 55。ADR-168 (Proposed — 関係を向き・接触・可動性の 3 軸で言う語彙) を起票し、
+// 実装前の 5 goal を exploring で宣言した。満期はどれも機械可読 (満期=ADR-168 — Accepted で発火) なので
+// 分子 (G3) は動かない。S1〜S3 の実装で support-verified へ上がるたびに下げる。
+// 2026-10-21 (同日): 55 → 56。O3 の決着 (見る人 ≠ 主張した人 — ADR-168 D5) で goal EachClaimKeepsItsClaimant を
+// exploring で足した (満期=ADR-168 — 機械可読なので G3 は動かない)。
+// 2026-10-22: 56 → 53。ADR-168 S1 で HorizontalDirectionNamesItsViewer / TwoSidesSayBetweenAndClamped /
+// EachClaimKeepsItsClaimant が support-verified へ (arrangement / arrangementGeometry / ArrangementReport の
+// node --test)。ADR-168 が Accepted になり満期=ADR-168 が発火するので、残る 3 goal の満期は S1b / S2 / S3 の
+// 番地へ張り替えた (どれも機械可読 — G3 は動かない)。
+const DEBT_BASELINE = 53
 
 /**
  * G3 — 満期 trigger を持たない exploring goal の個数 (実測値)。

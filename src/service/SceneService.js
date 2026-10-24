@@ -68,6 +68,7 @@ import {
   isCameraFrame, resolveCameras, nextCameraName, cameraSeedPose, DEFAULT_CAMERA_DECLARATION,
   cameraDeclarationOf,
 } from '../domain/visionCamera.js'
+import { isFrameRole } from '../domain/viewerFrame.js'
 import { GRIPPER_KIND } from '../context/GraspDeclarationCatalog.js'
 import {
   ORIGIN_FRAME_NAME, isOriginFrame, isOriginFrameName, findOriginFrame,
@@ -4315,6 +4316,8 @@ function orderFramesParentFirst(frames) {
  */
 function _restoreRobotRole(frame, dto) {
   if (isRobotRole(dto.robotRole)) frame.robotRole = dto.robotRole
+  // ADR-168 D2: a declared viewer. Unknown / absent stays null (原則 #31).
+  if (isFrameRole(dto.frameRole)) frame.frameRole = dto.frameRole
   // ADR-151: what the tcp's transform is measured from. Absent / unknown stays
   // null — the pre-ADR-151 shape the scene-entry upgrade replaces, never a
   // silently assumed mount (原則 #31).

@@ -215,7 +215,7 @@ test('layout と context の両スキーマが同じ語彙を持つ — 片方�
   // ADR-117 already paid for letting the context schema lag behind its layout twin, so
   // the two vocabularies are bound to each other here rather than trusted to be
   // updated together.
-  const ctx = readJson('schema/context-0.6.schema.json')
+  const ctx = readJson('schema/context-0.7.schema.json')
   const ctxFeature = ctx.$defs.hydratedEntity.properties.graspFeature
   assert.deepEqual(ctxFeature.properties.kind.enum, schema.$defs.graspFeature.properties.kind.enum)
   const ctxSpec = ctxFeature.properties.specs.items
@@ -227,4 +227,14 @@ test('layout と context の両スキーマが同じ語彙を持つ — 片方�
     ctxFeature.properties.faces.items.properties.face.enum,
     schema.$defs.graspFeature.properties.faces.items.properties.face.enum,
   )
+})
+
+test('frameRole (ADR-168 D2): the layout and context schemas and viewerFrame.js carry the same roles', async () => {
+  const { FRAME_ROLES } = await import('../domain/viewerFrame.js')
+  const ctx = readJson('schema/context-0.7.schema.json')
+  assert.deepEqual(schema.$defs.entity.properties.frameRole.enum, [...FRAME_ROLES])
+  assert.deepEqual(ctx.$defs.hydratedEntity.properties.frameRole.enum, [...FRAME_ROLES])
+  const viewer = { ref: 'op', type: 'CoordinateFrame', name: 'Operator', frameRole: 'viewer', position: { x: 0, y: 0, z: 0 } }
+  assert.equal(validate({ version: 'layout/1.0', entities: [viewer] }), true, JSON.stringify(validate.errors))
+  assert.equal(validate({ version: 'layout/1.0', entities: [{ ...viewer, frameRole: 'watcher' }] }), false)
 })

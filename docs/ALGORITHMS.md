@@ -45,6 +45,8 @@
 | 判定基準の満たされ具合 J・関心・差し出すもの | J = Σ_u Σ_c 比重share × 平均_e(重み × clip(余裕/scale, −1, 1))、期待値は可行の境界。関心 = 人 u の大項目 c を probe だけ緩めた線での J'(x\*') − J'(x\*) を最大で正規化 (シャドウプライスの有限差分)、差し出すもの = 提案後の線で解き直した案との余裕の減り (ADR-165 §PR4 の俯瞰 4) | `core/…/criteria/assessment.py` (係数は `catalog.py`、案は `cells.py` の `CellSource` — naive 既定は名目セル表) | **core のみ (アイデア — ADR-165 D6)** |
 | ロボットの見た目のメッシュの簡略化 | 位置で頂点を溶接し、meshoptimizer の辺縮約 (二次誤差) を絶対誤差 0.2 mm で、開いた縁は固定 (ADR-166 M8)。元は平面シェーディングなので法線は保存せず、実行時に面法線を作り直す | `scripts/simplify-robot-meshes.mjs` (オフライン・作者の手元で 1 回) → `public/…/visual_lod/*.glb`。実行時の復元は `src/view/robotMeshLod.js` | オフライン (反復・探索なので閲覧者の端末では走らせない — 軸 2。front は導出物を読むだけ、`RobotMeshLod.test.js` が源の SHA-256 で導出を問う) |
 | 期待値と実態の差の顔 (☺ ○ ☹ ?) | `op` の向きの余裕の符号、余裕 < 期待値の 10 % で ○、実態の幅が期待値をまたげば ? (重みを読まない) | `src/view/CriteriaGapMath.js: gapOf` | front (公知の閉形式・表示 — `CriteriaIndicatorCensus.test.js` が重みを読まないことを問う) |
+| 2 つの物の関係の state (接触・面) | 相手の座標系で subject の 8 頂点の区間を取り、相手の箱 (容器は `shellParts` の床と壁) ごとに軸 a の符号付き分離 `d_a = max(s_a.min − (c_a+h_a), (c_a−h_a) − s_a.max)`。`max_a d_a ∈ [−ε, ε]` で接触、`< −ε` でめり込み、`> ε` で離れている (ε = `CONTACT_TOLERANCE_MM` = 1 mm)。面 = `|d_a| ≤ ε` の軸に subject の側の符号。回転した subject は区間で外接するので縁では接触寄り (ADR-168 D4) | `src/domain/arrangementGeometry.js: observeContact` | front (公知の閉形式 — 判定ではなく宣言の照合。どれだけ外れたかの連続量は作らない — 軸 1) |
+| 2 つの物の関係の state (向き) | 上下 = 世界 z の区間の差 (> 1 mm の不感帯)、前後左右 = 中心の差を宣言された見る人の座標系 (+X 前・+Y 左 — REP-103) へ回した x / y の符号 (ADR-168 D1/D2) | `src/domain/arrangementGeometry.js: observeVertical / observeRelative` | front (公知の閉形式) |
 
 **両方 (導出)** の行だけが `src/` に写しを持つ。その 3 行は ADR-146 D3 の条件
 (共有フィクスチャの準拠テスト) を満たしており、登録簿は

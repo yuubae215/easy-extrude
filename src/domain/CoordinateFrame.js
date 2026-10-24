@@ -126,6 +126,15 @@ export class CoordinateFrame {
     this.robotRole = null
 
     /**
+     * Declared role outside any robot (ADR-168 D2). `'viewer'` = a person's
+     * standpoint that front/back/left/right are seen from (+X its front, +Y its
+     * left). null = an ordinary frame. Only `domain/viewerFrame.js` interprets
+     * it. Serialized with the frame (scene JSON + Layout DSL) so it round-trips.
+     * @type {'viewer' | null}
+     */
+    this.frameRole = null
+
+    /**
      * What a robot tcp's stored transform is measured FROM (ADR-151). `'flange'`
      * declares that `translation` / `rotation` ARE the tool mount (`tool0 → tcp`)
      * — the gripper's fact, and the interface the robot and the gripper share.

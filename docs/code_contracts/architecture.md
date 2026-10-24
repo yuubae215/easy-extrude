@@ -1175,3 +1175,38 @@ The desktop onboarding tour (`uiStore.tour`, quest card + anchor pulse) is the o
 
 **Why.** Before ADR-151 the `robot_base → tcp` edge held the rest-pose forward kinematics — a derived value stored as an edge — so the scene's TCP stood still while the previewed arm moved, and sat 150 mm short of the tool tip at rest. See `docs/adr/ADR-151-the-tcp-is-derived-from-the-tool-mount-not-stored-in-the-scene.md`; e2e evidence `e2e/tcp-mount.spec.js` + `e2e/grasp-stub.spec.js` S12.
 
+## A Relation Is Claimed by Someone; Mobility Is Looked Up; a Relative Direction Names Its Viewer (ADR-168)
+
+**Rule.** A declared relation between things (`Arrangement`, Context doc `arrangements[]`, context/0.7) is a
+*claim*: it always names who claims it (`by`, an actor ref) and is checked by ONE entry point,
+`domain/arrangement.js: arrangementIssues` (R15 calls it). It never stores what the poses already say.
+
+- **No mobility field.** Whether two things move together is the `jointType` of the layout constraints between
+  them (endpoints resolved to their Solid — `layout/ArrangementReport.js: hostByRef`), looked up by
+  `mobilityBetween`. 0 links = undeclared, 1 = its value, 2+ = an error. A mobility field on the arrangement would
+  make the same fact writable in two places (§1.1).
+- **A relative direction names its viewer.** `front` / `back` / `left` / `right` carry `viewer: <ref>` of a
+  CoordinateFrame with `frameRole: "viewer"` (+X its front, +Y its left — REP-103). Even with one viewer in the
+  scene nothing is picked implicitly; the claimant and the viewer are two facts (D5). The viewport camera is never a
+  viewer — orbiting it would rewrite every "left" in the document. What the camera sees may be *shown*, not written.
+- **The frame of reference follows contact.** Touching → the partner's face (`+x … -z`); apart → `above`/`below`
+  (gravity) or a relative direction. The validator refuses the crossed combinations.
+- **State is derived, status is discrete.** `arrangementGeometry.js` reads contact / face / vertical / relative
+  from poses every time (never stored). Status is per axis `match | mismatch | undeclared` — no score, no total;
+  "how far off" is a graded cost and belongs to `core/` (ADR-146 axis 1).
+- **Claims are kept side by side.** One claim per (pair × claimant). Two claimants disagreeing on the same axis in
+  the same frame of reference is a *claim conflict* (`claimConflicts`, returned as `arrangementConflicts`), not an
+  error and not an overwrite. Different viewers' left/right never conflict.
+- **`frameRole` has one interpreter** (`domain/viewerFrame.js`, registered in `IDENTITY_RULES`), and rides the
+  round trip compile → scene JSON → save → reload → decompile like `robotRole`.
+- **The model document is checked.** `docs/SPATIAL_RELATION_MODEL.md` §3 and the domain vocabulary are compared in
+  both directions by `src/SpatialRelationModelDoc.test.js`.
+- **People's words go through the dictionary, scoped.** Surface words (奥, 手前, くっついてる, top face …) fold onto the
+  canonical values only via `canonicalKeyIn(term, 'spatial')`. The `spatial` category is `scoped` in `CATEGORY_SCOPE`
+  and never reaches the category-free `canonicalKey`, because `above` / `below` / `between` are operator synonyms there
+  (and `CanonicalForm` hashes those keys). Words that say two facts (上, 下, 横, 載っている) are deliberately absent —
+  the caller asks which was meant. Every declarable word has a dictionary row; the census fails otherwise. **Order:
+  the dictionary row comes before the mechanism** (当事者 2026-10-24 — `/whiteboard` §0).
+
+**Why.** `above` meant "vertically above, apart" in its definition and "resting on, touching" in the inferencer and
+the templates — one word, two facts, and each place silently dropped one of them (ADR-168 力学 1).

@@ -206,6 +206,12 @@
             "tcp"
           ]
         },
+        "frameRole": {
+          "description": "ADR-168 D2: a CoordinateFrame's declared role outside any robot. 'viewer' = a person's standpoint that front/back/left/right are seen from: +X is the way it faces, +Y its left (REP-103). Not on a robot base/tcp or a vision camera, and world-parented for now (no parentRef). 0..N per scene; a relative direction always names its viewer, even when there is one. Absent = an ordinary frame.",
+          "enum": [
+            "viewer"
+          ]
+        },
         "mountedOn": {
           "description": "ADR-151: what a robot tcp's `position`/`rotation` are measured from. 'flange' = they ARE the tool mount (tool0 -> tcp) — the end effector's own fact and the interface the robot and its end effector share; the world pose is derived (base ∘ flange-at-rest ∘ mount), never stored. Absent on a pre-ADR-151 tcp, whose base-relative value the importer replaces with the default mount and announces (the entity and every relation to it survive).",
           "enum": [

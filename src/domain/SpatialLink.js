@@ -72,6 +72,9 @@ export class SpatialLink {
  *   contains   — Region source spatially contains entity target
  *   adjacent   — Source and target share a boundary or are neighbours
  *   above      — Source is vertically above target (Z-axis)
+ *                (`adjacent` / `above` each carry two facts — direction and
+ *                contact. Split into the Arrangement axes by ADR-168; their
+ *                retirement is 未実装 until S2 — DEF-071.)
  *   connects   — A route logically connects source to target.
  *                When link.properties.deadline (s) and link.properties.speed (m/s) are set,
  *                evaluates as a tact-time constraint: routeLength_mm / 1000 / speed > deadline → violated.

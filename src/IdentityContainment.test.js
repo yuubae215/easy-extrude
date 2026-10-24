@@ -72,6 +72,16 @@ const IDENTITY_RULES = [
     why: '取付けの判定が散ると、旧形式の base 相対の値を取付けとして読む経路が 1 つ残り、ツール先端ではない点へ IK を解く (ADR-151 の欠陥の再演)',
   },
   {
+    // ADR-168 D2。見る人 (相対の前後左右の基準) は frameRole の値で決まる。
+    // 値の比較を呼び出し側で書き直すと、役割を足した日に 1 経路だけ旧い判定を続け、
+    // 見る人でないフレームから「左」を測るか、見る人を落とす。
+    name: '見る人の同一性 (frameRole の値比較)',
+    owners: ['src/domain/viewerFrame.js'],
+    use: "isViewerFrame(obj) / isFrameRole(v) / viewerFrameGap(entity)  — import from 'src/domain/viewerFrame.js'",
+    all: [/frameRole/, /[!=]==\s*(FRAME_ROLE\.|['"`]viewer['"`])/],
+    why: '見る人の判定が散ると、前後左右を測る基準が経路ごとに食い違う (ADR-168 D2)',
+  },
+  {
     // ADR-094 §波及 が先行 PR として名指しした未移行分。ADR-090 が robot_base に対して
     // 閉じた欠陥 (同一性を呼び出し側で再導出する) が、Origin CF では 16 箇所 / 10 ファイルに
     // 残っていた。robot 規則と違い `all` が 1 本なのは、この名前には**正当な住所が

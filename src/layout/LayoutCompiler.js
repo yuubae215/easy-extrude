@@ -316,6 +316,8 @@ function generateObjects(entities, refMap, positions) {
           // for an ordinary frame; a legacy DSL that names a robot without the
           // role still resolves through the name path in domain/robotFrames.js.
           robotRole:   entity.robotRole ?? null,
+          // ADR-168 D2: a declared viewer (the standpoint of front/back/left/right).
+          frameRole:   entity.frameRole ?? null,
           // ADR-151: a tcp's `position` / `rotation` are the tool mount
           // (`tool0 → tcp`) when this says 'flange'.
           mountedOn:   entity.mountedOn ?? null,

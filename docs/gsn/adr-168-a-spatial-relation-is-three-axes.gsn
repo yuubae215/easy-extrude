@@ -1,0 +1,121 @@
+GOALS adr168_a_spatial_relation_is_three_axes
+
+goal RelationsAreSaidOneFactPerWord
+uuid 98a6717e-8bd7-4643-8b31-e80f80106416
+summary "2 つ (または 3 つ) の物の関係を、向き・接触・可動性のどれについても 1 語 1 事実で言え、言ったこと (宣言) と在ること (state) の一致が画面で読める。前後左右は誰から見ての話かが語の一部になる"
+state ToBeDeveloped
+labels adr-168, principle-33, term-l-hidden, change-declaration
+artifacts
+- "docs/adr/ADR-168-a-spatial-relation-is-three-axes-and-three-slots.md"
+
+    context Adr168Scope
+    uuid 9a8970be-0306-4bf4-83d5-028a996e407b
+    summary "ADR-168 (Accepted 2026-10-22・段階実装 — S1 実装済み): above / adjacent を退役し、関係を『接触・向き・可動性』の 3 軸の組として新しい型 Arrangement (主張した人 by + subject + 側 1..2) で言う。概念モデルの正本は docs/SPATIAL_RELATION_MODEL.md。可動性は既存の jointType、面は ADR-152 の語彙を使う。主張は state (配置から導出)・宣言 (文書)・status (軸ごとの離散の照合) の 3 欄。実装は S1 (型とスキーマ — 実装済み) → S1b (語が指す先を画面で確かめる) → S2 (推論と移行) → S3 (LINK NETWORK の木)"
+    artifacts
+    - "src/domain/arrangement.js"
+    - "src/domain/arrangementGeometry.js"
+    - "src/domain/viewerFrame.js"
+    - "src/layout/ArrangementReport.js"
+    - "src/domain/SpatialLink.js"
+    - "src/service/SemanticInferencer.js"
+
+    context PartyWords
+    uuid d3788faf-a5a6-4ad5-8662-3d3b35f46add
+    summary "当事者の言葉 (2026-10-21):『above が載っている、なのは語彙のイメージと合わなくない？ 離れて上方にあるイメージ』『上下左右どっちにあるのか、くっついてるのか離れてるのか、動くのか固定なのか』『2 つの間にワークがあるのか、挟んでいるのか』『側面や天底にはりついてる何かには相手の物体自身の向き、ちょっと離して置かれている何かには見ている人』『state は対象の主張、宣言は見る人の主張、status はお互いの共有するコスト関数』『宣言された見る人も要りそう — 前後左右はかなり主観的』"
+
+    context BusinessTreeAttachPoint
+    uuid 61b86ee2-fe2c-42a9-a539-3a4f91d92a10
+    summary "事業木へ接続 (2026-10-21, ADR-153): profit-growth.gsn の goal CoupledSpecsAreDeclaredInOnePlace (term-l-hidden) の下に solution Adr168Tree として吊る。コンテナとワークの関係が言えないと、その仕様は評価の外で決められ後から依存が見つかる。副次的には LINK NETWORK の読みやすさ (MobileStructureViewIsReadable, term-p-operate) に寄与する (S3)"
+    artifacts
+    - "docs/gsn/profit-growth.gsn"
+
+    justification WhyAxesNotMoreWords
+    uuid e7d47d6c-71e4-43fc-a7ff-4ccd41020215
+    summary "却下案 A (above の意味を固定して on / touching_* を足す) への反証: 向き 6 × 接触 2 の直積が語の数になり、3 者関係は依然言えず、語を足すたびに推論・凡例・スキーマの列挙が増える。却下案 C (全部を観測で表示) は『接していなければならない』という要求が言えず status が出ない"
+
+    justification WhyNoNewMobilityWord
+    uuid 53d83d83-1797-4854-ac9c-f455a7babd1b
+    summary "可動性は jointType が既に言っている (fixed / revolute / prismatic / floating …)。新しい型に可動性の欄を持たせると、同じ事実を SpatialLink と新しい型の 2 か所に書ける構造になる (§1.1)。リンクが 0 本 = 宣言なし、floating = 自由、と読めば『自由』と『何も言っていない』も区別できる"
+
+    justification ViewerIsNotThePersona
+    uuid 1582cbaf-7113-4c08-8b8a-d6d620a4d0af
+    summary "O3 決着 (当事者 2026-10-21):『一人だったらそうなんだけど、複数人いたら一致しない場合もある』。見る人 (幾何 — CoordinateFrame の役割 viewer) と主張した人 (by — Context DSL の actors) は別の事実として持つ。1 人なら同じ人を指しうるが推論しない (ADR-168 D5)"
+
+    strategy ByAxesSlotsAndOneType
+    uuid d81c7874-3878-49a4-8744-f05a2af9bcb4
+    summary "1 語 2 事実を軸に割り (接触・向き・可動性)、主張を 3 つの欄 (state / 宣言 / status) に分け、2 者と 3 者を 1 つの型で言う。下位 goal は当事者の問い (どちら側か・接しているか・動くか・間か挟みか・誰から見てか) と発端の苦情 (ぶら下がりが見えない) から遡って同定した必要条件"
+
+        goal EachAxisIsItsOwnWord
+        uuid 09f47c9e-bb29-4182-93e9-e0e3d11674d2
+        summary "接触・向き・可動性がそれぞれ独立の語で言え、各軸が『宣言なし』を独立の値に持つ (既定値で埋めない)。above / adjacent は退役し、旧データは読み込み時に無損失で移行される"
+        state ToBeDeveloped
+        labels support-exploring
+
+            assumption AxisSchemaPlanned
+            uuid 6091cd88-857c-4865-8684-c707c59842db
+            summary "証拠予定 (S2): 満期=GREP:src/service/SemanticInferencer.js::arrangementGeometry.js 。S1 で半分は立った (軸ごとの省略が『宣言なし』のまま status に出る / 運動学リンク 2 本以上は矛盾エラー — arrangement.test.js)。残りは S2: 旧 above・adjacent を含む scene が移行後に同じ向き・接触を言う (先例 ADR-152 の faces → specs) と、2 語の定義と推論が消えること (DEF-071)"
+
+        goal HorizontalDirectionNamesItsViewer
+        uuid a1dca7a3-32e0-4875-a0d1-2b966145fb41
+        summary "接しているときの向きは相手の面 (内在)、離れているときの上下は重力 (絶対)、前後左右は宣言された見る人 (相対) で言う。見る人を名指さない相対の向きは書けず、カメラ相対の左右は表示の導出にとどまり文書にも照合にも入らない"
+        labels support-verified
+
+            solution ViewerRuleTests
+            uuid 83fbf0aa-d5ad-415c-b82f-fa00e9778acb
+            summary "node --test (2026-10-22) — arrangement.test.js: viewer の無い front/back/left/right はエラー (見る人が 1 人でも) / 宣言されていない見る人はエラー / 接触中に above・相対の向き、離れて面を書くとエラー。arrangementGeometry.test.js: 見る人を Z 回りに 180° 回すと left↔right・front↔back が入れ替わる / 相手を回すと面の名前が回る (内在) / 接していることは above ではない。state の関数はカメラを入力に取らない (引数の形がそれを言う)。ArrangementReport.test.js: テンプレのセルの前に立つ見る人から、ビンはトレイの左。LayoutValidator は見る人がロボットのフレーム・視覚カメラ・TF の子であることを拒む"
+            artifacts
+            - "src/domain/arrangement.test.js"
+            - "src/domain/arrangementGeometry.test.js"
+            - "src/layout/ArrangementReport.test.js"
+
+        goal TwoSidesSayBetweenAndClamped
+        uuid 9175d98c-0b7f-4513-bb57-add3844eb5b8
+        summary "1 つの型で 2 者関係 (側 1) と 3 者関係 (側 2) を言え、側 2 の接触の組で『挟まれている / 間にある / 片側に寄っている』が区別される。側 0 は表現不能、3 以上は未決として宣言されている"
+        labels support-verified
+
+            solution BetweenTests
+            uuid 8e98d686-f24c-4aa5-b521-23fe354ec982
+            summary "node --test (2026-10-22) — ContextSchema.test.js: sides の minItems 1 / maxItems 2 が domain の MIN_SIDES / MAX_SIDES と一致、0 と 3 は形で拒否。arrangement.test.js: 2 側の向きが逆でない組・片側だけの向き・違う見る人の左右はエラー / 2 本の爪に挟まれたワークの fixture で両側が touching かつ向きが一致し、片方の爪を 10 mm 開くとその側だけが不一致になる"
+            artifacts
+            - "src/schema/ContextSchema.test.js"
+            - "src/domain/arrangement.test.js"
+
+        goal StatusIsDiscreteAndVisible
+        uuid 45dae2e0-7b76-4bc1-8fbe-c566d287ca95
+        summary "state は配置から導出され保存されない。status は軸ごとに 一致 / 不一致 / 宣言なし の 3 値で、点数・合計・順位を src/ に作らない (連続量のコストは core/ — ADR-146 軸 1)。不一致は画面で必ず見える"
+        state ToBeDeveloped
+        labels support-exploring
+
+            assumption StatusCensusPlanned
+            uuid b979d675-4449-4b7b-8e6b-87e554324674
+            summary "証拠予定 (S1b): 満期=PATH:src/view/ArrangementStatusView.js 。前半 (離散で保存しない) は S1 で立った — arrangementGeometry.test.js の閉形式テスト (接触の許容値は CONTACT_TOLERANCE_MM の 1 か所 / 上下の符号 / 内在の面 / 容器は内側の床) と arrangement.test.js の status の値域 3 値。残りは『不一致は画面で必ず見える』で、S1b の画面が立てる。将来 core/ が同じ接触判定を持つなら fixtures/cross-language/ の準拠テストを同じ PR で置く (CLAUDE.md §AI 向けガード 軸 3)"
+
+        goal EachClaimKeepsItsClaimant
+        uuid 0d6f3b8e-91a2-4c57-b3e4-7a8c2f5d1e90
+        summary "宣言はどれも主張した人 (by) を持ち、相対の向きはそれとは別に見る人 (viewer) を持つ。同じ対について人ごとの宣言を上書きせず並べ、同じ軸で食い違えば『主張どうしの衝突』として名指す (配置との status とは別の事実。どちらが正しいかは決めない)。人ごとの言い方は QUOTIENT_TABLE の分類 spatial (分類内でだけ引ける) で正規形へ落とす (2026-10-24 の辞書の整備 — S1 で見つかった辞書全体 1 鍵との衝突を、分類ごとの引き方で解いた)"
+        labels support-verified
+
+            solution ClaimantTests
+            uuid 6e2a9c41-3b7d-4f85-a0c6-d18e5b7f2a34
+            summary "node --test (2026-10-22) — arrangement.test.js: by の無い Arrangement・存在しない actor はエラー / 同じ人が同じ対を 2 度言うとエラー、別の人なら並ぶ / 違う見る人の left と right は衝突でなく、同じ見る人なら衝突 / 衝突の between は決定的に整列。ArrangementReport.test.js: テンプレのビンで 2 人の食い違いが 1 件の衝突として両方の主張を残し、R15 は衝突を error ではなく arrangementConflicts に返す。by と viewer は推論で結ばない (1 人の見る人でも viewer 未指定の相対の向きはエラー)"
+            artifacts
+            - "src/domain/arrangement.test.js"
+            - "src/layout/ArrangementReport.test.js"
+            - "src/context/ContextValidator.js"
+
+            solution SpatialDictionaryTests
+            uuid 2c7e91d4-5a83-4b6f-9e20-d4b1a8c3f675
+            summary "node --test (2026-10-24) — SynonymQuotient.test.js: 全分類が引き方を宣言 / 空間の語は分類を問わない引き方に漏れない (above は従来どおり greater_than) / 奥→back・手前→front・くっついてる→touching・上面→+z / 上・下・横・載っているは null (話し手に問う) / 宣言の無い分類を引くと throw。SpatialRelationModelDoc.test.js: 辞書の spatial の鍵と domain の宣言できる語が両向きに一致。CanonicalForm / NlIntake / ProvenanceNarrative の既存テストは無改変で通る (署名は変わらない)"
+            artifacts
+            - "src/context/SynonymQuotient.test.js"
+            - "src/SpatialRelationModelDoc.test.js"
+
+        goal HangingIsDerivedFromTheAxes
+        uuid 5c1e2a40-7d3b-4f8e-9a61-2b0c4d7e8f13
+        summary "LINK NETWORK の木の親は、subject を固定する相手か下から支える相手として軸から導かれ、単腕ピック&プレースのテンプレでワークが供給ビンの下にぶら下がって見える。候補が複数なら固定が支えに優先し、残りは弧として残る (無言で消さない)"
+        state ToBeDeveloped
+        labels support-exploring
+
+            assumption HangingRegressionPlanned
+            uuid 3f9d7b21-6a4e-4c80-b5d2-e1a7c9f04b68
+            summary "証拠予定 (S3): 満期=GREP:src/view/LinkNetworkLayout.js::mobilityBetween 。LinkNetworkLayout.test.js にテンプレの事実で回帰 — ワークの親が供給ビン側のノード / 根 2 個 / dropped 0。親候補 2 つのワーク・循環する固定の fixture (基数 N)。2026-10-21 の試算 (fastened と支えを木辺にした what-if) は根 9 → 2、深さ 1 → 4、弧 8 → 1、dropped 3 → 0。見た目として読めるかは当事者の実画面でしか測れない (docs/dogfooding/)"

@@ -49,6 +49,16 @@
  *                            a frozen field rewritten without a proposal)
  *                                                                   → error
  *
+ * ADR-168 S1 rule (context/0.7):
+ *   R15 arrangement        — every declared arrangement names an actor (`by`),
+ *                            Solids of the layout, 1..2 sides, a direction in
+ *                            the frame of reference its contact allows, a
+ *                            declared viewer for front/back/left/right, one
+ *                            claim per (pair × claimant), at most one kinematic
+ *                            link per pair (domain/arrangement.js)  → error
+ *       claim conflicts    — two claimants saying different things about the
+ *                            same pair on the same axis and frame   → arrangementConflicts
+ *
  * @module context/ContextValidator
  */
 
@@ -81,12 +91,14 @@ import { CRITERIA_CATEGORIES, CRITERIA_ELEMENTS, criteriaElementOf } from './Cri
 import { countUnheard, BLANK_FIELD } from './CriteriaElicitation.js'
 import { isEndUser, jobFunctionOf, writesLegacyStanceRole } from './ActorStance.js'
 import { lineStatus, lineDrift, LINE_STATUS, agreementOf } from './CriteriaLine.js'
+import { arrangementIssues, claimConflicts } from '../domain/arrangement.js'
+import { arrangementWorldOf } from '../layout/ArrangementReport.js'
 
 /**
  * @param {object} ctx — Context DSL object
  * @returns {{ valid: boolean, errors: string[], openQuestions: object[], blockedChecks: object[],
  *             conflicts: object[], negotiationClusters: object[], promoted: string[],
- *             checkResults: object[] }}
+ *             checkResults: object[], arrangementConflicts: object[] }}
  */
 export function validateContext(ctx) {
   const errors        = []
@@ -95,7 +107,7 @@ export function validateContext(ctx) {
   const checkResults  = []
 
   if (!ctx || typeof ctx !== 'object') {
-    return { valid: false, errors: ['Context DSL must be a non-null object'], openQuestions, blockedChecks, conflicts: [], negotiationClusters: [], promoted: [], checkResults }
+    return { valid: false, errors: ['Context DSL must be a non-null object'], openQuestions, blockedChecks, conflicts: [], negotiationClusters: [], promoted: [], checkResults, arrangementConflicts: [] }
   }
 
   if (!SUPPORTED_VERSIONS.includes(ctx.version)) {
@@ -569,6 +581,18 @@ export function validateContext(ctx) {
     }
   }
 
+  // ── R15: arrangements (ADR-168 S1) ──────────────────────────────────────────
+  // Claims about how things stand to each other. The rules live in the domain
+  // (one place — 原則 #25); a conflict between two claimants is reported beside
+  // R6's conflicts and decides nothing about who is right (ADR-168 D5).
+  let arrangementConflicts = []
+  const arrangements = ctx.arrangements ?? []
+  if (arrangements.length > 0) {
+    const issues = arrangementIssues(arrangements, arrangementWorldOf(ctx.specification?.layout, ctx.actors))
+    errors.push(...issues)
+    if (issues.length === 0) arrangementConflicts = claimConflicts(arrangements)
+  }
+
   // ── R5: blocked acceptance checks ────────────────────────────────────────────
   for (const check of ctx.acceptance ?? []) {
     if (!VALID_CHECK_MODES.includes(check.mode)) {
@@ -622,7 +646,7 @@ export function validateContext(ctx) {
     }
   }
 
-  return { valid: errors.length === 0, errors, openQuestions, blockedChecks, conflicts, negotiationClusters, promoted, checkResults }
+  return { valid: errors.length === 0, errors, openQuestions, blockedChecks, conflicts, negotiationClusters, promoted, checkResults, arrangementConflicts }
 }
 
 /**

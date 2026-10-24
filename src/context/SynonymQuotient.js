@@ -39,6 +39,28 @@
  * relation verbs the narrator needs. It is an extension point — adding a row
  * widens the quotient without touching either bridge.
  *
+ * ## Which lookup reaches a category (`CATEGORY_SCOPE`, ADR-168)
+ *
+ * A surface term folds onto one key **within its lookup scope**, not across the
+ * whole table. The 5W1H categories share the one category-free lookup
+ * (`canonicalKey`) as they always did. A category whose words collide with
+ * theirs is declared `scoped` and is reached only by `canonicalKeyIn(term, cat)`:
+ * the spatial words of ADR-168 say `above` / `below` too, and folding them into
+ * the shared lookup would silently change how the operators read — and every
+ * `CanonicalForm` signature that hashes those keys.
+ *
+ * Inside one scope a term that two keys claim is a load-time error, not a
+ * last-write-wins overwrite: a collision is caught in the dictionary, where it is
+ * made, rather than downstream where it reads as a wrong answer.
+ *
+ * ## Words the dictionary refuses on purpose (spatial)
+ *
+ * 「上」「横」「載っている」 are NOT synonyms of any spatial key: each says two
+ * facts or chooses between two (上 = above apart, or the +z face touching?
+ * 載っている = touching AND on the +z face). Folding them would decide for the
+ * speaker. They stay outside the quotient (canonicalKeyIn → null), so a caller
+ * must ask which was meant (docs/SPATIAL_RELATION_MODEL.md §3).
+ *
  * @type {ReadonlyArray<{key:string, en:string, ja:string, cat:string, synonyms:string[]}>}
  */
 export const QUOTIENT_TABLE = Object.freeze([
@@ -95,21 +117,83 @@ export const QUOTIENT_TABLE = Object.freeze([
     synonyms: ['constrain', 'restrict', 'bound', '制約する', '束縛', '拘束する'] },
   { key: 'depend_on', en: 'depends on', ja: 'に依存する', cat: 'verb',
     synonyms: ['depend', 'depends on', 'dependsOn', 'requires', 'needs', '依存', '依存する', '必要とする'] },
+
+  // ── Spatial relation (ADR-168 — Arrangement axis values ⇄ NL) ─────────────
+  // key === the domain's declarable value (domain/arrangement.js), pinned both
+  // ways by src/SpatialRelationModelDoc.test.js. Scoped: never reached by the
+  // category-free lookup (see CATEGORY_SCOPE).
+  { key: 'touching', en: 'touching', ja: 'くっついている', cat: 'spatial',
+    synonyms: ['touching', 'touch', 'in contact', 'contact', 'くっついている', 'くっついてる', 'くっつく', '接している', '接触', '接触している', '触れている', '密着'] },
+  { key: 'apart', en: 'apart', ja: '離れている', cat: 'spatial',
+    synonyms: ['apart', 'separated', 'not touching', 'with a gap', '離れている', '離れてる', '離れて', '離す', '非接触', '隙間がある'] },
+  { key: 'above', en: 'above', ja: '上方', cat: 'spatial',
+    synonyms: ['above', 'over', 'higher than', '上方', '上方にある', '上空'] },
+  { key: 'below', en: 'below', ja: '下方', cat: 'spatial',
+    synonyms: ['below', 'under', 'beneath', 'lower than', '下方', '下方にある'] },
+  { key: 'front', en: 'in front', ja: '手前', cat: 'spatial',
+    synonyms: ['front', 'in front', 'in front of', 'nearer', '手前', '前', '前方', '前側'] },
+  { key: 'back', en: 'behind', ja: '奥', cat: 'spatial',
+    synonyms: ['back', 'behind', 'farther', '奥', '後ろ', '後方', '向こう', '奥側'] },
+  { key: 'left', en: 'left', ja: '左', cat: 'spatial',
+    synonyms: ['left', 'to the left', 'left of', '左', '左側', '左手'] },
+  { key: 'right', en: 'right', ja: '右', cat: 'spatial',
+    synonyms: ['right', 'to the right', 'right of', '右', '右側', '右手'] },
+  { key: '+z', en: 'top face', ja: '上面', cat: 'spatial',
+    synonyms: ['+z', 'top', 'top face', 'top surface', '上面', '天面', '天'] },
+  { key: '-z', en: 'bottom face', ja: '底面', cat: 'spatial',
+    synonyms: ['-z', 'bottom', 'bottom face', 'underside', '底面', '下面', '底'] },
+  { key: '+x', en: '+x face', ja: '+x 面', cat: 'spatial', synonyms: ['+x', '+x面', '+x 面'] },
+  { key: '-x', en: '-x face', ja: '-x 面', cat: 'spatial', synonyms: ['-x', '-x面', '-x 面'] },
+  { key: '+y', en: '+y face', ja: '+y 面', cat: 'spatial', synonyms: ['+y', '+y面', '+y 面'] },
+  { key: '-y', en: '-y face', ja: '-y 面', cat: 'spatial', synonyms: ['-y', '-y面', '-y 面'] },
 ])
+
+/**
+ * Which lookup reaches each category (ADR-168). `global` = the category-free
+ * `canonicalKey` (and `canonicalKeyIn`); `scoped` = `canonicalKeyIn` only.
+ * A category missing here throws at module load (原則 #31 — "global by default"
+ * would be a decision nobody made, and the next colliding category would
+ * silently rewrite the shared lookup).
+ */
+export const CATEGORY_SCOPE = Object.freeze({
+  operator: 'global',
+  why:      'global',
+  how:      'global',
+  what:     'global',
+  verb:     'global',
+  spatial:  'scoped',
+})
 
 /** Operator-key → comparison symbol, for compact rendering when wanted. */
 const OP_SYMBOL = Object.freeze({
   at_least: '≥', at_most: '≤', greater_than: '>', less_than: '<', equal_to: '=', within: '∈',
 })
 
-// Pre-compute the surface-term → key lookup once at module load (the quotient map).
+// Pre-compute the surface-term → key lookups once at module load (the quotient
+// maps): the shared one, and one per category.
 const _termToKey = new Map()
+/** @type {Map<string, Map<string, string>>} */
+const _termToKeyByCat = new Map()
 const _entryByKey = new Map()
 for (const entry of QUOTIENT_TABLE) {
+  const scope = CATEGORY_SCOPE[entry.cat]
+  if (!scope) {
+    throw new Error(`SynonymQuotient: category "${entry.cat}" (key "${entry.key}") has no declared lookup scope in CATEGORY_SCOPE`)
+  }
+  if (_entryByKey.has(entry.key)) throw new Error(`SynonymQuotient: key "${entry.key}" is declared twice`)
   _entryByKey.set(entry.key, entry)
+  if (!_termToKeyByCat.has(entry.cat)) _termToKeyByCat.set(entry.cat, new Map())
+  const maps = scope === 'global' ? [_termToKey, _termToKeyByCat.get(entry.cat)] : [_termToKeyByCat.get(entry.cat)]
   for (const term of [entry.key, entry.en, entry.ja, ...entry.synonyms]) {
     const norm = _norm(term)
-    if (norm) _termToKey.set(norm, entry.key)
+    if (!norm) continue
+    for (const map of maps) {
+      const prior = map.get(norm)
+      if (prior && prior !== entry.key) {
+        throw new Error(`SynonymQuotient: "${term}" is claimed by both "${prior}" and "${entry.key}" in one lookup — a term folds onto one key per scope`)
+      }
+      map.set(norm, entry.key)
+    }
   }
 }
 
@@ -134,6 +218,21 @@ export function canonicalize(term) {
 /** The canonical key for a term, or `null` if outside the quotient. */
 export function canonicalKey(term) {
   return _termToKey.get(_norm(term)) ?? null
+}
+
+/**
+ * The canonical key for a term **within one category**, or `null` when the
+ * category does not claim it. The only way to reach a `scoped` category
+ * (ADR-168 — the spatial words). Throws on a category that is not declared:
+ * asking an undeclared category for a word is a typo, not an empty answer.
+ *
+ * @param {string} term
+ * @param {string} cat  a key of CATEGORY_SCOPE
+ * @returns {string|null}
+ */
+export function canonicalKeyIn(term, cat) {
+  if (!CATEGORY_SCOPE[cat]) throw new Error(`SynonymQuotient: category "${cat}" is not declared in CATEGORY_SCOPE`)
+  return _termToKeyByCat.get(cat)?.get(_norm(term)) ?? null
 }
 
 /**

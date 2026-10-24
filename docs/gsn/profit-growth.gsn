@@ -541,6 +541,12 @@ labels meta-goal, term-profit
                                     artifacts
                                     - "docs/gsn/adr-165-criteria-are-heard-in-full-before-design.gsn"
 
+                                    solution Adr168Tree
+                                    uuid 7a2e4c19-0b5d-4e3f-8c71-d6f2a9b04e85
+                                    summary "ADR-168 の論証木 (top goal RelationsAreSaidOneFactPerWord) を吊る。物どうしの関係 (コンテナとワーク・挟む 2 本の爪) を向き・接触・可動性の 1 語 1 事実で同じ文書に宣言でき、宣言と配置のずれが見える — 言えない関係は評価の外で決められ、後から依存が見つかる。この木の goal ごとの証拠と鮮度の正本は木の側 — ここは寄与する項だけを持つ (ADR-153 D2)"
+                                    artifacts
+                                    - "docs/gsn/adr-168-a-spatial-relation-is-three-axes.gsn"
+
                                 goal OneRequestJudgesEveryDomainTogether
                                 uuid 5286f3f3-0817-4f70-b284-e8546f4b5c50
                                 summary "(b) L_hidden: 1 回の評価がリーチ・IK・把持性・可視性・干渉を同時に判定し、どの問いも他の問いを塞がない。ドメインごとに別々に評価すると、あるドメインで決めた仕様が別のドメインで覆る"
