@@ -56,12 +56,12 @@ import { rotateVec3 } from '../domain/rotateVec3.js'
 export const CONFIRMATION_BY_WORD = Object.freeze({
   touching: { picture: 'contactPatch',  where: 'the surfaces in contact, filled on the partner' },
   apart:    { picture: 'separation',    where: 'a line between the two, with the gap (a lower bound, ≥)' },
-  '+x':     { picture: 'facePaint',     where: 'the partner\'s +x face, outlined and named (touched, or the side beyond it when apart)' },
-  '-x':     { picture: 'facePaint',     where: 'the partner\'s -x face, outlined and named (touched, or the side beyond it when apart)' },
-  '+y':     { picture: 'facePaint',     where: 'the partner\'s +y face, outlined and named (touched, or the side beyond it when apart)' },
-  '-y':     { picture: 'facePaint',     where: 'the partner\'s -y face, outlined and named (touched, or the side beyond it when apart)' },
-  '+z':     { picture: 'facePaint',     where: 'the partner\'s +z face, outlined and named (touched, or the side beyond it when apart)' },
-  '-z':     { picture: 'facePaint',     where: 'the partner\'s -z face, outlined and named (touched, or the side beyond it when apart)' },
+  '+x':     { picture: 'facePaint',     where: 'the partner\'s +x face, outlined and named (touched, or the side it faces when apart)' },
+  '-x':     { picture: 'facePaint',     where: 'the partner\'s -x face, outlined and named (touched, or the side it faces when apart)' },
+  '+y':     { picture: 'facePaint',     where: 'the partner\'s +y face, outlined and named (touched, or the side it faces when apart)' },
+  '-y':     { picture: 'facePaint',     where: 'the partner\'s -y face, outlined and named (touched, or the side it faces when apart)' },
+  '+z':     { picture: 'facePaint',     where: 'the partner\'s +z face, outlined and named (touched, or the side it faces when apart)' },
+  '-z':     { picture: 'facePaint',     where: 'the partner\'s -z face, outlined and named (touched, or the side it faces when apart)' },
   above:    { picture: 'verticalGuide', where: 'a vertical line from the partner\'s top to the subject\'s bottom' },
   below:    { picture: 'verticalGuide', where: 'a vertical line from the partner\'s bottom to the subject\'s top' },
   front:    { picture: 'viewerAxes',    where: 'the viewer, its facing arrow, and its front / back line through the partner' },
@@ -145,7 +145,7 @@ export function observedTowardText(toward, state) {
   if (frame === 'intrinsic') {
     if (touching) return state.faces.join(' ')
     if (state.contact !== OBSERVED_CONTACT.APART) return state.contact
-    return (state.faceSides ?? []).length ? `beyond ${state.faceSides.join(' ')}` : 'beyond no face'
+    return (state.faceSides ?? []).length ? `on the ${state.faceSides.join(' ')} side` : 'on no face\'s side'
   }
   if (touching) return `touching ${state.faces.join(' ')}`
   if (frame === 'absolute') return state.vertical ?? 'level with it'

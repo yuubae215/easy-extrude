@@ -20,8 +20,9 @@
  * ## Which frame of reference a direction uses (ADR-168 D1 / 力学 3)
  *
  *   touching → the partner's face (`+x … -z`, ADR-152 — intrinsic)
- *   apart    → the partner's face again, read as the SIDE beyond it ("on the
- *              robot's +x side, at a distance" — intrinsic, 改訂 2026-10-25; a
+ *   apart    → the partner's face again, read as the side that face LOOKS
+ *              TOWARD ("on the robot's +x side, at a distance" — intrinsic,
+ *              改訂 2026-10-25; a
  *              declared FRONT of a thing, so "in front of the machine" folds
  *              onto a face, is 未実装 — DEF-073), or
  *              `above` / `below` (gravity — absolute), or

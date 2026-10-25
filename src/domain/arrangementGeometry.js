@@ -17,7 +17,8 @@
  *             top of a workbench and the inner floor of a bin both say `+z` — the
  *             subject rests on the +z side of both. (Inside vs outside a cavity is
  *             a separate fact that has no word yet — docs/SPATIAL_RELATION_MODEL.md.)
- *   face side when apart: which of the partner's faces the subject lies beyond,
+ *   face side when apart: which of the partner's faces look toward the subject
+ *             (the subject lies past the face's plane),
  *             in the partner's own frame (intrinsic — "on its +x side, at a
  *             distance"). The same face words as touching (ADR-168 改訂 2026-10-25).
  *   vertical  when apart: above | below in the WORLD (gravity, +Z), or null.
