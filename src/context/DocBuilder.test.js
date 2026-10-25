@@ -529,3 +529,25 @@ describe('grasp relation writers (ADR-164 D4)', () => {
     assert.deepEqual(d, snap)
   })
 })
+
+describe('claimArrangement (ADR-168 S2-1)', () => {
+
+  it('claimArrangement records one side in the claimant\'s name, input-immutable, with a ref minted from the pair', async () => {
+  const { claimArrangement } = await import('./DocBuilder.js')
+  const doc = { version: 'context/0.7', actors: [{ ref: 'ann' }], arrangements: [{ ref: 'part_bin_worktable', by: 'ben', subject: 'part_bin', sides: [{ of: 'worktable' }] }] }
+  const out = claimArrangement(doc, { by: 'ann', subject: 'part_bin', side: { of: 'worktable', contact: 'touching', toward: '+z' } })
+  assert.equal(doc.arrangements.length, 1, 'input untouched')
+  assert.deepEqual(out.arrangements[1], {
+    ref: 'part_bin_worktable_2', by: 'ann', subject: 'part_bin',
+    sides: [{ of: 'worktable', contact: 'touching', toward: '+z' }],
+  })
+})
+
+  it('claimArrangement refuses a second claim on the same pair by the same person, in either order', async () => {
+  const { claimArrangement } = await import('./DocBuilder.js')
+  const doc = { arrangements: [{ ref: 'r', by: 'ann', subject: 'part_bin', sides: [{ of: 'worktable' }] }] }
+  assert.throws(() => claimArrangement(doc, { by: 'ann', subject: 'part_bin', side: { of: 'worktable' } }), /already claims/)
+  assert.throws(() => claimArrangement(doc, { by: 'ann', subject: 'worktable', side: { of: 'part_bin' } }), /already claims/)
+  assert.doesNotThrow(() => claimArrangement(doc, { by: 'ben', subject: 'part_bin', side: { of: 'worktable' } }))
+})
+})

@@ -20,6 +20,7 @@ import { CONFLICT_TONE, PANEL_KIND, STATUS_MARK, panelHeadline, toneFor } from '
 export function EntityRelations() {
   const model = useUIStore(s => s.context.arrangements)
   const select = useUIStore(s => s.callbacks.onSelectRelationEntity)
+  const setSpeaker = useUIStore(s => s.callbacks.onSetRelationSpeaker)
   const headline = panelHeadline(model)
   const listed = model.kind === PANEL_KIND.LISTED
 
@@ -32,6 +33,8 @@ export function EntityRelations() {
       }}>
         {headline}
       </div>
+
+      {model.speaker && <SpeakerPicker speaker={model.speaker} onChange={setSpeaker} />}
 
       {model.kind === PANEL_KIND.INVALID && model.errors.map((e, i) => (
         <div key={i} style={{ fontSize: '10px', color: COLOR.cautionTone, marginTop: '3px', lineHeight: '1.35' }}>{e}</div>
@@ -65,6 +68,32 @@ export function EntityRelations() {
         </div>
       ))}
     </Section>
+  )
+}
+
+/**
+ * Who is speaking — the actor a drag's offer would be claimed by (ADR-168 S2-1).
+ * "Nobody" is a choice of its own, never a pre-selected actor (原則 #31); the
+ * note says why nothing is offered while nobody speaks (原則 #11).
+ */
+function SpeakerPicker({ speaker, onChange }) {
+  return (
+    <div style={{ marginTop: '6px', fontSize: '10px', lineHeight: '1.4' }}>
+      <label style={{ color: COLOR.textSecondary }}>
+        Speaking:{' '}
+        <select
+          data-testid="relation-speaker"
+          value={speaker.current ?? ''}
+          disabled={speaker.choices.length === 0}
+          onChange={(e) => onChange?.(e.target.value === '' ? null : e.target.value)}
+          style={{ fontSize: '10px', fontFamily: 'inherit', background: COLOR.surface, color: COLOR.textPrimary, border: `1px solid ${COLOR.border}` }}
+        >
+          <option value="">— nobody —</option>
+          {speaker.choices.map(c => <option key={c.ref} value={c.ref}>{c.label}</option>)}
+        </select>
+      </label>
+      {speaker.note && <div style={{ color: COLOR.textSecondary, marginTop: '2px' }}>{speaker.note}</div>}
+    </div>
   )
 }
 

@@ -530,9 +530,8 @@ export class GrabOperationHandler {
     if (ctrl._selectedIds.size === 1) {
       const ctx        = ctrl._quickDragCtx
       const suggestion = ctx.runInference()
-      const key        = suggestion ? `${suggestion.semanticType}|${suggestion.targetId}` : null
-      const prevKey    = s.currentSuggestion
-        ? `${s.currentSuggestion.semanticType}|${s.currentSuggestion.targetId}` : null
+      const key        = suggestion?.key ?? null
+      const prevKey    = s.currentSuggestion?.key ?? null
       if (suggestion) {
         if (!s.isSuggesting || key !== prevKey) {
           s.isSuggesting      = true

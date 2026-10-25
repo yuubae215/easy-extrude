@@ -71,7 +71,7 @@ import { EndpointDragState } from '../core/states/EndpointDragState.js'
 import { SketchDrawState }   from '../core/states/SketchDrawState.js'
 import { QuickDragState }    from '../core/states/QuickDragState.js'
 import { RectSelectState }   from '../core/states/RectSelectState.js'
-import { inferSemanticRelationships } from '../service/SemanticInferencer.js'
+import { inferSuggestions } from '../service/SemanticInferencer.js'
 import { SpatialLinkView, LINK_TYPE_COLORS } from '../view/SpatialLinkView.js'
 import { RotateSectorPreview }        from '../view/RotateSectorPreview.js'
 import { MotionGovernor }             from '../view/MotionGovernor.js'
@@ -591,6 +591,10 @@ export class AppController {
       const id = this._ctxService.sceneIdForRef(ref)
       if (id) this._selMgr.selectOnly(id)
       else this._uiView.showToast(`"${ref}" has no object in the scene`, { type: 'warn' })
+    })
+    // Who is speaking — the claimant a drag's offer would carry (ADR-168 S2-1).
+    useUIStore.getState().actions.registerCallback('onSetRelationSpeaker', (ref) => {
+      this._arrangementCtrl.setSpeaker(ref)
     })
 
     // ── Production Context-first overlay (ADR-050 Phase 2) ─────────────────
@@ -1612,37 +1616,29 @@ export class AppController {
 
       // ── Live semantic inference during drag (ADR-041 Phase 2) ────────────
 
-      runInference: () => {
-        if (this._selectedIds.size !== 1) return null
-        const [movedId] = this._selectedIds
-        const moved = this._scene.getObject(movedId)
-        if (!(moved instanceof Solid)) return null
-        const existingPairs = new Set(
-          this._service.getLinks().map(l => `${l.sourceId}|${l.targetId}`),
-        )
-        const suggestions = inferSemanticRelationships(
-          moved, this._scene.objects.values(), existingPairs,
-        )
-        return suggestions.length > 0 ? suggestions[0] : null
-      },
+      runInference: () => this._suggestionsForSelection()[0] ?? null,
 
       showDragSuggestion: (suggestion) => {
         if (this._ghostLinkView) {
           this._ghostLinkView.dispose(this._sceneView.scene)
           this._ghostLinkView = null
         }
-        const srcPos = this._dragSuggestionCentroid(suggestion.sourceId)
-        const tgtPos = this._dragSuggestionCentroid(suggestion.targetId)
-        if (!srcPos || !tgtPos) return
-        this._ghostLinkView = new SpatialLinkView(
-          this._sceneView.scene, srcPos, tgtPos, suggestion.semanticType,
-        )
-        this._ghostLinkView.setHighlighted(true)
+        // A relation offer has no ghost link — it is not a SpatialLink (ADR-168 S2-1);
+        // the tooltip says what would be claimed and by whom.
+        if (suggestion.kind === 'link') {
+          const srcPos = this._dragSuggestionCentroid(suggestion.sourceId)
+          const tgtPos = this._dragSuggestionCentroid(suggestion.targetId)
+          if (!srcPos || !tgtPos) return
+          this._ghostLinkView = new SpatialLinkView(
+            this._sceneView.scene, srcPos, tgtPos, suggestion.semanticType,
+          )
+          this._ghostLinkView.setHighlighted(true)
+        }
         this._uiView.showDragSuggestionTooltip(suggestion)
       },
 
       updateDragSuggestion: (suggestion) => {
-        if (!this._ghostLinkView) return
+        if (!this._ghostLinkView || suggestion.kind !== 'link') return
         const srcPos = this._dragSuggestionCentroid(suggestion.sourceId)
         const tgtPos = this._dragSuggestionCentroid(suggestion.targetId)
         if (srcPos && tgtPos) this._ghostLinkView.update(srcPos, tgtPos)
@@ -1665,7 +1661,7 @@ export class AppController {
         this._activeDragPointerId = null
         this._service.setLinkDragging(new Set(), false)
         this._service.updateLinkSelectionHighlight(this._selectedIds)
-        this._linkHandler.createDirect(suggestion.sourceId, suggestion.targetId, suggestion)
+        this._acceptSuggestion(suggestion)
       },
     }
   }
@@ -1718,33 +1714,45 @@ export class AppController {
    * suggestion banner when the moved Solid lands near another object (ADR-041).
    */
   _runSemanticInference() {
-    if (this._selectedIds.size !== 1) return
-    const [movedId] = this._selectedIds
-    const moved = this._scene.getObject(movedId)
-    if (!(moved instanceof Solid)) return
-
-    const existingPairs = new Set(
-      this._service.getLinks().map(l => `${l.sourceId}|${l.targetId}`),
-    )
-    const suggestions = inferSemanticRelationships(
-      moved, this._scene.objects.values(), existingPairs,
-    )
-    if (suggestions.length === 0) return
-
-    const top    = suggestions[0]
-    const source = this._scene.getObject(top.sourceId)
-    const target = this._scene.getObject(top.targetId)
+    const top = this._suggestionsForSelection()[0]
+    if (!top) return
+    const nameOf = (id) => this._scene.getObject(id)?.name ?? '?'
+    const [sourceId, targetId] = top.kind === 'arrangement' ? [top.subjectId, top.partnerId] : [top.sourceId, top.targetId]
     this._uiView.showSemanticSuggestion({
-      sourceId:     top.sourceId,
-      targetId:     top.targetId,
-      semanticType: top.semanticType,
-      label:        top.label,
-      sourceName:   source?.name ?? '?',
-      targetName:   target?.name ?? '?',
+      ...top,
+      sourceName: nameOf(sourceId),
+      targetName: nameOf(targetId),
     }, () => {
       this._quickDragCtx.hideDragSuggestion()
-      this._linkHandler.createDirect(top.sourceId, top.targetId, top)
+      this._acceptSuggestion(top)
     })
+  }
+
+  /**
+   * What to offer for the single selected Solid (SemanticInferencer): relation
+   * offers in the speaker's name (ADR-168 S2-1), then `contains` links.
+   * @returns {import('../service/SemanticInferencer.js').Suggestion[]}
+   */
+  _suggestionsForSelection() {
+    if (this._selectedIds.size !== 1) return []
+    const [movedId] = this._selectedIds
+    const moved = this._scene.getObject(movedId)
+    if (!(moved instanceof Solid)) return []
+    return inferSuggestions(moved, this._scene.objects.values(), {
+      existingPairs: new Set(this._service.getLinks().map(l => `${l.sourceId}|${l.targetId}`)),
+      refOf:         (id) => this._ctxService.refForSceneId(id),
+      speaker:       this._arrangementCtrl?.speaker ?? null,
+      claimedPairs:  this._arrangementCtrl?.claimedPairs() ?? new Set(),
+    })
+  }
+
+  /** Accept an offer: a link is created; a relation is claimed into the document. */
+  _acceptSuggestion(suggestion) {
+    if (suggestion.kind === 'arrangement') {
+      this._ctxCtrl.claimArrangement(suggestion.by, suggestion.subjectRef, suggestion.side)
+    } else {
+      this._linkHandler.createDirect(suggestion.sourceId, suggestion.targetId, suggestion)
+    }
   }
 
   /**

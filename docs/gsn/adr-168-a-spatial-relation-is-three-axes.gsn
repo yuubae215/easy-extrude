@@ -53,7 +53,7 @@ artifacts
 
             assumption AxisSchemaPlanned
             uuid 6091cd88-857c-4865-8684-c707c59842db
-            summary "証拠予定 (S2): 満期=GREP:src/service/SemanticInferencer.js::arrangementGeometry.js 。S1 で半分は立った (軸ごとの省略が『宣言なし』のまま status に出る / 運動学リンク 2 本以上は矛盾エラー — arrangement.test.js)。残りは S2: 旧 above・adjacent を含む scene が移行後に同じ向き・接触を言う (先例 ADR-152 の faces → specs) と、2 語の定義と推論が消えること (DEF-071)"
+            summary "証拠予定 (S2-2): 満期=GONE:src/domain/SpatialLink.js::'above' 。S1 で半分は立った (軸ごとの省略が『宣言なし』のまま status に出る / 運動学リンク 2 本以上は矛盾エラー — arrangement.test.js)。2026-10-25 の S2-1 で推論が旧 2 語を提案しなくなった (SemanticInferencer.test.js — 提案は閉形式の接触を話している人の名前で出し、点数を持たない)。残りは S2-2: 旧 above・adjacent を含む scene / layout が移行後に同じことを言い (持ち主のいない旧主張 unclaimedRelations、マスの ID で)、2 語の定義が消えること (DEF-071)。満期を張り替えた理由: S2 を S2-1 / S2-2 に割ったので、初めの trigger (SemanticInferencer が arrangementGeometry を読む) は S2-1 で発火したが goal はまだ半分"
 
         goal HorizontalDirectionNamesItsViewer
         uuid a1dca7a3-32e0-4875-a0d1-2b966145fb41

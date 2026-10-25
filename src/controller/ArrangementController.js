@@ -6,6 +6,10 @@
  *   document edge (`contextLoaded` / `contextChanged`) → `refresh()` re-reads the
  *       relations against the layout (`ContextService.arrangementReport`)
  *   selection (SelectionManager step 8, via AppController) → `setFocus(refs)`
+ *   the speaker choice (Relations section) → `setSpeaker(ref)` — who a drag's
+ *       offer would be claimed by (ADR-168 S2-1). 0..1, no default: nobody
+ *       speaking offers nothing. Not saved — it is who sits at the screen now,
+ *       not a fact of the document.
  *
  *   → the Relations section's model (`context.arrangements` — sole writer)
  *   → the 3D picture (`ArrangementStatusView` — sole owner)
@@ -17,12 +21,12 @@
  *
  * @module controller/ArrangementController
  */
-import { arrangementPanel, arrangementPicture } from '../view/ArrangementStatusMath.js'
+import { arrangementPanel, arrangementPicture, speakerPanel } from '../view/ArrangementStatusMath.js'
 
 export class ArrangementController {
   /**
    * @param {{
-   *   ctxService: {arrangementReport: () => object|null, on: Function},
+   *   ctxService: {arrangementReport: () => object|null, getDoc?: () => object|null, on: Function},
    *   store: {getState: () => any},
    *   createView: () => {show: (pic: object|null) => void, dispose: () => void},
    * }} deps
@@ -39,6 +43,10 @@ export class ArrangementController {
     this._view = null
     /** @type {object|null} the picture last handed to the view (read by `snapshot`) */
     this._picture = null
+    /** @type {string|null} who is speaking (an actor ref) — null = nobody */
+    this._speaker = null
+    /** @type {string|null} a speaker the document dropped, named once in the panel */
+    this._lostSpeaker = null
     ctxService.on('contextLoaded',  () => this.refresh())
     ctxService.on('contextChanged', () => this.refresh())
   }
@@ -46,7 +54,46 @@ export class ArrangementController {
   /** Re-read the relations from the document (the document edge). */
   refresh() {
     this._result = this._ctx.arrangementReport()
+    const actors = this._doc()?.actors ?? []
+    if (this._speaker && !actors.some(a => a.ref === this._speaker)) {
+      this._lostSpeaker = this._speaker
+      this._speaker = null
+    }
     this._render()
+  }
+
+  _doc() { return this._ctx.getDoc?.() ?? null }
+
+  /** Who is speaking (an actor ref), or null. */
+  get speaker() { return this._speaker }
+
+  /**
+   * Choose who is speaking. Throws on a ref that is not an actor of the
+   * document — the selector only offers actors, so another value is a bug.
+   * @param {string|null} ref
+   */
+  setSpeaker(ref) {
+    if (ref !== null && !(this._doc()?.actors ?? []).some(a => a.ref === ref)) {
+      throw new Error(`ArrangementController: "${ref}" is not an actor of the document`)
+    }
+    this._speaker = ref
+    this._lostSpeaker = null
+    this._render()
+  }
+
+  /**
+   * The pairs the speaker already claims, as "subject|of" — a drag does not
+   * offer them again. Empty when nobody is speaking.
+   * @returns {Set<string>}
+   */
+  claimedPairs() {
+    const out = new Set()
+    if (!this._speaker) return out
+    for (const arr of this._doc()?.arrangements ?? []) {
+      if (arr.by !== this._speaker) continue
+      for (const side of arr.sides ?? []) out.add(`${arr.subject}|${side.of}`)
+    }
+    return out
   }
 
   /**
@@ -63,7 +110,10 @@ export class ArrangementController {
   }
 
   _render() {
-    this._store.getState().actions.contextSetArrangements(arrangementPanel(this._result, this._focus))
+    this._store.getState().actions.contextSetArrangements({
+      ...arrangementPanel(this._result, this._focus),
+      speaker: speakerPanel(this._doc(), this._speaker, this._lostSpeaker),
+    })
     const pic = arrangementPicture(this._result, this._focus)
     this._picture = pic
     if (!pic && !this._view) return
@@ -76,7 +126,7 @@ export class ArrangementController {
    * the picture here rather than from pixels (the grasp declaration precedent).
    */
   snapshot() {
-    return { focusRefs: this._focus, model: this._store.getState().context?.arrangements ?? null, picture: this._picture }
+    return { focusRefs: this._focus, speaker: this._speaker, model: this._store.getState().context?.arrangements ?? null, picture: this._picture }
   }
 
   dispose() {

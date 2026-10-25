@@ -29,7 +29,10 @@
  *   showDragSuggestion(suggestion)     — create ghost link + tooltip
  *   updateDragSuggestion(suggestion)   — reposition ghost link each frame
  *   hideDragSuggestion()               — dispose ghost link + tooltip
- *   acceptSuggestion(suggestion)       — confirm drag + create SpatialLink
+ *   acceptSuggestion(suggestion)       — confirm drag + create the link or claim the arrangement
+ *
+ * A suggestion carries its own `key` (SemanticInferencer) — compared here so
+ * this class needs no import.
  */
 export class QuickDragState {
   /** @param {object} ctx */
@@ -48,10 +51,8 @@ export class QuickDragState {
     const suggestion = ctx.runInference()
 
     if (suggestion) {
-      const key     = `${suggestion.semanticType}|${suggestion.targetId}`
-      const prevKey = this._currentSuggestion
-        ? `${this._currentSuggestion.semanticType}|${this._currentSuggestion.targetId}`
-        : null
+      const key     = suggestion.key
+      const prevKey = this._currentSuggestion?.key ?? null
 
       if (!this._isSuggesting || key !== prevKey) {
         // 【遷移: DRAGGING → SUGGESTING】新しい推論が見つかった

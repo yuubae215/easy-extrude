@@ -427,3 +427,27 @@ export function arrangementPanel(result, focusRefs) {
     }))
   return { kind: PANEL_KIND.LISTED, focusRefs, rows, conflicts, errors: [], summary }
 }
+
+// ── who is speaking (ADR-168 S2-1) ───────────────────────────────────────────
+
+/**
+ * The "who is speaking" block of the Relations section: the actor a drag's
+ * offer would be claimed by. `null` without a document (there is nobody to
+ * choose from, and the panel already says why). Nobody speaking is a state of
+ * its own with its own words — never a default actor (原則 #31): a claim needs
+ * a claimant, and choosing one for the user would be inferring it (ADR-168 D5).
+ *
+ * @param {object|null} doc
+ * @param {string|null} speaker   the chosen actor ref (null = nobody)
+ * @param {string|null} lost      a speaker the document no longer has (said once, not silently dropped)
+ * @returns {{current: string|null, choices: Array<{ref: string, label: string}>, note: string|null}|null}
+ */
+export function speakerPanel(doc, speaker, lost) {
+  if (!doc) return null
+  const choices = (doc.actors ?? []).map(a => ({ ref: a.ref, label: a.name ? `${a.name} (${a.ref})` : a.ref }))
+  let note = null
+  if (choices.length === 0) note = 'The document has no actors — add one to claim relations.'
+  else if (lost) note = `"${lost}" is no longer an actor of the document — choose who is speaking.`
+  else if (!speaker) note = 'Nobody is speaking — moving a thing offers no relation until you choose who claims it.'
+  return { current: speaker, choices, note }
+}

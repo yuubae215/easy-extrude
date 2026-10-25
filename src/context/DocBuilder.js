@@ -574,6 +574,32 @@ export function removeDocEntry(doc, kind, ref) {
   return clone
 }
 
+/**
+ * Record a claim about two things (ADR-168 — an Arrangement with one side), in
+ * the claimant's name (input-immutable). The ref is minted from the pair and
+ * made unique among the document's arrangements. Throws when the claimant
+ * already claims this pair (in either order) — one claim per person per pair
+ * (ADR-168 D5); a second would overwrite the first in the reader's head.
+ *
+ * @param {object} doc
+ * @param {{by: string, subject: string, side: {of: string, contact?: string, toward?: unknown}}} claim
+ * @returns {object} new doc
+ */
+export function claimArrangement(doc, { by, subject, side }) {
+  const existing = doc.arrangements ?? []
+  const claims = (a, b) => existing.some(arr => arr.by === by && arr.subject === a && (arr.sides ?? []).some(s => s.of === b))
+  if (claims(subject, side.of) || claims(side.of, subject)) {
+    throw new Error(`"${by}" already claims the relation of "${subject}" and "${side.of}"`)
+  }
+  const taken = new Set(existing.map(a => a.ref))
+  const stem = `${subject}_${side.of}`
+  let ref = stem
+  for (let n = 2; taken.has(ref); n++) ref = `${stem}_${n}`
+  const clone = _clone(doc)
+  clone.arrangements = [...existing.map(a => _clone(a)), { ref, by, subject, sides: [_clone(side)] }]
+  return clone
+}
+
 /** Replace the array element sharing `entry.ref`, or append if none matches. */
 function _upsertByRef(arr, entry) {
   const list = arr ?? []

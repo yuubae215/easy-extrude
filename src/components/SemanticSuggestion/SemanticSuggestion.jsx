@@ -92,7 +92,7 @@ export function SemanticSuggestion() {
           flexShrink: 0,
         }}
       >
-        Link ({suggestion.label})
+        {suggestion.kind === 'arrangement' ? `Claim as ${suggestion.by}` : `Link (${suggestion.label})`}
       </button>
       <button
         onClick={dismissSemanticSuggestion}

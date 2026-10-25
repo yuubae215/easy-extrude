@@ -67,7 +67,7 @@ export function DragSuggestionTooltip() {
         fontSize: '11px',
         fontFamily: 'monospace',
       }}>↵</kbd>
-      <span style={{ color: '#94a3b8' }}>to link</span>
+      <span style={{ color: '#94a3b8' }}>{suggestion.kind === 'arrangement' ? `to claim as ${suggestion.by}` : 'to link'}</span>
     </div>
   )
 }
