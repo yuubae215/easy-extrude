@@ -18,7 +18,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { CONTACTS, FACE_TOWARD, ABSOLUTE_TOWARD, RELATIVE_DIRS } from './domain/arrangement.js'
 import { OBSERVED_CONTACT } from './domain/arrangementGeometry.js'
-import { QUOTIENT_TABLE, COMBINATION_TABLE } from './context/SynonymQuotient.js'
+import { QUOTIENT_TABLE, PHRASE_TABLE } from './context/SynonymQuotient.js'
 
 const doc = readFileSync(new URL('../docs/SPATIAL_RELATION_MODEL.md', import.meta.url), 'utf8')
 
@@ -63,10 +63,10 @@ test('the dictionary has a class for every declarable word, and no spatial class
   assert.deepEqual(spatial.filter(k => !DECLARABLE.includes(k)), [], 'dictionary rows for words the code cannot declare')
 })
 
-test('every combination of the dictionary is in the document\'s combination table, and the document names no other', () => {
+test('every phrase of the dictionary is in the document\'s phrase table, and the document names no other', () => {
   const rows = wordTableRows().filter(r => /^\| [^|`]+\(([a-z_]+)\) \|/.test(r))
   const inDoc = rows.map(r => /\(([a-z_]+)\)/.exec(r.split('|')[1])[1])
-  const inCode = COMBINATION_TABLE.map(c => c.key)
-  assert.deepEqual(inCode.filter(k => !inDoc.includes(k)), [], 'combinations in COMBINATION_TABLE but not in docs/SPATIAL_RELATION_MODEL.md §3')
-  assert.deepEqual(inDoc.filter(k => !inCode.includes(k)), [], 'combinations in the document but not in COMBINATION_TABLE')
+  const inCode = PHRASE_TABLE.map(c => c.key)
+  assert.deepEqual(inCode.filter(k => !inDoc.includes(k)), [], 'phrases in PHRASE_TABLE but not in docs/SPATIAL_RELATION_MODEL.md §3')
+  assert.deepEqual(inDoc.filter(k => !inCode.includes(k)), [], 'phrases in the document but not in PHRASE_TABLE')
 })

@@ -129,8 +129,10 @@ artifacts
 
             solution DictionaryExamplesAreExecutable
             uuid a79808df-a02a-44d2-9012-b0be34d18e39
-            summary "node --test (2026-10-25) — SpatialExamples.test.js: 空間の語 14 + 組 1 のどれもが意味・例文・対の例文を持ち (欠ければ辞書の読み込みが throw)、例文の語はその行に・対の語は別の行に落ち、行ごとの小さな配置で domain の sideStatus が例文を一致・対を不一致と読む (配置を 1 つすり替えると落ちることを確認)。SynonymQuotient.test.js: 載っている は combinationIn で touching + +z、語の表には落ちない / 上・横・on・前・置いてある はどちらの表にも落ちない。SpatialRelationModelDoc.test.js: 組の表と文書の組の表が両向きに一致"
+            summary "node --test (2026-10-25) — relationCells.test.js: 接触 × 向きのマスは (接触 + 言わない) × (向き + 言わない) = 39 で domain から導出、ID はマス自身の値 (接触:向き) で一意・往復、✗ の 6 マスは検査の拒否と 1 つずつ一致し理由を持つ、宣言できる 33 マスはどれも語で言える。SpatialExamples.test.js: 33 マスのどれにもそのマスである配置がある / 語 14 と言い回し 9 (組 1・二択 8) のどれもが意味・例文・対の例文を持ち、語は行ごとの配置で・言い回しは指すマスごとの配置で例文が一致・対が不一致 (二択に余計なマスを足すと落ち、宣言できないマスを指すと読み込みが throw することを確認)。SynonymQuotient.test.js: 載っている は組 (touching:+z)、上 は二択 (touching:+z / apart:above)、前 は二択 (apart:front + まだマスの無い読み DEF-073)、置いてある はどちらにも無い"
             artifacts
+            - "src/domain/relationCells.js"
+            - "src/domain/relationCells.test.js"
             - "src/context/SpatialExamples.test.js"
             - "src/context/SynonymQuotient.js"
             - "src/SpatialRelationModelDoc.test.js"

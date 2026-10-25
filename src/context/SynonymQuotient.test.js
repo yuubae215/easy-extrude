@@ -9,7 +9,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  QUOTIENT_TABLE, CATEGORY_SCOPE, canonicalize, canonicalKey, canonicalKeyIn, combinationIn, localize,
+  QUOTIENT_TABLE, CATEGORY_SCOPE, canonicalize, canonicalKey, canonicalKeyIn, phraseIn, localize,
   localizeOperator, operatorSymbol, synonymsOf,
 } from './SynonymQuotient.js'
 
@@ -137,17 +137,24 @@ describe('lookup scope per category (ADR-168)', () => {
 
   it('asking an undeclared category is an error, not an empty answer', () => {
     assert.throws(() => canonicalKeyIn('above', 'spacial'), /not declared/)
-    assert.throws(() => combinationIn('載っている', 'spacial'), /not declared/)
+    assert.throws(() => phraseIn('載っている', 'spacial'), /not declared/)
   })
 
-  it('a combination folds onto BOTH values it fixes; a choice folds onto nothing in either table (2026-10-25)', () => {
-    assert.deepEqual({ ...combinationIn('載っている', 'spatial').axes }, { contact: 'touching', toward: '+z' })
-    assert.equal(combinationIn('on top of', 'spatial').key, 'resting_on')
-    assert.equal(canonicalKeyIn('載っている', 'spatial'), null, 'a combination is not a word')
-    for (const w of ['上', '横', 'on', '前', '置いてある']) {
-      assert.equal(canonicalKeyIn(w, 'spatial'), null, w)
-      assert.equal(combinationIn(w, 'spatial'), null, w)
-    }
-    assert.equal(combinationIn('上方', 'spatial'), null, 'a word is not a combination')
+  it('a combination is one cell with both axes said; a choice names its readings; neither is a word (2026-10-25)', () => {
+    const resting = phraseIn('載っている', 'spatial')
+    assert.equal(resting.kind, 'combination')
+    assert.deepEqual(resting.cells.map(c => c.id), ['touching:+z'])
+    assert.equal(phraseIn('on top of', 'spatial').key, 'resting_on')
+    const up = phraseIn('上', 'spatial')
+    assert.equal(up.kind, 'choice')
+    assert.deepEqual(up.cells.map(c => c.id), ['touching:+z', 'apart:above'])
+    // 前: one reading is a cell, the other (the partner's own front) has none yet — still a choice.
+    const front = phraseIn('前', 'spatial')
+    assert.equal(front.kind, 'choice')
+    assert.deepEqual(front.cells.map(c => c.id), ['apart:front'])
+    assert.match(front.notYet[0], /DEF-073/)
+    for (const w of ['載っている', '上', '横', 'on', '前']) assert.equal(canonicalKeyIn(w, 'spatial'), null, `${w} is not a word`)
+    assert.equal(phraseIn('上方', 'spatial'), null, 'a word is not a phrase')
+    assert.equal(phraseIn('置いてある', 'spatial'), null, 'not decided yet — neither a word nor a phrase')
   })
 })
