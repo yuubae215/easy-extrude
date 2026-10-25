@@ -17,6 +17,10 @@
  *             top of a workbench and the inner floor of a bin both say `+z` — the
  *             subject rests on the +z side of both. (Inside vs outside a cavity is
  *             a separate fact that has no word yet — docs/SPATIAL_RELATION_MODEL.md.)
+ *   face side when apart: which of the partner's faces look toward the subject
+ *             (the subject lies past the face's plane),
+ *             in the partner's own frame (intrinsic — "on its +x side, at a
+ *             distance"). The same face words as touching (ADR-168 改訂 2026-10-25).
  *   vertical  when apart: above | below in the WORLD (gravity, +Z), or null.
  *   relative  when apart: front | back | left | right as seen by a declared
  *             viewer (domain/viewerFrame.js), by the bodies' centres.
@@ -223,6 +227,33 @@ export function observeVertical(subject, partner) {
   if (s.min - p.max > DIRECTION_DEADBAND_MM) return 'above'
   if (p.min - s.max > DIRECTION_DEADBAND_MM) return 'below'
   return null
+}
+
+/**
+ * When apart: the partner's faces the subject lies BEYOND, as the partner's
+ * local face words (intrinsic — "on the robot's +x side, at a distance").
+ * Read on the partner's outer box in its own frame: face `+a` holds when the
+ * subject's whole interval on a is past the face plane by more than the dead
+ * band, `-a` likewise on the other side. Several can hold (a diagonal); none
+ * holds while the intervals overlap on every axis (touching, overlapping, or
+ * inside a cavity — the touched face is `observeContact`'s word there).
+ *
+ *   +a  ⇔  s_a.min − h_a > δ        −a  ⇔  −h_a − s_a.max > δ
+ *
+ * @param {Body} subject
+ * @param {Body} partner
+ * @returns {string[]}  sorted face words
+ */
+export function observeFaceSides(subject, partner) {
+  const inv = conj(partner.rotation ?? IDENTITY)
+  const s = intervals(worldCorners(subject).map(c => rotateVec3(sub(c, partner.center), inv)))
+  const out = []
+  for (const a of AXES) {
+    const h = partner.size[a] / 2
+    if (s[a].min - h > DIRECTION_DEADBAND_MM) out.push(`+${a}`)
+    if (-h - s[a].max > DIRECTION_DEADBAND_MM) out.push(`-${a}`)
+  }
+  return out.sort()
 }
 
 /**

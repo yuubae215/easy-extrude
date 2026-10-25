@@ -19,6 +19,7 @@ function rig(arrangements) {
   const ctxService = {
     on: (ev, fn) => { (handlers[ev] ??= []).push(fn) },
     arrangementReport: () => (doc ? reportArrangements(layout, doc.arrangements, actors) : null),
+    getDoc: () => (doc ? { actors, ...doc } : null),
   }
   const written = []
   const store = { getState: () => ({ actions: { contextSetArrangements: (m) => written.push(m) } }) }
@@ -82,4 +83,51 @@ test('no document is its own answer — not "none declared"', () => {
   const r = rig(null)
   r.emit('contextLoaded')
   assert.equal(r.written.at(-1).kind, PANEL_KIND.NO_DOCUMENT)
+})
+
+// ── who is speaking (ADR-168 S2-1) ──
+
+test('nobody speaks until chosen — no default actor, and the panel says why nothing is offered', () => {
+  const r = rig([])
+  r.emit('contextLoaded')
+  assert.equal(r.ctrl.speaker, null)
+  assert.equal(r.written.at(-1).speaker.current, null)
+  assert.match(r.written.at(-1).speaker.note, /Nobody is speaking/)
+  assert.deepEqual(r.written.at(-1).speaker.choices.map(c => c.ref), ['ann', 'ben'])
+})
+
+test('choosing a speaker reaches the panel; a ref that is not an actor throws', () => {
+  const r = rig([])
+  r.emit('contextLoaded')
+  r.ctrl.setSpeaker('ben')
+  assert.equal(r.written.at(-1).speaker.current, 'ben')
+  assert.equal(r.written.at(-1).speaker.note, null)
+  assert.throws(() => r.ctrl.setSpeaker('nobody'), /not an actor/)
+})
+
+test('the speaker\'s own claims are the pairs not offered again; others\' claims are not theirs', () => {
+  const r = rig([
+    { ref: 'a1', by: 'ann', subject: 'part_bin', sides: [{ of: 'worktable', contact: 'touching' }] },
+    { ref: 'b1', by: 'ben', subject: 'work_1', sides: [{ of: 'part_bin', contact: 'touching' }] },
+  ])
+  r.emit('contextLoaded')
+  assert.deepEqual([...r.ctrl.claimedPairs()], [], 'nobody speaking claims nothing')
+  r.ctrl.setSpeaker('ann')
+  assert.deepEqual([...r.ctrl.claimedPairs()], ['part_bin|worktable'])
+})
+
+test('a speaker the document drops is named once, not silently forgotten', () => {
+  const r = rig([])
+  r.emit('contextLoaded')
+  r.ctrl.setSpeaker('ben')
+  r.setDoc({ arrangements: [], actors: [{ ref: 'ann' }] })
+  r.emit('contextChanged')
+  assert.equal(r.ctrl.speaker, null)
+  assert.match(r.written.at(-1).speaker.note, /"ben" is no longer an actor/)
+})
+
+test('without a document there is no speaker block', () => {
+  const r = rig(null)
+  r.emit('contextLoaded')
+  assert.equal(r.written.at(-1).speaker, null)
 })

@@ -53,11 +53,11 @@ artifacts
 
             assumption AxisSchemaPlanned
             uuid 6091cd88-857c-4865-8684-c707c59842db
-            summary "証拠予定 (S2): 満期=GREP:src/service/SemanticInferencer.js::arrangementGeometry.js 。S1 で半分は立った (軸ごとの省略が『宣言なし』のまま status に出る / 運動学リンク 2 本以上は矛盾エラー — arrangement.test.js)。残りは S2: 旧 above・adjacent を含む scene が移行後に同じ向き・接触を言う (先例 ADR-152 の faces → specs) と、2 語の定義と推論が消えること (DEF-071)"
+            summary "証拠予定 (S2-2): 満期=GONE:src/domain/SpatialLink.js::'above' 。S1 で半分は立った (軸ごとの省略が『宣言なし』のまま status に出る / 運動学リンク 2 本以上は矛盾エラー — arrangement.test.js)。2026-10-25 の S2-1 で推論が旧 2 語を提案しなくなった (SemanticInferencer.test.js — 提案は閉形式の接触を話している人の名前で出し、点数を持たない)。残りは S2-2: 旧 above・adjacent を含む scene / layout が移行後に同じことを言い (持ち主のいない旧主張 unclaimedRelations、マスの ID で)、2 語の定義が消えること (DEF-071)。満期を張り替えた理由: S2 を S2-1 / S2-2 に割ったので、初めの trigger (SemanticInferencer が arrangementGeometry を読む) は S2-1 で発火したが goal はまだ半分"
 
         goal HorizontalDirectionNamesItsViewer
         uuid a1dca7a3-32e0-4875-a0d1-2b966145fb41
-        summary "接しているときの向きは相手の面 (内在)、離れているときの上下は重力 (絶対)、前後左右は宣言された見る人 (相対) で言う。見る人を名指さない相対の向きは書けず、カメラ相対の左右は表示の導出にとどまり文書にも照合にも入らない"
+        summary "接しているときの向きは相手の面 (内在)、離れているときの上下は重力 (絶対)、前後左右は宣言された見る人 (相対) で言う (2026-10-25 改訂: 離れていても相手の面の側は内在で言える — IntrinsicSideIsSayableApart)。見る人を名指さない相対の向きは書けず、カメラ相対の左右は表示の導出にとどまり文書にも照合にも入らない"
         labels support-verified
 
             solution ViewerRuleTests
@@ -67,6 +67,19 @@ artifacts
             - "src/domain/arrangement.test.js"
             - "src/domain/arrangementGeometry.test.js"
             - "src/layout/ArrangementReport.test.js"
+
+        goal IntrinsicSideIsSayableApart
+        uuid c698f36c-ffae-4368-b55b-9011c8d5dac8
+        summary "離れている物についても、相手自身の向き (内在) で側が言える —『ロボットの +x 側に離して置く』。新しい語は足さず面の語を使い、相手を回せば側も回る。辞書は内在と相対の二択の言い方 (前・後ろ・in front of・behind …) を正規形へ落とさず、話し手に問う"
+        labels support-verified
+
+            solution IntrinsicSideTests
+            uuid 294ce68e-480d-49f7-9383-f4f57aacfebb
+            summary "node --test (2026-10-25) — arrangementGeometry.test.js: 300 mm 離れた箱はロボットの +x 側だけ / ロボットを 90° 回すと同じ場所が -y 側 (世界ではなく相手の座標系) / 斜めは 2 側 / 接触・容器の中は側を持たない。arrangement.test.js: apart + 面は検査を通る / 側で一致・不一致 / 接していれば接した面で読み側では読まない / めり込みはどちらでもない。SynonymQuotient.test.js: 前・前方・後ろ・後方・左手・右手・in front of・behind・left of・right of・beside・next to・on は null、手前→front・向こう→back。物に正面を宣言する形は DEF-073 (見送り)"
+            artifacts
+            - "src/domain/arrangementGeometry.test.js"
+            - "src/domain/arrangement.test.js"
+            - "src/context/SynonymQuotient.test.js"
 
         goal TwoSidesSayBetweenAndClamped
         uuid 9175d98c-0b7f-4513-bb57-add3844eb5b8
@@ -113,6 +126,16 @@ artifacts
             - "src/domain/arrangement.test.js"
             - "src/layout/ArrangementReport.test.js"
             - "src/context/ContextValidator.js"
+
+            solution DictionaryExamplesAreExecutable
+            uuid a79808df-a02a-44d2-9012-b0be34d18e39
+            summary "node --test (2026-10-25) — relationCells.test.js: 接触 × 向きのマスは (接触 + 言わない) × (向き + 言わない) = 39 で domain から導出、ID はマス自身の値 (接触:向き) で一意・往復、✗ の 6 マスは検査の拒否と 1 つずつ一致し理由を持つ、宣言できる 33 マスはどれも語で言える。SpatialExamples.test.js: 33 マスのどれにもそのマスである配置がある / 語 14 と言い回し 9 (組 1・二択 8) のどれもが意味・例文・対の例文を持ち、語は行ごとの配置で・言い回しは指すマスごとの配置で例文が一致・対が不一致 (二択に余計なマスを足すと落ち、宣言できないマスを指すと読み込みが throw することを確認)。SynonymQuotient.test.js: 載っている は組 (touching:+z)、上 は二択 (touching:+z / apart:above)、前 は二択 (apart:front + まだマスの無い読み DEF-073)、置いてある はどちらにも無い"
+            artifacts
+            - "src/domain/relationCells.js"
+            - "src/domain/relationCells.test.js"
+            - "src/context/SpatialExamples.test.js"
+            - "src/context/SynonymQuotient.js"
+            - "src/SpatialRelationModelDoc.test.js"
 
             solution SpatialDictionaryTests
             uuid 2c7e91d4-5a83-4b6f-9e20-d4b1a8c3f675

@@ -102,7 +102,7 @@ labels meta-goal, term-profit
 
                                     assumption ZeroInputPlanned
                                     uuid f78e8ea9-b6a5-4573-a7df-c93041989cff
-                                    summary "証拠予定: DocBuilder.test.js に、createDefaultCellDoc() が ContextValidator でエラー 0 かつ actors/variables/requirements いずれも非空であることを固定 (ADR-091 §1)"
+                                    summary "証拠予定: DocBuilder.test.js に、createDefaultCellDoc() が ContextValidator でエラー 0 かつ actors/variables/requirements いずれも非空であることを固定 (ADR-091 §1) 満期=GREP:src/context/DocBuilder.js::createDefaultCellDoc"
 
                                 goal PristineResidueIsVisible
                                 uuid 61514d04-2b09-46d9-8efc-559a33ad45ed
@@ -112,7 +112,7 @@ labels meta-goal, term-profit
 
                                     assumption PristineCountPlanned
                                     uuid 781e07f8-9711-4e8a-98fa-4a8f63e4dfca
-                                    summary "証拠予定: IntakeAssist に pristineCount を追加し、全欄未訂正で総欄数・1 欄訂正で −1 を固定。review 段と Checks への表示 (ADR-091 §3 / 原則 #11)"
+                                    summary "証拠予定: IntakeAssist に pristineCount を追加し、全欄未訂正で総欄数・1 欄訂正で −1 を固定。review 段と Checks への表示 (ADR-091 §3 / 原則 #11) 満期=GREP:src/context/IntakeAssist.js::pristineCount"
 
                                 goal IdentityNotUserAuthored
                                 uuid b79c4165-5663-4006-bc22-7416f548986d
@@ -122,7 +122,7 @@ labels meta-goal, term-profit
 
                                     assumption MintRefPlanned
                                     uuid fb7b5107-73ab-4662-baf9-d09c593bbc5f
-                                    summary "証拠予定: mintRef の決定性・一意性の property テストと、suggestRef を呼んでいること (採番の単一源) の参照同一性テスト (ADR-091 §4 / §1.1)"
+                                    summary "証拠予定: mintRef の決定性・一意性の property テストと、suggestRef を呼んでいること (採番の単一源) の参照同一性テスト (ADR-091 §4 / §1.1) 満期=GREP:src/context/IntakeAssist.js::mintRef"
 
                             strategy ByFeedbackLoop
                             uuid f5a1aae8-d932-4c58-9cc6-9bbd9fa42f68
@@ -154,7 +154,7 @@ labels meta-goal, term-profit
 
                                     assumption FeedbackLedgerPlanned
                                     uuid 22e5b511-8137-4c83-9397-a2b494d0c87e
-                                    summary "証拠予定: docs/dogfooding/2026-07-25-context-defaults.md の 4 節 (環境 / 獲得した値 / 詰まり / 判定結果) が実際に埋まること。様式は固定済みだが、記録は当事者の探索後にしか存在しない"
+                                    summary "証拠予定: docs/dogfooding/2026-07-25-context-defaults.md の 4 節 (環境 / 獲得した値 / 詰まり / 判定結果) が実際に埋まること。様式は固定済みだが、記録は当事者の探索後にしか存在しない 満期=GONE:docs/dogfooding/2026-07-25-context-defaults.md::<記入> (判定結果の節が埋まったとき)"
 
                                 goal IterationUpdatesTheDefault
                                 uuid f10648c6-15b4-408a-9d54-0bf6f4b008ff
@@ -164,7 +164,7 @@ labels meta-goal, term-profit
 
                                     assumption IterationPlanned
                                     uuid df5b25c2-28e7-4e31-9cc9-9955f2edbc75
-                                    summary "証拠予定: 探索記録の『ADR-091 に返す修正』節 → ADR-091 の改稿 (または Accepted 化) → createDefaultCellDoc() の値差分、の 3 点が同一の記録から辿れること"
+                                    summary "証拠予定: 探索記録の『ADR-091 に返す修正』節 → ADR-091 の改稿 (または Accepted 化) → createDefaultCellDoc() の値差分、の 3 点が同一の記録から辿れること 満期=ADR-091 (ADR-091 が探索記録を受けて改稿・採択されたとき)"
 
                             strategy ByRemovingDeadEndsBeforeTheVerdict
                             uuid aeaacdd0-22b1-413a-bb1c-3dab46e4fcc5

@@ -52,8 +52,8 @@ test('sides: 0 is not a relation, 3 is not decided yet', () => {
   has(issues([arr({ sides: [{ of: 'bin' }, { of: 'table' }, { of: 'jawL' }] })]), /has 3 sides .* not decided yet/)
 })
 
-test('D1: a face is said only when touching; above/below and relative only when apart', () => {
-  has(issues([arr({ sides: [{ of: 'bin', contact: 'apart', toward: '+z' }] })]), /a face \(\+z\) is said only of a thing touching it/)
+test('D1 (改訂 2026-10-25): a face is said touching (the face) or apart (the side beyond it); above/below and relative only when apart', () => {
+  assert.deepEqual(issues([arr({ sides: [{ of: 'bin', contact: 'apart', toward: '+z' }] })]), [])
   has(issues([arr({ sides: [{ of: 'bin', contact: 'touching', toward: 'above' }] })]), /touching, the direction is the partner's face/)
   has(issues([arr({ sides: [{ of: 'bin', contact: 'touching', toward: { dir: 'left', viewer: 'operator' } }] })]), /touching, the direction is the partner's face/)
 })
@@ -166,4 +166,16 @@ test('clamped: a workpiece between two jaws touches each jaw on the jaw\'s face 
   // Open the right jaw by 10 mm: that side is now "between, apart" — and says so.
   const opened = { ...jawRight, center: { ...jawRight.center, y: -40 } }
   assert.deepEqual(sideStatus(clamped.sides[1], stateOf(opened)), { contact: 'mismatch', toward: 'mismatch' })
+})
+
+test('apart + a face: matches when the subject lies beyond that face, never by the touched-face reading', () => {
+  const apartBeyond = { contact: 'apart', faces: [], faceSides: ['+x'], gap: 300, vertical: null, relative: () => [] }
+  assert.equal(sideStatus({ contact: 'apart', toward: '+x' }, apartBeyond).toward, AXIS_STATUS.MATCH)
+  assert.equal(sideStatus({ contact: 'apart', toward: '-x' }, apartBeyond).toward, AXIS_STATUS.MISMATCH)
+  // A face declared while the layout touches is read as the touched face, not the side.
+  const touchingSide = { contact: 'touching', faces: ['+z'], faceSides: ['+x'], gap: null, vertical: null, relative: () => [] }
+  assert.equal(sideStatus({ toward: '+x' }, touchingSide).toward, AXIS_STATUS.MISMATCH)
+  // Overlapping is neither a touched face nor a side.
+  const overlapping = { contact: 'overlapping', faces: [], faceSides: [], gap: null, vertical: null, relative: () => [] }
+  assert.equal(sideStatus({ toward: '+x' }, overlapping).toward, AXIS_STATUS.MISMATCH)
 })

@@ -64,7 +64,7 @@ import {
   createBlankDoc, addActor, addFact, addVariable, addRequirement,
   updateActor, updateVariable, updateRequirement, removeDocEntry,
   setEntityGraspFeature, setEntityGraspTcp, setEntityGraspLift, removeEntityGraspRelation, setEntityPose, setEntityHand, setEntityCamera, setEntityMassDeclaration,
-  adoptSceneEntities, docDeclaresEntity,
+  adoptSceneEntities, docDeclaresEntity, claimArrangement,
 } from '../context/DocBuilder.js'
 import { planSceneAdoption, adoptionRefusalMessage, adoptionToast } from '../domain/sceneAdoption.js'
 import { createAdoptFromSceneCommand } from '../command/AdoptFromSceneCommand.js'
@@ -535,6 +535,33 @@ export class ContextController {
     const beforeDoc = this._ctxService.getDoc()
     const afterDoc  = removeDocEntry(beforeDoc, type, ref)
     this._runDocEdit(beforeDoc, afterDoc, `Remove ${type} ${ref}`, `Could not remove ${type}`)
+  }
+
+  /**
+   * Claim a relation about two things in someone's name (ADR-168 S2-1) — the
+   * accepted drag offer. Through the same doc-edit command as every other
+   * document change (原則 #1), so it is undoable and recompiles the layout the
+   * Relations section reads. A second claim on the same pair by the same person
+   * is refused with its reason (原則 #11), not written over the first.
+   *
+   * @param {string} by          the claimant (an actor ref)
+   * @param {string} subjectRef  Layout DSL ref of the moved Solid
+   * @param {{of: string, contact?: string, toward?: unknown}} side
+   */
+  claimArrangement(by, subjectRef, side) {
+    if (!this._ctxService.loaded) {
+      this._ctrl._uiView.showToast('Open a context first — a relation is claimed in a document.', { type: 'warn' })
+      return null
+    }
+    const beforeDoc = this._ctxService.getDoc()
+    let afterDoc
+    try {
+      afterDoc = claimArrangement(beforeDoc, { by, subject: subjectRef, side })
+    } catch (err) {
+      this._ctrl._uiView.showToast(err.message, { type: 'warn' })
+      return null
+    }
+    return this._runDocEdit(beforeDoc, afterDoc, `Claim relation (${by})`, 'Could not record the relation')
   }
 
   /**

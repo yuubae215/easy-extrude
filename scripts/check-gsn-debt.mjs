@@ -409,7 +409,13 @@ const SUPPORT_LABELS = new Map([
 // 番地へ張り替えた (どれも機械可読 — G3 は動かない)。
 // 2026-10-24: 53 → 52。ADR-168 S1b で StatusIsDiscreteAndVisible が support-verified へ
 // (ArrangementConfirmation / ArrangementController の node --test + e2e/arrangement-status.spec.js)。
-const DEBT_BASELINE = 52
+// 2026-10-24: 52 → 42。散文満期 24 個の棚卸しで、**実装済みなのに昇格し忘れていた** 10 個を
+// support-verified へ: ADR-110 ×3 / ADR-111 ×3 / ADR-112 ×3 (どれも 2026-08-05 に Accepted・実装済みで、
+// assumption の summary には『実測 (2026-08-05)』とまで書いてあった) と ADR-081 の ConeAxisIsTcpOriented
+// (ADR-084 の tcp_orientation は core に入り pytest が在った)。根拠のテストは同日すべて再実行した。
+// 満期が散文だったので G4 は発火できなかった — 散文満期は「満期が来たことを機械が知りえない」だけでなく、
+// **決着したことも知りえない**。
+const DEBT_BASELINE = 42
 
 /**
  * G3 — 満期 trigger を持たない exploring goal の個数 (実測値)。
@@ -433,7 +439,13 @@ const DEBT_BASELINE = 52
 // 2026-09-30: 26 → 24。ADR-121 の PureLayerTestWillSettleIt / SchemaCensusWillSettleIt は
 // 散文満期だった (番地を書けていなかった) ので、実装で決着して分子から 2 つ抜けた。
 // 3 つ目 (KeyAbsenceTestWillSettleIt) は GREP 満期を持っていたので分子には乗っていない。
-const PROSE_DEBT_BASELINE = 24
+// 2026-10-24: 24 → 5。棚卸しで 10 個は決着済みとして抜け (上の DEBT_BASELINE のコメント)、9 個に番地を書いた:
+// ADR-114 (GREP IdentityContainment.test.js)・ADR-122 ×3 (GREP app.py /pickable、PATH 中立スキーマ)・
+// profit-growth ×5 (GREP DocBuilder / IntakeAssist、GONE 探索記録の <記入>、ADR-091)。残る 5 個は
+// 番地を書けないことを宣言する: ADR-081 の 3 個 (InterDomainDual / ForecastActualDual / SweetSpotProposeLane —
+// 実運用データの入手が前提で、それが repo のどこに現れるか決まっていない) と ADR-148 / ADR-149 の
+// DEF-042 系 2 個 (判断先が番号未定の ADR — 満期=ADR-NNN と書けない)。
+const PROSE_DEBT_BASELINE = 5
 
 const errors = []
 

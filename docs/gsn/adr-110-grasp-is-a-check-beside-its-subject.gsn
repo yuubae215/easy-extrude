@@ -60,33 +60,34 @@ artifacts
         goal EveryFloorArgumentActuallyOpensTheFloor
         uuid 63966e3c-bbdc-4021-aafd-2eb552c6f2be
         summary "open-floor の引数のうち、下部の器を開かないものが 0 個である。数えるべきは『場のタブが 3 つある』ではなく『場を開かない引数が 0 個』— 前者は在るものを辿る数え方で今日の欠陥を素通りする"
-        state ToBeDeveloped
-        labels support-exploring
+        labels support-verified
 
-            assumption FloorArgumentsWillBeCountedNotListed
+            solution FloorArgumentsWillBeCountedNotListed
             uuid 8840987a-e1b2-4b2e-8143-2eed4cc355da
-            summary "実測 (2026-08-05, pnpm test): FloorContainerCensus.test.js が ContextController の registerCallback 行から各 callback のメソッドを引き、その呼び出し閉包が ui.contextStart( に到達するかを問う。器を開かない引数 0 個。手書きの『場を開く callback リスト』は作らなかった (母集団は配線の構文から導出)"
+            summary "node --test src/FloorContainerCensus.test.js pass (再実行 2026-10-24, commit bea37cf) —『場を開く』の引数のうち器を開かないものが 0 個 (ADR-110 D1)。母集団は ContextController の registerCallback 行から導出し、各 callback の呼び出し閉包が ui.contextStart( に到達するかを問う (手書きの『場を開く callback リスト』は作らない)。移設した引数が着いていること・戻っていないことも同じファイルが問う。初回実測は 2026-08-05"
             artifacts
             - "src/FloorContainerCensus.test.js"
 
         goal TheEntranceCountStaysAtSeven
         uuid 75ed4882-a71e-4778-85f9-c72fcff24b24
         summary "desktop 7 / mobile 7 の ratchet を上げも下げもせずにこの変更が通る。baseline の変更が要ったら、それは案 C (新しい動詞) を選んだ証拠であり本 ADR の決定と矛盾する"
-        state ToBeDeveloped
-        labels support-exploring
+        labels support-verified
 
-            assumption TheUnchangedBaselineIsTheProof
+            solution TheUnchangedBaselineIsTheProof
             uuid b5cf128d-8b11-4f73-9a52-12948e8892f0
-            summary "実測 (2026-08-05): HeaderEntranceCensus.test.js は**1 行も書き換えずに**通った (desktop 7 / mobile 7)。ADR-107 が SelectionOwnership.test.js に使ったのと同じ形の検算で、案 C (新しい動詞を立てる) を選んでいれば ratchet の書き換えが要ったはずである"
+            summary "node --test src/HeaderEntranceCensus.test.js pass (再実行 2026-10-24, commit bea37cf) — 入口の個数を宣言の上限と両方向で照合する ratchet が、ADR-110 の実装 (2026-08-05) で 1 行も書き換えずに通った。ADR-107 が SelectionOwnership.test.js に使ったのと同じ形の検算で、案 C (新しい動詞) を選んでいれば ratchet の書き換えが要った"
+            artifacts
+            - "src/HeaderEntranceCensus.test.js"
 
         goal TheSubjectlessPathIsRelocatedNotDeleted
         uuid 6e202b00-8ad7-497e-8a19-9da961171005
         summary "選択が無い状態でも把持探索の入口が画面に在り、押せない理由が読める。ロボットを選ぶと enabled になり探索が seed される"
-        state ToBeDeveloped
-        labels support-exploring
+        labels support-verified
 
-            assumption AvailabilityAndReasonComeFromOneReturnValue
+            solution AvailabilityAndReasonComeFromOneReturnValue
             uuid 246aa007-1877-4e8a-9fcf-86a5b7a7fc6e
-            summary "実測 (2026-08-05): 住所は REQUIRES ではなく view/EntityScopeChecks.js になった (ADR-110 §実装で変わったこと — ヘッダから出た前提をヘッダの語彙に足すと空回りする宣言が 1 行できる)。判定と理由は同じ返り値から出る形のまま、0 の種は GRASP_BLOCKED_KIND の 2 種で未宣言の種は throw、基数を渡さない呼びも throw。unit は FloorContainerCensus.test.js、e2e は『把持探索は Context ▾ から消え、選択の隣に理由つきで在る』(消えたこと・disabled + 理由・ロボット選択で enabled の 3 点)。0 台の理由文は e2e から焼いていない — 削除フローが主語になるため unit 側に置いた (境界の宣言)"
+            summary "node --test src/FloorContainerCensus.test.js pass (再実行 2026-10-24, commit bea37cf) — 選択が無いときの理由は GRASP_BLOCKED_KIND の 2 種に割れ (0 台に『ロボットを選べ』と言わない)、未宣言の種と基数を渡さない呼びは throw。住所は view/EntityScopeChecks.js (ADR-110 §実装で変わったこと)。e2e (smoke.spec.js『把持探索は Context ▾ から消え、選択の隣に理由つきで在る』) は 2026-08-05 の実測で、今回は再実行していない"
             artifacts
             - "e2e/smoke.spec.js"
+            - "src/FloorContainerCensus.test.js"
+            - "src/view/EntityScopeChecks.js"

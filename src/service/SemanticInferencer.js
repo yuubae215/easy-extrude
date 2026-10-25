@@ -1,41 +1,77 @@
 /**
- * SemanticInferencer — geometric-heuristic SpatialLink suggestion engine.
- *
- * Analyzes spatial proximity between a moved Solid and other scene entities
- * after a grab/drag operation, returning ranked SpatialLink suggestions.
+ * SemanticInferencer — what to offer after a Solid is moved (ADR-041, ADR-168 S2-1).
  *
  * Pure computation: no DOM, no Three.js scene mutations, no I/O.
  * All inputs are read-only; no argument is mutated.
  *
- * Heuristics (in priority order):
- *   A. "above"    — moved bottom face ≈ target top face with XY footprint overlap
- *   B. "adjacent" — moved side face ≈ target side face with perpendicular overlap
- *   C. "contains" — moved Solid's XY centroid is inside an AnnotatedRegion polygon
+ * Two kinds of suggestion, neither scored nor ranked (ADR-146 axis 1 — a
+ * graded preference is an idea and lives in core/):
+ *
+ *   arrangement  the moved Solid TOUCHES another: offered as a claim in the
+ *                speaker's name — `{contact: touching, toward: <the face>}` —
+ *                read by the domain's own closed form (`observeContact`), so
+ *                what is offered is what the relation's status will read. The
+ *                face is said only when exactly one is touched (an edge touches
+ *                two; saying either would choose). Offered only while someone
+ *                is speaking and both things are in the document; a claim
+ *                needs a claimant (ADR-168 D5) and a subject the document has.
+ *   link         the moved Solid's centre lies in an AnnotatedRegion: a
+ *                `contains` SpatialLink, as before (heuristic C).
+ *
+ * Until S2-1 the first kind was SpatialLinks `above` / `adjacent` with a
+ * confidence — two words that each carried two facts (ADR-168 力学 1); those
+ * heuristics (A / B) and their metre-era 0.15 threshold are gone.
+ *
+ * Order is deterministic (arrangements by partner ref, then links by region
+ * id); a caller showing one shows the first.
  *
  * @see ADR-041
+ * @see docs/adr/ADR-168-a-spatial-relation-is-three-axes-and-three-slots.md
  */
 import { Box3, Vector3 } from 'three'
 import { Solid }           from '../domain/Solid.js'
 import { AnnotatedRegion } from '../domain/AnnotatedRegion.js'
+import { observeContact, CONTACT_TOLERANCE_MM, OBSERVED_CONTACT } from '../domain/arrangementGeometry.js'
+import { sizeOfCorners } from '../domain/hollowBody.js'
+import { cellOfSide } from '../domain/relationCells.js'
+import { PHRASE_TABLE, phraseKind } from '../context/SynonymQuotient.js'
 
 /**
- * Face-gap (units) below which two faces are considered "touching".
- * In the mm world (ADR-136) this reads as 0.15 mm — a metre-era value. Moving
- * onto `domain/arrangementGeometry.CONTACT_TOLERANCE_MM` is 未実装 until
- * ADR-168 S2 (DEF-071).
+ * Each carries `key`: the same offer on consecutive drag frames has the same
+ * key, so a preview is kept rather than rebuilt (the drag states compare keys
+ * and stay dependency-free).
+ *
+ * @typedef {{kind: 'arrangement', key: string, subjectId: string, partnerId: string,
+ *            subjectRef: string, partnerRef: string, by: string,
+ *            side: {of: string, contact: 'touching', toward?: string}, cell: string, label: string}} ArrangementSuggestion
+ * @typedef {{kind: 'link', key: string, sourceId: string, targetId: string, jointType: null,
+ *            semanticType: 'contains', label: string}} LinkSuggestion
+ * @typedef {ArrangementSuggestion | LinkSuggestion} Suggestion
  */
-const CONTACT_THRESHOLD = 0.15
 
 /**
- * @typedef {{
- *   sourceId:     string,
- *   targetId:     string,
- *   jointType:    string|null,
- *   semanticType: string,
- *   label:        string,
- *   confidence:   number,
- * }} Suggestion
+ * The geometry body of a live Solid, in the shape `domain/arrangementGeometry`
+ * reads (the same fields `layout/ArrangementReport` takes from a compiled one).
+ * @param {Solid} solid
  */
+export function bodyOfSolid(solid) {
+  const p = solid._position
+  const q = solid.orientation
+  return {
+    center:   { x: p.x, y: p.y, z: p.z },
+    size:     sizeOfCorners(solid.localCorners),
+    rotation: { x: q.x, y: q.y, z: q.z, w: q.w },
+    inner:    solid.innerDimensions ?? null,
+  }
+}
+
+/** The words a suggested side is shown in: a combination's name if the cell has one. */
+function sideLabel(side) {
+  const cell = cellOfSide(side)
+  const combo = PHRASE_TABLE.find(p => phraseKind(p) === 'combination' && p.cells[0] === cell)
+  if (combo) return combo.en[0].toUpperCase() + combo.en.slice(1)
+  return side.toward ? `Touching ${side.toward}` : 'Touching'
+}
 
 /**
  * Compute the world-space AABB of a Solid from its 8 world-space corners.
@@ -48,10 +84,6 @@ function _solidBox(solid) {
   return box
 }
 
-function _xOverlap(a, b) { return a.max.x > b.min.x && a.min.x < b.max.x }
-function _yOverlap(a, b) { return a.max.y > b.min.y && a.min.y < b.max.y }
-function _zOverlap(a, b) { return a.max.z > b.min.z && a.min.z < b.max.z }
-function _xyOverlap(a, b) { return _xOverlap(a, b) && _yOverlap(a, b) }
 
 /**
  * Ray-casting point-in-polygon test on the XY plane.
@@ -74,97 +106,67 @@ function _xyPointInPolygon(px, py, poly) {
 }
 
 /**
- * Infers SpatialLink suggestions for the moved entity against all scene objects.
+ * What to offer for the moved entity against the other scene objects.
  *
- * Returns at most 3 suggestions sorted by confidence (highest first).
- * Pairs that already have a link are silently skipped.
- *
- * @param {Solid} moved          Entity that was just repositioned
- * @param {Iterable<any>} sceneObjects  All scene entities (read-only)
- * @param {Set<string>} existingPairs  "sourceId|targetId" strings for existing links
+ * @param {Solid} moved                 entity that was just repositioned
+ * @param {Iterable<any>} sceneObjects  all scene entities (read-only)
+ * @param {{
+ *   existingPairs: Set<string>,          "sourceId|targetId" of existing SpatialLinks
+ *   refOf: (sceneId: string) => string|null,  the document ref of a scene object (null = not in the document)
+ *   speaker: string|null,                who is speaking (an actor ref) — null offers no arrangement
+ *   claimedPairs: Set<string>,           "subjectRef|ofRef" the speaker already claims (either order is checked)
+ * }} ctx
  * @returns {Suggestion[]}
  */
-export function inferSemanticRelationships(moved, sceneObjects, existingPairs) {
+export function inferSuggestions(moved, sceneObjects, { existingPairs, refOf, speaker, claimedPairs }) {
   if (!(moved instanceof Solid)) return []
-
+  const movedRef = speaker ? refOf(moved.id) : null
+  const mBody = movedRef ? bodyOfSolid(moved) : null
   const mBox = _solidBox(moved)
-  const suggestions = []
+  /** @type {ArrangementSuggestion[]} */
+  const arrangements = []
+  /** @type {LinkSuggestion[]} */
+  const links = []
 
   for (const entity of sceneObjects) {
     if (entity.id === moved.id) continue
 
-    // Skip pairs that already have a SpatialLink in either direction.
-    if (existingPairs.has(`${moved.id}|${entity.id}`)) continue
-    if (existingPairs.has(`${entity.id}|${moved.id}`)) continue
-
-    if (entity instanceof Solid) {
-      const tBox = _solidBox(entity)
-
-      // ── Heuristic A: "above" ────────────────────────────────────────────
-      // moved's bottom face (-Z) is near target's top face (+Z), with XY overlap.
-      const zGapAbove = Math.abs(mBox.min.z - tBox.max.z)
-      if (zGapAbove < CONTACT_THRESHOLD && _xyOverlap(mBox, tBox)) {
-        suggestions.push({
-          sourceId:     moved.id,
-          targetId:     entity.id,
-          jointType:    null,
-          semanticType: 'above',
-          label:        'Above',
-          confidence:   1 - zGapAbove / CONTACT_THRESHOLD,
-        })
-        continue  // skip "adjacent" check for the same pair
-      }
-
-      // ── Heuristic B: "adjacent" (side faces) ───────────────────────────
-      // Checks four axis-aligned side-face pairs with perpendicular overlap.
-      const x_L = Math.abs(mBox.min.x - tBox.max.x)
-      const x_R = Math.abs(mBox.max.x - tBox.min.x)
-      const y_L = Math.abs(mBox.min.y - tBox.max.y)
-      const y_R = Math.abs(mBox.max.y - tBox.min.y)
-
-      let minDist = Infinity
-      if (x_L < CONTACT_THRESHOLD && _yOverlap(mBox, tBox) && _zOverlap(mBox, tBox)) minDist = Math.min(minDist, x_L)
-      if (x_R < CONTACT_THRESHOLD && _yOverlap(mBox, tBox) && _zOverlap(mBox, tBox)) minDist = Math.min(minDist, x_R)
-      if (y_L < CONTACT_THRESHOLD && _xOverlap(mBox, tBox) && _zOverlap(mBox, tBox)) minDist = Math.min(minDist, y_L)
-      if (y_R < CONTACT_THRESHOLD && _xOverlap(mBox, tBox) && _zOverlap(mBox, tBox)) minDist = Math.min(minDist, y_R)
-
-      if (minDist < Infinity) {
-        suggestions.push({
-          sourceId:     moved.id,
-          targetId:     entity.id,
-          jointType:    null,
-          semanticType: 'adjacent',
-          label:        'Adjacent',
-          confidence:   0.7 * (1 - minDist / CONTACT_THRESHOLD),
-        })
+    if (entity instanceof Solid && mBody) {
+      const ref = refOf(entity.id)
+      if (ref && !claimedPairs.has(`${movedRef}|${ref}`) && !claimedPairs.has(`${ref}|${movedRef}`)) {
+        const c = observeContact(mBody, bodyOfSolid(entity))
+        if (c.contact === OBSERVED_CONTACT.TOUCHING) {
+          // A complete, declarable side — what is offered is what gets written.
+          /** @type {{of: string, contact: 'touching', toward?: string}} */
+          const side = c.faces.length === 1 ? { of: ref, contact: 'touching', toward: c.faces[0] } : { of: ref, contact: 'touching' }
+          const cell = cellOfSide(side)
+          arrangements.push({
+            kind: 'arrangement', key: `arrangement|${entity.id}|${cell}`, subjectId: moved.id, partnerId: entity.id,
+            subjectRef: movedRef, partnerRef: ref, by: speaker, side, cell, label: sideLabel(side),
+          })
+        }
       }
     }
 
-    // ── Heuristic C: "contains" (AnnotatedRegion) ─────────────────────────
-    // moved Solid's XY centroid is inside the region's polygon.
-    // Link direction: region (source) contains solid (target).
-    if (entity instanceof AnnotatedRegion) {
+    // ── "contains" (AnnotatedRegion) — region (source) contains solid (target) ──
+    if (entity instanceof AnnotatedRegion
+        && !existingPairs.has(`${entity.id}|${moved.id}`) && !existingPairs.has(`${moved.id}|${entity.id}`)) {
       const center = mBox.getCenter(new Vector3())
       if (_xyPointInPolygon(center.x, center.y, entity.corners)) {
-        suggestions.push({
-          sourceId:     entity.id,
-          targetId:     moved.id,
-          jointType:    null,
-          semanticType: 'contains',
-          label:        'Contains',
-          confidence:   0.85,
+        links.push({
+          kind: 'link', key: `link|contains|${entity.id}`, sourceId: entity.id, targetId: moved.id,
+          jointType: null, semanticType: 'contains', label: 'Contains',
         })
       }
     }
   }
 
-  return suggestions
-    .sort((a, b) => b.confidence - a.confidence)
-    .slice(0, 3)
+  const byKey = (k) => (a, b) => (a[k] < b[k] ? -1 : a[k] > b[k] ? 1 : 0)
+  return [...arrangements.sort(byKey('partnerRef')), ...links.sort(byKey('sourceId'))]
 }
 
-/** Outer radius for approach warmth visualization — 3× the contact threshold. */
-const APPROACH_RADIUS = CONTACT_THRESHOLD * 3
+/** Outer radius (mm) for approach warmth visualization — 3× the one contact tolerance. */
+const APPROACH_RADIUS = CONTACT_TOLERANCE_MM * 3
 
 /**
  * Computes continuous warmth values (0..1) for Solid entities near the moved Solid.
@@ -195,3 +197,4 @@ export function computeApproachWarmth(moved, sceneObjects) {
   }
   return result
 }
+

@@ -17,7 +17,7 @@ import { compileLayout, buildRefMap } from './LayoutCompiler.js'
 import {
   arrangementIssues, claimConflicts, mobilityBetween, sideStatus,
 } from '../domain/arrangement.js'
-import { observeContact, observeVertical, observeRelative } from '../domain/arrangementGeometry.js'
+import { observeContact, observeFaceSides, observeVertical, observeRelative } from '../domain/arrangementGeometry.js'
 import { isViewerFrame, viewerFrameGap } from '../domain/viewerFrame.js'
 import { sizeOfCorners } from '../domain/hollowBody.js'
 
@@ -124,6 +124,7 @@ export function reportArrangements(layoutDsl, arrangements, actors) {
         const contact = observeContact(subject, partner)
         const state = {
           ...contact,
+          faceSides: observeFaceSides(subject, partner),
           vertical: observeVertical(subject, partner),
           relative: (viewerRef) => observeRelative(subject, partner, viewerOf(viewerRef)),
         }
@@ -135,6 +136,7 @@ export function reportArrangements(layoutDsl, arrangements, actors) {
           state: {
             contact:  contact.contact,
             faces:    contact.faces,
+            faceSides: state.faceSides,
             gap:      contact.gap,
             vertical: state.vertical,
             ...(viewerRef ? { relative: state.relative(viewerRef) } : {}),

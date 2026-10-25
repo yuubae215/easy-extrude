@@ -56,12 +56,12 @@ import { rotateVec3 } from '../domain/rotateVec3.js'
 export const CONFIRMATION_BY_WORD = Object.freeze({
   touching: { picture: 'contactPatch',  where: 'the surfaces in contact, filled on the partner' },
   apart:    { picture: 'separation',    where: 'a line between the two, with the gap (a lower bound, ≥)' },
-  '+x':     { picture: 'facePaint',     where: 'the partner\'s +x face, outlined and named' },
-  '-x':     { picture: 'facePaint',     where: 'the partner\'s -x face, outlined and named' },
-  '+y':     { picture: 'facePaint',     where: 'the partner\'s +y face, outlined and named' },
-  '-y':     { picture: 'facePaint',     where: 'the partner\'s -y face, outlined and named' },
-  '+z':     { picture: 'facePaint',     where: 'the partner\'s +z face, outlined and named' },
-  '-z':     { picture: 'facePaint',     where: 'the partner\'s -z face, outlined and named' },
+  '+x':     { picture: 'facePaint',     where: 'the partner\'s +x face, outlined and named (touched, or the side it faces when apart)' },
+  '-x':     { picture: 'facePaint',     where: 'the partner\'s -x face, outlined and named (touched, or the side it faces when apart)' },
+  '+y':     { picture: 'facePaint',     where: 'the partner\'s +y face, outlined and named (touched, or the side it faces when apart)' },
+  '-y':     { picture: 'facePaint',     where: 'the partner\'s -y face, outlined and named (touched, or the side it faces when apart)' },
+  '+z':     { picture: 'facePaint',     where: 'the partner\'s +z face, outlined and named (touched, or the side it faces when apart)' },
+  '-z':     { picture: 'facePaint',     where: 'the partner\'s -z face, outlined and named (touched, or the side it faces when apart)' },
   above:    { picture: 'verticalGuide', where: 'a vertical line from the partner\'s top to the subject\'s bottom' },
   below:    { picture: 'verticalGuide', where: 'a vertical line from the partner\'s bottom to the subject\'s top' },
   front:    { picture: 'viewerAxes',    where: 'the viewer, its facing arrow, and its front / back line through the partner' },
@@ -142,7 +142,11 @@ export function observedTowardText(toward, state) {
     return touching ? state.faces.join(' ') : (state.vertical ?? 'level with it')
   }
   const frame = frameOfToward(toward)
-  if (frame === 'intrinsic') return touching ? state.faces.join(' ') : `not touching (${state.contact})`
+  if (frame === 'intrinsic') {
+    if (touching) return state.faces.join(' ')
+    if (state.contact !== OBSERVED_CONTACT.APART) return state.contact
+    return (state.faceSides ?? []).length ? `on the ${state.faceSides.join(' ')} side` : 'on no face\'s side'
+  }
   if (touching) return `touching ${state.faces.join(' ')}`
   if (frame === 'absolute') return state.vertical ?? 'level with it'
   return (state.relative ?? []).join(', ') || 'neither side'
@@ -281,7 +285,7 @@ export function arrangementPicture(result, focusRefs) {
         if (frame === 'intrinsic') {
           const corners = faceCorners(partner, toward)
           const at = [0, 1, 2].map(k => corners.reduce((s, c) => s + c[k], 0) / 4)
-          items.push({ kind: 'facePaint', tone: PICTURE_TONE, corners, caption: `${toward} of ${side.of}`, at })
+          items.push({ kind: 'facePaint', tone: PICTURE_TONE, corners, caption: side.state.contact === OBSERVED_CONTACT.TOUCHING ? `${toward} of ${side.of}` : `${toward} side of ${side.of}`, at })
         } else if (frame === 'absolute') {
           const pz = zRange(partner)
           const sz = zRange(subject)
@@ -422,4 +426,28 @@ export function arrangementPanel(result, focusRefs) {
       claims: c.claims.map(k => ({ ref: k.ref, by: k.by, value: claimText(c.axis, k.value) })),
     }))
   return { kind: PANEL_KIND.LISTED, focusRefs, rows, conflicts, errors: [], summary }
+}
+
+// ── who is speaking (ADR-168 S2-1) ───────────────────────────────────────────
+
+/**
+ * The "who is speaking" block of the Relations section: the actor a drag's
+ * offer would be claimed by. `null` without a document (there is nobody to
+ * choose from, and the panel already says why). Nobody speaking is a state of
+ * its own with its own words — never a default actor (原則 #31): a claim needs
+ * a claimant, and choosing one for the user would be inferring it (ADR-168 D5).
+ *
+ * @param {object|null} doc
+ * @param {string|null} speaker   the chosen actor ref (null = nobody)
+ * @param {string|null} lost      a speaker the document no longer has (said once, not silently dropped)
+ * @returns {{current: string|null, choices: Array<{ref: string, label: string}>, note: string|null}|null}
+ */
+export function speakerPanel(doc, speaker, lost) {
+  if (!doc) return null
+  const choices = (doc.actors ?? []).map(a => ({ ref: a.ref, label: a.name ? `${a.name} (${a.ref})` : a.ref }))
+  let note = null
+  if (choices.length === 0) note = 'The document has no actors — add one to claim relations.'
+  else if (lost) note = `"${lost}" is no longer an actor of the document — choose who is speaking.`
+  else if (!speaker) note = 'Nobody is speaking — moving a thing offers no relation until you choose who claims it.'
+  return { current: speaker, choices, note }
 }

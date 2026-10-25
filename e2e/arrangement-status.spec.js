@@ -111,3 +111,50 @@ test('関係の宣言が画面に出る — 不一致は何も選ばなくても
 
   expect(errors).toEqual([])
 })
+
+test('動かした物の関係は、話している人の名前でだけ差し出され、受けると文書に主張として入る (ADR-168 S2-1)', async ({ page }) => {
+  const errors = await boot(page)
+  await importDoc(page)
+  if (!(await page.evaluate(() => window.__ui.getState().nPanelVisible))) await page.keyboard.press('n')
+
+  // The tray stands on the bench (the template's old "above"); nobody claims it yet.
+  await page.evaluate(() => window.__ui.getState().callbacks.onSelectRelationEntity('output_tray'))
+  await expect.poll(async () => (await snap(page)).focusRefs).toEqual(['output_tray'])
+  const speaker = page.getByTestId('relation-speaker')
+  await expect(speaker).toHaveValue('')
+  await expect(page.getByText(/Nobody is speaking/)).toBeVisible()
+
+  const box = await page.locator('#canvas-container canvas').boundingBox()
+  const grabAndDrop = async () => {
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+    await page.keyboard.press('g')
+    await page.keyboard.press('Enter')
+  }
+
+  // Nobody speaking: a drop offers no relation (a claim needs a claimant — D5).
+  await grabAndDrop()
+  await page.waitForTimeout(300)
+  await expect(page.getByRole('button', { name: /^Claim as/ })).toHaveCount(0)
+
+  // Ann speaks: the same drop offers "resting on" in her name.
+  await speaker.selectOption('ann')
+  await expect.poll(async () => (await snap(page)).speaker).toBe('ann')
+  await grabAndDrop()
+  const claim = page.getByRole('button', { name: 'Claim as ann' })
+  await expect(claim).toBeVisible()
+  await expect(page.getByText(/resting on/)).toBeVisible()
+  await claim.click()
+
+  // The claim is in the document, read back by the Relations section as holding.
+  await expect.poll(async () => (await snap(page)).model.rows.map(r => `${r.by}:${r.subject}`)).toContain('ann:output_tray')
+  const row = (await snap(page)).model.rows.find(r => r.by === 'ann' && r.subject === 'output_tray')
+  expect(row.sides[0].of).toBe('worktable')
+  expect(row.sides[0].contact).toMatchObject({ declared: 'touching', status: 'match' })
+  expect(row.sides[0].toward).toMatchObject({ declared: '+z', status: 'match' })
+
+  // Undo takes the claim back out — it went through the one doc-edit command.
+  await page.keyboard.press('Control+z')
+  await expect.poll(async () => (await snap(page)).model.rows.some(r => r.by === 'ann' && r.subject === 'output_tray')).toBe(false)
+
+  expect(errors).toEqual([])
+})

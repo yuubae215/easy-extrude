@@ -63,35 +63,35 @@ artifacts
         goal NoSelectableKindLacksAnAddress
         uuid 5c68e8f0-5e8b-423b-a76a-ac4a3bc18d8f
         summary "選択可能な種のうち、どちらのナビゲータにも住所を持たないものが 0 個である。母集団は SELECTION_KIND の枝から導出し、手書きの種リストにしない"
-        state ToBeDeveloped
-        labels support-exploring
+        labels support-verified
 
-            assumption AddressTableDerivesFromTheUnionsBranches
+            solution AddressTableDerivesFromTheUnionsBranches
             uuid 9e43f457-93f4-4d26-8927-56e220188667
-            summary "証拠の予定: SelectionKindDeclarations.test.js が既に採っている形 (assertCoversPopulation で SELECTION_KIND の枝から母集団を導出し、empty は理由つきの対象外として宣言する) をそのまま使い、3 つ目の宣言表『種 → ナビゲータの側』を足す。枝を足して行を足さなければ落ちる。在る行を辿る数え方では今日の穴 (variables に住所が無い) が 0 に見えるので、必ず種の側から数える"
+            summary "node --test src/NavigatorAddressCensus.test.js pass (再実行 2026-10-24, commit bea37cf) —『選択できる種はすべてどれかのナビゲータに住所を持つ — 住所なしは 0 個』。宣言表は view/NavigatorSides.js の NAVIGATOR_SIDE_BY_SELECTION_KIND で、母集団は SELECTABLE_KINDS (SELECTION_KIND の枝) から導出し、未宣言の側は throw。empty は選べる物の種ではないので表に居ない (SELECTABLE_KINDS が外すのと同じ理由)"
             artifacts
-            - "src/SelectionKindDeclarations.test.js"
+            - "src/NavigatorAddressCensus.test.js"
+            - "src/view/NavigatorSides.js"
 
         goal TheSemanticSideIsAWindowNotAnEntrance
         uuid 5c3b4888-61cd-47d4-b02a-186a1d5e01ac
         summary "意味側の行のクリックが既存の選択 verb を呼ぶだけで、選択の書き手が増えない。ADR-099 の 5 verb は 5 のまま"
-        state ToBeDeveloped
-        labels support-exploring
+        labels support-verified
 
-            assumption TheCensusMustPassWithoutBeingRebuilt
+            solution TheCensusMustPassWithoutBeingRebuilt
             uuid 31c803fc-a5bd-43c1-b68f-a391b0732ae0
-            summary "証拠の予定: SelectionOwnership.test.js を**作り直さずに**通す。ADR-107 が同じ検算を使って『窓を足しても入口は増えない』を確かめており、作り直しが要ったらそれは選択に第二の書き手を作った証拠になる。窓は 5 つに見えて undo コールバックの中に 4 つ複製されていたという ADR-099 の実測があるので、窓を辿る数え方には戻さない"
+            summary "node --test src/SelectionOwnership.test.js src/NavigatorAddressCensus.test.js pass (再実行 2026-10-24, commit bea37cf) — SelectionOwnership.test.js は ADR-111 の実装 (2026-08-05) で作り直さずに通り、選択の入口は 5 verb のまま。NavigatorAddressCensus.test.js が『意味側の行は既存の窓を通る — 選択の verb を直に呼ばない』と、窓の callback が src/ で 1 度だけ登録されることを問う"
             artifacts
             - "src/SelectionOwnership.test.js"
+            - "src/NavigatorAddressCensus.test.js"
 
         goal TheEmptySemanticSideDeclaresWhichZeroItIs
         uuid ec71cf23-8fd0-4a4a-886b-0a0a11fa4d70
         summary "意味側が空のとき、『文書が無い』と『文書に変数が 0 個』が別の文言として出る。1 つの『空』で両方を賄わない"
-        state ToBeDeveloped
-        labels support-exploring
+        labels support-verified
 
-            assumption TwoZerosAreDeclaredNotInferred
+            solution TwoZerosAreDeclaredNotInferred
             uuid 40392e12-55c3-41d4-a359-0ac8bf078e9e
-            summary "証拠の予定: ADR-105 が発見の 0 を 4 種 (unexamined / none-declared / all-pass / failing) に割ったのと同じ形で、意味側の 0 を最低 2 種として宣言し unit で両方を焼く。既定値で埋めない (原則 #31 / ADR-096 の既定表の規律)。文書が無い側の文言は採択への出口を持つ — ADR-105 の unexamined が名指しする先と同じ"
+            summary "node --test src/NavigatorAddressCensus.test.js pass (再実行 2026-10-24, commit bea37cf) —『意味側の 0 は 2 種に割れ、別々の文言を出す (ADR-111 D4)』と『文書が在るのに変数の配列が来ていない呼びは throw する — 0 を既定で埋めない』。文書の有無は view/DocPresence.js の documentAdopted 1 つに畳まれている (ADR-111 §実装で変わったこと)"
             artifacts
-            - "docs/adr/ADR-105-unexamined-is-not-clear.md"
+            - "src/NavigatorAddressCensus.test.js"
+            - "src/view/DocPresence.js"
