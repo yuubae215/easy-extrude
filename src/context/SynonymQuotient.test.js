@@ -126,6 +126,15 @@ describe('lookup scope per category (ADR-168)', () => {
     for (const w of ['上', '横', '載っている', '下']) assert.equal(canonicalKeyIn(w, 'spatial'), null, w)
   })
 
+  it('front/back/left/right words that may be the partner\'s own (intrinsic) are refused — only the speaker\'s own fold (2026-10-25)', () => {
+    for (const w of ['前', '前方', '後ろ', '後方', '左手', '右手', 'in front of', 'behind', 'left of', 'right of', 'beside', 'next to', 'on']) {
+      assert.equal(canonicalKeyIn(w, 'spatial'), null, w)
+    }
+    assert.equal(canonicalKeyIn('手前', 'spatial'), 'front')
+    assert.equal(canonicalKeyIn('向こう', 'spatial'), 'back')
+    assert.equal(localize('front', 'en'), 'nearer')
+  })
+
   it('asking an undeclared category is an error, not an empty answer', () => {
     assert.throws(() => canonicalKeyIn('above', 'spacial'), /not declared/)
   })

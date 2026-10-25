@@ -20,7 +20,11 @@
  * ## Which frame of reference a direction uses (ADR-168 D1 / 力学 3)
  *
  *   touching → the partner's face (`+x … -z`, ADR-152 — intrinsic)
- *   apart    → `above` / `below` (gravity — absolute), or
+ *   apart    → the partner's face again, read as the SIDE beyond it ("on the
+ *              robot's +x side, at a distance" — intrinsic, 改訂 2026-10-25; a
+ *              declared FRONT of a thing, so "in front of the machine" folds
+ *              onto a face, is 未実装 — DEF-073), or
+ *              `above` / `below` (gravity — absolute), or
  *              `{dir: front|back|left|right, viewer}` (a declared viewer — relative)
  *
  * ## The three slots (ADR-168 D4)
@@ -181,9 +185,6 @@ export function arrangementIssues(arrangements, world) {
           errors.push(`${at}: toward ${JSON.stringify(side.toward)} is not a face (${FACE_TOWARD.join(' ')}), above/below, or {dir: ${RELATIVE_DIRS.join('|')}, viewer}`)
         } else {
           const frame = frameOfToward(side.toward)
-          if (frame === 'intrinsic' && side.contact === CONTACT.APART) {
-            errors.push(`${at}: a face (${side.toward}) is said only of a thing touching it — apart, say above/below or a direction seen by a viewer (ADR-168 D1)`)
-          }
           if (frame !== 'intrinsic' && side.contact === CONTACT.TOUCHING) {
             errors.push(`${at}: touching, the direction is the partner's face (${FACE_TOWARD.join(' ')}), not ${JSON.stringify(towardWord(side.toward))} (ADR-168 D1)`)
           }
@@ -288,7 +289,7 @@ function conflictOf(subject, of, axis, claims, valueOf) {
 }
 
 /**
- * @typedef {{contact: 'touching'|'apart'|'overlapping', faces: string[], gap: number|null,
+ * @typedef {{contact: 'touching'|'apart'|'overlapping', faces: string[], faceSides?: string[], gap: number|null,
  *            vertical: 'above'|'below'|null, relative: (viewerRef: string) => string[]}} SideState
  */
 
@@ -311,7 +312,9 @@ export function sideStatus(side, state) {
     const t = side.toward
     const frame = frameOfToward(t)
     const holds =
-      frame === 'intrinsic' ? state.contact === OBSERVED_CONTACT.TOUCHING && state.faces.includes(t)
+      frame === 'intrinsic'
+        ? (state.contact === OBSERVED_CONTACT.TOUCHING ? state.faces.includes(t)
+          : state.contact === OBSERVED_CONTACT.APART && (state.faceSides ?? []).includes(t))
       : frame === 'absolute' ? state.contact !== OBSERVED_CONTACT.TOUCHING && state.vertical === t
       : state.contact !== OBSERVED_CONTACT.TOUCHING && state.relative(t.viewer).includes(t.dir)
     toward = holds ? AXIS_STATUS.MATCH : AXIS_STATUS.MISMATCH

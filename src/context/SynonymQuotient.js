@@ -55,11 +55,19 @@
  *
  * ## Words the dictionary refuses on purpose (spatial)
  *
- * 「上」「横」「載っている」 are NOT synonyms of any spatial key: each says two
- * facts or chooses between two (上 = above apart, or the +z face touching?
- * 載っている = touching AND on the +z face). Folding them would decide for the
- * speaker. They stay outside the quotient (canonicalKeyIn → null), so a caller
- * must ask which was meant (docs/SPATIAL_RELATION_MODEL.md §3).
+ * Two different reasons keep a word out (docs/SPATIAL_RELATION_MODEL.md §3):
+ *
+ * - A CHOICE between two readings — folding it would choose for the speaker:
+ *   上 / 下 (apart above, or touching the +z face?), 横 / beside / next to
+ *   (touching a side face, or apart to one side?), on (touching, and which
+ *   face?), and 前 / 後ろ / 左手 / 右手 / in front of / behind / left of /
+ *   right of — "the robot's front" is usually the ROBOT's own front
+ *   (intrinsic), "in front of me" the speaker's (relative). The caller asks.
+ * - A COMBINATION of two values that are both fixed — 載っている = touching AND
+ *   the +z face. Nothing is chosen for the speaker, but one key holds one value,
+ *   so it cannot be a synonym here; it needs its own table (planned, 2026-10-25).
+ *
+ * Both stay outside the quotient (canonicalKeyIn → null).
  *
  * @type {ReadonlyArray<{key:string, en:string, ja:string, cat:string, synonyms:string[]}>}
  */
@@ -130,14 +138,18 @@ export const QUOTIENT_TABLE = Object.freeze([
     synonyms: ['above', 'over', 'higher than', '上方', '上方にある', '上空'] },
   { key: 'below', en: 'below', ja: '下方', cat: 'spatial',
     synonyms: ['below', 'under', 'beneath', 'lower than', '下方', '下方にある'] },
-  { key: 'front', en: 'in front', ja: '手前', cat: 'spatial',
-    synonyms: ['front', 'in front', 'in front of', 'nearer', '手前', '前', '前方', '前側'] },
-  { key: 'back', en: 'behind', ja: '奥', cat: 'spatial',
-    synonyms: ['back', 'behind', 'farther', '奥', '後ろ', '後方', '向こう', '奥側'] },
+  // front / back / left / right are a declared VIEWER's (relative). Only the
+  // words that are always the speaker's own are here: 手前 / 奥 (near / far from
+  // whoever speaks). 前・後ろ・左手・in front of・behind・left of are refused —
+  // "the robot's front" is the robot's own (intrinsic), see the note above.
+  { key: 'front', en: 'nearer', ja: '手前', cat: 'spatial',
+    synonyms: ['front', 'nearer', 'closer', '手前', '手前側'] },
+  { key: 'back', en: 'farther', ja: '奥', cat: 'spatial',
+    synonyms: ['back', 'farther', 'further away', '奥', '奥側', '向こう'] },
   { key: 'left', en: 'left', ja: '左', cat: 'spatial',
-    synonyms: ['left', 'to the left', 'left of', '左', '左側', '左手'] },
+    synonyms: ['left', 'to the left', '左', '左側'] },
   { key: 'right', en: 'right', ja: '右', cat: 'spatial',
-    synonyms: ['right', 'to the right', 'right of', '右', '右側', '右手'] },
+    synonyms: ['right', 'to the right', '右', '右側'] },
   { key: '+z', en: 'top face', ja: '上面', cat: 'spatial',
     synonyms: ['+z', 'top', 'top face', 'top surface', '上面', '天面', '天'] },
   { key: '-z', en: 'bottom face', ja: '底面', cat: 'spatial',

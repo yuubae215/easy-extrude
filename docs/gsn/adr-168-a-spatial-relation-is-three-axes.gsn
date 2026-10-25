@@ -57,7 +57,7 @@ artifacts
 
         goal HorizontalDirectionNamesItsViewer
         uuid a1dca7a3-32e0-4875-a0d1-2b966145fb41
-        summary "接しているときの向きは相手の面 (内在)、離れているときの上下は重力 (絶対)、前後左右は宣言された見る人 (相対) で言う。見る人を名指さない相対の向きは書けず、カメラ相対の左右は表示の導出にとどまり文書にも照合にも入らない"
+        summary "接しているときの向きは相手の面 (内在)、離れているときの上下は重力 (絶対)、前後左右は宣言された見る人 (相対) で言う (2026-10-25 改訂: 離れていても相手の面の側は内在で言える — IntrinsicSideIsSayableApart)。見る人を名指さない相対の向きは書けず、カメラ相対の左右は表示の導出にとどまり文書にも照合にも入らない"
         labels support-verified
 
             solution ViewerRuleTests
@@ -67,6 +67,19 @@ artifacts
             - "src/domain/arrangement.test.js"
             - "src/domain/arrangementGeometry.test.js"
             - "src/layout/ArrangementReport.test.js"
+
+        goal IntrinsicSideIsSayableApart
+        uuid c698f36c-ffae-4368-b55b-9011c8d5dac8
+        summary "離れている物についても、相手自身の向き (内在) で側が言える —『ロボットの +x 側に離して置く』。新しい語は足さず面の語を使い、相手を回せば側も回る。辞書は内在と相対の二択の言い方 (前・後ろ・in front of・behind …) を正規形へ落とさず、話し手に問う"
+        labels support-verified
+
+            solution IntrinsicSideTests
+            uuid 294ce68e-480d-49f7-9383-f4f57aacfebb
+            summary "node --test (2026-10-25) — arrangementGeometry.test.js: 300 mm 離れた箱はロボットの +x 側だけ / ロボットを 90° 回すと同じ場所が -y 側 (世界ではなく相手の座標系) / 斜めは 2 側 / 接触・容器の中は側を持たない。arrangement.test.js: apart + 面は検査を通る / 側で一致・不一致 / 接していれば接した面で読み側では読まない / めり込みはどちらでもない。SynonymQuotient.test.js: 前・前方・後ろ・後方・左手・右手・in front of・behind・left of・right of・beside・next to・on は null、手前→front・向こう→back。物に正面を宣言する形は DEF-073 (見送り)"
+            artifacts
+            - "src/domain/arrangementGeometry.test.js"
+            - "src/domain/arrangement.test.js"
+            - "src/context/SynonymQuotient.test.js"
 
         goal TwoSidesSayBetweenAndClamped
         uuid 9175d98c-0b7f-4513-bb57-add3844eb5b8

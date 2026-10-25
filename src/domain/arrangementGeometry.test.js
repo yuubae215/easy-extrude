@@ -5,7 +5,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  observeContact, observeVertical, observeRelative, contactPatches,
+  observeContact, observeFaceSides, observeVertical, observeRelative, contactPatches,
   CONTACT_TOLERANCE_MM, OBSERVED_CONTACT,
 } from './arrangementGeometry.js'
 
@@ -146,4 +146,30 @@ test('the patch and the read contact agree on every face (one reading, two uses)
   for (const [s, p] of [[bin, workbench], [workbench, bin], [work1, bin]]) {
     assert.deepEqual([...new Set(contactPatches(s, p).map(x => x.face))].sort(), observeContact(s, p).faces)
   }
+})
+
+// ── apart + a face: the side beyond the partner's face (intrinsic — 改訂 2026-10-25) ──
+
+const robot = box({ x: 0, y: 0, z: 500 }, { x: 200, y: 200, z: 1000 })
+const rot90 = { x: 0, y: 0, z: Math.SQRT1_2, w: Math.SQRT1_2 }   // 90° about Z
+
+test('a box 300 mm off the robot\'s +x face lies on its +x side — and only that side', () => {
+  const tray = box({ x: 500, y: 0, z: 50 }, { x: 100, y: 100, z: 100 })
+  assert.equal(observeContact(tray, robot).contact, OBSERVED_CONTACT.APART)
+  assert.deepEqual(observeFaceSides(tray, robot), ['+x'])
+})
+
+test('the side is the PARTNER\'s: turn the robot 90° and the same spot is its -y side (intrinsic, not world)', () => {
+  const tray = box({ x: 500, y: 0, z: 50 }, { x: 100, y: 100, z: 100 })
+  assert.deepEqual(observeFaceSides(tray, { ...robot, rotation: rot90 }), ['-y'])
+})
+
+test('diagonal: two sides hold at once; within the face span on an axis, that axis says nothing', () => {
+  const corner = box({ x: 500, y: 500, z: 50 }, { x: 100, y: 100, z: 100 })
+  assert.deepEqual(observeFaceSides(corner, robot), ['+x', '+y'])
+})
+
+test('touching, overlapping and inside a cavity have no side — the touched face is observeContact\'s word there', () => {
+  assert.deepEqual(observeFaceSides(bin, workbench), [])        // touching the top: not past the +z plane by the dead band
+  assert.deepEqual(observeFaceSides(work1, bin), [])            // inside the cavity
 })
