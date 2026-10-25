@@ -9,7 +9,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  QUOTIENT_TABLE, CATEGORY_SCOPE, canonicalize, canonicalKey, canonicalKeyIn, localize,
+  QUOTIENT_TABLE, CATEGORY_SCOPE, canonicalize, canonicalKey, canonicalKeyIn, combinationIn, localize,
   localizeOperator, operatorSymbol, synonymsOf,
 } from './SynonymQuotient.js'
 
@@ -137,5 +137,17 @@ describe('lookup scope per category (ADR-168)', () => {
 
   it('asking an undeclared category is an error, not an empty answer', () => {
     assert.throws(() => canonicalKeyIn('above', 'spacial'), /not declared/)
+    assert.throws(() => combinationIn('載っている', 'spacial'), /not declared/)
+  })
+
+  it('a combination folds onto BOTH values it fixes; a choice folds onto nothing in either table (2026-10-25)', () => {
+    assert.deepEqual({ ...combinationIn('載っている', 'spatial').axes }, { contact: 'touching', toward: '+z' })
+    assert.equal(combinationIn('on top of', 'spatial').key, 'resting_on')
+    assert.equal(canonicalKeyIn('載っている', 'spatial'), null, 'a combination is not a word')
+    for (const w of ['上', '横', 'on', '前', '置いてある']) {
+      assert.equal(canonicalKeyIn(w, 'spatial'), null, w)
+      assert.equal(combinationIn(w, 'spatial'), null, w)
+    }
+    assert.equal(combinationIn('上方', 'spatial'), null, 'a word is not a combination')
   })
 })

@@ -65,7 +65,7 @@
  *   (intrinsic), "in front of me" the speaker's (relative). The caller asks.
  * - A COMBINATION of two values that are both fixed — 載っている = touching AND
  *   the +z face. Nothing is chosen for the speaker, but one key holds one value,
- *   so it cannot be a synonym here; it needs its own table (planned, 2026-10-25).
+ *   so it cannot be a synonym here; it lives in COMBINATION_TABLE (2026-10-25).
  *
  * Both stay outside the quotient (canonicalKeyIn → null).
  *
@@ -131,33 +131,61 @@ export const QUOTIENT_TABLE = Object.freeze([
   // ways by src/SpatialRelationModelDoc.test.js. Scoped: never reached by the
   // category-free lookup (see CATEGORY_SCOPE).
   { key: 'touching', en: 'touching', ja: 'くっついている', cat: 'spatial',
-    synonyms: ['touching', 'touch', 'in contact', 'contact', 'くっついている', 'くっついてる', 'くっつく', '接している', '接触', '接触している', '触れている', '密着'] },
+    synonyms: ['touching', 'touch', 'in contact', 'contact', 'くっついている', 'くっついてる', 'くっつく', '接している', '接触', '接触している', '触れている', '密着'],
+    gloss: { says: '接している — 2 つの面の距離が許容値 (CONTACT_TOLERANCE_MM) 以内', notSays: 'どの面で接しているか・どちらが上か (向きは別の語)' },
+    example: { ja: 'ビンが作業台にくっついている', term: 'くっついている' }, contrast: { ja: 'ビンが作業台から離れている', term: '離れている' } },
   { key: 'apart', en: 'apart', ja: '離れている', cat: 'spatial',
-    synonyms: ['apart', 'separated', 'not touching', 'with a gap', '離れている', '離れてる', '離れて', '離す', '非接触', '隙間がある'] },
+    synonyms: ['apart', 'separated', 'not touching', 'with a gap', '離れている', '離れてる', '離れて', '離す', '非接触', '隙間がある'],
+    gloss: { says: '離れている — どの面どうしも許容値より遠い', notSays: 'どちらの方向か・どれだけ離れているか (隙間の宣言は DEF-072)' },
+    example: { ja: 'ビンは作業台から離れている', term: '離れている' }, contrast: { ja: 'ビンは作業台に接している', term: '接している' } },
   { key: 'above', en: 'above', ja: '上方', cat: 'spatial',
-    synonyms: ['above', 'over', 'higher than', '上方', '上方にある', '上空'] },
+    synonyms: ['above', 'over', 'higher than', '上方', '上方にある', '上空'],
+    gloss: { says: '離れていて、重力で見て上方にある', notSays: '接しているか (接していれば above ではない)・真上かどうか' },
+    example: { ja: '照明は作業台の上方にある', term: '上方' }, contrast: { ja: '照明は作業台の下方にある', term: '下方' } },
   { key: 'below', en: 'below', ja: '下方', cat: 'spatial',
-    synonyms: ['below', 'under', 'beneath', 'lower than', '下方', '下方にある'] },
+    synonyms: ['below', 'under', 'beneath', 'lower than', '下方', '下方にある'],
+    gloss: { says: '離れていて、重力で見て下方にある', notSays: '接しているか (接していれば below ではない)・真下かどうか' },
+    example: { ja: '作業台は照明の下方にある', term: '下方' }, contrast: { ja: '作業台は照明の上方にある', term: '上方' } },
   // front / back / left / right are a declared VIEWER's (relative). Only the
   // words that are always the speaker's own are here: 手前 / 奥 (near / far from
   // whoever speaks). 前・後ろ・左手・in front of・behind・left of are refused —
   // "the robot's front" is the robot's own (intrinsic), see the note above.
   { key: 'front', en: 'nearer', ja: '手前', cat: 'spatial',
-    synonyms: ['front', 'nearer', 'closer', '手前', '手前側'] },
+    synonyms: ['front', 'nearer', 'closer', '手前', '手前側'],
+    gloss: { says: '宣言した見る人から見て手前 (相手より見る人に近い)', notSays: '相手自身の正面 (それは面の語 — 前・in front of は二択なので辞書に入れない)' },
+    example: { ja: '工具は箱の手前にある', term: '手前' }, contrast: { ja: '工具は箱の奥にある', term: '奥' } },
   { key: 'back', en: 'farther', ja: '奥', cat: 'spatial',
-    synonyms: ['back', 'farther', 'further away', '奥', '奥側', '向こう'] },
+    synonyms: ['back', 'farther', 'further away', '奥', '奥側', '向こう'],
+    gloss: { says: '宣言した見る人から見て奥 (相手より見る人から遠い)', notSays: '相手自身の背面 (それは面の語 — 後ろ・behind は二択)' },
+    example: { ja: '工具は箱の奥にある', term: '奥' }, contrast: { ja: '工具は箱の手前にある', term: '手前' } },
   { key: 'left', en: 'left', ja: '左', cat: 'spatial',
-    synonyms: ['left', 'to the left', '左', '左側'] },
+    synonyms: ['left', 'to the left', '左', '左側'],
+    gloss: { says: '宣言した見る人から見て左', notSays: '相手自身の左 (それは面の語 — 左手・left of は二択)' },
+    example: { ja: '工具は箱の左にある', term: '左' }, contrast: { ja: '工具は箱の右にある', term: '右' } },
   { key: 'right', en: 'right', ja: '右', cat: 'spatial',
-    synonyms: ['right', 'to the right', '右', '右側'] },
+    synonyms: ['right', 'to the right', '右', '右側'],
+    gloss: { says: '宣言した見る人から見て右', notSays: '相手自身の右 (それは面の語 — 右手・right of は二択)' },
+    example: { ja: '工具は箱の右にある', term: '右' }, contrast: { ja: '工具は箱の左にある', term: '左' } },
   { key: '+z', en: 'top face', ja: '上面', cat: 'spatial',
-    synonyms: ['+z', 'top', 'top face', 'top surface', '上面', '天面', '天'] },
+    synonyms: ['+z', 'top', 'top face', 'top surface', '上面', '天面', '天'],
+    gloss: { says: '相手自身の +z 面 — 接していればその面に、離れていればその面より先の側に', notSays: '世界の上下 (相手が傾けば変わる)・容器の中か外か' },
+    example: { ja: 'ビンは作業台の上面に接している', term: '上面' }, contrast: { ja: 'ビンは作業台の底面に接している', term: '底面' } },
   { key: '-z', en: 'bottom face', ja: '底面', cat: 'spatial',
-    synonyms: ['-z', 'bottom', 'bottom face', 'underside', '底面', '下面', '底'] },
-  { key: '+x', en: '+x face', ja: '+x 面', cat: 'spatial', synonyms: ['+x', '+x面', '+x 面'] },
-  { key: '-x', en: '-x face', ja: '-x 面', cat: 'spatial', synonyms: ['-x', '-x面', '-x 面'] },
-  { key: '+y', en: '+y face', ja: '+y 面', cat: 'spatial', synonyms: ['+y', '+y面', '+y 面'] },
-  { key: '-y', en: '-y face', ja: '-y 面', cat: 'spatial', synonyms: ['-y', '-y面', '-y 面'] },
+    synonyms: ['-z', 'bottom', 'bottom face', 'underside', '底面', '下面', '底'],
+    gloss: { says: '相手自身の -z 面 — 接していればその面に、離れていればその面より先の側に', notSays: '世界の上下 (相手が傾けば変わる)' },
+    example: { ja: '作業台はビンの底面に接している', term: '底面' }, contrast: { ja: '作業台はビンの上面に接している', term: '上面' } },
+  { key: '+x', en: '+x face', ja: '+x 面', cat: 'spatial', synonyms: ['+x', '+x面', '+x 面'],
+    gloss: { says: '相手自身の +x 面 — 接していればその面に、離れていればその面より先の側に', notSays: '世界の向き (相手を回せば回る)・相手の正面かどうか' },
+    example: { ja: 'トレイはロボットの +x 面に接している', term: '+x 面' }, contrast: { ja: 'トレイはロボットの -x 面に接している', term: '-x 面' } },
+  { key: '-x', en: '-x face', ja: '-x 面', cat: 'spatial', synonyms: ['-x', '-x面', '-x 面'],
+    gloss: { says: '相手自身の -x 面 — 接していればその面に、離れていればその面より先の側に', notSays: '世界の向き (相手を回せば回る)' },
+    example: { ja: 'トレイはロボットの -x 面に接している', term: '-x 面' }, contrast: { ja: 'トレイはロボットの +x 面に接している', term: '+x 面' } },
+  { key: '+y', en: '+y face', ja: '+y 面', cat: 'spatial', synonyms: ['+y', '+y面', '+y 面'],
+    gloss: { says: '相手自身の +y 面 — 接していればその面に、離れていればその面より先の側に', notSays: '世界の向き (相手を回せば回る)' },
+    example: { ja: 'トレイはロボットの +y 面に接している', term: '+y 面' }, contrast: { ja: 'トレイはロボットの -y 面に接している', term: '-y 面' } },
+  { key: '-y', en: '-y face', ja: '-y 面', cat: 'spatial', synonyms: ['-y', '-y面', '-y 面'],
+    gloss: { says: '相手自身の -y 面 — 接していればその面に、離れていればその面より先の側に', notSays: '世界の向き (相手を回せば回る)' },
+    example: { ja: 'トレイはロボットの -y 面に接している', term: '-y 面' }, contrast: { ja: 'トレイはロボットの +y 面に接している', term: '+y 面' } },
 ])
 
 /**
@@ -174,6 +202,57 @@ export const CATEGORY_SCOPE = Object.freeze({
   what:     'global',
   verb:     'global',
   spatial:  'scoped',
+})
+
+/**
+ * Categories whose every entry carries its CORE IMAGE and its EXAMPLES
+ * (当事者 2026-10-25 — 辞書には語・意味・例文が必ず在る):
+ *
+ *   gloss    { says, notSays } — the one fact the word says, and what it does
+ *            NOT say. The "not" line is what keeps a word from carrying a second
+ *            fact (原則 #33-1).
+ *   example  { ja, term } — a sentence and the surface term in it that folds
+ *            onto this entry.
+ *   contrast { ja, term } — the minimal pair: one word changed, a different
+ *            entry. A word is understood by what it is NOT next to it.
+ *
+ * Every example is executable: `src/context/SpatialExamples.test.js` checks the
+ * term folds onto the entry, the contrast onto another, and grounds both in a
+ * small layout read by the domain's own geometry (原則 #33-4).
+ * Not retroactive: the 5W1H categories and the operators have no gloss yet.
+ */
+export const GLOSSED_CATEGORIES = Object.freeze(['spatial'])
+
+/**
+ * COMBINATIONS — one way of saying that fixes TWO axis values at once
+ * (載っている = touching AND the +z face). Nothing is chosen for the speaker, but
+ * a quotient key holds one value, so a combination cannot be a synonym in
+ * QUOTIENT_TABLE; it lives here and folds onto an axis set (`combinationIn`).
+ * A CHOICE between readings (上 / 横 / on / 前) is not a combination — those stay
+ * out of both tables and the caller asks (docs/SPATIAL_RELATION_MODEL.md §3).
+ *
+ *   axes — axis name → a key of the same category in QUOTIENT_TABLE
+ *
+ * Start with the one sentence there is (当事者 2026-10-25): resting on.
+ *
+ * @type {ReadonlyArray<{key:string, en:string, ja:string, cat:string, axes:Record<string,string>,
+ *                       synonyms:string[], gloss:{says:string, notSays:string},
+ *                       example:{ja:string, term:string}, contrast:{ja:string, term:string}}>}
+ */
+export const COMBINATION_TABLE = Object.freeze([
+  { key: 'resting_on', en: 'resting on', ja: '載っている', cat: 'spatial',
+    axes: { contact: 'touching', toward: '+z' },
+    synonyms: ['載っている', '載ってる', '載せてある', 'resting on', 'sitting on', 'on top of'],
+    gloss: { says: '接していて、相手自身の +z 面の側にある (touching + +z)', notSays: '固定されているか (可動性は jointType)・容器の中か上か' },
+    example: { ja: 'ビンは作業台に載っている', term: '載っている' }, contrast: { ja: 'ビンは作業台の上方にある', term: '上方' } },
+])
+
+/** The axes a combination may fix, and which keys each accepts (spatial). */
+const COMBINATION_AXES = Object.freeze({
+  spatial: Object.freeze({
+    contact: Object.freeze(['touching', 'apart']),
+    toward:  Object.freeze(['+x', '-x', '+y', '-y', '+z', '-z', 'above', 'below']),
+  }),
 })
 
 /** Operator-key → comparison symbol, for compact rendering when wanted. */
@@ -206,6 +285,43 @@ for (const entry of QUOTIENT_TABLE) {
       }
       map.set(norm, entry.key)
     }
+  }
+}
+
+function _requireGloss(entry, table) {
+  if (!GLOSSED_CATEGORIES.includes(entry.cat)) return
+  const ok = (o, ...ks) => o && ks.every(k => typeof o[k] === 'string' && o[k] !== '')
+  if (!ok(entry.gloss, 'says', 'notSays')) throw new Error(`SynonymQuotient: ${table} "${entry.key}" has no gloss { says, notSays } — category "${entry.cat}" carries its core image`)
+  for (const k of ['example', 'contrast']) {
+    if (!ok(entry[k], 'ja', 'term')) throw new Error(`SynonymQuotient: ${table} "${entry.key}" has no ${k} { ja, term }`)
+    if (!entry[k].ja.includes(entry[k].term)) throw new Error(`SynonymQuotient: ${table} "${entry.key}" ${k}: "${entry[k].term}" is not in "${entry[k].ja}"`)
+  }
+}
+for (const entry of QUOTIENT_TABLE) _requireGloss(entry, 'QUOTIENT_TABLE')
+
+/** @type {Map<string, Map<string, object>>} */
+const _comboByCat = new Map()
+for (const combo of COMBINATION_TABLE) {
+  if (CATEGORY_SCOPE[combo.cat] !== 'scoped') throw new Error(`SynonymQuotient: combination "${combo.key}" is in category "${combo.cat}", which is not a declared scoped category`)
+  if (_entryByKey.has(combo.key)) throw new Error(`SynonymQuotient: combination key "${combo.key}" is also a word key`)
+  const allowed = COMBINATION_AXES[combo.cat]
+  const axisNames = Object.keys(combo.axes ?? {})
+  if (axisNames.length < 2) throw new Error(`SynonymQuotient: combination "${combo.key}" fixes ${axisNames.length} axis — one value is a word, not a combination`)
+  for (const [axis, value] of Object.entries(combo.axes)) {
+    if (!allowed?.[axis]?.includes(value)) throw new Error(`SynonymQuotient: combination "${combo.key}" axis ${axis}="${value}" is not a ${combo.cat} value of that axis`)
+  }
+  _requireGloss(combo, 'COMBINATION_TABLE')
+  if (!_comboByCat.has(combo.cat)) _comboByCat.set(combo.cat, new Map())
+  const words = _termToKeyByCat.get(combo.cat) ?? new Map()
+  const combos = _comboByCat.get(combo.cat)
+  const axes = Object.freeze({ ...combo.axes })
+  for (const term of [combo.key, combo.en, combo.ja, ...combo.synonyms]) {
+    const norm = _norm(term)
+    if (!norm) continue
+    if (words.has(norm)) throw new Error(`SynonymQuotient: "${term}" is both the word "${words.get(norm)}" and the combination "${combo.key}" — a term folds onto one thing per scope`)
+    const prior = combos.get(norm)
+    if (prior && prior.key !== combo.key) throw new Error(`SynonymQuotient: "${term}" is claimed by combinations "${prior.key}" and "${combo.key}"`)
+    combos.set(norm, { key: combo.key, axes })
   }
 }
 
@@ -245,6 +361,21 @@ export function canonicalKey(term) {
 export function canonicalKeyIn(term, cat) {
   if (!CATEGORY_SCOPE[cat]) throw new Error(`SynonymQuotient: category "${cat}" is not declared in CATEGORY_SCOPE`)
   return _termToKeyByCat.get(cat)?.get(_norm(term)) ?? null
+}
+
+/**
+ * The axis values a term fixes **as a combination** within one category
+ * (載っている → `{contact: 'touching', toward: '+z'}`), or `null` when no
+ * combination claims it. A word (`canonicalKeyIn`) and a combination never
+ * share a term. Throws on an undeclared category, as `canonicalKeyIn` does.
+ *
+ * @param {string} term
+ * @param {string} cat
+ * @returns {{key: string, axes: Readonly<Record<string, string>>}|null}
+ */
+export function combinationIn(term, cat) {
+  if (!CATEGORY_SCOPE[cat]) throw new Error(`SynonymQuotient: category "${cat}" is not declared in CATEGORY_SCOPE`)
+  return _comboByCat.get(cat)?.get(_norm(term)) ?? null
 }
 
 /**

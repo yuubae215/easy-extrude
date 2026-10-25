@@ -127,6 +127,14 @@ artifacts
             - "src/layout/ArrangementReport.test.js"
             - "src/context/ContextValidator.js"
 
+            solution DictionaryExamplesAreExecutable
+            uuid a79808df-a02a-44d2-9012-b0be34d18e39
+            summary "node --test (2026-10-25) — SpatialExamples.test.js: 空間の語 14 + 組 1 のどれもが意味・例文・対の例文を持ち (欠ければ辞書の読み込みが throw)、例文の語はその行に・対の語は別の行に落ち、行ごとの小さな配置で domain の sideStatus が例文を一致・対を不一致と読む (配置を 1 つすり替えると落ちることを確認)。SynonymQuotient.test.js: 載っている は combinationIn で touching + +z、語の表には落ちない / 上・横・on・前・置いてある はどちらの表にも落ちない。SpatialRelationModelDoc.test.js: 組の表と文書の組の表が両向きに一致"
+            artifacts
+            - "src/context/SpatialExamples.test.js"
+            - "src/context/SynonymQuotient.js"
+            - "src/SpatialRelationModelDoc.test.js"
+
             solution SpatialDictionaryTests
             uuid 2c7e91d4-5a83-4b6f-9e20-d4b1a8c3f675
             summary "node --test (2026-10-24) — SynonymQuotient.test.js: 全分類が引き方を宣言 / 空間の語は分類を問わない引き方に漏れない (above は従来どおり greater_than) / 奥→back・手前→front・くっついてる→touching・上面→+z / 上・下・横・載っているは null (話し手に問う) / 宣言の無い分類を引くと throw。SpatialRelationModelDoc.test.js: 辞書の spatial の鍵と domain の宣言できる語が両向きに一致。CanonicalForm / NlIntake / ProvenanceNarrative の既存テストは無改変で通る (署名は変わらない)"
