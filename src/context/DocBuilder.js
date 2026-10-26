@@ -10,6 +10,8 @@
  */
 import { CONTEXT_DSL_VERSION } from './ContextDslSchema.js'
 import { LAYOUT_DSL_VERSION } from '../layout/LayoutDslSchema.js'
+import { unclaimedKey, unclaimedRef } from '../layout/LegacyRelations.js'
+import { sideOfCell } from '../domain/relationCells.js'
 import { constraintRef } from './ContextValidator.js'
 import { WHERE_KEYS, RELATION_KEYS } from '../domain/graspFeature.js'
 import { declaresGraspRelation } from '../domain/graspRelation.js'
@@ -598,6 +600,45 @@ export function claimArrangement(doc, { by, subject, side }) {
   const clone = _clone(doc)
   clone.arrangements = [...existing.map(a => _clone(a)), { ref, by, subject, sides: [_clone(side)] }]
   return clone
+}
+
+/**
+ * Claim an unclaimed relation in someone's name (ADR-168 S2-2,
+ * input-immutable): the relation a retired word said (`above` / `adjacent`)
+ * becomes an Arrangement whose one side says exactly its cell, and leaves
+ * `specification.layout.unclaimedRelations`. A trace that named the unclaimed
+ * relation now names the claim — it still traces to where it came from.
+ *
+ * Throws when no such unclaimed relation exists, or when the claimant already
+ * claims the pair (`claimArrangement` — one claim per person per pair).
+ * The relation's `properties` (e.g. an old `note`) do not travel: an
+ * Arrangement has no field for them.
+ *
+ * @param {object} doc
+ * @param {{by: string, key: string}} claim  `key` = `unclaimedKey` of the relation
+ * @returns {object} new doc
+ */
+export function claimUnclaimed(doc, { by, key }) {
+  const layout = doc.specification?.layout
+  const list = layout?.unclaimedRelations ?? []
+  const i = list.findIndex(u => unclaimedKey(u) === key)
+  if (i === -1) throw new Error(`No unclaimed relation "${key}" in the document`)
+  const u = list[i]
+  const side = { of: u.of, ...sideOfCell(u.cell) }
+  const claimed = claimArrangement(doc, { by, subject: u.subject, side })
+  const ref = claimed.arrangements[claimed.arrangements.length - 1].ref
+  const rest = list.filter((_, j) => j !== i)
+  const nextLayout = { ...claimed.specification.layout }
+  if (rest.length > 0) nextLayout.unclaimedRelations = rest
+  else delete nextLayout.unclaimedRelations
+  const named = unclaimedRef(u)
+  // Another unclaimed relation of the same pair keeps the trace.
+  const stillNamed = rest.some(r => unclaimedRef(r) === named)
+  const specification = { ...claimed.specification, layout: nextLayout }
+  if (claimed.specification.trace !== undefined && !stillNamed) {
+    specification.trace = claimed.specification.trace.map(t => t?.to === named ? { ...t, to: ref } : t)
+  }
+  return { ...claimed, specification }
 }
 
 /** Replace the array element sharing `entry.ref`, or append if none matches. */

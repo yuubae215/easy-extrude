@@ -1,11 +1,11 @@
 # 168. 2 つの物の関係は 1 語ではなく軸の組で言う — 向き・接触・可動性、主張は 3 つの欄に
 
-- Status: Accepted (2026-10-22 — 当事者が「ここまで ok です。進んでください」で採択。**段階実装: S1 実装済み** (型・スキーマ context/0.7・state・status・主張どうしの衝突・R15・`frameRole` の往復 — 下の「実装メモ (S1)」)。2026-10-24 に**辞書を整備** (同義語辞書に分類 `spatial` — 下の「実装メモ (辞書)」)。同日 **S1b 実装** (語が指す先を画面で確かめる — 下の「実装メモ (S1b)」)。2026-10-25 に **D1 を改訂** (離れていても面の語で側を言える) し、辞書の二択を外した (下の「実装メモ (内在の側と二択)」)。同日、組の表 (載っている) と、語ごとの意味・例文を足し (「実装メモ (組の表と例文)」)、接触 × 向きのマスの表を先に置いて辞書をマスへの指し方に作り替えた (「実装メモ (マスの表)」)。同日 **S2-1 実装** (話している人と推論の置き換え — 「実装メモ (S2-1)」)。S2-2 (旧語の退役と移行) と S3 は未着手。S2・S3 は未着手で、それぞれの満期は論証木と `docs/DEFERRAL_LEDGER.md` DEF-071・072 が持つ) — 起票時: Proposed (2026-10-21 — 俯瞰で D1〜D4 の向きに合意、同日 O1〜O3 を当事者が決定し D5 と概念モデル `docs/SPATIAL_RELATION_MODEL.md` を足した)
+- Status: Accepted (2026-10-22 — 当事者が「ここまで ok です。進んでください」で採択。**段階実装: S1 実装済み** (型・スキーマ context/0.7・state・status・主張どうしの衝突・R15・`frameRole` の往復 — 下の「実装メモ (S1)」)。2026-10-24 に**辞書を整備** (同義語辞書に分類 `spatial` — 下の「実装メモ (辞書)」)。同日 **S1b 実装** (語が指す先を画面で確かめる — 下の「実装メモ (S1b)」)。2026-10-25 に **D1 を改訂** (離れていても面の語で側を言える) し、辞書の二択を外した (下の「実装メモ (内在の側と二択)」)。同日、組の表 (載っている) と、語ごとの意味・例文を足し (「実装メモ (組の表と例文)」)、接触 × 向きのマスの表を先に置いて辞書をマスへの指し方に作り替えた (「実装メモ (マスの表)」)。同日 **S2-1 実装** (話している人と推論の置き換え — 「実装メモ (S2-1)」)。2026-10-26 **S2-2 実装** (旧語の退役と移行 — 「実装メモ (S2-2)」。DEF-071 決着)。S3 は未着手で、満期は論証木が持つ) — 起票時: Proposed (2026-10-21 — 俯瞰で D1〜D4 の向きに合意、同日 O1〜O3 を当事者が決定し D5 と概念モデル `docs/SPATIAL_RELATION_MODEL.md` を足した)
 - Date: 2026-10-21
 - Deciders: yuubae215 (要求: 「above が載っている、なのは語彙のイメージと合わない — 離れて上方にあるイメージ」/「上下左右どっちにあるのか、くっついてるのか離れてるのか、動くのか固定なのかを表す語彙はほしくない？」/「2 つの間にワークがあるのか、挟んでいるのか」/ 参照枠の規則 / state・宣言・status の読み / 「新たな型を作りましょう」/「宣言された見る人も要りそう — 前後左右はかなり主観的」/ O1「CoordinateFrame の役割で」・O2「Arrangement でいい」・O3「一人だったらそうなんだけど、複数人いたら一致しない場合もある」/「語彙が主観で変化するだろうから、データ構造か概念モデルで残しておいたほうが良い」), Claude (起票)
 - 状態台帳: `docs/STATE_LEDGER.md` の「2 つの物の関係」「見る人」行 (S1 の実装で §提案中の実体 から台帳本体へ移した)
 - 段: なし (IA 再設計の順序表には載せない — 画面の住所を動かさない。実装の段は本 ADR の §段 が持つ)
-- Retires: なし — 退役させる `above` / `adjacent` (2 つの semanticType と、それを提案する推論) は S2 で消える。Accepted (S1) の時点では消せないので、退役ではなく**残し**として `docs/DEFERRAL_LEDGER.md` DEF-071 に降ろした (ADR-125 — 起票時はここに 3 番地を書いていた)。S2 が入ったとき DEF-071 が発火し、消えていなければ語は割られずに足されただけ (第二の源) になる
+- Retires: なし — 退役させる `above` / `adjacent` (2 つの semanticType と、それを提案する推論) は S2 で消える。Accepted (S1) の時点では消せないので、退役ではなく**残し**として `docs/DEFERRAL_LEDGER.md` DEF-071 に降ろした (ADR-125 — 起票時はここに 3 番地を書いていた)。S2 が入ったとき DEF-071 が発火し、消えていなければ語は割られずに足されただけ (第二の源) になる。**2026-10-26 の S2-2 で消え、DEF-071 は決着した** (残っていないことは `src/layout/LegacyRelations.test.js` の census が問う)
 - Supersedes / Superseded by: ADR-038 の semanticType 語彙のうち `above` / `adjacent` の 2 語を置き換える (他の語は無改変)。ADR-041 のヒューリスティック A/B の出力先を新しい型へ移す。ADR-048 §2.2.1 の「CF ツリー = 運動学的全域木」の前提を §段 S3 で見直す (ADR-094 / ADR-167 の幾何は継承)
 
 ---
@@ -200,7 +200,7 @@ Arrangement {
 | **S1** ✓ | `Arrangement` と `viewer` 役割の欄をスキーマへ入れる (座席は Context 文書の最上位 `arrangements[]` — 主張した人 `actors` と同じ文書に住む。見る人は Layout の `frameRole`)、domain の型、state の純粋関数、status (配置との照合) と主張どうしの衝突 | D1〜D5 |
 | **S1b** ✓ | **語が指す先を画面で確かめる手段** (原則 #33-4 — 概念モデル §3 の右端の列): 接している面を光らせる / 見る人の位置と正面の矢印 / status の不一致と主張どうしの衝突を画面に出す。置き場所 `src/view/ArrangementStatusView.js` (絵の導出は `ArrangementStatusMath.js`、パネルは N パネルの Relations 節) | D4 の「不一致は画面で必ず見える」 |
 | **S2-1** ✓ | **話している人** (Relations 節で選ぶ actor — 0..1、既定値なし、保存しない) と、`SemanticInferencer` の A/B を新しい型の提案へ置き換える (閉形式の接触を話している人の名前で差し出し、点数・順位を持たない。受けると文書へ主張として書く) | 推論側の Retires (A/B と 0.15) を消す |
-| **S2-2** | 旧 `above` / `adjacent` の退役: 定義・手動メニュー・凡例・スキーマの enum。旧データは読み込み時に**持ち主のいない旧主張** (`unclaimedRelations: [{subject, of, cell, was}]` — `cell` はマスの ID、layout-1.1 / scene-1.4) へ無損失で移し、保存時に書き戻す。話している人を選ぶと旧主張を主張に移せる。テンプレ 4 本は作者の意図どおり `cell: touching:+z` で書く | 語の定義の Retires を消す (DEF-071) |
+| **S2-2** ✓ | 旧 `above` / `adjacent` の退役: 定義・手動メニュー・凡例・スキーマの enum。旧データは読み込み時に**持ち主のいない旧主張** (`unclaimedRelations: [{subject, of, cell, was}]` — `cell` はマスの ID、layout-1.1 / scene-1.4) へ無損失で移し、保存時に書き戻す。話している人を選ぶと旧主張を主張に移せる。テンプレ 4 本は作者の意図どおり `cell: touching:+z` で書く | 語の定義の Retires を消す (DEF-071) |
 | **S3** | LINK NETWORK の木を軸から導く: 親 = subject を**固定** (`jointType: fixed`) する相手、または subject を**下から支える**相手 (`touching` かつ 相手の上向きの面)。候補が 2 つ以上なら固定が支えに優先し、残りは弧 (無言で消さない)。循環は 1 本を弧に回す | 発端の苦情 |
 
 ## 実装メモ (S1 — 2026-10-22)
@@ -399,6 +399,49 @@ contains は後ろ / 差し出す側は domain の検査に通る / 暖色は 3 
 `src/context/DocBuilder.test.js` (主張の追加と 2 度目の拒否)、`e2e/arrangement-status.spec.js` (実アプリで:
 話し手なしでは差し出されない → ann を選ぶと tray の "resting on" が "Claim as ann" で出る → 受けると文書に
 touching:+z の一致として入る → undo で消える)。
+
+## 実装メモ (S2-2 — 2026-10-26)
+
+俯瞰 (Q1〜Q6) に当事者が合意してから実装した。決まったこと:
+
+- **旧語の読み (Q1)。** 読み替えの表 `LEGACY_CELL_BY_WORD` (`src/layout/LegacyRelations.js` — 1 か所) は
+  `above` → `_:above` (上にある、接触は言わない)、`adjacent` → `_:_` (どちらの軸も言わない)。旧語が言っていない
+  ことを読み込みが代わりに言わない — 絞るのは引き取る人。表に無い語は throw する (原則 #31)。
+- **テンプレ (Q2)。** ADR は「4 本」と書いていたが実際は `above` 4 本 + `adjacent` 1 本 (conveyor) の 5 本だった。
+  `above` の 4 本は `touching:+z`、conveyor は `apart:+x` (前の station の +x 面の先に離れて並ぶ)。どれも配置と
+  全軸一致することを `DocBuilder.test.js` が引き取ったうえで問う。
+- **形の改訂 (Q3)。** 旧主張は `{subject, of, cell, was, properties?}`。`properties` (旧リンクの `note` など) を
+  そのまま持つ欄を足した — 無いと保存した瞬間にメモが消え、「無損失で移す」が破れていた。ただし**引き取ると
+  `properties` は主張に載らない** (Arrangement に欄が無い)。引き取る前に節がメモを見せ、undo で戻る。
+- **関節つきの旧語 (Q4)。** `jointType` が null でない `above` / `adjacent` は移すとリンクに語が残らず、語を
+  発明することになるので、対を名指して読み込みごと拒む (`RetiredRelationError`)。作る経路は無かった。
+- **版 (Q5)。** `layout/1.1` (`schema/layout-1.1.schema.json`) と scene `1.4` (`schema/scene-1.4.schema.json`)。
+  layout のスキーマは `layout/1.0` も受ける (旧語を移したあとの 1.0 文書は 1.1 と同じことしか言わない)。
+  Context 文書は版を上げず、`hydratedLayout` に `unclaimedRelations` を加算した (context/0.7 内の加算 — 先例は
+  `frameRole`)。BFF の openapi は両版を受け、`core/` の `layout_version` 既定は 1.1 (request 側 — contractVersion は不変)。
+- **入口 (3 つ、どれも同じ純粋関数)。** layout = `compileLayout` (BFF 経由も含む)、文書 = `ContextService.loadContext`
+  (trace の `constraint:a→b` は `unclaimed:a→b` へ付いていく)、scene = `parseImportJson` / `SceneService.importFromJson` /
+  `loadScene`。保存 (`SceneSerializer` / `SceneExporter` / `LayoutDecompiler`) は新しい形で書き戻す。
+- **画面 (Q6)。** Relations 節の「Unclaimed」: 文書があれば文書の旧主張を出し、話している人がいれば「Claim as …」で
+  引き取れる (`ContextController.claimUnclaimed` → `DocBuilder.claimUnclaimed` — 1 つの doc-edit、undo 可)。
+  引き取れないときは理由を言う — actor がいない / 話している人がいない / 文書が無い (scene だけ — 旧主張は名前で
+  出し、保存で書き戻す)。同じ人が同じ対を主張済みならその行は理由を出してボタンを出さない。
+
+**実装で見つけたこと:** 凡例の色が JSX の 4 か所 (`LinkTypePicker` / `npanelShared` / `DragSuggestionTooltip` /
+`SemanticSuggestion`) にも写しで在った。DEF-071 は「凡例の 2 色」と書いていたが、`theme/semantic.js` だけを
+消していたら残っていた — census (`src/` 全体で旧語をリンクの語として書く行が 0) を置いたら出てきた。宣言の
+外の色は 696 → 686 / 190 → 187 に下がった。
+
+**残したもの:** 文書を開いたまま scene ファイルを Import すると、その scene が持つ旧主張は scene 側にだけ住み、
+Relations 節は文書の旧主張しか出さない (引き取るには文書の物である必要がある)。scene の保存で書き戻されるので
+失われはしない。actor が 0 人の文書で引き取る瞬間にその場で名乗れる入口は無い (理由を言うところまで)。
+
+証拠: `src/layout/LegacyRelations.test.js` (表・3 経路・関節の拒否・往復・examples・census)、
+`src/schema/LayoutSchema.test.js` / `SceneSchema.test.js` (enum から 2 語が消え、旧主張は閉じている・版の束縛)、
+`src/context/DocBuilder.test.js` (引き取り・trace・2 度目の拒否・5 本のテンプレ全部を引き取って全軸一致)、
+`src/service/ContextService.test.js` (旧文書の読み込みで移行後が保持される・関節つきは scene に触れる前に拒む)、
+`src/controller/ArrangementController.test.js` (旧主張の節: 0 は出さない・話し手待ち・主張済みの対・actor なし・
+文書なし)、`e2e/arrangement-status.spec.js` (実アプリで旧 layout を開き、ann として引き取り、undo で戻る)。
 
 ## Consequences — Evidence と tradeoff (§1.2 Evidence)
 

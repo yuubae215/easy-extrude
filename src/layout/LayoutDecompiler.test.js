@@ -45,7 +45,7 @@ test('normal form: strategy is manual and every entity has an explicit position-
   const scene = compileLayout(factoryLayout)
   const { dsl } = decompileLayout(scene)
   assert.equal(dsl.strategy, 'manual')
-  assert.equal(dsl.version, 'layout/1.0')
+  assert.equal(dsl.version, 'layout/1.1')
   for (const e of dsl.entities) {
     if (e.type === 'Solid' || e.type === 'AnnotatedPoint') {
       assert.ok(e.position, `${e.ref} should carry an explicit position`)
@@ -220,7 +220,14 @@ test('validator rejects a parentRef that names no entity, a self-parent, or a no
 test('constraints recover entity / origin / frame ref namespaces', () => {
   const scene = compileLayout(factoryLayout)
   const { dsl } = decompileLayout(scene)
-  assert.equal(dsl.constraints.length, 5)
+  assert.equal(dsl.constraints.length, 2)
+  // The three `above` relations the template once had are unclaimed relations
+  // now (ADR-168 S2-2), and come back as such.
+  assert.deepEqual(dsl.unclaimedRelations.map(u => [u.subject, u.of, u.cell]), [
+    ['base_plate', 'workbench', 'touching:+z'],
+    ['container_a', 'workbench', 'touching:+z'],
+    ['container_b', 'workbench', 'touching:+z'],
+  ])
 
   // entity→origin namespace
   const power = dsl.constraints.find(c => c.source === 'floor_outlet')

@@ -70,12 +70,6 @@ export class SpatialLink {
  *   mounts     — Source vertices expressed in target's local coordinate space
  *   aligned    — Source axis aligned with target axis (orientation reference)
  *   contains   — Region source spatially contains entity target
- *   adjacent   — Source and target share a boundary or are neighbours
- *   above      — Source is vertically above target (Z-axis)
- *                (`adjacent` / `above` each carry two facts — direction and
- *                contact. Split into the Arrangement axes by ADR-168; their
- *                retirement is 未実装 until S2-2 — DEF-071. Since S2-1 the
- *                inference no longer proposes them.)
  *   connects   — A route logically connects source to target.
  *                When link.properties.deadline (s) and link.properties.speed (m/s) are set,
  *                evaluates as a tact-time constraint: routeLength_mm / 1000 / speed > deadline → violated.
@@ -84,7 +78,7 @@ export class SpatialLink {
  *   bounded_by — 2D map object (AnnotatedLine/Region) defines a clearance boundary for a 3D Solid;
  *                link.properties.clearance (mm) is the minimum required distance
  *
- * @typedef {'fastened'|'mounts'|'aligned'|'contains'|'adjacent'|'above'|'connects'|'references'|'represents'|'bounded_by'} SemanticType
+ * @typedef {'fastened'|'mounts'|'aligned'|'contains'|'connects'|'references'|'represents'|'bounded_by'} SemanticType
  */
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -99,11 +93,14 @@ export const JOINT_TYPES = /** @type {const} */ ([
 
 /**
  * All valid semantic annotation types.
+ * `above` / `adjacent` were retired by ADR-168 S2-2 — each said two facts; what
+ * old data said with them is read into unclaimed relations
+ * (`layout/LegacyRelations.js`), never into a link.
  * @see ADR-038
  */
 export const SEMANTIC_TYPES = /** @type {const} */ ([
   'fastened', 'mounts', 'aligned',
-  'contains', 'adjacent', 'above', 'connects',
+  'contains', 'connects',
   'references', 'represents',
   'bounded_by',
 ])
@@ -119,7 +116,7 @@ export const GEOMETRIC_SEMANTIC_TYPES = /** @type {const} */ (['fastened', 'moun
  * semanticType values that describe topological / structural relationships.
  * No transform applied at runtime.
  */
-export const TOPOLOGICAL_SEMANTIC_TYPES = /** @type {const} */ (['contains', 'adjacent', 'above', 'connects', 'bounded_by'])
+export const TOPOLOGICAL_SEMANTIC_TYPES = /** @type {const} */ (['contains', 'connects', 'bounded_by'])
 
 /**
  * semanticType values that carry semantic meaning only.
@@ -131,6 +128,8 @@ export const ANNOTATION_SEMANTIC_TYPES = /** @type {const} */ (['references', 'r
 /**
  * Maps an old-format `linkType` string (scene v1.2 and earlier) to the new
  * two-layer [jointType, semanticType] representation (scene v1.3+).
+ * The retired `above` / `adjacent` never reach here: a scene is passed through
+ * `migrateSceneRelations` first (ADR-168 S2-2).
  *
  * @param {string} linkType  Old single-field link type value
  * @returns {[JointType|null, SemanticType]}
@@ -142,8 +141,6 @@ export function migrateLinkType(linkType) {
     mounts:     ['fixed',  'mounts'],
     aligned:    ['fixed',  'aligned'],
     contains:   [null,     'contains'],
-    adjacent:   [null,     'adjacent'],
-    above:      [null,     'above'],
     connects:   [null,     'connects'],
     references: [null,     'references'],
     represents: [null,     'represents'],

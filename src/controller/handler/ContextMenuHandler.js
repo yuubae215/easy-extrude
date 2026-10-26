@@ -91,12 +91,12 @@ export class ContextMenuHandler {
         }}]
       : []
 
-    // Topological / annotation links (jointType === null: adjacent, contains,
-    // above, connects, references, represents) carry no kinematic constraint,
+    // Topological / annotation links (jointType === null: contains, connects,
+    // references, represents, bounded_by) carry no kinematic constraint,
     // so they have no Unfasten path — but they ARE removable
     // (`detachSpatialLink` is universal). Before this, the only affordance was a
     // per-row delete buried in the N-panel's Spatial Links section, so users
-    // reported adjacent links as undeletable (#4 — a discoverability gap, not a
+    // reported such links as undeletable (#4 — a discoverability gap, not a
     // hard block). Surface one Disconnect item per topological link here, using
     // the same undoable detach path as the N-panel (createDeleteSpatialLinkCommand).
     const topoLinks = ctrl._service.getLinksOf(id).filter(l => l.jointType === null)

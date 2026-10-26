@@ -10,8 +10,6 @@ const SEMANTIC_META = {
   fastened:   { color: '#10B981', desc: 'Rigid attachment — no relative motion' },
   aligned:    { color: '#14B8A6', desc: 'Shared plane or axis' },
   contains:   { color: '#8B5CF6', desc: 'Spatial containment' },
-  adjacent:   { color: '#64748B', desc: 'Side-by-side, no overlap' },
-  above:      { color: '#94A3B8', desc: 'Elevated above target' },
   connects:   { color: '#06B6D4', desc: 'Path between two hubs' },
   references: { color: '#F59E0B', desc: 'Logical reference' },
   represents: { color: '#F43F5E', desc: 'Abstraction of physical object' },

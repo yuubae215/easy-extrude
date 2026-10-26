@@ -44,8 +44,6 @@ export const LINK_TYPE_COLORS = Object.freeze({
   aligned:    0x14B8A6,  // teal
   // Category B — Topological
   contains:   0x8B5CF6,  // violet
-  above:      0x6366F1,  // indigo
-  adjacent:   0x64748B,  // slate
   connects:   0x06B6D4,  // cyan
   // Category C — Semantic
   references: 0xF59E0B,  // amber

@@ -18,8 +18,8 @@ labels adr-139, adr-138, adr-137, adr-136, adr-115, adr-120, adr-018, principle-
     summary "実測: この repo の world 規約の唯一の正本は CLAUDE.md の 1 行 (『ROS world frame (+X forward, +Y left, +Z up). Right-handed.』) で、読む機械が 1 つも無い。schema/layout-1.0 の top-level は version/meta/strategy/strategyOptions/entities/constraints、schema/scene-1.3 は version/objects/links/transformGraph/operationGraph (required: version, objects) — どちらにも frame も unit も無い。SceneService._applyGeometryUpdate はサーバ (STEP 変換) 由来の生 positions を無変換・無宣言で BufferGeometry へ書き initCorners で AABB を作る。ADR-115 と同じ形 — 宣言は在るが読む機械が無い"
     artifacts
     - "CLAUDE.md"
-    - "schema/scene-1.3.schema.json"
-    - "schema/layout-1.0.schema.json"
+    - "schema/scene-1.4.schema.json"
+    - "schema/layout-1.1.schema.json"
     - "src/service/SceneService.js"
 
     context Principle21IsDeclaredAndNeverInstantiatedOnThisAxis

@@ -80,6 +80,8 @@ import { AnnotatedLineView }   from '../view/AnnotatedLineView.js'
 import { AnnotatedRegionView } from '../view/AnnotatedRegionView.js'
 import { AnnotatedPointView }  from '../view/AnnotatedPointView.js'
 import { SpatialLink, migrateLinkType } from '../domain/SpatialLink.js'
+import { migrateSceneRelations, isSameUnclaimed } from '../layout/LegacyRelations.js'
+import { SCENE_JSON_VERSION } from '../layout/LayoutDslSchema.js'
 import { SpatialLinkView } from '../view/SpatialLinkView.js'
 import { RoleService } from './RoleService.js'
 import { constraintSolver } from './ConstraintSolver.js'
@@ -465,13 +467,14 @@ export class SceneService extends EventEmitter {
     if (!this._bff) return false
     try {
       const remote = await this._bff.getScene(sceneId)
+      const { scene: data } = migrateSceneRelations(remote.data, SCENE_JSON_VERSION)   // ADR-168 S2-2
       this._clearScene()
-      const entities = this._deserializeEntities(remote.data, viewContext)
+      const entities = this._deserializeEntities(data, viewContext)
       for (const entity of entities) {
         this._model.addObject(entity)
         this.emit('objectAdded', entity)
       }
-      for (const dto of (remote.data.links ?? [])) {
+      for (const dto of (data.links ?? [])) {
         try {
           // Migrate old linkType field (v1.2) to jointType/semanticType (v1.3)
           const [jt, st] = dto.jointType !== undefined
@@ -485,6 +488,7 @@ export class SceneService extends EventEmitter {
           console.warn('[SceneService] loadScene: skipping link', dto.id, err)
         }
       }
+      this._adoptUnclaimed(data.unclaimedRelations, (id) => id)
       this._remoteId = sceneId
 
       // Rebuild Solid geometry in parallel via Wasm worker (ADR-027 Phase 2).
@@ -685,12 +689,16 @@ export class SceneService extends EventEmitter {
    *
    * Emits: 'objectAdded' for each successfully reconstructed entity.
    *
-   * @param {{ version: string, objects: object[] }} parsed  output of parseImportJson()
+   * @param {{ version: string, objects: object[] }} source  output of parseImportJson() or a compiled scene
    * @param {{ camera?: import('three').Camera, renderer?: import('three').WebGLRenderer, container?: HTMLElement }} viewContext
    * @param {{ clear?: boolean }} [options]
    * @returns {{ imported: number, skipped: number }}
    */
-  async importFromJson(parsed, viewContext = {}, { clear = true, preserve = null } = {}) {
+  async importFromJson(source, viewContext = {}, { clear = true, preserve = null } = {}) {
+    // A retired relation word (`above` / `adjacent`) never becomes a link: it
+    // moves into an unclaimed relation first (ADR-168 S2-2). Throws, before the
+    // scene is touched, on an old link that also has a joint.
+    const { scene: parsed } = migrateSceneRelations(source, SCENE_JSON_VERSION)
     // `preserve` narrows the clear to the previous projection (ADR-131). Ids are
     // still reused (the `clear` branch below), which is what keeps `_refToId`
     // valid across a regeneration — the preserved entities carry generated ids
@@ -763,6 +771,7 @@ export class SceneService extends EventEmitter {
         skipped++
       }
     }
+    this._adoptUnclaimed(parsed.unclaimedRelations, remapId)
 
     // One synchronous world-pose pass so _worldPoseCache is populated, then
     // reactivate geometric constraints for any imported fastened / mounts links.
@@ -1009,7 +1018,9 @@ export class SceneService extends EventEmitter {
       this._worldPoseCache.clear()
       this._mountLocalPositions.clear()
       this._fixedJointTransforms.clear()
+      const hadUnclaimed = this._model.unclaimedRelations.length > 0
       this._model = new SceneModel()
+      if (hadUnclaimed) this.emit('unclaimedRelationsChanged', this._model.unclaimedRelations)
       return
     }
 
@@ -1018,6 +1029,9 @@ export class SceneService extends EventEmitter {
     // model owns its bookkeeping; this method never touches the maps directly).
     // A link survives only when BOTH endpoints do: a link with one end gone is
     // not a weaker link, it is a broken one.
+    // An unclaimed relation (ADR-168 S2-2) survives on the same terms as a link.
+    this._model.setUnclaimedRelations(
+      this._model.unclaimedRelations.filter(u => preserve.has(u.subject) && preserve.has(u.of)))
     for (const [id, link] of [...this._model.links]) {
       if (preserve.has(link.sourceId) && preserve.has(link.targetId)) continue
       this._linkViews.get(id)?.dispose(this._threeScene)
@@ -1035,6 +1049,26 @@ export class SceneService extends EventEmitter {
       this.emit('objectRemoved', id, obj)
     }
   }
+
+  /**
+   * Add the unclaimed relations a loaded scene carries (ADR-168 S2-2), ids
+   * remapped like the links'. One that says the same as one already held is
+   * not doubled (`isSameUnclaimed`). Emits `unclaimedRelationsChanged`.
+   * @param {object[]|undefined} incoming
+   * @param {(id: string) => string} remapId
+   */
+  _adoptUnclaimed(incoming, remapId) {
+    const held = [...this._model.unclaimedRelations]
+    for (const u of incoming ?? []) {
+      const next = { ...u, subject: remapId(u.subject), of: remapId(u.of) }
+      if (!held.some(h => isSameUnclaimed(h, next))) held.push(next)
+    }
+    this._model.setUnclaimedRelations(held)
+    this.emit('unclaimedRelationsChanged', this._model.unclaimedRelations)
+  }
+
+  /** Relations nobody has claimed yet, by scene id (ADR-168 S2-2). */
+  getUnclaimedRelations() { return this._model.unclaimedRelations }
 
   // ── Aggregate root access ──────────────────────────────────────────────────
 

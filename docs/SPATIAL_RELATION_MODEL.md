@@ -8,7 +8,7 @@
 - **なぜそう決めたか**の正本は ADR-168 (ここには理由を書かない — §1.1)。
 - **状態と基数**の正本は `docs/STATE_LEDGER.md` (「2 つの物の関係」「見る人」行)。
 - **機械が読む正本**はスキーマ (`schema/context-0.7.schema.json` の `arrangement` /
-  `arrangementSide`、`schema/layout-1.0.schema.json` の `frameRole`) と domain の語彙
+  `arrangementSide`、`schema/layout-1.1.schema.json` の `frameRole`) と domain の語彙
   (`src/domain/arrangement.js` / `viewerFrame.js`)。この文書はそこから外れていないかを問われる側で、
   問い所は `src/SpatialRelationModelDoc.test.js` (§3 の語の表と domain の語彙を両向きに突き合わせる)。
 
@@ -46,7 +46,15 @@ classDiagram
   class SpatialLink {
     jointType : 可動性の正本
   }
+  class UnclaimedRelation {
+    <<持ち主のいない旧主張 — S2-2>>
+    subject : 物
+    of : 物
+    cell : マスの ID
+    was : above or adjacent
+  }
   Actor "1" --> "0..*" Arrangement : 主張する
+  UnclaimedRelation "0..*" ..> "0..1" Arrangement : 話している人が引き取る
   Arrangement "1" *-- "1..2" Side : 側
   Side "0..1" --> "1" RelativeToward : 離れているときの前後左右
   RelativeToward "0..*" --> "1" Viewer : 誰の位置から
@@ -59,6 +67,11 @@ classDiagram
   立ち位置から言えば同じ人を指すが、それは推論しない (ADR-168 D5)。
 - `Arrangement` は可動性を持たない。subject と側の相手の間の `SpatialLink.jointType` から引く
   (運動学リンク 0 本 = 宣言なし / 1 本 = その値 / 2 本以上 = 矛盾)。
+- `UnclaimedRelation` は誰の主張でもない — 旧ファイルの `above` / `adjacent` が言っていたことを、
+  読み込み時に無損失で移した先 (layout の `unclaimedRelations`、scene では id で)。`cell` は旧語が
+  言っていたことだけを言うマス (`above` → `_:above`、`adjacent` → `_:_` — 読み替え表は
+  `src/layout/LegacyRelations.js` の 1 か所)。話している人が引き取ると、そのマスをちょうど言う 1 側の
+  `Arrangement` になって消える (ADR-168 S2-2)。
 
 ## 2. 主張の 3 欄 + 主張どうし
 
@@ -173,7 +186,10 @@ flowchart LR
   になる (面の語は「触れた面から subject への向き」なので)。中か外かは別の事実で、まだ語が無い
   (既存の `contains` は領域の包含で、意味が違う)。
 
-## 4. 退役する語
+## 4. 退役した語 (2026-10-26 — S2-2)
+
+リンクの語としては書けない (スキーマの enum・定義・メニュー・凡例から消えた)。旧データの行き先は
+§1 の `UnclaimedRelation`。
 
 | 語 | 割った先 | 理由 (ADR-168 力学 1) |
 |---|---|---|
@@ -195,3 +211,4 @@ flowchart LR
 | 2026-10-25 | **組の表と例文**: `COMBINATION_TABLE` を足し、最初の行を「載っている」(touching + +z) にした。空間の語と組の行に意味 (言うこと / 言わないこと)・例文・対の例文を必須にし、例文を配置つきの検査として走らせる。英語の `on` は二択なので組に入れない (`on top of` は組) | ADR-168 実装メモ (組の表と例文 — 2026-10-25) |
 | 2026-10-25 | **マスの表を先に**: 接触 × 向きのマス (39、宣言できるもの 33) を domain から導出し、ID をマス自身の値にした (`RELATION_CELLS`)。組の表を言い回しの表 (`PHRASE_TABLE`) に作り替え、組 (マス 1 つ) と二択 (読み 2 つ以上) を指すマスの数で分けた。二択 8 行 (上・下・横・on・前・後ろ・左手・右手) を `null` から宣言へ。まだマスの無い読みは `notYet` (DEF-073) | ADR-168 実装メモ (マスの表 — 2026-10-25) |
 | 2026-10-25 | **S2-1**: 「話している人」を足し、推論の提案を旧 `above` / `adjacent` から、閉形式の接触を話している人の名前で差し出す主張へ置き換えた (点数なし)。語は増やしていない (話している人は画面の状態で、文書の語ではない) | ADR-168 実装メモ (S2-1) |
+| 2026-10-26 | **S2-2**: `above` / `adjacent` をリンクの語から退役させた。旧データは**持ち主のいない旧主張** (`unclaimedRelations` — `subject`・`of`・マスの ID・旧語・旧 `properties`) へ無損失で移り、話している人が引き取るとその人の `Arrangement` になる。旧語の読みは言っていないことを足さない (`above` → `_:above`、`adjacent` → `_:_`)。テンプレ 5 本は作者の意図どおり `touching:+z` 4 本・`apart:+x` 1 本 | ADR-168 実装メモ (S2-2) |

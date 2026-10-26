@@ -66,8 +66,6 @@ function _computeLinkOptions(source, target) {
     options.push({ jointType: null, semanticType: 'bounded_by', label: 'Bounded By (1000mm)',  properties: { clearance: 1000 } })
     options.push({ jointType: null, semanticType: 'bounded_by', label: 'Bounded By (no gap)',  properties: { clearance: 0 } })
   }
-  options.push({ jointType: null, semanticType: 'adjacent',   label: 'Adjacent' })
-  options.push({ jointType: null, semanticType: 'above',      label: 'Above' })
   // Anchor → CoordinateFrame: tolerance-constrained references presets (ADR-043 Phase 4).
   if (source instanceof AnnotatedPoint && source.placeType === 'Anchor' && isCF(target)) {
     options.push({ jointType: null, semanticType: 'references', label: 'Tolerance ±1 mm',  properties: { tolerance: 1 } })

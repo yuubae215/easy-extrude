@@ -142,7 +142,9 @@ test('動かした物の関係は、話している人の名前でだけ差し�
   await grabAndDrop()
   const claim = page.getByRole('button', { name: 'Claim as ann' })
   await expect(claim).toBeVisible()
-  await expect(page.getByText(/resting on/)).toBeVisible()
+  // The offer's own words (the Relations section also lists the template's
+  // unclaimed "resting on" relations since S2-2, so the text is scoped).
+  await expect(page.getByText(/Output tray resting on/)).toBeVisible()
   await claim.click()
 
   // The claim is in the document, read back by the Relations section as holding.
@@ -155,6 +157,61 @@ test('動かした物の関係は、話している人の名前でだけ差し�
   // Undo takes the claim back out — it went through the one doc-edit command.
   await page.keyboard.press('Control+z')
   await expect.poll(async () => (await snap(page)).model.rows.some(r => r.by === 'ann' && r.subject === 'output_tray')).toBe(false)
+
+  expect(errors).toEqual([])
+})
+
+test('旧 above / adjacent の文書を開くと持ち主のいない旧主張として並び、話している人の名前で引き取れる (ADR-168 S2-2)', async ({ page }) => {
+  const errors = await boot(page)
+  // The pick & place template as it was saved before S2-2: layout/1.0, its three
+  // resting relations still said with the retired link word `above`, traced.
+  const doc = await page.evaluate(async () => {
+    const { useUIStore } = await import('/easy-extrude/src/store/uiStore.js')
+    window.__ui = useUIStore
+    const { docFromLayout } = await import('/easy-extrude/src/context/DocBuilder.js')
+    const layout = JSON.parse(JSON.stringify((await import('/easy-extrude/examples/layout_pick_place_cell.json')).default))
+    layout.version = 'layout/1.0'
+    for (const u of layout.unclaimedRelations) {
+      layout.constraints.push({ source: u.subject, target: u.of, jointType: null, semanticType: 'above', properties: u.properties })
+    }
+    delete layout.unclaimedRelations
+    const d = docFromLayout(layout, 'Old relations e2e')
+    d.actors = [{ ref: 'ann' }]
+    return d
+  })
+  const chooser = page.waitForEvent('filechooser')
+  await page.evaluate(() => window.__ui.getState().callbacks.onImportCtxJson())
+  await (await chooser).setFiles({ name: 'old.ctx.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(doc)) })
+  await expect.poll(() => page.evaluate(() => window.__easyExtrude.arrangements()?.model?.unclaimed?.rows?.length)).toBe(3)
+  if (!(await page.evaluate(() => window.__ui.getState().nPanelVisible))) await page.keyboard.press('n')
+
+  // Read without loss and without saying more than the old word did.
+  let u = (await snap(page)).model.unclaimed
+  expect(u.rows.map(r => [r.subject, r.of, r.reading, r.was])).toEqual([
+    ['robot_pedestal', 'worktable', 'contact not said, above', 'above'],
+    ['part_bin', 'worktable', 'contact not said, above', 'above'],
+    ['output_tray', 'worktable', 'contact not said, above', 'above'],
+  ])
+  expect(u.rows[1].note).toBe('Supply bin placed on the top')
+  await expect(page.getByTestId('relation-unclaimed')).toBeVisible()
+  await expect(page.getByText('Choose who is speaking to claim these in their name.')).toBeVisible()
+  await expect(page.getByTestId('relation-unclaimed-claim')).toHaveCount(0)
+
+  // Ann speaks: each one can be claimed in her name.
+  await page.getByTestId('relation-speaker').selectOption('ann')
+  await expect(page.getByTestId('relation-unclaimed-claim')).toHaveCount(3)
+  await page.getByRole('button', { name: 'Claim part_bin → worktable as ann' }).click()
+
+  await expect.poll(async () => (await snap(page)).model.unclaimed?.rows.length).toBe(2)
+  const row = (await snap(page)).model.rows.find(r => r.by === 'ann' && r.subject === 'part_bin')
+  expect(row.sides[0].of).toBe('worktable')
+  expect(row.sides[0].toward.declared).toBe('above')
+  expect(row.sides[0].contact.declared).toBe(null)
+
+  // One undo puts the unclaimed relation back and takes the claim out.
+  await page.keyboard.press('Control+z')
+  await expect.poll(async () => (await snap(page)).model.unclaimed?.rows.length).toBe(3)
+  expect((await snap(page)).model.rows.some(r => r.by === 'ann' && r.subject === 'part_bin')).toBe(false)
 
   expect(errors).toEqual([])
 })

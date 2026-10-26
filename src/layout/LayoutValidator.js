@@ -7,7 +7,7 @@
  * @returns {{ valid: boolean, errors: string[] }}
  */
 import {
-  LAYOUT_DSL_VERSION,
+  SUPPORTED_LAYOUT_VERSIONS,
   VALID_STRATEGIES,
   VALID_AXES,
   VALID_ENTITY_TYPES,
@@ -16,6 +16,7 @@ import {
 } from './LayoutDslSchema.js'
 import { hollowBodyGap, trayNormalFormGap } from '../domain/hollowBody.js'
 import { viewerFrameGap } from '../domain/viewerFrame.js'
+import { isRetiredRelationWord, unclaimedIssues } from './LegacyRelations.js'
 
 export function validateLayoutDsl(dsl) {
   const errors = []
@@ -24,8 +25,8 @@ export function validateLayoutDsl(dsl) {
     return { valid: false, errors: ['DSL must be a non-null object'] }
   }
 
-  if (dsl.version !== LAYOUT_DSL_VERSION) {
-    errors.push(`version must be "${LAYOUT_DSL_VERSION}", got "${dsl.version}"`)
+  if (!SUPPORTED_LAYOUT_VERSIONS.includes(dsl.version)) {
+    errors.push(`version must be one of ${SUPPORTED_LAYOUT_VERSIONS.map(v => `"${v}"`).join(', ')}, got "${dsl.version}"`)
   }
 
   if (!Array.isArray(dsl.entities)) {
@@ -170,8 +171,27 @@ export function validateLayoutDsl(dsl) {
     if (c.jointType !== null && c.jointType !== undefined && !VALID_JOINT_TYPES.includes(c.jointType)) {
       errors.push(`constraints[${i}].jointType "${c.jointType}" is not valid. Use one of: ${VALID_JOINT_TYPES.join(', ')} or null`)
     }
-    if (!c.semanticType || !VALID_SEMANTIC_TYPES.includes(c.semanticType)) {
+    if (isRetiredRelationWord(c.semanticType)) {
+      errors.push(`constraints[${i}].semanticType "${c.semanticType}" is retired (ADR-168) — it is read into unclaimedRelations on load; claim it as an arrangement`)
+    } else if (!c.semanticType || !VALID_SEMANTIC_TYPES.includes(c.semanticType)) {
       errors.push(`constraints[${i}].semanticType "${c.semanticType}" is not valid. Use one of: ${VALID_SEMANTIC_TYPES.join(', ')}`)
+    }
+  }
+
+  // Unclaimed relations (ADR-168 S2-2): what a retired word said, kept until
+  // someone claims it. Both ends name things of this layout.
+  if (dsl.unclaimedRelations !== undefined && !Array.isArray(dsl.unclaimedRelations)) {
+    errors.push('unclaimedRelations must be an array')
+  }
+  for (const [i, u] of (Array.isArray(dsl.unclaimedRelations) ? dsl.unclaimedRelations : []).entries()) {
+    for (const issue of unclaimedIssues(u)) errors.push(`unclaimedRelations[${i}]: ${issue}`)
+    if (u && typeof u === 'object') {
+      if (typeof u.subject === 'string' && !allRefs.has(u.subject)) {
+        errors.push(`unclaimedRelations[${i}].subject "${u.subject}" does not match any entity ref, frame ref, or "<ref>_origin"`)
+      }
+      if (typeof u.of === 'string' && !allRefs.has(u.of)) {
+        errors.push(`unclaimedRelations[${i}].of "${u.of}" does not match any entity ref, frame ref, or "<ref>_origin"`)
+      }
     }
   }
 

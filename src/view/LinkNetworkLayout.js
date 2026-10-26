@@ -97,7 +97,7 @@ export const MAX_ANCESTOR_HOPS = 16
 
 /** semanticType values that carry a directional arrowhead. */
 export const DIRECTED_TYPES = new Set([
-  'mounts', 'fastened', 'aligned', 'contains', 'above', 'references', 'represents',
+  'mounts', 'fastened', 'aligned', 'contains', 'references', 'represents',
 ])
 
 /** One column per leaf — the unit the tree's width is denominated in. */

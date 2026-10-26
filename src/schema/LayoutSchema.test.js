@@ -1,7 +1,7 @@
 /**
  * Layout DSL schema conformance + drift binding (ADR-064 Phase 2).
  *
- * The schema (schema/layout-1.0.schema.json) is the SHAPE contract for the
+ * The schema (schema/layout-1.1.schema.json) is the SHAPE contract for the
  * Layout DSL — a closed, versioned JSON Schema artifact given the same
  * treatment grasp-contract received (PHILOSOPHY #29). This suite proves:
  *
@@ -21,8 +21,10 @@ import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import Ajv2020 from 'ajv/dist/2020.js'
 
+import { RETIRED_RELATION_WORDS } from '../layout/LegacyRelations.js'
 import {
   LAYOUT_DSL_VERSION,
+  SUPPORTED_LAYOUT_VERSIONS,
   VALID_STRATEGIES,
   VALID_AXES,
   VALID_ENTITY_TYPES,
@@ -38,13 +40,13 @@ const here = dirname(fileURLToPath(import.meta.url))
 const root = join(here, '..', '..')
 const readJson = (p) => JSON.parse(readFileSync(join(root, p), 'utf8'))
 
-const schema = readJson('schema/layout-1.0.schema.json')
+const schema = readJson('schema/layout-1.1.schema.json')
 const ajv = new Ajv2020({ allErrors: true, strict: false })
 const validate = ajv.compile(schema)
 
 // ── 1. Conformance: bundled examples pass ────────────────────────────────────
 
-test('factory_layout.json conforms to layout-1.0 schema', () => {
+test('factory_layout.json conforms to layout-1.1 schema', () => {
   const valid = validate(readJson('examples/factory_layout.json'))
   assert.equal(valid, true, JSON.stringify(validate.errors, null, 2))
 })
@@ -89,16 +91,54 @@ test('a null jointType (topological link) is accepted', () => {
   assert.equal(validate({
     version: 'layout/1.0',
     entities: [{ ref: 'a', type: 'Solid', name: 'A' }, { ref: 'b', type: 'Solid', name: 'B' }],
-    constraints: [{ source: 'a', target: 'b', jointType: null, semanticType: 'adjacent' }],
+    constraints: [{ source: 'a', target: 'b', jointType: null, semanticType: 'connects' }],
   }), true, JSON.stringify(validate.errors))
+})
+
+// ── ADR-168 S2-2: the retired relation words and where they went ─────────────
+
+test('a retired relation word (above / adjacent) is not a semanticType', () => {
+  for (const word of RETIRED_RELATION_WORDS) {
+    assert.equal(validate({
+      version: 'layout/1.1',
+      entities: [{ ref: 'a', type: 'Solid', name: 'A' }, { ref: 'b', type: 'Solid', name: 'B' }],
+      constraints: [{ source: 'a', target: 'b', jointType: null, semanticType: word }],
+    }), false, word)
+  }
+})
+
+test('every layout example that had a retired word conforms, with its unclaimed relations', () => {
+  for (const f of ['factory_layout', 'layout_pick_place_cell', 'layout_palletizing', 'layout_conveyor_line']) {
+    const dsl = readJson(`examples/${f}.json`)
+    assert.ok(dsl.unclaimedRelations.length > 0, f)
+    assert.equal(validate(dsl), true, `${f}: ${JSON.stringify(validate.errors, null, 2)}`)
+  }
+})
+
+test('an unclaimed relation is closed: a smuggled field or an unknown old word is rejected', () => {
+  const doc = (u) => ({
+    version: 'layout/1.1',
+    entities: [{ ref: 'a', type: 'Solid', name: 'A' }, { ref: 'b', type: 'Solid', name: 'B' }],
+    unclaimedRelations: [u],
+  })
+  const ok = { subject: 'a', of: 'b', cell: '_:above', was: 'above', properties: { note: 'kept' } }
+  assert.equal(validate(doc(ok)), true, JSON.stringify(validate.errors))
+  assert.equal(validate(doc({ ...ok, by: 'ann' })), false, 'a claimant is an Arrangement, not an unclaimed relation')
+  assert.equal(validate(doc({ ...ok, was: 'beside' })), false)
+  assert.equal(validate(doc({ ...ok, cell: 'touching:front' })), false, 'a relative cell needs a viewer')
 })
 
 // ── 3. Drift binding: schema enums === LayoutDslSchema.js constants ──────────
 // If a constant gains a value the schema does not, CI fails here — the two
 // definitions cannot diverge unnoticed (§1.1).
 
-test('schema version const is pinned to LAYOUT_DSL_VERSION', () => {
-  assert.equal(schema.properties.version.const, LAYOUT_DSL_VERSION)
+test('schema version enum is pinned to SUPPORTED_LAYOUT_VERSIONS, and writers write the last', () => {
+  assert.deepEqual(schema.properties.version.enum, [...SUPPORTED_LAYOUT_VERSIONS])
+  assert.equal(SUPPORTED_LAYOUT_VERSIONS.at(-1), LAYOUT_DSL_VERSION)
+})
+
+test('schema unclaimed `was` enum matches RETIRED_RELATION_WORDS', () => {
+  assert.deepEqual(schema.$defs.unclaimedRelation.properties.was.enum, [...RETIRED_RELATION_WORDS])
 })
 
 test('schema strategy enum matches VALID_STRATEGIES', () => {

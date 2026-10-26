@@ -13,7 +13,7 @@ import {
 import { resolveGraspTargets } from './graspTargets.js'
 import { wireTargetFor } from './graspWire.js'
 
-const layout = JSON.parse(readFileSync(new URL('../../schema/layout-1.0.schema.json', import.meta.url), 'utf8'))
+const layout = JSON.parse(readFileSync(new URL('../../schema/layout-1.1.schema.json', import.meta.url), 'utf8'))
 const request = JSON.parse(readFileSync(
   new URL('../../packages/grasp-contract/schema/grasp-search-request.schema.json', import.meta.url), 'utf8'))
 

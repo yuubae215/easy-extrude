@@ -21,6 +21,7 @@ export function EntityRelations() {
   const model = useUIStore(s => s.context.arrangements)
   const select = useUIStore(s => s.callbacks.onSelectRelationEntity)
   const setSpeaker = useUIStore(s => s.callbacks.onSetRelationSpeaker)
+  const claimUnclaimed = useUIStore(s => s.callbacks.onClaimUnclaimed)
   const headline = panelHeadline(model)
   const listed = model.kind === PANEL_KIND.LISTED
 
@@ -62,6 +63,8 @@ export function EntityRelations() {
         </div>
       ))}
 
+      {model.unclaimed && <UnclaimedList unclaimed={model.unclaimed} speaker={model.speaker?.current ?? null} onClaim={claimUnclaimed} />}
+
       {model.conflicts.map((c, i) => (
         <div key={`c${i}`} style={{ marginTop: '6px', fontSize: '10px', lineHeight: '1.4', color: COLOR[CONFLICT_TONE] }}>
           Conflict on {c.axis} of {c.subject} → {c.of}: {c.claims.map(k => `${k.by} says ${k.value}`).join(' / ')}
@@ -93,6 +96,39 @@ function SpeakerPicker({ speaker, onChange }) {
         </select>
       </label>
       {speaker.note && <div style={{ color: COLOR.textSecondary, marginTop: '2px' }}>{speaker.note}</div>}
+    </div>
+  )
+}
+
+/**
+ * Relations nobody has claimed yet (ADR-168 S2-2) — what a retired word
+ * (`above` / `adjacent`) said in a loaded file. Each row says the reading (the
+ * cell) beside the old word; "Claim as …" makes it the speaker's Arrangement.
+ * When nothing can be claimed, the note says why (原則 #11).
+ */
+function UnclaimedList({ unclaimed, speaker, onClaim }) {
+  return (
+    <div data-testid="relation-unclaimed" style={{ marginTop: '8px', fontSize: '10px', lineHeight: '1.4' }}>
+      <div style={{ color: COLOR.textPrimary, fontWeight: 'bold' }}>Unclaimed ({unclaimed.rows.length})</div>
+      {unclaimed.note && <div style={{ color: COLOR.textSecondary, marginTop: '2px' }}>{unclaimed.note}</div>}
+      {unclaimed.rows.map((row, i) => (
+        <div key={`${row.key}#${i}`} style={{ marginTop: '4px', paddingLeft: '8px', borderLeft: `1px solid ${COLOR.border}` }}>
+          <div style={{ color: COLOR.textPrimary }}>{row.subject} → {row.of}: {row.reading}</div>
+          <div style={{ color: COLOR.textSecondary }}>was "{row.was}"{row.note ? ` — ${row.note}` : ''}</div>
+          {unclaimed.canClaim && (row.blocked
+            ? <div style={{ color: COLOR.textSecondary }}>{row.blocked}</div>
+            : (
+              <button
+                data-testid="relation-unclaimed-claim"
+                aria-label={`Claim ${row.subject} → ${row.of} as ${speaker}`}
+                onClick={() => onClaim?.(row.key)}
+                style={{ marginTop: '2px', fontSize: '10px', fontFamily: 'inherit', background: COLOR.surface, color: COLOR.textPrimary, border: `1px solid ${COLOR.border}`, cursor: 'pointer' }}
+              >
+                Claim as {speaker}
+              </button>
+            ))}
+        </div>
+      ))}
     </div>
   )
 }

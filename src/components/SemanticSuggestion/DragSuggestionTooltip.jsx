@@ -2,8 +2,6 @@ import { useUIStore } from '../../store/uiStore.js'
 import { isNarrowViewport } from '../../view/Viewport.js'
 
 const COLOR_MAP = {
-  above:    '#6366F1',
-  adjacent: '#64748B',
   contains: '#8B5CF6',
 }
 const SEMANTIC_COLOR = {

@@ -52,8 +52,6 @@ const EDGE_STYLE = {
   represents: { color: '#e74c3c', dash: 'none', width: 1.5, directed: true  },
   connects:   { color: '#00bcd4', dash: 'none', width: 1.5, directed: false },
   contains:   { color: '#9c27b0', dash: 'none', width: 1.5, directed: true  },
-  adjacent:   { color: '#607d8b', dash: 'none', width: 1.5, directed: false },
-  above:      { color: '#6366F1', dash: 'none', width: 1.5, directed: true  },
   // Spatial semanticTypes — geometric binding (ADR-038)
   mounts:     { color: '#ff5722', dash: 'none', width: 2.0, directed: true  },
   fastened:   { color: '#ff9800', dash: 'none', width: 2.0, directed: false },

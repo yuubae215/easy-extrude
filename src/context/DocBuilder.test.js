@@ -551,3 +551,84 @@ describe('claimArrangement (ADR-168 S2-1)', () => {
   assert.doesNotThrow(() => claimArrangement(doc, { by: 'ben', subject: 'part_bin', side: { of: 'worktable' } }))
 })
 })
+
+describe('claimUnclaimed (ADR-168 S2-2)', () => {
+  const layoutWith = (unclaimed) => ({
+    version: 'layout/1.1', strategy: 'manual',
+    entities: [
+      { ref: 'table', type: 'Solid', name: 'table', dimensions: { x: 100, y: 100, z: 100 }, position: { x: 0, y: 0, z: 50 } },
+      { ref: 'bin', type: 'Solid', name: 'bin', dimensions: { x: 100, y: 100, z: 100 }, position: { x: 0, y: 0, z: 150 } },
+    ],
+    unclaimedRelations: unclaimed,
+  })
+
+  it('makes the unclaimed relation the claimant\'s Arrangement saying exactly its cell, and the trace follows', async () => {
+    const { claimUnclaimed } = await import('./DocBuilder.js')
+    const doc = {
+      version: 'context/0.7', actors: [{ ref: 'ann' }],
+      specification: {
+        layout: layoutWith([
+          { subject: 'bin', of: 'table', cell: 'touching:+z', was: 'above', properties: { note: 'on top' } },
+          { subject: 'table', of: 'bin', cell: '_:_', was: 'adjacent' },
+        ]),
+        trace: [{ from: 'g', to: 'unclaimed:bin→table', kind: 'derives' }],
+      },
+    }
+    const out = claimUnclaimed(doc, { by: 'ann', key: 'bin|table|touching:+z' })
+    assert.equal(doc.specification.layout.unclaimedRelations.length, 2, 'input untouched')
+    assert.deepEqual(out.arrangements, [{ ref: 'bin_table', by: 'ann', subject: 'bin', sides: [{ of: 'table', contact: 'touching', toward: '+z' }] }])
+    assert.deepEqual(out.specification.layout.unclaimedRelations.map(u => u.was), ['adjacent'])
+    assert.deepEqual(out.specification.trace, [{ from: 'g', to: 'bin_table', kind: 'derives' }])
+  })
+
+  it('a cell that says nothing becomes a side that says nothing; the last one removes the list', async () => {
+    const { claimUnclaimed } = await import('./DocBuilder.js')
+    const doc = { actors: [{ ref: 'ann' }], specification: { layout: layoutWith([{ subject: 'table', of: 'bin', cell: '_:_', was: 'adjacent' }]) } }
+    const out = claimUnclaimed(doc, { by: 'ann', key: 'table|bin|_:_' })
+    assert.deepEqual(out.arrangements[0].sides, [{ of: 'bin' }])
+    assert.equal('unclaimedRelations' in out.specification.layout, false)
+  })
+
+  it('refuses an unknown key and a pair the person already claims (in either order)', async () => {
+    const { claimUnclaimed } = await import('./DocBuilder.js')
+    const doc = {
+      actors: [{ ref: 'ann' }],
+      arrangements: [{ ref: 'r', by: 'ann', subject: 'table', sides: [{ of: 'bin' }] }],
+      specification: { layout: layoutWith([{ subject: 'bin', of: 'table', cell: '_:above', was: 'above' }]) },
+    }
+    assert.throws(() => claimUnclaimed(doc, { by: 'ann', key: 'nope' }), /No unclaimed relation/)
+    assert.throws(() => claimUnclaimed(doc, { by: 'ann', key: 'bin|table|_:above' }), /already claims/)
+    assert.doesNotThrow(() => claimUnclaimed(doc, { by: 'ben', key: 'bin|table|_:above' }))
+  })
+
+  it('every template that had a retired word: claiming each relation gives a valid document whose every axis matches its layout', async () => {
+    const { claimUnclaimed, docFromLayout } = await import('./DocBuilder.js')
+    const { validateContext } = await import('./ContextValidator.js')
+    const { compileContext } = await import('./ContextCompiler.js')
+    const { reportArrangements } = await import('../layout/ArrangementReport.js')
+    const { unclaimedKey } = await import('../layout/LegacyRelations.js')
+    const { readFileSync } = await import('node:fs')
+    const read = (f) => JSON.parse(readFileSync(new URL(`../../examples/${f}.json`, import.meta.url), 'utf8'))
+    const docs = {
+      factory_context: read('factory_context'),
+      ...Object.fromEntries(['factory_layout', 'layout_pick_place_cell', 'layout_palletizing', 'layout_conveyor_line']
+        .map(f => [f, docFromLayout(read(f))])),
+    }
+    for (const [name, start] of Object.entries(docs)) {
+      let doc = addActor(start, { ref: 'ann', name: 'Ann', role: 'sier' })
+      const keys = doc.specification.layout.unclaimedRelations.map(unclaimedKey)
+      assert.ok(keys.length > 0, name)
+      for (const key of keys) doc = claimUnclaimed(doc, { by: 'ann', key })
+      assert.equal(doc.specification.layout.unclaimedRelations, undefined, `${name}: all claimed`)
+      const v = validateContext(doc)
+      assert.deepEqual(v.errors, [], name)
+      const report = reportArrangements(compileContext(doc).layoutDsl, doc.arrangements, doc.actors)
+      assert.deepEqual(report.errors, [], name)
+      for (const r of report.reports) {
+        for (const side of r.sides) {
+          assert.deepEqual(side.status, { contact: 'match', toward: 'match' }, `${name}: ${r.subject} → ${side.of}`)
+        }
+      }
+    }
+  })
+})

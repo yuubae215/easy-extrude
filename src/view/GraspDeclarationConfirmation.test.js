@@ -25,7 +25,7 @@ import { DEFAULT_HAND_BY_KIND } from '../domain/robotHand.js'
 import { DECLARED_PAINTERS } from './SelectionKinds.js'
 import { frustumCorners } from '../domain/visionCamera.js'
 
-const schema = JSON.parse(readFileSync(new URL('../../schema/layout-1.0.schema.json', import.meta.url), 'utf8'))
+const schema = JSON.parse(readFileSync(new URL('../../schema/layout-1.1.schema.json', import.meta.url), 'utf8'))
 
 /** Leaf-ish field paths of an object schema (one level into `approach`). */
 function fieldsOf(prefix, def) {

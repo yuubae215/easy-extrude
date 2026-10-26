@@ -195,8 +195,6 @@ function _computeLinkOptions(source, target) {
     options.push({ jointType: null, semanticType: 'bounded_by', label: 'Bounded By (1000mm)',  properties: { clearance: 1000 } })
     options.push({ jointType: null, semanticType: 'bounded_by', label: 'Bounded By (no gap)',  properties: { clearance: 0 } })
   }
-  options.push({ jointType: null, semanticType: 'adjacent',   label: 'Adjacent' })
-  options.push({ jointType: null, semanticType: 'above',      label: 'Above' })
   // Anchor → CoordinateFrame: tolerance-constrained references presets (ADR-043 Phase 4).
   if (source instanceof AnnotatedPoint && source.placeType === 'Anchor' && isCF(target)) {
     options.push({ jointType: null, semanticType: 'references', label: 'Tolerance ±1 mm',  properties: { tolerance: 1 } })
@@ -584,6 +582,11 @@ export class AppController {
       ctxService: this._ctxService,
       store:      useUIStore,
       createView: () => new ArrangementStatusView(this._sceneView.scene),
+      scene: {
+        getUnclaimedRelations: () => this._service.getUnclaimedRelations(),
+        on:     (event, fn) => this._service.on(event, fn),
+        nameOf: (id) => this._scene.getObject(id)?.name ?? id,
+      },
     })
     // A name in the Relations section selects that thing — through the public
     // verb (原則 #1). A ref the projection made no entity for says so (#11).
@@ -595,6 +598,16 @@ export class AppController {
     // Who is speaking — the claimant a drag's offer would carry (ADR-168 S2-1).
     useUIStore.getState().actions.registerCallback('onSetRelationSpeaker', (ref) => {
       this._arrangementCtrl.setSpeaker(ref)
+    })
+    // Claim an unclaimed relation (ADR-168 S2-2) in the speaker's name — the
+    // section offers it only while someone is speaking.
+    useUIStore.getState().actions.registerCallback('onClaimUnclaimed', (key) => {
+      const by = this._arrangementCtrl.speaker
+      if (!by) {
+        this._uiView.showToast('Choose who is speaking first — a claim is made in someone\'s name.', { type: 'warn' })
+        return
+      }
+      this._ctxCtrl.claimUnclaimed(by, key)
     })
 
     // ── Production Context-first overlay (ADR-050 Phase 2) ─────────────────

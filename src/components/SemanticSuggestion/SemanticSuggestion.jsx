@@ -3,8 +3,6 @@ import { useUIStore } from '../../store/uiStore.js'
 import { isNarrowViewport } from '../../view/Viewport.js'
 
 const SEMANTIC_VERB = {
-  above:    { color: '#94A3B8', verb: 'is above' },
-  adjacent: { color: '#64748B', verb: 'is adjacent to' },
   contains: { color: '#8B5CF6', verb: 'contains' },
 }
 const SEMANTIC_COLOR = {

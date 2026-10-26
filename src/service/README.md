@@ -11,7 +11,7 @@ Files: `SceneService.js`, `SceneSerializer.js`, `SceneExporter.js`,
 | Service | Responsibility |
 |---------|---------------|
 | `SceneService` | Entity factories + CRUD, observable domain events (ADR-013), world-pose cache, link views |
-| `SceneSerializer` / `Exporter` / `Importer` | Scene ⇄ JSON v1.3 round-trip (schema `schema/scene-1.3.schema.json`) |
+| `SceneSerializer` / `Exporter` / `Importer` | Scene ⇄ JSON v1.4 round-trip (schema `schema/scene-1.4.schema.json`) |
 | `CommandStack` | Undo/redo stack (ADR-022) + landing listener (ADR-065) |
 | `BffClient` | REST + WebSocket client for the BFF (incl. grasp search — ADR-054) |
 | `ContextService` | Canonical context doc lifecycle; scene as derived projection (ADR-050/052) |

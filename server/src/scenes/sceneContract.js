@@ -1,6 +1,6 @@
 /**
  * Scene contract binding — derives a runtime validator + the stamped scene
- * version from the in-repo JSON Schema (schema/scene-1.3.schema.json).
+ * version from the in-repo JSON Schema (schema/scene-1.4.schema.json).
  *
  * Unlike the grasp contract (owned upstream in a submodule), the scene schema's
  * source of truth is THIS repository — the BFF only *reads* it, never restates
@@ -18,7 +18,7 @@ import { dirname, join } from 'node:path'
 import Ajv2020 from 'ajv/dist/2020.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
-const schemaPath = join(here, '..', '..', '..', 'schema', 'scene-1.3.schema.json')
+const schemaPath = join(here, '..', '..', '..', 'schema', 'scene-1.4.schema.json')
 
 const sceneSchema = JSON.parse(readFileSync(schemaPath, 'utf8'))
 
@@ -35,7 +35,7 @@ function formatErrors(errors) {
 }
 
 /**
- * Validate a scene DTO payload against the scene-1.3 shape contract.
+ * Validate a scene DTO payload against the scene-1.4 shape contract.
  * @param {unknown} value
  * @returns {{ valid: boolean, errors: string[] }}
  */

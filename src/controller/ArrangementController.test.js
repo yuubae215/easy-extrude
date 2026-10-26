@@ -131,3 +131,91 @@ test('without a document there is no speaker block', () => {
   r.emit('contextLoaded')
   assert.equal(r.written.at(-1).speaker, null)
 })
+
+// ── unclaimed relations (ADR-168 S2-2) ───────────────────────────────────────
+
+function unclaimedRig({ doc, sceneList = [] }) {
+  const handlers = {}
+  const sceneHandlers = {}
+  let current = doc
+  let list = sceneList
+  const ctxService = {
+    on: (ev, fn) => { (handlers[ev] ??= []).push(fn) },
+    arrangementReport: () => (current ? reportArrangements(layout, current.arrangements ?? [], current.actors ?? []) : null),
+    getDoc: () => current,
+  }
+  const written = []
+  const store = { getState: () => ({ actions: { contextSetArrangements: (m) => written.push(m) } }) }
+  const ctrl = new ArrangementController({
+    ctxService, store, createView: () => ({ show() {}, dispose() {} }),
+    scene: {
+      getUnclaimedRelations: () => list,
+      on: (ev, fn) => { (sceneHandlers[ev] ??= []).push(fn) },
+      nameOf: (id) => `name(${id})`,
+    },
+  })
+  return {
+    ctrl, written,
+    emit: (ev) => handlers[ev].forEach(fn => fn()),
+    sceneChanged: (next) => { list = next; sceneHandlers.unclaimedRelationsChanged.forEach(fn => fn()) },
+  }
+}
+
+const unclaimedDoc = (actors) => ({
+  actors,
+  arrangements: [],
+  specification: { layout: { unclaimedRelations: [
+    { subject: 'part_bin', of: 'worktable', cell: 'touching:+z', was: 'above', properties: { note: 'Supply bin placed on the top' } },
+    { subject: 'output_tray', of: 'worktable', cell: '_:above', was: 'above' },
+  ] } },
+})
+
+test('no unclaimed relations is no block at all (0 is the normal state of a new file)', () => {
+  const r = unclaimedRig({ doc: { actors, arrangements: [], specification: { layout: {} } } })
+  r.emit('contextLoaded')
+  assert.equal(r.written.at(-1).unclaimed, null)
+})
+
+test('the document\'s unclaimed relations are listed with their reading; claiming waits for a speaker, and says so', () => {
+  const r = unclaimedRig({ doc: unclaimedDoc(actors) })
+  r.emit('contextLoaded')
+  const u = r.written.at(-1).unclaimed
+  assert.deepEqual(u.rows.map(x => [x.subject, x.of, x.reading, x.was]), [
+    ['part_bin', 'worktable', 'resting on', 'above'],
+    ['output_tray', 'worktable', 'contact not said, above', 'above'],
+  ])
+  assert.equal(u.rows[0].note, 'Supply bin placed on the top')
+  assert.equal(u.canClaim, false)
+  assert.match(u.note, /Choose who is speaking/)
+  r.ctrl.setSpeaker('ann')
+  assert.equal(r.written.at(-1).unclaimed.canClaim, true)
+  assert.equal(r.written.at(-1).unclaimed.note, null)
+  assert.equal(r.written.at(-1).unclaimed.rows[0].key, 'part_bin|worktable|touching:+z')
+})
+
+test('a pair the speaker already claims is shown as such, not offered', () => {
+  const doc = { ...unclaimedDoc(actors), arrangements: [{ ref: 'x', by: 'ann', subject: 'worktable', sides: [{ of: 'part_bin' }] }] }
+  const r = unclaimedRig({ doc })
+  r.emit('contextLoaded')
+  r.ctrl.setSpeaker('ann')
+  assert.match(r.written.at(-1).unclaimed.rows[0].blocked, /ann already claims/)
+  assert.equal(r.written.at(-1).unclaimed.rows[1].blocked, null)
+})
+
+test('a document with no actors says that is why nothing can be claimed', () => {
+  const r = unclaimedRig({ doc: unclaimedDoc([]) })
+  r.emit('contextLoaded')
+  assert.match(r.written.at(-1).unclaimed.note, /no actors/)
+  assert.equal(r.written.at(-1).unclaimed.canClaim, false)
+})
+
+test('without a document the scene\'s unclaimed relations are listed by name and cannot be claimed', () => {
+  const r = unclaimedRig({ doc: null })
+  r.sceneChanged([{ subject: 'id1', of: 'id2', cell: '_:_', was: 'adjacent' }])
+  const u = r.written.at(-1).unclaimed
+  assert.deepEqual(u.rows.map(x => [x.subject, x.of, x.was]), [['name(id1)', 'name(id2)', 'adjacent']])
+  assert.equal(u.canClaim, false)
+  assert.match(u.note, /no document to write a claim into/)
+  r.sceneChanged([])
+  assert.equal(r.written.at(-1).unclaimed, null)
+})

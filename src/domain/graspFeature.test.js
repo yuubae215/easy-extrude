@@ -423,7 +423,7 @@ test('kind の無い where の欄は読めない — 「where は言っていな
 })
 
 test('where と関係の半分は、スキーマの graspFeature の欄をちょうど覆う (census)', () => {
-  const schema = JSON.parse(readFileSync(new URL('../../schema/layout-1.0.schema.json', import.meta.url), 'utf8'))
+  const schema = JSON.parse(readFileSync(new URL('../../schema/layout-1.1.schema.json', import.meta.url), 'utf8'))
   const fields = Object.keys(schema.$defs.graspFeature.properties).sort()
   assert.deepEqual([...WHERE_KEYS, ...RELATION_KEYS].sort(), fields)
   assert.deepEqual(WHERE_KEYS.filter(k => RELATION_KEYS.includes(k)), [], 'one field, one half')

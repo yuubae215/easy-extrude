@@ -72,7 +72,8 @@ import { keyCardinality, signatureFor } from '../context/Keyring.js'
 import { buildWhyTree, recoverProvenance, entityRefsConstrainedByVariable } from '../context/ProvenanceTree.js'
 import { narrateProvenance, narrateWhyTree } from '../context/ProvenanceNarrative.js'
 import { compileLayout, buildRefMap, linkIdForConstraint } from '../layout/LayoutCompiler.js'
-import { SCENE_JSON_VERSION } from '../layout/LayoutDslSchema.js'
+import { SCENE_JSON_VERSION, LAYOUT_DSL_VERSION } from '../layout/LayoutDslSchema.js'
+import { migrateDocRelations } from '../layout/LegacyRelations.js'
 import { reportArrangements } from '../layout/ArrangementReport.js'
 
 /** Decision statuses that count as "approved" for the persona-projection gate. */
@@ -203,11 +204,15 @@ export class ContextService extends EventEmitter {
    * import failure; the caller surfaces it (PHILOSOPHY #11) — the service never
    * shows UI itself (PHILOSOPHY #3).
    *
-   * @param {object} doc — Context DSL object (context/0.x)
+   * @param {object} source — Context DSL object (context/0.x)
    * @param {object} viewContext — { camera, renderer, container } for importFromJson
    * @returns {Promise<{imported:number, skipped:number}>}
    */
-  async loadContext(doc, viewContext) {
+  async loadContext(source, viewContext) {
+    // A retired relation word (`above` / `adjacent`) in the layout is read into
+    // an unclaimed relation, its trace following it (ADR-168 S2-2). The document
+    // held from here on is the moved one, so a save writes the new form.
+    const { doc } = migrateDocRelations(source, LAYOUT_DSL_VERSION)
     const validatorResult = validateContext(doc)
     if (!validatorResult.valid) {
       throw new Error(`Context DSL validation failed:\n  - ${validatorResult.errors.join('\n  - ')}`)

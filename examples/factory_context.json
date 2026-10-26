@@ -145,7 +145,7 @@
 
   "specification": {
     "layout": {
-      "version": "layout/1.0",
+      "version": "layout/1.1",
       "meta": {
         "name": "Factory cell automation layout",
         "description": "A layout that replaces a cell-type process with an automated one. A robot and base plate sit on a workbench 2.8m from a floor-mounted 100V/3-prong outlet, with two workpiece containers in the bench's spare area."
@@ -267,32 +267,11 @@
       ],
       "constraints": [
         {
-          "source": "base_plate",
-          "target": "workbench",
-          "jointType": null,
-          "semanticType": "above",
-          "properties": { "note": "Base plate bolted onto the workbench top" }
-        },
-        {
           "source": "robot_base",
           "target": "robot_mount",
           "jointType": "fixed",
           "semanticType": "fastened",
           "properties": { "note": "Robot bolted to the base plate (M12 ×4)" }
-        },
-        {
-          "source": "container_a",
-          "target": "workbench",
-          "jointType": null,
-          "semanticType": "above",
-          "properties": { "note": "Container A sits beside the robot on the workbench top" }
-        },
-        {
-          "source": "container_b",
-          "target": "workbench",
-          "jointType": null,
-          "semanticType": "above",
-          "properties": { "note": "Container B sits next to container A" }
         },
         {
           "source": "floor_outlet",
@@ -306,6 +285,11 @@
             "note":        "Power cable run from the floor outlet to the workbench"
           }
         }
+      ],
+      "unclaimedRelations": [
+        { "subject": "base_plate", "of": "workbench", "cell": "touching:+z", "was": "above", "properties": { "note": "Base plate bolted onto the workbench top" } },
+        { "subject": "container_a", "of": "workbench", "cell": "touching:+z", "was": "above", "properties": { "note": "Container A sits beside the robot on the workbench top" } },
+        { "subject": "container_b", "of": "workbench", "cell": "touching:+z", "was": "above", "properties": { "note": "Container B sits next to container A" } }
       ]
     },
 
@@ -319,10 +303,10 @@
       { "from": "o_robot_select",     "to": "robot_tcp",    "kind": "satisfies" },
       { "from": "g_depal",            "to": "container_a",  "kind": "constrains" },
       { "from": "g_depal",            "to": "container_b",  "kind": "constrains" },
-      { "from": "o_baseplate_design", "to": "constraint:base_plate→workbench",       "kind": "satisfies" },
+      { "from": "o_baseplate_design", "to": "unclaimed:base_plate→workbench",        "kind": "satisfies" },
       { "from": "o_robot_mount",      "to": "constraint:robot_base→robot_mount",     "kind": "satisfies" },
-      { "from": "g_depal",            "to": "constraint:container_a→workbench",      "kind": "constrains" },
-      { "from": "g_depal",            "to": "constraint:container_b→workbench",      "kind": "constrains" },
+      { "from": "g_depal",            "to": "unclaimed:container_a→workbench",       "kind": "constrains" },
+      { "from": "g_depal",            "to": "unclaimed:container_b→workbench",       "kind": "constrains" },
       { "from": "o_power",            "to": "constraint:floor_outlet→workbench_origin", "kind": "satisfies" },
       { "from": "f_outlet_to_bench",  "to": "constraint:floor_outlet→workbench_origin", "kind": "constrains" }
     ]

@@ -13,8 +13,6 @@
  *   aligned   → teal    #14B8A6
  *  Category B — Topological:
  *   contains  → violet  #8B5CF6  (directed)
- *   above     → indigo  #6366F1  (directed)
- *   adjacent  → slate   #64748B  (undirected)
  *   connects  → cyan    #06B6D4  (undirected)
  *  Category C — Semantic (directed, source depends on target):
  *   references → amber  #F59E0B
@@ -52,9 +50,9 @@ export { LINK_TYPE_COLORS }
 
 /**
  * Link types that carry a directional arrowhead (source → target).
- * Undirected types (connects, adjacent) have no arrow.
+ * Undirected types (connects) have no arrow.
  */
-const DIRECTED = new Set(['mounts', 'fastened', 'aligned', 'contains', 'above', 'references', 'represents', 'bounded_by'])
+const DIRECTED = new Set(['mounts', 'fastened', 'aligned', 'contains', 'references', 'represents', 'bounded_by'])
 
 export class SpatialLinkView {
   /**

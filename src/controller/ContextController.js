@@ -64,7 +64,7 @@ import {
   createBlankDoc, addActor, addFact, addVariable, addRequirement,
   updateActor, updateVariable, updateRequirement, removeDocEntry,
   setEntityGraspFeature, setEntityGraspTcp, setEntityGraspLift, removeEntityGraspRelation, setEntityPose, setEntityHand, setEntityCamera, setEntityMassDeclaration,
-  adoptSceneEntities, docDeclaresEntity, claimArrangement,
+  adoptSceneEntities, docDeclaresEntity, claimArrangement, claimUnclaimed,
 } from '../context/DocBuilder.js'
 import { planSceneAdoption, adoptionRefusalMessage, adoptionToast } from '../domain/sceneAdoption.js'
 import { createAdoptFromSceneCommand } from '../command/AdoptFromSceneCommand.js'
@@ -562,6 +562,32 @@ export class ContextController {
       return null
     }
     return this._runDocEdit(beforeDoc, afterDoc, `Claim relation (${by})`, 'Could not record the relation')
+  }
+
+  /**
+   * Claim an unclaimed relation in someone's name (ADR-168 S2-2) — what a
+   * retired word said in a loaded file becomes that person's Arrangement. The
+   * same doc-edit command as every other document change (原則 #1), so one undo
+   * puts the unclaimed relation back. Refused with its reason (原則 #11) when
+   * the person already claims the pair.
+   *
+   * @param {string} by   the claimant (an actor ref)
+   * @param {string} key  `unclaimedKey` of the relation
+   */
+  claimUnclaimed(by, key) {
+    if (!this._ctxService.loaded) {
+      this._ctrl._uiView.showToast('There is no document to write a claim into.', { type: 'warn' })
+      return null
+    }
+    const beforeDoc = this._ctxService.getDoc()
+    let afterDoc
+    try {
+      afterDoc = claimUnclaimed(beforeDoc, { by, key })
+    } catch (err) {
+      this._ctrl._uiView.showToast(err.message, { type: 'warn' })
+      return null
+    }
+    return this._runDocEdit(beforeDoc, afterDoc, `Claim unclaimed relation (${by})`, 'Could not record the relation')
   }
 
   /**

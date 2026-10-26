@@ -1,13 +1,13 @@
 /**
  * Scene DTO schema conformance + drift binding (ADR-064 Phase 3).
  *
- * schema/scene-1.3.schema.json is the SHAPE contract for the /api/scenes
- * persistence payload (SceneSerializer v1.3). Designed on the Blender datablock
+ * schema/scene-1.4.schema.json is the SHAPE contract for the /api/scenes
+ * persistence payload (SceneSerializer v1.4). Designed on the Blender datablock
  * principle: the graph skeleton is closed (additionalProperties:false), bulk
  * geometry rides as an opaque base64 blob leaf (envelope-validated only). This
  * suite proves:
  *
- *   1. Conformance — a full v1.3 DTO (every object type + link + transformGraph)
+ *   1. Conformance — a full v1.4 DTO (every object type + link + transformGraph)
  *      conforms; the ImportedMesh base64 buffers pass as opaque strings.
  *   2. additionalProperties:false — smuggled fields / bad enums are rejected.
  *   3. Drift binding — the schema's version const and object-type enum are
@@ -31,13 +31,13 @@ const here = dirname(fileURLToPath(import.meta.url))
 const root = join(here, '..', '..')
 const readJson = (p) => JSON.parse(readFileSync(join(root, p), 'utf8'))
 
-const schema = readJson('schema/scene-1.3.schema.json')
+const schema = readJson('schema/scene-1.4.schema.json')
 const ajv = new Ajv2020({ allErrors: true, strict: false })
 const validate = ajv.compile(schema)
 
-/** A full v1.3 DTO covering every object type SceneSerializer emits. */
+/** A full v1.4 DTO covering every object type SceneSerializer emits. */
 const fullDto = () => ({
-  version: '1.3',
+  version: '1.4',
   objects: [
     { type: 'Solid', id: 's1', name: 'A', description: '', ifcClass: null, position: { x: 0, y: 0, z: 0 }, orientation: { x: 0, y: 0, z: 0, w: 1 }, localCorners: [{ x: -1, y: -1, z: -1 }, { x: 1, y: 1, z: 1 }] },
     { type: 'Profile', id: 'p1', name: 'P', description: '', sketchRect: { p1: { x: 0, y: 0, z: 0 }, p2: { x: 1, y: 1, z: 0 } } },
@@ -48,7 +48,8 @@ const fullDto = () => ({
     { type: 'AnnotatedRegion', id: 'ar1', name: 'R', description: '', placeType: 'Zone', vertices: [{ id: 'v0', x: 0, y: 0, z: 0 }] },
     { type: 'AnnotatedPoint', id: 'ap1', name: 'Pt', description: '', placeType: 'Anchor', vertex: { id: 'v0', x: 0, y: 0, z: 0 } },
   ],
-  links: [{ type: 'SpatialLink', id: 'l1', sourceId: 'cf1', targetId: 's1', jointType: null, semanticType: 'adjacent', properties: {} }],
+  links: [{ type: 'SpatialLink', id: 'l1', sourceId: 'cf1', targetId: 's1', jointType: null, semanticType: 'connects', properties: {} }],
+  unclaimedRelations: [{ subject: 's1', of: 'p1', cell: '_:above', was: 'above', properties: { note: 'kept' } }],
   transformGraph: {
     nodes: [{ id: 'tnode_s1', objectId: 's1', label: 'A', transform: { translation: [0, 0, 0], rotation: [0, 0, 0, 1] } }],
     edges: [{ id: 'tedge_0', parentId: 'tnode_world', childId: 'tnode_s1', constraint: 'fixed' }],
@@ -57,12 +58,12 @@ const fullDto = () => ({
 
 // ── 1. Conformance ───────────────────────────────────────────────────────────
 
-test('a full v1.3 DTO (every object type + link + graph) conforms', () => {
+test('a full v1.4 DTO (every object type + link + unclaimed relation + graph) conforms', () => {
   assert.equal(validate(fullDto()), true, JSON.stringify(validate.errors, null, 2))
 })
 
 test('an empty scene (objects only) conforms', () => {
-  assert.equal(validate({ version: '1.3', objects: [], links: [], transformGraph: { nodes: [], edges: [] } }), true, JSON.stringify(validate.errors))
+  assert.equal(validate({ version: '1.4', objects: [], links: [], transformGraph: { nodes: [], edges: [] } }), true, JSON.stringify(validate.errors))
 })
 
 test('a stored scene with an operationGraph blob conforms (declared-open)', () => {
@@ -83,7 +84,7 @@ test('a bad version is rejected', () => {
 })
 
 test('an unknown object type is rejected', () => {
-  assert.equal(validate({ version: '1.3', objects: [{ type: 'Torus', id: 't' }] }), false)
+  assert.equal(validate({ version: '1.4', objects: [{ type: 'Torus', id: 't' }] }), false)
 })
 
 test('a smuggled field on a Solid is rejected', () => {
@@ -94,6 +95,13 @@ test('a smuggled field on a Solid is rejected', () => {
 test('a bad link semanticType is rejected', () => {
   const dto = fullDto(); dto.links[0].semanticType = 'glued'
   assert.equal(validate(dto), false)
+})
+
+test('a retired relation word (above / adjacent) is not a link semanticType (ADR-168 S2-2)', () => {
+  for (const word of ['above', 'adjacent']) {
+    const dto = fullDto(); dto.links[0].semanticType = word
+    assert.equal(validate(dto), false, word)
+  }
 })
 
 // ── 3. Drift binding: schema pinned to the code's single sources ─────────────
