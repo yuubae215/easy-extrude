@@ -494,6 +494,9 @@ export function unclaimedPanel({ doc, sceneList, speaker, claimedPairs, nameOf =
   const show = fromDoc ? (r) => r : nameOf
   let note = null
   if (!fromDoc) note = 'There is no document to write a claim into — these are kept as the file said them.'
+  // Naming oneself right here, at the moment of claiming, is 未実装 — the
+  // section only says why (DEF-074: where the entry sits, and whether the one
+  // who just named themselves may become the speaker without inferring it).
   else if ((doc.actors ?? []).length === 0) note = 'The document has no actors — add one to claim these.'
   else if (!speaker) note = 'Choose who is speaking to claim these in their name.'
   const canClaim = fromDoc && speaker !== null

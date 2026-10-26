@@ -434,7 +434,7 @@ touching:+z の一致として入る → undo で消える)。
 
 **残したもの:** 文書を開いたまま scene ファイルを Import すると、その scene が持つ旧主張は scene 側にだけ住み、
 Relations 節は文書の旧主張しか出さない (引き取るには文書の物である必要がある)。scene の保存で書き戻されるので
-失われはしない。actor が 0 人の文書で引き取る瞬間にその場で名乗れる入口は無い (理由を言うところまで)。
+失われはしない。actor が 0 人の文書で引き取る瞬間にその場で名乗れる入口は無い (理由を言うところまで) — `docs/DEFERRAL_LEDGER.md` DEF-074 (入口の置き場所と、名乗った人を話し手にしてよいかが未決)。
 
 証拠: `src/layout/LegacyRelations.test.js` (表・3 経路・関節の拒否・往復・examples・census)、
 `src/schema/LayoutSchema.test.js` / `SceneSchema.test.js` (enum から 2 語が消え、旧主張は閉じている・版の束縛)、
