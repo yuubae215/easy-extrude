@@ -198,12 +198,22 @@ jobs:
   # coverage net). Verifies the experience layer's wiring is live end-to-end:
   # boot → box add → undo → template load → negotiate tab, plus a
   # prefers-reduced-motion pass.
-  e2e:
+  #
+  # Sharded over 4 runners: serially the suite took 11.2m of a 15m budget
+  # (86 tests × 2–13s, workers: 1), so every new test ate the margin. Each
+  # shard runs its own dev server + Chromium; `fullyParallel` in
+  # playwright.config.js lets the cut fall inside smoke.spec.js.
+  e2e-shard:
+    name: e2e (${{ matrix.shard }}/4)
     # Pinned: Playwright 1.56.1 cannot install Chromium on ubuntu-26.04, which
     # `ubuntu-latest` became in 2026-10 (the job died at browser install, before
     # any test). Unpin when Playwright is upgraded to a release that supports it.
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -225,12 +235,22 @@ jobs:
         run: pnpm exec playwright install --with-deps chromium
 
       - name: Smoke E2E
-        run: pnpm test:e2e
+        run: pnpm test:e2e --shard=${{ matrix.shard }}/4
 
       - name: Upload report on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-report
+          name: playwright-report-${{ matrix.shard }}
           path: playwright-report/
           retention-days: 7
+
+  # One stable check name for branch protection — the matrix rows are
+  # `e2e (i/4)`, so a required `e2e` would otherwise wait forever.
+  e2e:
+    needs: e2e-shard
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: All shards passed
+        run: test "${{ needs.e2e-shard.result }}" = success

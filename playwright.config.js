@@ -13,6 +13,14 @@ import { defineConfig, devices } from '@playwright/test'
  * (vite.config.js), so `crossOriginIsolated` is true and the coi-serviceworker
  * self-skips — no registration/reload loop under headless Chromium.
  *
+ * Sharding: CI splits the suite over 4 machines (`--shard=i/4`, ci.yml `e2e`
+ * matrix). `fullyParallel: true` is what lets a shard cut INSIDE a file —
+ * without it Playwright shards per file and `smoke.spec.js` (7.1m of 11.2m)
+ * would stay one indivisible block. Tests are already independent (each one
+ * boots its own page; no serial describes, no shared module state). Within a
+ * shard `workers` stays 1: software WebGL is CPU-bound, so two workers on one
+ * runner fight for the same cores instead of halving the time.
+ *
  * Browser: default Playwright resolution (CI runs `playwright install
  * chromium`). A sandbox with a pre-installed Chromium can point at it via
  * `PW_CHROMIUM` without a download.
@@ -24,7 +32,7 @@ export default defineConfig({
   testDir: './e2e',
   timeout: 60_000,
   expect: { timeout: 15_000 },
-  fullyParallel: false,
+  fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
   workers: 1,
