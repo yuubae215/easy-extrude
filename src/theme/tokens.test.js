@@ -425,8 +425,12 @@ const DECLARED_VOCABULARIES = {
 // 697 → 696 (ADR-167): the LINK NETWORK's depth badge (`#6f6f6f`) left with
 // the indented outline — a top-down tree states depth by position. Distinct
 // stays 190: that grey still has another user.
-const UNDECLARED_OCCURRENCE_BASELINE = 696
-const UNDECLARED_DISTINCT_BASELINE   = 190
+// 696 → 686 (ADR-168 S2-2): the `above` / `adjacent` entries of the node
+// editor's edge styles and of four JSX link legends left with the two retired
+// relation words; distinct 190 → 187 (#607d8b, #64748b and #6366f1 had no
+// other user).
+const UNDECLARED_OCCURRENCE_BASELINE = 686
+const UNDECLARED_DISTINCT_BASELINE   = 187
 
 const HEX_LITERAL = /#[0-9a-fA-F]{6}\b|\b0x[0-9a-fA-F]{6}\b/g
 

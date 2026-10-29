@@ -355,3 +355,36 @@ test('projectChecks returns [] before a doc is loaded and for a doc without acce
   await svc.loadContext(phase2(), VC)                  // acceptance: []
   assert.deepEqual(svc.projectChecks(), [])
 })
+
+// ── ADR-168 S2-2: an older document's retired relation words ────────────────
+
+test('loadContext reads a retired word into an unclaimed relation, holds the moved doc, and the scene carries it', async () => {
+  const scene = fakeScene()
+  const svc = new ContextService(scene)
+  const old = factory()
+  // The factory example as it was before S2-2: one `above` constraint, traced.
+  const u = old.specification.layout.unclaimedRelations.shift()
+  old.specification.layout.constraints.unshift({ source: u.subject, target: u.of, jointType: null, semanticType: 'above', properties: u.properties })
+  old.specification.layout.version = 'layout/1.0'
+  for (const t of old.specification.trace) if (t.to === `unclaimed:${u.subject}→${u.of}`) t.to = `constraint:${u.subject}→${u.of}`
+
+  await svc.loadContext(old, VC)
+  const held = svc.getDoc()
+  assert.notStrictEqual(held, old, 'the moved document is held, so a save writes the new form')
+  assert.equal(held.specification.layout.version, 'layout/1.1')
+  assert.ok(held.specification.layout.constraints.every(c => c.semanticType !== 'above'))
+  assert.deepEqual(held.specification.layout.unclaimedRelations.at(-1),
+    { subject: u.subject, of: u.of, cell: '_:above', was: 'above', properties: u.properties })
+  assert.ok(held.specification.trace.some(t => t.to === `unclaimed:${u.subject}→${u.of}`))
+  assert.equal(scene.calls[0].scene.unclaimedRelations.length, 3)
+})
+
+test('loadContext refuses an older document whose retired word also has a joint, before touching the scene', async () => {
+  const scene = fakeScene()
+  const svc = new ContextService(scene)
+  const old = factory()
+  old.specification.layout.constraints.push({ source: 'container_a', target: 'workbench', jointType: 'fixed', semanticType: 'above' })
+  await assert.rejects(() => svc.loadContext(old, VC), /cannot be moved/)
+  assert.equal(scene.calls.length, 0)
+  assert.equal(svc.loaded, false)
+})

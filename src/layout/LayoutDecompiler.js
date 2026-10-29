@@ -3,7 +3,7 @@
  *
  * Pure computation: no I/O, no Three.js, no DOM. Loads under bare `node --test`.
  *
- * Recovers a Layout DSL (layout/1.0) from a SceneSerializer v1.3 scene JSON — the
+ * Recovers a Layout DSL (layout/1.1) from a SceneSerializer v1.4 scene JSON — the
  * φ⁻¹ of `compileLayout`. Makes Scene ⇄ Layout DSL *Mutual* at the What/How
  * geometry layer: the scene is "just another way to input the same geometry."
  *
@@ -31,7 +31,8 @@
  * @module layout/LayoutDecompiler
  */
 
-import { LAYOUT_DSL_VERSION } from './LayoutDslSchema.js'
+import { LAYOUT_DSL_VERSION, SCENE_JSON_VERSION } from './LayoutDslSchema.js'
+import { migrateSceneRelations } from './LegacyRelations.js'
 import { isOriginFrame } from '../domain/originFrame.js'
 import { sizeOfCorners } from '../domain/hollowBody.js'
 
@@ -94,14 +95,16 @@ export function solidRefOfSceneId(id) {
  * than re-spelling the prefix strip (§1.1 — ADR-163). Output-only: the DSL is
  * unchanged by it.
  *
- * @param {{objects?: object[], links?: object[]}} sceneJson
+ * @param {{objects?: object[], links?: object[], unclaimedRelations?: object[]}} source
  * @returns {{ dsl: object, warnings: {id:string, type:string, reason:string}[],
  *            refOf: ReadonlyMap<string, string> }}
  */
-export function decompileLayout(sceneJson) {
-  if (!sceneJson || typeof sceneJson !== 'object') {
+export function decompileLayout(source) {
+  if (!source || typeof source !== 'object') {
     throw new Error('decompileLayout: scene JSON must be a non-null object')
   }
+  // An older scene may still say a retired relation word (ADR-168 S2-2).
+  const { scene: sceneJson } = migrateSceneRelations(source, SCENE_JSON_VERSION)
   const objects  = Array.isArray(sceneJson.objects) ? sceneJson.objects : []
   const links    = Array.isArray(sceneJson.links)   ? sceneJson.links   : []
   const warnings = []
@@ -279,11 +282,28 @@ export function decompileLayout(sceneJson) {
     })
   }
 
+  // ── Pass G: unclaimed relations (ADR-168 S2-2) — scene ids back to refs ────
+  const unclaimedRelations = []
+  for (const u of (Array.isArray(sceneJson.unclaimedRelations) ? sceneJson.unclaimedRelations : [])) {
+    const subject = idToRef.get(u.subject)
+    const of      = idToRef.get(u.of)
+    if (subject === undefined || of === undefined) {
+      warnings.push({
+        id:   `${u.subject}→${u.of}`,
+        type: 'UnclaimedRelation',
+        reason: `unclaimed relation end not expressible in ${LAYOUT_DSL_VERSION} (subject="${u.subject}", of="${u.of}")`,
+      })
+      continue
+    }
+    unclaimedRelations.push({ ...structuredClone(u), subject, of })
+  }
+
   const dsl = {
     version:  LAYOUT_DSL_VERSION,
     strategy: 'manual',
     entities,
     constraints,
+    ...(unclaimedRelations.length > 0 ? { unclaimedRelations } : {}),
   }
 
   return { dsl, warnings, refOf: idToRef }

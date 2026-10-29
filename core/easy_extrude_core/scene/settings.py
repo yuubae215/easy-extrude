@@ -39,6 +39,6 @@ class GraspSettings:
     pre_grasp_distance: float = 0.1
     clearance_reference: float = 0.1
     top_n: int = 5
-    layout_version: str = "layout/1.0"
+    layout_version: str = "layout/1.1"
     camera: Camera | None = None
     gripper: Gripper | None = None

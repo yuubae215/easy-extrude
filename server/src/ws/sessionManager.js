@@ -17,7 +17,7 @@
  * messages tied to the geometry service (ADR-017 Phase B); they get a closed
  * versioned message schema OR are removed at the BFF redesign (Phase C). Note
  * this path persists scenes via `updateScene` directly, bypassing the REST
- * scene-1.3 validation on purpose — it is its own uncontracted wire until Phase C.
+ * scene-1.4 validation on purpose — it is its own uncontracted wire until Phase C.
  * The geometry.update payload is opaque mesh (encoded buffers): a blob leaf, so
  * contracting it later is an envelope, not per-vertex validation.
  */

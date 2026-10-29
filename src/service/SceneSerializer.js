@@ -46,6 +46,8 @@
  *
  * The serialized payload (v1.2+) has an additional top-level `links` array.
  * v1.3 replaces the flat `linkType` field with `jointType` + `semanticType`.
+ * v1.4 retires the semanticTypes `above` / `adjacent` and adds a top-level
+ * `unclaimedRelations` array — what they said, by scene id (ADR-168 S2-2).
  */
 import { Solid }            from '../domain/Solid.js'
 import { Profile }          from '../domain/Profile.js'
@@ -269,5 +271,6 @@ export function serializeScene(scene) {
     objects,
     links,
     transformGraph: { nodes, edges },
+    ...(scene.unclaimedRelations?.length > 0 ? { unclaimedRelations: scene.unclaimedRelations.map(u => structuredClone(u)) } : {}),
   }
 }

@@ -273,7 +273,7 @@ export const useUIStore = create((set, get) => ({
     // `kind`-discriminated union like the two above — 'no-document' /
     // 'none-declared' / 'invalid' / 'listed' — so "nobody declared a relation"
     // never reads as "every relation holds". Sole writer ArrangementController.
-    arrangements: { kind: 'no-document', focusRefs: [], rows: [], conflicts: [], errors: [], summary: null, speaker: null },
+    arrangements: { kind: 'no-document', focusRefs: [], rows: [], conflicts: [], errors: [], summary: null, speaker: null, unclaimed: null },
     // ADR-165 D3: the slice of the document the criteria hearing reads —
     // `{actors, requirements, criteriaAgreement, criteriaHearing}` — projected
     // on the DOCUMENT edge (the hearing lives in the document intake, outside

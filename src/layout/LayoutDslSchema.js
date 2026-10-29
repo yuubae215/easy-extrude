@@ -1,5 +1,5 @@
 /**
- * LayoutDslSchema — constants and type definitions for Layout DSL v1.0.
+ * LayoutDslSchema — constants and type definitions for Layout DSL v1.1.
  *
  * Pure data: no I/O, no Three.js, no DOM.
  *
@@ -8,11 +8,19 @@
  *   How   → strategy + strategyOptions (linear / grid / stack / radial / manual)
  *   What  → entities (Solid dimensions, frame offsets, annotation vertices)
  *
- * Output: SceneSerializer v1.3 compatible JSON, loadable via importFromJson().
+ * Output: SceneSerializer v1.4 compatible JSON, loadable via importFromJson().
  */
+import { SEMANTIC_TYPES } from '../domain/SpatialLink.js'
 
-export const LAYOUT_DSL_VERSION = 'layout/1.0'
-export const SCENE_JSON_VERSION  = '1.3'
+export const LAYOUT_DSL_VERSION = 'layout/1.1'
+export const SCENE_JSON_VERSION  = '1.4'
+
+// layout/1.1 (ADR-168 S2-2): the semanticTypes `above` / `adjacent` are retired;
+// what they said lives in `unclaimedRelations` (LegacyRelations.js). A
+// layout/1.0 document is still read — it says nothing 1.1 cannot, once its
+// retired words are moved (`migrateLayoutRelations`, run on load).
+/** Layout versions a document may carry. Writers always write LAYOUT_DSL_VERSION. */
+export const SUPPORTED_LAYOUT_VERSIONS = Object.freeze(['layout/1.0', LAYOUT_DSL_VERSION])
 
 // Additive growth within layout/1.0 (no version bump — consistent with how
 // `frames`, `placeType`, and `parentRef` were added):
@@ -36,12 +44,8 @@ export const VALID_ENTITY_TYPES = [
 /** URDF kinematic joint types (ADR-038). */
 export const VALID_JOINT_TYPES = ['fixed', 'revolute', 'continuous', 'prismatic', 'floating', 'planar']
 
-/** Domain semantic types (ADR-038). */
-export const VALID_SEMANTIC_TYPES = [
-  'fastened', 'mounts', 'aligned',
-  'contains', 'adjacent', 'above', 'connects',
-  'references', 'represents', 'bounded_by',
-]
+/** Domain semantic types (ADR-038) — the domain's list, not a copy. */
+export const VALID_SEMANTIC_TYPES = [...SEMANTIC_TYPES]
 
 /** Default strategy options. */
 export const DEFAULT_STRATEGY_OPTIONS = {

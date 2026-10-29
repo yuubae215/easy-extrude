@@ -10,7 +10,7 @@ artifacts
 
     context Adr168Scope
     uuid 9a8970be-0306-4bf4-83d5-028a996e407b
-    summary "ADR-168 (Accepted 2026-10-22・段階実装 — S1 実装済み): above / adjacent を退役し、関係を『接触・向き・可動性』の 3 軸の組として新しい型 Arrangement (主張した人 by + subject + 側 1..2) で言う。概念モデルの正本は docs/SPATIAL_RELATION_MODEL.md。可動性は既存の jointType、面は ADR-152 の語彙を使う。主張は state (配置から導出)・宣言 (文書)・status (軸ごとの離散の照合) の 3 欄。実装は S1 (型とスキーマ — 実装済み) → S1b (語が指す先を画面で確かめる — 実装済み) → S2 (推論と移行) → S3 (LINK NETWORK の木)"
+    summary "ADR-168 (Accepted 2026-10-22・段階実装 — S1・S1b・S2 実装済み): above / adjacent を退役し、関係を『接触・向き・可動性』の 3 軸の組として新しい型 Arrangement (主張した人 by + subject + 側 1..2) で言う。概念モデルの正本は docs/SPATIAL_RELATION_MODEL.md。可動性は既存の jointType、面は ADR-152 の語彙を使う。主張は state (配置から導出)・宣言 (文書)・status (軸ごとの離散の照合) の 3 欄。実装は S1 (型とスキーマ — 実装済み) → S1b (語が指す先を画面で確かめる — 実装済み) → S2-1 (話している人と推論の置き換え — 実装済み) → S2-2 (旧語の退役と移行 — 実装済み) → S3 (LINK NETWORK の木)"
     artifacts
     - "src/domain/arrangement.js"
     - "src/domain/arrangementGeometry.js"
@@ -48,12 +48,20 @@ artifacts
         goal EachAxisIsItsOwnWord
         uuid 09f47c9e-bb29-4182-93e9-e0e3d11674d2
         summary "接触・向き・可動性がそれぞれ独立の語で言え、各軸が『宣言なし』を独立の値に持つ (既定値で埋めない)。above / adjacent は退役し、旧データは読み込み時に無損失で移行される"
-        state ToBeDeveloped
-        labels support-exploring
+        labels support-verified
 
-            assumption AxisSchemaPlanned
-            uuid 6091cd88-857c-4865-8684-c707c59842db
-            summary "証拠予定 (S2-2): 満期=GONE:src/domain/SpatialLink.js::'above' 。S1 で半分は立った (軸ごとの省略が『宣言なし』のまま status に出る / 運動学リンク 2 本以上は矛盾エラー — arrangement.test.js)。2026-10-25 の S2-1 で推論が旧 2 語を提案しなくなった (SemanticInferencer.test.js — 提案は閉形式の接触を話している人の名前で出し、点数を持たない)。残りは S2-2: 旧 above・adjacent を含む scene / layout が移行後に同じことを言い (持ち主のいない旧主張 unclaimedRelations、マスの ID で)、2 語の定義が消えること (DEF-071)。満期を張り替えた理由: S2 を S2-1 / S2-2 に割ったので、初めの trigger (SemanticInferencer が arrangementGeometry を読む) は S2-1 で発火したが goal はまだ半分"
+            solution RetiredWordsMoveWithoutLoss
+            uuid 2b8d5c17-6e3f-4a90-9c41-d7f0a38e6b25
+            summary "node --test (2026-10-26, S2-2) — 前半 (S1・S2-1): 軸ごとの省略が『宣言なし』のまま status に出る / 運動学リンク 2 本以上は矛盾エラー (arrangement.test.js)、推論は旧 2 語を提案しない (SemanticInferencer.test.js)。後半 (S2-2): LegacyRelations.test.js — 旧語の読み替え表は宣言できるマスだけを持ち (above → _:above、adjacent → _:_ — 旧語が言っていない接触を言わない)、表に無い語は throw / layout・scene (v1.3 の semanticType と v1.2 の linkType)・文書の 3 経路が旧語を持ち主のいない旧主張へ移し、note などの properties を保ち、trace が付いてくる / 関節も持つ旧リンクは対を名指して拒む / compile ⇄ decompile と parse で往復が不動点 / src のどこにも旧語をリンクの語として書く行が無い (census)。LayoutSchema・SceneSchema.test.js: 旧語は semanticType の enum に無く、unclaimedRelation は閉じている。DocBuilder.test.js: 旧主張を引き取るとそのマスをちょうど言う Arrangement になり、5 本のテンプレで全部引き取った文書は検査に通り全軸が配置と一致する。ContextService.test.js: 旧文書の読み込みで移行後の文書が保持される。満期 GONE:src/domain/SpatialLink.js::'above' は発火し DEF-071 は決着"
+            artifacts
+            - "src/layout/LegacyRelations.js"
+            - "src/layout/LegacyRelations.test.js"
+            - "src/schema/LayoutSchema.test.js"
+            - "src/schema/SceneSchema.test.js"
+            - "src/context/DocBuilder.test.js"
+            - "src/service/ContextService.test.js"
+            - "src/domain/arrangement.test.js"
+            - "src/service/SemanticInferencer.test.js"
 
         goal HorizontalDirectionNamesItsViewer
         uuid a1dca7a3-32e0-4875-a0d1-2b966145fb41

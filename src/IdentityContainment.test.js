@@ -82,6 +82,16 @@ const IDENTITY_RULES = [
     why: '見る人の判定が散ると、前後左右を測る基準が経路ごとに食い違う (ADR-168 D2)',
   },
   {
+    // ADR-168 S2-2。持ち主のいない旧主張は (subject, of, cell) で 1 つに決まる
+    // (旧語 `was` は同一性に入らない)。鍵を呼び出し側で組み直すと、引き取りと重複除去が
+    // 別の同一性を使い、引き取ったものが残るか、別物を消す。
+    name: '持ち主のいない旧主張の同一性 (subject + of + cell)',
+    owners: ['src/layout/LegacyRelations.js'],
+    use: "unclaimedKey(u) / isSameUnclaimed(a, b)  — import from 'src/layout/LegacyRelations.js'",
+    all: [/\.subject\b/, /\.of\b/, /\.cell\b/],
+    why: '同一性が 2 つあると、引き取りと重複除去が別の旧主張を指す (ADR-168 S2-2)',
+  },
+  {
     // ADR-094 §波及 が先行 PR として名指しした未移行分。ADR-090 が robot_base に対して
     // 閉じた欠陥 (同一性を呼び出し側で再導出する) が、Origin CF では 16 箇所 / 10 ファイルに
     // 残っていた。robot 規則と違い `all` が 1 本なのは、この名前には**正当な住所が

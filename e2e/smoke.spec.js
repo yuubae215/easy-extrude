@@ -1138,13 +1138,13 @@ async function linkNetworkRows(page) {
   })
 }
 
-/** Cube → robot_base の Adjacent リンクを張り、LINK NETWORK パネルを開かせる。 */
+/** Cube → robot_base の References リンクを張り、LINK NETWORK パネルを開かせる (Adjacent は ADR-168 S2-2 で退役)。 */
 async function openLinkNetwork(page) {
   await addRobot(page)                            // ADR-132 D5: boot holds no robot
   await selectRow(page, 'Cube')
   await page.keyboard.press('l')
   await selectRow(page, 'robot_base')             // link mode ではこれが「相手」
-  await page.getByText('Adjacent', { exact: true }).click()
+  await page.getByText('References', { exact: true }).click()
   await expect(page.getByRole('region', { name: 'Link Network panel' })).toBeVisible()
 }
 

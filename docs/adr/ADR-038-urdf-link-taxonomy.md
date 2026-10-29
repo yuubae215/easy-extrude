@@ -3,7 +3,8 @@
 **Status**: Accepted  
 **Date**: 2026-05-08  
 **Supersedes**: ADR-030 §2 (link type vocabulary), ADR-032 §2 (geometric link vocabulary)  
-**Related**: ADR-053 (ロボティクス KPI メソッド — 予約 jointType `revolute`/`prismatic` を URDF→シーン表現で活用)
+**Related**: ADR-053 (ロボティクス KPI メソッド — 予約 jointType `revolute`/`prismatic` を URDF→シーン表現で活用)  
+**Partially superseded by**: ADR-168 — the semanticTypes `above` / `adjacent` (each carried two facts) were retired in S2-2 (2026-10-26); old data is read into unclaimed relations. The other words are unchanged.
 
 ---
 

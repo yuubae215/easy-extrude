@@ -1,5 +1,5 @@
 {
-  "version": "layout/1.0",
+  "version": "layout/1.1",
   "meta": {
     "name": "Straight conveyor line",
     "description": "A straight line of 4 stations — infeed, 2× processing, outfeed — evenly spaced along the transport direction (+X). Stations are auto-aligned by the linear strategy."
@@ -56,27 +56,10 @@
       "dimensions": { "x": 600, "y": 600, "z": 900 }
     }
   ],
-  "constraints": [
-    {
-      "source": "process_station_1",
-      "target": "infeed_station",
-      "jointType": null,
-      "semanticType": "adjacent",
-      "properties": { "note": "Adjacent along the transport direction" }
-    },
-    {
-      "source": "process_station_2",
-      "target": "process_station_1",
-      "jointType": null,
-      "semanticType": "adjacent",
-      "properties": { "note": "Adjacent along the transport direction" }
-    },
-    {
-      "source": "outfeed_station",
-      "target": "process_station_2",
-      "jointType": null,
-      "semanticType": "adjacent",
-      "properties": { "note": "Adjacent along the transport direction" }
-    }
+  "constraints": [],
+  "unclaimedRelations": [
+    { "subject": "process_station_1", "of": "infeed_station", "cell": "apart:+x", "was": "adjacent", "properties": { "note": "Adjacent along the transport direction" } },
+    { "subject": "process_station_2", "of": "process_station_1", "cell": "apart:+x", "was": "adjacent", "properties": { "note": "Adjacent along the transport direction" } },
+    { "subject": "outfeed_station", "of": "process_station_2", "cell": "apart:+x", "was": "adjacent", "properties": { "note": "Adjacent along the transport direction" } }
   ]
 }

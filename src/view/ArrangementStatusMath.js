@@ -48,6 +48,9 @@
 import { AXIS_STATUS, CONTACTS, FACE_TOWARD, ABSOLUTE_TOWARD, RELATIVE_DIRS, frameOfToward } from '../domain/arrangement.js'
 import { contactPatches, OBSERVED_CONTACT } from '../domain/arrangementGeometry.js'
 import { rotateVec3 } from '../domain/rotateVec3.js'
+import { cellById, UNSTATED } from '../domain/relationCells.js'
+import { unclaimedKey } from '../layout/LegacyRelations.js'
+import { PHRASE_TABLE, phraseKind } from '../context/SynonymQuotient.js'
 
 /**
  * Each declarable word → the picture that shows what it points at.
@@ -450,4 +453,64 @@ export function speakerPanel(doc, speaker, lost) {
   else if (lost) note = `"${lost}" is no longer an actor of the document — choose who is speaking.`
   else if (!speaker) note = 'Nobody is speaking — moving a thing offers no relation until you choose who claims it.'
   return { current: speaker, choices, note }
+}
+
+// ── unclaimed relations (ADR-168 S2-2) ───────────────────────────────────────
+
+/**
+ * A cell of the grid as the words a person reads: a combination's name when the
+ * cell has one ("resting on"), else each axis, an unsaid one named as unsaid.
+ * @param {string} id  a cell id (`relationCells`)
+ */
+export function cellText(id) {
+  const combo = PHRASE_TABLE.find(p => phraseKind(p) === 'combination' && p.cells[0] === id)
+  if (combo) return combo.en
+  const cell = cellById(id)
+  const contact = cell.contact === UNSTATED ? 'contact not said' : cell.contact
+  const direction = cell.direction === UNSTATED ? 'direction not said' : cell.direction
+  return `${contact}, ${direction}`
+}
+
+/**
+ * The "unclaimed" block of the Relations section — what a retired word
+ * (`above` / `adjacent`) said in a loaded file, until someone claims it.
+ * `null` when there are none (0 is the normal state of a new file).
+ *
+ * With a document the list is the document's (`specification.layout`, refs)
+ * and a row can be claimed by whoever is speaking. Without one the list is the
+ * scene's (ids, shown by name) and nothing can be claimed — there is no
+ * document to write a claim into. Each reason is said, never a silent dead
+ * button (原則 #11).
+ *
+ * @param {{doc: object|null, sceneList: ReadonlyArray<object>, speaker: string|null,
+ *          claimedPairs: Set<string>, nameOf?: (id: string) => string}} input
+ * @returns {{rows: Array<{key: string, subject: string, of: string, reading: string, was: string,
+ *            note: string|null, blocked: string|null}>, canClaim: boolean, note: string|null}|null}
+ */
+export function unclaimedPanel({ doc, sceneList, speaker, claimedPairs, nameOf = (id) => id }) {
+  const fromDoc = doc !== null
+  const list = fromDoc ? (doc.specification?.layout?.unclaimedRelations ?? []) : (sceneList ?? [])
+  if (list.length === 0) return null
+  const show = fromDoc ? (r) => r : nameOf
+  let note = null
+  if (!fromDoc) note = 'There is no document to write a claim into — these are kept as the file said them.'
+  // Naming oneself right here, at the moment of claiming, is 未実装 — the
+  // section only says why (DEF-074: where the entry sits, and whether the one
+  // who just named themselves may become the speaker without inferring it).
+  else if ((doc.actors ?? []).length === 0) note = 'The document has no actors — add one to claim these.'
+  else if (!speaker) note = 'Choose who is speaking to claim these in their name.'
+  const canClaim = fromDoc && speaker !== null
+  const rows = list.map(u => {
+    const claimed = canClaim && (claimedPairs.has(`${u.subject}|${u.of}`) || claimedPairs.has(`${u.of}|${u.subject}`))
+    return {
+      key: unclaimedKey(u),
+      subject: show(u.subject),
+      of: show(u.of),
+      reading: cellText(u.cell),
+      was: u.was,
+      note: typeof u.properties?.note === 'string' ? u.properties.note : null,
+      blocked: claimed ? `${speaker} already claims ${u.subject} and ${u.of}` : null,
+    }
+  })
+  return { rows, canClaim, note }
 }

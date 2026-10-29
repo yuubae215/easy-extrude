@@ -3,13 +3,14 @@
  *
  * Pure computation: no I/O, no DOM, no Three.js scene mutations.
  *
- * Export format (v1.3):
+ * Export format (v1.4):
  * {
- *   version: "1.3",
+ *   version: "1.4",
  *   coordinateSystem: "ROS REP-103 (+X forward, +Y left, +Z up)",
  *   exportedAt: <ISO timestamp>,
  *   objects: SceneExportObject[],
- *   links: SpatialLinkExport[]
+ *   links: SpatialLinkExport[],
+ *   unclaimedRelations?: { subject, of, cell, was, properties? }[]   // v1.4 — ADR-168 S2-2
  * }
  *
  * SceneExportObject discriminated union by `type`:
@@ -258,11 +259,13 @@ export function exportScene(scene, worldPoseOf) {
   }))
 
   return {
-    version:          '1.3',
+    version:          '1.4',
     coordinateSystem: 'ROS REP-103 (+X forward, +Y left, +Z up)',
     exportedAt:       new Date().toISOString(),
     objects,
     links,
+    // Relations nobody has claimed yet (ADR-168 S2-2) — written back as read.
+    ...(scene.unclaimedRelations?.length > 0 ? { unclaimedRelations: scene.unclaimedRelations.map(u => structuredClone(u)) } : {}),
   }
 }
 

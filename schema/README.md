@@ -9,7 +9,7 @@ shape contract with `additionalProperties:false` and a version field
 
 | Schema | Wire form | Source of vocabulary |
 |--------|-----------|----------------------|
-| `layout-1.0.schema.json`  | `layout/1.0` (ADR-045, ADR-055) | `src/layout/LayoutDslSchema.js` |
+| `layout-1.1.schema.json`  | `layout/1.0`–`layout/1.1` (ADR-045, ADR-055, ADR-168 S2-2) | `src/layout/LayoutDslSchema.js` |
 | `context-0.7.schema.json` | `context/0.1`–`context/0.7` (ADR-046, ADR-049, ADR-053, ADR-104, ADR-165, ADR-168) | `src/context/ContextDslSchema.js` |
 
 ## Shape vs. meaning
@@ -42,7 +42,7 @@ no second definition that can silently drift.
 ## Validating an instance
 
 ```bash
-node schema/tools/validate.mjs layout-1.0  examples/factory_layout.json
+node schema/tools/validate.mjs layout-1.1  examples/factory_layout.json
 node schema/tools/validate.mjs context-0.7 examples/cell_robotics_context.json
 cat my-doc.json | node schema/tools/validate.mjs context-0.7 -
 ```
@@ -59,3 +59,12 @@ ADR-104 → `context-0.6.schema.json`, ADR-165 → `context-0.7.schema.json`,
 ADR-168). Keeping both would leave two artifacts answering the same question
 for the same document — and the older one would keep passing, quietly, for
 documents it no longer describes fully.
+
+`layout-1.0.schema.json` → `layout-1.1.schema.json` (ADR-168 S2-2) is the one
+step that is **not** additive: layout/1.1 retires the semanticTypes `above` /
+`adjacent` and adds `unclaimedRelations`. The schema still accepts
+`version: "layout/1.0"`, because a 1.0 document whose retired words have been
+moved (`LegacyRelations.migrateLayoutRelations`, run by every loader) says
+nothing 1.1 cannot; a 1.0 document that still says `above` does not conform —
+it has to pass through the loader first. The scene JSON took the same step
+(`scene-1.3.schema.json` → `scene-1.4.schema.json`).

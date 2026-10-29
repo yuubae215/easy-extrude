@@ -12,7 +12,8 @@
  * @module layout/LayoutCompiler
  */
 
-import { SCENE_JSON_VERSION, DEFAULT_STRATEGY_OPTIONS } from './LayoutDslSchema.js'
+import { SCENE_JSON_VERSION, LAYOUT_DSL_VERSION, DEFAULT_STRATEGY_OPTIONS } from './LayoutDslSchema.js'
+import { migrateLayoutRelations } from './LegacyRelations.js'
 import { validateLayoutDsl } from './LayoutValidator.js'
 import { ORIGIN_FRAME_NAME } from '../domain/originFrame.js'
 
@@ -368,16 +369,37 @@ function generateLinks(constraints, refMap) {
   return links
 }
 
+/**
+ * Unclaimed relations (ADR-168 S2-2) carried into the scene with their refs
+ * resolved to scene ids — the scene keeps them so a scene⇄layout round trip
+ * loses none.
+ */
+function generateUnclaimed(unclaimed, refMap) {
+  const out = []
+  for (const u of unclaimed) {
+    const subject = refMap.get(u.subject)
+    const of      = refMap.get(u.of)
+    if (!subject || !of) continue // validator catches unresolved refs
+    out.push({ ...structuredClone(u), subject, of })
+  }
+  return out
+}
+
 // ── Public API ────────────────────────────────────────────────────────────────
 
 /**
- * Compile a Layout DSL object into a SceneSerializer v1.3 scene JSON.
+ * Compile a Layout DSL object into a SceneSerializer v1.4 scene JSON.
  *
- * @param {object} dsl  Parsed Layout DSL (version layout/1.0)
- * @returns {{ version: string, objects: object[], links: object[], transformGraph: object }}
+ * A layout/1.0 document that still says a retired relation word is read the way
+ * every loader reads it (ADR-168 S2-2): the word moves into an unclaimed
+ * relation first. A link that also has a joint is refused with the pair named.
+ *
+ * @param {object} source  Parsed Layout DSL (version layout/1.0 or 1.1)
+ * @returns {{ version: string, objects: object[], links: object[], transformGraph: object, unclaimedRelations?: object[] }}
  * @throws {Error} with .errors string[] on validation failure
  */
-export function compileLayout(dsl) {
+export function compileLayout(source) {
+  const { dsl } = migrateLayoutRelations(source, LAYOUT_DSL_VERSION)
   const validation = validateLayoutDsl(dsl)
   if (!validation.valid) {
     const err = new Error(
@@ -396,11 +418,13 @@ export function compileLayout(dsl) {
   )
   const objects = generateObjects(dsl.entities, refMap, positions)
   const links   = generateLinks(dsl.constraints ?? [], refMap)
+  const unclaimed = generateUnclaimed(dsl.unclaimedRelations ?? [], refMap)
 
   return {
     version:        SCENE_JSON_VERSION,
     objects,
     links,
     transformGraph: { nodes: [], edges: [] },
+    ...(unclaimed.length > 0 ? { unclaimedRelations: unclaimed } : {}),
   }
 }

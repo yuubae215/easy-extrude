@@ -150,8 +150,6 @@ export const LINK_COLORS = {
   fastened:   '#10B981',
   aligned:    '#14B8A6',
   contains:   '#8B5CF6',
-  above:      '#6366F1',
-  adjacent:   '#64748B',
   connects:   '#06B6D4',
   references: '#F59E0B',
   represents: '#F43F5E',

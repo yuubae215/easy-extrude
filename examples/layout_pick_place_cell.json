@@ -1,5 +1,5 @@
 {
-  "version": "layout/1.0",
+  "version": "layout/1.1",
   "meta": {
     "name": "Single-arm pick & place cell",
     "description": "A minimal picking cell: a single-arm robot on a pedestal on a workbench moves workpieces from a supply bin to an output tray."
@@ -240,39 +240,12 @@
   ],
   "constraints": [
     {
-      "source": "robot_pedestal",
-      "target": "worktable",
-      "jointType": null,
-      "semanticType": "above",
-      "properties": {
-        "note": "Pedestal bolted to the workbench top"
-      }
-    },
-    {
       "source": "robot_base",
       "target": "robot_mount",
       "jointType": "fixed",
       "semanticType": "fastened",
       "properties": {
         "note": "Robot fastened to the pedestal"
-      }
-    },
-    {
-      "source": "part_bin",
-      "target": "worktable",
-      "jointType": null,
-      "semanticType": "above",
-      "properties": {
-        "note": "Supply bin placed on the top"
-      }
-    },
-    {
-      "source": "output_tray",
-      "target": "worktable",
-      "jointType": null,
-      "semanticType": "above",
-      "properties": {
-        "note": "Output tray placed on the top"
       }
     },
     {
@@ -312,5 +285,10 @@
         "note": "Power from the inlet to the cell"
       }
     }
+  ],
+  "unclaimedRelations": [
+    { "subject": "robot_pedestal", "of": "worktable", "cell": "touching:+z", "was": "above", "properties": { "note": "Pedestal bolted to the workbench top" } },
+    { "subject": "part_bin", "of": "worktable", "cell": "touching:+z", "was": "above", "properties": { "note": "Supply bin placed on the top" } },
+    { "subject": "output_tray", "of": "worktable", "cell": "touching:+z", "was": "above", "properties": { "note": "Output tray placed on the top" } }
   ]
 }

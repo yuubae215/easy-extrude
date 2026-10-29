@@ -415,7 +415,10 @@ const SUPPORT_LABELS = new Map([
 // (ADR-084 の tcp_orientation は core に入り pytest が在った)。根拠のテストは同日すべて再実行した。
 // 満期が散文だったので G4 は発火できなかった — 散文満期は「満期が来たことを機械が知りえない」だけでなく、
 // **決着したことも知りえない**。
-const DEBT_BASELINE = 42
+// 2026-10-26: 42 → 41。ADR-168 S2-2 で EachAxisIsItsOwnWord が support-verified へ (LegacyRelations /
+// LayoutSchema / SceneSchema / DocBuilder / ContextService の node --test)。満期 GONE:…SpatialLink.js::'above'
+// が発火し、DEF-071 も同じコミットで決着。
+const DEBT_BASELINE = 41
 
 /**
  * G3 — 満期 trigger を持たない exploring goal の個数 (実測値)。

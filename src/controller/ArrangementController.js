@@ -10,6 +10,9 @@
  *       offer would be claimed by (ADR-168 S2-1). 0..1, no default: nobody
  *       speaking offers nothing. Not saved — it is who sits at the screen now,
  *       not a fact of the document.
+ *   unclaimed relations (ADR-168 S2-2) — the document's when there is one,
+ *       else the scene's (`unclaimedRelationsChanged`) — listed with what may
+ *       claim them; claiming goes through `ContextController.claimUnclaimed`.
  *
  *   → the Relations section's model (`context.arrangements` — sole writer)
  *   → the 3D picture (`ArrangementStatusView` — sole owner)
@@ -21,7 +24,7 @@
  *
  * @module controller/ArrangementController
  */
-import { arrangementPanel, arrangementPicture, speakerPanel } from '../view/ArrangementStatusMath.js'
+import { arrangementPanel, arrangementPicture, speakerPanel, unclaimedPanel } from '../view/ArrangementStatusMath.js'
 
 export class ArrangementController {
   /**
@@ -29,10 +32,12 @@ export class ArrangementController {
    *   ctxService: {arrangementReport: () => object|null, getDoc?: () => object|null, on: Function},
    *   store: {getState: () => any},
    *   createView: () => {show: (pic: object|null) => void, dispose: () => void},
+   *   scene?: {getUnclaimedRelations: () => ReadonlyArray<object>, on: Function, nameOf?: (id: string) => string},
    * }} deps
    */
-  constructor({ ctxService, store, createView }) {
+  constructor({ ctxService, store, createView, scene = null }) {
     this._ctx = ctxService
+    this._scene = scene
     this._store = store
     this._createView = createView
     /** @type {object|null} the last report — null = no document */
@@ -49,6 +54,7 @@ export class ArrangementController {
     this._lostSpeaker = null
     ctxService.on('contextLoaded',  () => this.refresh())
     ctxService.on('contextChanged', () => this.refresh())
+    scene?.on('unclaimedRelationsChanged', () => this._render())
   }
 
   /** Re-read the relations from the document (the document edge). */
@@ -113,6 +119,13 @@ export class ArrangementController {
     this._store.getState().actions.contextSetArrangements({
       ...arrangementPanel(this._result, this._focus),
       speaker: speakerPanel(this._doc(), this._speaker, this._lostSpeaker),
+      unclaimed: unclaimedPanel({
+        doc: this._doc(),
+        sceneList: this._scene?.getUnclaimedRelations() ?? [],
+        speaker: this._speaker,
+        claimedPairs: this.claimedPairs(),
+        nameOf: this._scene?.nameOf,
+      }),
     })
     const pic = arrangementPicture(this._result, this._focus)
     this._picture = pic

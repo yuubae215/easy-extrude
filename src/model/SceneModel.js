@@ -34,6 +34,16 @@ export class SceneModel {
      */
     this._mountedByIndex = new Map()
 
+    /**
+     * Relations nobody has claimed yet (ADR-168 S2-2) — what a retired relation
+     * word (`above` / `adjacent`) said in a loaded file, by scene id. Plain
+     * frozen records, not entities: they draw nothing and are only carried so a
+     * save writes back what the load read. 0..N; replaced whole by
+     * `setUnclaimedRelations`.
+     * @type {ReadonlyArray<{subject: string, of: string, cell: string, was: string, properties?: object}>}
+     */
+    this._unclaimed = Object.freeze([])
+
     /** @type {string|null} */
     this._activeId = null
 
@@ -58,6 +68,14 @@ export class SceneModel {
 
   /** Full link map (do not mutate directly; use addLink / removeLink). */
   get links() { return this._links }
+
+  /** Relations nobody has claimed yet, by scene id (ADR-168 S2-2). */
+  get unclaimedRelations() { return this._unclaimed }
+
+  /** Replace the unclaimed relations (the sole writer of the list). */
+  setUnclaimedRelations(list) {
+    this._unclaimed = Object.freeze([...list].map(u => Object.freeze(structuredClone(u))))
+  }
 
   /** ID of the currently active object, or null if none. */
   get activeId() { return this._activeId }

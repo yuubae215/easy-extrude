@@ -8,8 +8,12 @@
  *   "1.1" — geometry buffers included
  *   "1.2" — SpatialLinks with flat `linkType` field
  *   "1.3" — SpatialLinks with `jointType` + `semanticType` (ADR-038)
+ *   "1.4" — `above` / `adjacent` retired; `unclaimedRelations` (ADR-168 S2-2)
  *
  * Backward compatibility: v1.2 files with `linkType` are auto-migrated on import.
+ *                         A retired relation word (`above` / `adjacent`) in any
+ *                         version is moved into `unclaimedRelations` here, so
+ *                         nothing downstream sees it (LegacyRelations.js).
  *                         Files missing `links` are imported with links treated as [].
  *
  * Usage:
@@ -17,14 +21,17 @@
  *   await sceneService.importFromJson(parsed, viewContext, { clear: true })
  */
 
+import { SEMANTIC_TYPES } from '../domain/SpatialLink.js'
+import { migrateSceneRelations, unclaimedIssues } from '../layout/LegacyRelations.js'
+
 /** @typedef {'Solid'|'Profile'|'MeasureLine'|'CoordinateFrame'|'ImportedMesh'} ObjType */
 
-const SUPPORTED_VERSIONS = new Set(['1.0', '1.1', '1.2', '1.3'])
+const SUPPORTED_VERSIONS = new Set(['1.0', '1.1', '1.2', '1.3', '1.4'])
 
 /**
  * Scene object types that round-trip through serialize/deserialize. Single
  * source for the type set (memory_management contract "SceneImporter KNOWN_TYPES
- * Coverage"); the scene-1.3 JSON Schema binds its object-type enum to this
+ * Coverage"); the scene-1.4 JSON Schema binds its object-type enum to this
  * (ADR-064 Phase 3 drift test).
  */
 export const KNOWN_TYPES = [
@@ -33,37 +40,35 @@ export const KNOWN_TYPES = [
 ]
 
 const VALID_JOINT_TYPES    = new Set(['fixed', 'revolute', 'continuous', 'prismatic', 'floating', 'planar'])
-const VALID_SEMANTIC_TYPES = new Set([
-  'fastened', 'mounts', 'aligned',
-  'contains', 'adjacent', 'above', 'connects',
-  'references', 'represents',
-  'bounded_by',
-])
+const VALID_SEMANTIC_TYPES = new Set(SEMANTIC_TYPES)
 // v1.2 flat linkType values still accepted for backward compat
-const VALID_LEGACY_LINK_TYPES = new Set([...VALID_SEMANTIC_TYPES, 'references', 'connects', 'contains', 'adjacent'])
+const VALID_LEGACY_LINK_TYPES = new Set([...VALID_SEMANTIC_TYPES])
 
 /**
  * Parse and lightly validate the JSON text of an exported scene file.
  *
  * @param {string} jsonText  Raw text content of the .json file.
- * @returns {{ version: string, objects: object[], links: object[] }}
- * @throws {Error} if the JSON is malformed or the schema is invalid.
+ * @returns {{ version: string, objects: object[], links: object[], unclaimedRelations: object[] }}
+ * @throws {Error} if the JSON is malformed or the schema is invalid, or an old
+ *   link says a retired relation word and has a joint (RetiredRelationError).
  */
 export function parseImportJson(jsonText) {
-  let root
+  let parsedRoot
   try {
-    root = JSON.parse(jsonText)
+    parsedRoot = JSON.parse(jsonText)
   } catch {
     throw new Error('File is not valid JSON')
   }
-
-  if (!root || typeof root !== 'object') {
+  if (!parsedRoot || typeof parsedRoot !== 'object') {
     throw new Error('JSON root is not an object')
   }
 
-  if (!SUPPORTED_VERSIONS.has(root.version)) {
-    throw new Error(`Unsupported version: ${root.version}`)
+  if (!SUPPORTED_VERSIONS.has(parsedRoot.version)) {
+    throw new Error(`Unsupported version: ${parsedRoot.version}`)
   }
+
+  // Retired relation words move before any link is read (ADR-168 S2-2).
+  const root = Array.isArray(parsedRoot.links) ? migrateSceneRelations(parsedRoot, '1.4').scene : parsedRoot
 
   if (!Array.isArray(root.objects)) {
     throw new Error('The objects field is not an array')
@@ -97,5 +102,14 @@ export function parseImportJson(jsonText) {
     return true
   }) : []
 
-  return { version: root.version, objects, links }
+  if (root.unclaimedRelations !== undefined && !Array.isArray(root.unclaimedRelations)) {
+    throw new Error('The unclaimedRelations field is not an array')
+  }
+  const unclaimedRelations = root.unclaimedRelations ?? []
+  for (const [i, u] of unclaimedRelations.entries()) {
+    const issues = unclaimedIssues(u)
+    if (issues.length > 0) throw new Error(`unclaimedRelations[${i}]: ${issues.join('; ')}`)
+  }
+
+  return { version: root.version, objects, links, unclaimedRelations }
 }

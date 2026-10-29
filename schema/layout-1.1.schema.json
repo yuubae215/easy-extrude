@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://easy-extrude.dev/schema/layout-1.0.json",
+  "$id": "https://easy-extrude.dev/schema/layout-1.1.json",
   "title": "LayoutDSL",
   "description": "Public schema for Layout DSL v1.0 (ADR-045, ADR-055). This is the SHAPE contract: it fixes the closed set of fields and the enum vocabularies. Cross-reference resolution, ref uniqueness, and other MEANING checks stay in LayoutValidator.js (ADR-064 Phase 2). additionalProperties:false makes an unknown field a rejection, mirroring the grasp-contract discipline (PHILOSOPHY #29).",
   "type": "object",
@@ -11,8 +11,8 @@
   ],
   "properties": {
     "version": {
-      "const": "layout/1.0",
-      "description": "Layout DSL version. Bound to LAYOUT_DSL_VERSION by the drift test."
+      "enum": ["layout/1.0", "layout/1.1"],
+      "description": "Layout DSL version. Bound to SUPPORTED_LAYOUT_VERSIONS by the drift test; writers write LAYOUT_DSL_VERSION (layout/1.1). A layout/1.0 document conforms once its retired relation words are moved (ADR-168 S2-2)."
     },
     "meta": {
       "$ref": "#/$defs/meta"
@@ -41,9 +41,51 @@
       "items": {
         "$ref": "#/$defs/constraint"
       }
+    },
+    "unclaimedRelations": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/unclaimedRelation" }
     }
   },
   "$defs": {
+    "unclaimedRelation": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "ADR-168 S2-2: a relation nobody has claimed yet — what a retired relation word (`above` / `adjacent`) said in older data, kept without loss until a person claims it as an Arrangement. Bound to LegacyRelations.unclaimedIssues.",
+      "required": [
+        "subject",
+        "of",
+        "cell",
+        "was"
+      ],
+      "properties": {
+        "subject": {
+          "type": "string",
+          "description": "The link's source (a layout ref)."
+        },
+        "of": {
+          "type": "string",
+          "description": "The link's target (a layout ref)."
+        },
+        "cell": {
+          "type": "string",
+          "pattern": "^(touching|apart|_):([+-][xyz]|above|below|_)$",
+          "description": "The contact × direction cell the old word reads as (relationCells id, `_` = not said). A relative direction cannot appear (no viewer)."
+        },
+        "was": {
+          "enum": [
+            "above",
+            "adjacent"
+          ],
+          "description": "The retired word, verbatim. Bound to RETIRED_RELATION_WORDS."
+        },
+        "properties": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "The old link's properties (e.g. its note), verbatim."
+        }
+      }
+    },
     "meta": {
       "type": "object",
       "additionalProperties": false,
@@ -666,8 +708,6 @@
             "mounts",
             "aligned",
             "contains",
-            "adjacent",
-            "above",
             "connects",
             "references",
             "represents",

@@ -166,8 +166,8 @@ export const openApiSpec = {
           },
           semanticType: {
             type: 'string',
-            enum: ['fastened', 'mounts', 'aligned', 'contains', 'adjacent', 'above', 'connects', 'references', 'represents', 'bounded_by'],
-            description: 'Domain semantic annotation.',
+            enum: ['fastened', 'mounts', 'aligned', 'contains', 'connects', 'references', 'represents', 'bounded_by'],
+            description: 'Domain semantic annotation. `above` / `adjacent` were retired in layout/1.1 (ADR-168): a layout/1.0 constraint saying them is read into `unclaimedRelations`.',
             example: 'fastened',
           },
           properties: { type: 'object', description: 'Arbitrary metadata (clearance, cable spec, etc.)', additionalProperties: true },
@@ -176,9 +176,9 @@ export const openApiSpec = {
       LayoutDSL: {
         type: 'object',
         required: ['version', 'entities'],
-        description: 'Layout DSL v1.0 — declarative 5W1H scene composition request (ADR-045)',
+        description: 'Layout DSL v1.1 — declarative 5W1H scene composition request (ADR-045). layout/1.0 is still read.',
         properties: {
-          version:  { type: 'string', enum: ['layout/1.0'], example: 'layout/1.0' },
+          version:  { type: 'string', enum: ['layout/1.0', 'layout/1.1'], example: 'layout/1.1' },
           meta: {
             type: 'object',
             properties: {
@@ -210,6 +210,21 @@ export const openApiSpec = {
           },
           entities:    { type: 'array', items: { $ref: '#/components/schemas/LayoutEntity' }, minItems: 1 },
           constraints: { type: 'array', items: { $ref: '#/components/schemas/LayoutConstraint' } },
+          unclaimedRelations: {
+            type: 'array',
+            description: 'ADR-168 S2-2: relations nobody has claimed yet — what a retired word (`above` / `adjacent`) said. `cell` is the contact × direction cell it reads as; `was` the old word.',
+            items: {
+              type: 'object',
+              required: ['subject', 'of', 'cell', 'was'],
+              properties: {
+                subject:    { type: 'string' },
+                of:         { type: 'string' },
+                cell:       { type: 'string', example: '_:above' },
+                was:        { type: 'string', enum: ['above', 'adjacent'] },
+                properties: { type: 'object', additionalProperties: true },
+              },
+            },
+          },
         },
       },
       LayoutCompileRequest: {
@@ -229,9 +244,9 @@ export const openApiSpec = {
       },
       SceneV13: {
         type: 'object',
-        description: 'SceneSerializer v1.3 JSON — compatible with SceneImporter.parseImportJson()',
+        description: 'SceneSerializer v1.4 JSON — compatible with SceneImporter.parseImportJson()',
         properties: {
-          version:        { type: 'string', example: '1.3' },
+          version:        { type: 'string', example: '1.4' },
           objects:        { type: 'array', items: { type: 'object' }, description: 'Solid / CoordinateFrame / Annotated* DTOs' },
           links:          { type: 'array', items: { type: 'object' }, description: 'SpatialLink DTOs' },
           transformGraph: { $ref: '#/components/schemas/TransformGraph' },
@@ -254,7 +269,7 @@ export const openApiSpec = {
         required: ['layoutVersion', 'graspSearch'],
         properties: {
           contractVersion: { type: 'integer', example: 1, description: 'Optional; if present it must match the canonical contractVersion or the BFF returns 400.' },
-          layoutVersion:   { type: 'string', example: 'layout/1.0', description: 'Layout DSL schema version this declaration targets (references the public schema; not redefined).' },
+          layoutVersion:   { type: 'string', example: 'layout/1.1', description: 'Layout DSL schema version this declaration targets (references the public schema; not redefined).' },
           graspSearch: {
             type: 'object',
             description: 'graspSearch declaration. Detailed shape owned by the Layout DSL schema named by layoutVersion; intentionally open here.',
@@ -454,13 +469,13 @@ export const openApiSpec = {
     '/layout/compile': {
       post: {
         tags: ['Layout'],
-        summary: 'Compile Layout DSL → SceneSerializer v1.3 JSON (stateless)',
+        summary: 'Compile Layout DSL → SceneSerializer v1.4 JSON (stateless)',
         description: [
           'Pure compilation: no DB write. Returns a scene JSON compatible with',
           '`SceneImporter.parseImportJson()` and `SceneService.importFromJson()`.',
           '',
-          '**Layout DSL v1.0** encodes a 5W1H scene composition request (ADR-044/045):',
-          '- **Why** → `constraints` (semanticType: fastened / above / connects / …)',
+          '**Layout DSL v1.1** encodes a 5W1H scene composition request (ADR-044/045):',
+          '- **Why** → `constraints` (semanticType: fastened / contains / connects / …)',
           '- **How** → `strategy` + `strategyOptions` (linear / grid / stack / radial / manual)',
           '- **What** → `entities` (Solid dimensions, CF offsets, annotation vertices)',
           '',
@@ -477,7 +492,7 @@ export const openApiSpec = {
               schema: { $ref: '#/components/schemas/LayoutCompileRequest' },
               example: {
                 dsl: {
-                  version: 'layout/1.0',
+                  version: 'layout/1.1',
                   meta: { name: 'Example' },
                   strategy: 'linear',
                   strategyOptions: { axis: '+X', spacing: 3000 },
@@ -486,7 +501,7 @@ export const openApiSpec = {
                     { ref: 'box_b', type: 'Solid', name: 'Box B', dimensions: { x: 500, y: 500, z: 500 } },
                   ],
                   constraints: [
-                    { source: 'box_a', target: 'box_b', jointType: null, semanticType: 'adjacent' },
+                    { source: 'box_a', target: 'box_b', jointType: null, semanticType: 'connects' },
                   ],
                 },
               },
@@ -495,7 +510,7 @@ export const openApiSpec = {
         },
         responses: {
           200: {
-            description: 'SceneSerializer v1.3 JSON — pass directly to importFromJson()',
+            description: 'SceneSerializer v1.4 JSON — pass directly to importFromJson()',
             content: {
               'application/json': {
                 schema: { $ref: '#/components/schemas/SceneV13' },
@@ -568,7 +583,7 @@ export const openApiSpec = {
             'application/json': {
               schema: { $ref: '#/components/schemas/GraspSearchRequest' },
               example: {
-                layoutVersion: 'layout/1.0',
+                layoutVersion: 'layout/1.1',
                 graspSearch: { objectiveWeights: { reach: 0.6, clearance: 0.4 }, topN: 5 },
               },
             },

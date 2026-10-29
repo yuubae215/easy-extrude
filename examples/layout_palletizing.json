@@ -1,5 +1,5 @@
 {
-  "version": "layout/1.0",
+  "version": "layout/1.1",
   "meta": {
     "name": "Palletizing cell",
     "description": "A palletizing cell where a single-arm robot on a floor pedestal stacks boxes 2×2 onto an adjacent pallet."
@@ -106,34 +106,12 @@
       "jointType": "fixed",
       "semanticType": "fastened",
       "properties": { "note": "Robot fastened to the pedestal" }
-    },
-    {
-      "source": "box_1",
-      "target": "pallet",
-      "jointType": null,
-      "semanticType": "above",
-      "properties": { "note": "Stacked onto the pallet" }
-    },
-    {
-      "source": "box_2",
-      "target": "pallet",
-      "jointType": null,
-      "semanticType": "above",
-      "properties": { "note": "Stacked onto the pallet" }
-    },
-    {
-      "source": "box_3",
-      "target": "pallet",
-      "jointType": null,
-      "semanticType": "above",
-      "properties": { "note": "Stacked onto the pallet" }
-    },
-    {
-      "source": "box_4",
-      "target": "pallet",
-      "jointType": null,
-      "semanticType": "above",
-      "properties": { "note": "Stacked onto the pallet" }
     }
+  ],
+  "unclaimedRelations": [
+    { "subject": "box_1", "of": "pallet", "cell": "touching:+z", "was": "above", "properties": { "note": "Stacked onto the pallet" } },
+    { "subject": "box_2", "of": "pallet", "cell": "touching:+z", "was": "above", "properties": { "note": "Stacked onto the pallet" } },
+    { "subject": "box_3", "of": "pallet", "cell": "touching:+z", "was": "above", "properties": { "note": "Stacked onto the pallet" } },
+    { "subject": "box_4", "of": "pallet", "cell": "touching:+z", "was": "above", "properties": { "note": "Stacked onto the pallet" } }
   ]
 }

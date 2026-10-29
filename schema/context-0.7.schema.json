@@ -875,7 +875,7 @@
     },
     "hydratedLayout": {
       "type": "object",
-      "description": "Layout DSL embedded in a Context doc, with scalar leaves optionally deferred as {$fact}/{$decision}/{$expr} refs (resolved by the compiler). The resolved form conforms to layout-1.0.schema.json.",
+      "description": "Layout DSL embedded in a Context doc, with scalar leaves optionally deferred as {$fact}/{$decision}/{$expr} refs (resolved by the compiler). The resolved form conforms to layout-1.1.schema.json.",
       "additionalProperties": false,
       "properties": {
         "version": {
@@ -910,6 +910,22 @@
           "type": "array",
           "items": {
             "$ref": "#/$defs/hydratedConstraint"
+          }
+        },
+        "unclaimedRelations": {
+          "description": "ADR-168 S2-2: relations nobody has claimed yet — what a retired relation word (above / adjacent) said in an older layout. Same shape as layout-1.1 unclaimedRelation (refs). Claimed by DocBuilder.claimUnclaimed.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["subject", "of", "cell", "was"],
+            "properties": {
+              "subject": { "type": "string" },
+              "of": { "type": "string" },
+              "cell": { "type": "string", "pattern": "^(touching|apart|_):([+-][xyz]|above|below|_)$" },
+              "was": { "enum": ["above", "adjacent"] },
+              "properties": { "type": "object", "additionalProperties": true }
+            }
           }
         }
       }
@@ -1005,30 +1021,30 @@
           "$ref": "#/$defs/hydratedQuat"
         },
         "parentRef": {
-          "description": "For a standalone CoordinateFrame, the ref of the entity it is a TF child of (e.g. tcp -> robot_base). Mirrors layout-1.0 `entity.parentRef`; when present, position/rotation are the LOCAL offset from that parent.",
+          "description": "For a standalone CoordinateFrame, the ref of the entity it is a TF child of (e.g. tcp -> robot_base). Mirrors layout-1.1 `entity.parentRef`; when present, position/rotation are the LOCAL offset from that parent.",
           "type": "string"
         },
         "robotRole": {
-          "description": "Declared role of a CoordinateFrame inside a robot's TF tree (ADR-090). Mirrors layout-1.0 `entity.robotRole`. Without it a context document cannot express a robot at all, which is why no bundled example declared one (ADR-117).",
+          "description": "Declared role of a CoordinateFrame inside a robot's TF tree (ADR-090). Mirrors layout-1.1 `entity.robotRole`. Without it a context document cannot express a robot at all, which is why no bundled example declared one (ADR-117).",
           "enum": [
             "base",
             "tcp"
           ]
         },
         "frameRole": {
-          "description": "ADR-168 D2: a CoordinateFrame's declared role outside any robot. 'viewer' = a person's standpoint that front/back/left/right are seen from (+X its front, +Y its left). Mirrors layout-1.0 `entity.frameRole`. Absent = an ordinary frame.",
+          "description": "ADR-168 D2: a CoordinateFrame's declared role outside any robot. 'viewer' = a person's standpoint that front/back/left/right are seen from (+X its front, +Y its left). Mirrors layout-1.1 `entity.frameRole`. Absent = an ordinary frame.",
           "enum": [
             "viewer"
           ]
         },
         "mountedOn": {
-          "description": "ADR-151: what a robot tcp's `position`/`rotation` are measured from. 'flange' = they ARE the tool mount (tool0 -> tcp) — the end effector's own fact and the interface the robot and its end effector share; the world pose is derived (base ∘ flange-at-rest ∘ mount), never stored. Absent on a pre-ADR-151 tcp, whose base-relative value the importer replaces with the default mount and announces (the entity and every relation to it survive). Mirrors layout-1.0 `entity.mountedOn`.",
+          "description": "ADR-151: what a robot tcp's `position`/`rotation` are measured from. 'flange' = they ARE the tool mount (tool0 -> tcp) — the end effector's own fact and the interface the robot and its end effector share; the world pose is derived (base ∘ flange-at-rest ∘ mount), never stored. Absent on a pre-ADR-151 tcp, whose base-relative value the importer replaces with the default mount and announces (the entity and every relation to it survive). Mirrors layout-1.1 `entity.mountedOn`.",
           "enum": [
             "flange"
           ]
         },
         "camera": {
-          "description": "ADR-164 D3: this frame IS a vision camera — the entity the 'can it be seen' gate asks from. Its `position`/`rotation` are the camera's pose in the ROS OPTICAL convention: +Z is the line of sight, +X image-right, +Y image-down. The wire `camera.viewAxis` is DERIVED from that rotation, never stored. `fovHalfAngle` (rad, (0, π/2)) is the half angle the solver's cone uses; absent = no field-of-view gate (line of sight only), never filled in on read. Absent `camera` = an ordinary frame. Not on a robot base/tcp (a wrist camera is its own frame). 0..N cameras per scene; with N the search asks about the one picked (the robot picker's shape). Mirrors layout-1.0 `entity.camera`.",
+          "description": "ADR-164 D3: this frame IS a vision camera — the entity the 'can it be seen' gate asks from. Its `position`/`rotation` are the camera's pose in the ROS OPTICAL convention: +Z is the line of sight, +X image-right, +Y image-down. The wire `camera.viewAxis` is DERIVED from that rotation, never stored. `fovHalfAngle` (rad, (0, π/2)) is the half angle the solver's cone uses; absent = no field-of-view gate (line of sight only), never filled in on read. Absent `camera` = an ordinary frame. Not on a robot base/tcp (a wrist camera is its own frame). 0..N cameras per scene; with N the search asks about the one picked (the robot picker's shape). Mirrors layout-1.1 `entity.camera`.",
           "type": "object",
           "additionalProperties": false,
           "properties": {
@@ -1166,7 +1182,7 @@
           }
         },
         "graspFeature": {
-          "description": "Declares HOW a Solid should be grasped (ADR-119 D2 / ADR-128 / ADR-152 D1). Mirrors layout-1.0 `entity.graspFeature` — changed in the SAME change, because ADR-117 already paid for letting this schema lag behind its layout twin. A closed kind-discriminated union; absence means the front derives the faces from the declared hand (ADR-118) and says so, which is a different state from an explicit `anywhere`. `faces` is the legacy face list, read and migrated to specs, never written. ADR-164 D4: the declaration IS the grasp RELATION (object × hand), and `kind` is only its WHERE — so `kind` is OPTIONAL. A relation that says only which hand (`tcp`) or how it lifts (`lift`) has said nothing about where: it is grasped exactly as with no graspFeature (faces derived from the hand) and the panel says so. At least one field — an empty object says nothing.",
+          "description": "Declares HOW a Solid should be grasped (ADR-119 D2 / ADR-128 / ADR-152 D1). Mirrors layout-1.1 `entity.graspFeature` — changed in the SAME change, because ADR-117 already paid for letting this schema lag behind its layout twin. A closed kind-discriminated union; absence means the front derives the faces from the declared hand (ADR-118) and says so, which is a different state from an explicit `anywhere`. `faces` is the legacy face list, read and migrated to specs, never written. ADR-164 D4: the declaration IS the grasp RELATION (object × hand), and `kind` is only its WHERE — so `kind` is OPTIONAL. A relation that says only which hand (`tcp`) or how it lifts (`lift`) has said nothing about where: it is grasped exactly as with no graspFeature (faces derived from the hand) and the panel says so. At least one field — an empty object says nothing.",
           "type": "object",
           "additionalProperties": false,
           "properties": {
@@ -1688,7 +1704,7 @@
       }
     },
     "hydratedQuat": {
-      "description": "Rotation as x/y/z/w, mirroring layout-1.0 `quaternion` but allowing variable refs like the other hydrated geometry fields.",
+      "description": "Rotation as x/y/z/w, mirroring layout-1.1 `quaternion` but allowing variable refs like the other hydrated geometry fields.",
       "type": "object",
       "additionalProperties": false,
       "properties": {

@@ -21,7 +21,7 @@
  * geometry service (ADR-017 Phase B). They will be given a closed versioned
  * schema OR removed when the BFF is redesigned (Phase C — BFF security/redesign
  * ADR). Until then: no ajv contract here. The mesh payload itself is opaque
- * geometry (base64 buffers) — the same blob-leaf treatment as scene-1.3's
+ * geometry (base64 buffers) — the same blob-leaf treatment as scene-1.4's
  * ImportedMesh, so contracting it later is an envelope, not per-vertex checks.
  */
 import { Router }  from 'express'
