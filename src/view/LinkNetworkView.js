@@ -81,7 +81,7 @@
  *      tree regression), ADR-030 (SpatialLink), ADR-048 (panel dimensions)
  */
 import { LINK_TYPE_COLORS, NODE_TYPE_COLORS } from '../theme/semantic.js'
-import { COLOR } from '../theme/tokens.js'
+import { COLOR, Z } from '../theme/tokens.js'
 import { leftEdgeOffset, bottomEdgeOffset, BOTTOM_TIER } from './EdgeOccupancy.js'
 import {
   computeLayout, layoutSignature, treeSegments, arcPath, labelLines,
@@ -174,7 +174,10 @@ export class LinkNetworkView {
       background:      'rgba(20, 20, 22, 0.93)',
       border:          '1px solid rgba(255,255,255,0.10)',
       borderRadius:    '8px',
-      zIndex:          '50',
+      // Mounted on document.body, outside #react-ui-root's stacking context, so
+      // it competes with the 3D labels directly — a tie (it was '50' = sceneLabel)
+      // let any label projected under the panel print across it.
+      zIndex:          String(Z.edgePanel),
       display:         'none',
       flexDirection:   'column',
       backdropFilter:  'blur(8px)',

@@ -164,6 +164,13 @@ const CENSUS_REGISTRY = [
   { file: 'src/theme/tokens.test.js',        table: 'EXCLUDED_WITH_REASON',        kind: KIND.DERIVED_PARTITION,
     why: '母集団 = Object.keys(COLOR)。STATE_TOKENS との和が全トークンを覆う (ADR-102 以前からの手本)' },
 
+  // ── 重なり順 (2026-10-31) ──
+  { file: 'src/view/BodyMountStacking.test.js', table: 'BODY_MOUNT_TIERS',     kind: KIND.DERIVED_PARTITION,
+    why: '母集団 = document.body へ直接 mount するファイル。#react-ui-root の重なり文脈の外なので、'
+       + '層を Z トークンで宣言させる (LINK NETWORK が sceneLabel と同じ 50 を書き、ラベルが上に出ていた)' },
+  { file: 'src/view/BodyMountStacking.test.js', table: 'BODY_MOUNT_EXCLUDED',  kind: KIND.DERIVED_PARTITION,
+    why: '同上の対象外側 (層を描かない一時要素・キャンバス上のジェスチャ)' },
+
   // ── 投影軸 (ADR-103) ──
   { file: 'src/ProjectionAxisOwnership.test.js', table: 'RETIRED_MODE_SHAPES',   kind: KIND.SHAPE_CENSUS,
     why: '退役した Map モードの形。src/** 全体での出現数が 0 であることを数える '

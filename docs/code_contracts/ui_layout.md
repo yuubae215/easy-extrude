@@ -183,6 +183,8 @@ On mobile, status text is shown in the footer info bar (`_infoEl`) instead of th
 
 `SceneView` appends `renderer.domElement` to `document.getElementById('canvas-container')` (fallback: `document.body`). Never append directly to `document.body` — the implicit stacking order is fragile when a React overlay exists. Explicit z-index contract: `#canvas-container` (z-index:0) → GizmoView canvas (z-index:10, `position:fixed`) → `#react-ui-root` (z-index:100). Adding React UI layers without this container caused a black-screen regression after Phase 5.
 
+**Body-mounted layers stack on a declared `Z` tier (2026-10-31).** `#react-ui-root` is `position:fixed; z-index:100`, so it is its own stacking context — a React panel's inner z never competes with the 3D labels. An element appended straight to `document.body` has no such shelter: it competes with `EntityLabel` (`Z.sceneLabel`) directly, and on a tie the later DOM node wins. Such an element writes its tier as a token (`String(Z.edgePanel)` for an edge panel, which the token table puts above `Z.sceneLabel`), never a literal number. **Bug history:** the LINK NETWORK panel wrote `'50'` — the same number as `Z.sceneLabel` — so any label projected under the panel printed across the tree (seen while checking ADR-168 S3: `tcp` over the panel). **Asked at:** `src/view/BodyMountStacking.test.js` — the population is derived (files that call `document.body.appendChild(`) and each declares its tier or why it paints no layer.
+
 ---
 
 ## CF Label getBoundingClientRect Cache
