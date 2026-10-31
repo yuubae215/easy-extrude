@@ -788,3 +788,191 @@ test('レイアウトを変える変更はすべて署名を変える (DOM が�
       `${what} が署名に現れない — 「レイアウトが変わったのに DOM が古い」が書ける`)
   }
 })
+
+// ── Where a thing hangs (ADR-168 S3) ────────────────────────────────────────
+//
+// The tree's parent is an attachment: owner (`parentId`), then a fixed link,
+// then a declared support. The regression that started ADR-168 is the
+// single-arm pick & place template — 9 roots in a row, every workpiece an arc
+// that the lane budget turned into a badge.
+
+import { readFileSync } from 'node:fs'
+import { compileLayout } from '../layout/LayoutCompiler.js'
+import { supportsOf } from '../domain/support.js'
+
+/** A compiled example in the controller's shape — what `_updateLinkNetwork` passes. */
+function compiledScene(file) {
+  const dsl = JSON.parse(readFileSync(new URL(`../../examples/${file}`, import.meta.url), 'utf8'))
+  const compiled = compileLayout(dsl)
+  const TYPE = { Solid: 'cuboid', CoordinateFrame: 'frame', AnnotatedPoint: 'annot-point', AnnotatedRegion: 'annot-region', AnnotatedLine: 'annot-line' }
+  const infos = new Map()
+  for (const o of compiled.objects) {
+    infos.set(o.id, { name: o.name, type: TYPE[o.type] ?? 'cuboid', parentId: o.parentId ?? null })
+  }
+  const links = compiled.links.map(l => ({ ...l }))
+  return { infos, links, held: supportsOf({ unclaimed: compiled.unclaimedRelations ?? [] }) }
+}
+
+const roots = (layout) => [...layout.nodes.values()].filter(n => n.layer === 0).map(n => n.label).sort()
+const drawnArcs = (layout) => [...layout.edges.values()].filter(e => !e.tree)
+
+test('S3: the pick & place template hangs — 2 roots, depth 4, 1 arc, nothing dropped', () => {
+  const { infos, links, held } = compiledScene('layout_pick_place_cell.json')
+  const layout = computeLayout(infos, links, held)
+  assert.deepEqual(roots(layout), ['Power inlet (100V)', 'Workbench'])
+  assert.equal(layout.depth, 4)
+  assert.equal(drawnArcs(layout).length, 1, 'only the power connection is left as an arc')
+  assert.equal(layout.dropped, 0)
+  // A workpiece hangs under the bin's floor frame — the frame it is fixed to.
+  for (const id of ['solid_work_1', 'solid_work_2', 'solid_work_3']) {
+    const nd = layout.nodes.get(id)
+    assert.equal(nd.parentId, 'cf_part_bin_part_bin_floor', id)
+    assert.equal(nd.parentKind, 'fixed')
+  }
+  assert.equal(layout.nodes.get('cf_part_bin_part_bin_floor').parentId, 'solid_part_bin')
+  assert.equal(layout.nodes.get('cf_part_bin_part_bin_floor').parentKind, 'owner')
+  // The bin, the tray and the pedestal rest on the workbench (unclaimed relations).
+  for (const id of ['solid_part_bin', 'solid_output_tray', 'solid_robot_pedestal']) {
+    assert.equal(layout.nodes.get(id).parentId, 'solid_worktable', id)
+    assert.equal(layout.nodes.get(id).parentKind, 'support', id)
+  }
+  // The robot base hangs from the pedestal's mounting frame.
+  assert.equal(layout.nodes.get('cf_robot_base').parentId, 'cf_robot_pedestal_robot_mount')
+})
+
+test('S3: with nothing attached the same scene is a row of roots — the hanging is S3\'s, not the data\'s', () => {
+  const { infos, links } = compiledScene('layout_pick_place_cell.json')
+  // The owner forest alone. (ADR-168 counted 9 roots when the supports were
+  // still `above` links; as unclaimed relations, the tray had no link left.)
+  const before = computeLayout(infos, links.map(l => ({ ...l, jointType: null })))
+  assert.equal(roots(before).length, 8)
+  assert.equal(before.depth, 2)
+})
+
+test('S3: a consumed fixed link stays in edges as `tree` — counted, laneless, never a bow', () => {
+  const { infos, links, held } = compiledScene('layout_pick_place_cell.json')
+  const layout = computeLayout(infos, links, held)
+  const consumed = [...layout.edges.values()].filter(e => e.tree)
+  assert.equal(consumed.length, 4)
+  for (const e of consumed) {
+    assert.equal(e.lane, null)
+    assert.equal(e.cx, null)
+    assert.equal(e.dropped, false)
+  }
+})
+
+test('S3: 0 attachments — the output is exactly what the owner forest drew before', () => {
+  const { infos, links } = twoSolidScene()
+  const a = computeLayout(infos, links)
+  const b = computeLayout(infos, links, { supports: [], contested: [] })
+  assert.equal(layoutSignature(a), layoutSignature(b))
+  for (const nd of a.nodes.values()) assert.ok(nd.parentKind === null || nd.parentKind === 'owner')
+})
+
+test('S3: a support alone (no link) still shows the panel — something was declared', () => {
+  const infos = new Map()
+  solidWithFrames(infos, { id: 'table', name: 'Table' })
+  solidWithFrames(infos, { id: 'box', name: 'Box' })
+  const layout = computeLayout(infos, [], { supports: [{ subject: 'box', of: 'table' }] })
+  assert.equal(layout.nodes.size, 2)
+  assert.equal(layout.edges.size, 0)
+  assert.equal(layout.nodes.get('box').parentId, 'table')
+  assert.equal(layout.nodes.get('box').parentKind, 'support')
+})
+
+test('S3: N candidates — a fixed link beats a support, and the losing support stays an arc', () => {
+  const infos = new Map()
+  solidWithFrames(infos, { id: 'table', name: 'Table' })
+  solidWithFrames(infos, { id: 'jig', name: 'Jig' })
+  solidWithFrames(infos, { id: 'part', name: 'Part' })
+  const links = [link('fx', 'part_origin', 'jig_origin', { jointType: 'fixed', semanticType: 'fastened' })]
+  const layout = computeLayout(infos, links, { supports: [{ subject: 'part', of: 'table' }] })
+  assert.equal(layout.nodes.get('part').parentId, 'jig')
+  assert.equal(layout.nodes.get('part').parentKind, 'fixed')
+  const arcs = drawnArcs(layout)
+  assert.equal(arcs.length, 1)
+  assert.equal(arcs[0].kind, 'support')
+  assert.deepEqual([arcs[0].source, arcs[0].target], ['part', 'table'])
+})
+
+test('S3: N candidates of one kind — one wins by the canonical order, whatever order they arrive in', () => {
+  const infos = new Map()
+  solidWithFrames(infos, { id: 'a', name: 'A' })
+  solidWithFrames(infos, { id: 'b', name: 'B' })
+  solidWithFrames(infos, { id: 'p', name: 'P' })
+  const supports = [{ subject: 'p', of: 'b' }, { subject: 'p', of: 'a' }]
+  const one = computeLayout(infos, [], { supports })
+  const two = computeLayout(infos, [], { supports: [...supports].reverse() })
+  assert.equal(layoutSignature(one), layoutSignature(two))
+  assert.equal(one.nodes.get('p').parentId, 'a')
+  assert.equal(drawnArcs(one).length, 1, 'the other support is an arc, not gone')
+})
+
+test('S3: a cycle of fixed links — one is left as an arc, every node is placed', () => {
+  const infos = new Map()
+  for (const id of ['a', 'b', 'c']) solidWithFrames(infos, { id, name: id.toUpperCase() })
+  const fx = (id, s, t) => link(id, `${s}_origin`, `${t}_origin`, { jointType: 'fixed', semanticType: 'fastened' })
+  const links = [fx('ab', 'a', 'b'), fx('bc', 'b', 'c'), fx('ca', 'c', 'a')]
+  const layout = computeLayout(infos, links)
+  assert.equal(layout.nodes.size, 3)
+  assert.equal(roots(layout).length, 1)
+  assert.equal([...layout.edges.values()].filter(e => e.tree).length, 2)
+  assert.equal(drawnArcs(layout).length, 1)
+  // Same answer in any arrival order.
+  assert.equal(layoutSignature(computeLayout(infos, [...links].reverse())), layoutSignature(layout))
+})
+
+test('S3: two kinematic links on one pair contradict — neither hangs anything', () => {
+  const infos = new Map()
+  solidWithFrames(infos, { id: 'a', name: 'A' })
+  solidWithFrames(infos, { id: 'b', name: 'B' })
+  const links = [
+    link('f', 'a_origin', 'b_origin', { jointType: 'fixed', semanticType: 'fastened' }),
+    link('r', 'a_origin', 'b_origin', { jointType: 'revolute', semanticType: 'connects' }),
+  ]
+  const layout = computeLayout(infos, links)
+  assert.equal(roots(layout).length, 2)
+  assert.equal(drawnArcs(layout).length, 2)
+})
+
+test('S3: a movable joint does not hang — only `fixed` attaches', () => {
+  const infos = new Map()
+  solidWithFrames(infos, { id: 'a', name: 'A' })
+  solidWithFrames(infos, { id: 'b', name: 'B' })
+  const layout = computeLayout(infos, [link('r', 'a_origin', 'b_origin', { jointType: 'revolute', semanticType: 'connects' })])
+  assert.equal(roots(layout).length, 2)
+})
+
+test('S3: an owner edge is never cut — a CF fixed elsewhere moves its owner root, not itself', () => {
+  const { infos, links } = twoSolidScene()
+  const fixed = links.map(l => ({ ...l, jointType: 'fixed', semanticType: 'fastened' }))
+  const layout = computeLayout(infos, fixed)
+  for (const [id, info] of infos) {
+    const nd = layout.nodes.get(id)
+    if (nd && info.parentId != null && infos.get(info.parentId)?.name !== ORIGIN_FRAME_NAME) {
+      assert.equal(nd.parentKind, 'owner', id)
+    }
+  }
+})
+
+test('S3: a contested pair is drawn as an arc between the two, not hung', () => {
+  const infos = new Map()
+  solidWithFrames(infos, { id: 'a', name: 'A' })
+  solidWithFrames(infos, { id: 'b', name: 'B' })
+  const layout = computeLayout(infos, [], { contested: [{ a: 'a', b: 'b' }] })
+  assert.equal(roots(layout).length, 2)
+  const arcs = drawnArcs(layout)
+  assert.equal(arcs.length, 1)
+  assert.equal(arcs[0].kind, 'contested')
+})
+
+test('S3: an attached elbow is styled apart from an owner elbow; a shared bar only when all below are attached', () => {
+  const { infos, links, held } = compiledScene('layout_pick_place_cell.json')
+  const layout = computeLayout(infos, links, held)
+  const segs = treeSegments(layout.nodes)
+  assert.ok(segs.some(s => s.attached) && segs.some(s => !s.attached))
+  // The bin floor's three children are all workpieces fixed to it: its stem is attached.
+  const floor = layout.nodes.get('cf_part_bin_part_bin_floor')
+  const stem = segs.find(s => s.x1 === floor.x && s.y1 === floor.y + STEM_DY)
+  assert.equal(stem.attached, true)
+})

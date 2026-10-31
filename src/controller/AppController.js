@@ -587,6 +587,9 @@ export class AppController {
         on:     (event, fn) => this._service.on(event, fn),
         nameOf: (id) => this._scene.getObject(id)?.name ?? id,
       },
+      // A thing hangs under what it rests on (ADR-168 S3) — re-hang on the
+      // event that changed the declarations.
+      onDeclarationsChanged: () => this._updateLinkNetwork(),
     })
     // A name in the Relations section selects that thing — through the public
     // verb (原則 #1). A ref the projection made no entity for says so (#11).
@@ -2409,7 +2412,7 @@ export class AppController {
       entityInfos.set(id, { name: obj.name, type, parentId: obj.parentId ?? null })
     }
     const links = [...this._scene.links.values()]
-    this._linkNetworkView.update(entityInfos, links)
+    this._linkNetworkView.update(entityInfos, links, this._arrangementCtrl?.supports() ?? null)
     this._linkNetworkView.setSelection(this._selectedIds)
   }
 

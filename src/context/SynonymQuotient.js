@@ -278,7 +278,7 @@ export const PHRASE_TABLE = Object.freeze([
   { key: 'on_choice', en: 'on', ja: 'on', cat: 'spatial',
     cells: ['touching:+x', 'touching:-x', 'touching:+y', 'touching:-y', 'touching:+z', 'touching:-z'],
     synonyms: ['on'],
-    gloss: { says: '接している (on the table / on the wall)', notSays: 'どの面か (話し手に問う)・支えているか (支えはまだ軸が無い)' },
+    gloss: { says: '接している (on the table / on the wall)', notSays: 'どの面か (話し手に問う)・支えているか (支えは軸ではなく、touching:+z の面から導く — ADR-168 S3)' },
     example: { ja: 'the bin is on the workbench', term: 'on' }, contrast: { ja: 'the bin is apart from the workbench', term: 'apart' } },
   { key: 'front_choice', en: 'in front of', ja: '前', cat: 'spatial',
     cells: ['apart:front'], notYet: ['相手自身の正面 (DEF-073)'],
