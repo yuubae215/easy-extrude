@@ -60,9 +60,37 @@
  * interval colouring over its x span; the lane sets how far it bows above its
  * endpoints, and past `MAX_LANES` an arc becomes a `+N` badge on both endpoints.
  *
+ * ## Where a thing hangs (ADR-168 S3)
+ *
+ * The tree's parent is a thing's **attachment** — what it hangs from — and it
+ * comes in three kinds, tried in this order:
+ *
+ *   owner   — `parentId`: the frame was defined on that entity. A CF can hang
+ *             from nothing else, and an owner edge is never cut.
+ *   fixed   — a SpatialLink with `jointType: fixed` (`mobilityBetween` — two
+ *             kinematic links on one pair contradict and fix nothing). The
+ *             source end is the one attached: its owner ROOT hangs under the
+ *             target node — the precise frame it is fixed to (a workpiece
+ *             under the bin's floor frame, not under the bin).
+ *   support — a declared relation that says the thing rests on another's top
+ *             (`domain/support.js` — claims and unclaimed relations, never the
+ *             pose). Only an owner root can be supported.
+ *
+ * Before ADR-168 S3 the tree was the `parentId` forest alone (ADR-048 §2.2.1
+ * "the CF tree is the kinematic spanning tree"), and everything a person means
+ * by "hangs from" was an arc — so a pick & place cell drew 9 roots in a row.
+ *
+ * A thing gets at most ONE attachment. Candidates are taken fixed-before-support,
+ * then in a canonical order; one that would close a cycle, or that arrives for a
+ * thing already attached, is left as an arc (a fixed link stays the arc it
+ * always was; a support becomes a `support` arc). A contested support — the
+ * declarations disagree — is an arc too. Nothing a person declared vanishes
+ * (原則 #11). A fixed link that won is CONSUMED by the tree: it stays in
+ * `edges` with `tree: true` and is drawn as the elbow, not as a bow.
+ *
  * ## Cardinality (原則 #31 — the reason this file is testable at all)
  *
- *   0 — no links at all: no nodes, no edges. The caller hides the whole panel;
+ *   0 — nothing declared (no link, no support): no nodes, no edges. The caller hides the whole panel;
  *       `computeLayout` reports it as an empty result rather than an empty canvas.
  *       No cotree edge → `lanes === 0`: no headroom is reserved for arcs that
  *       do not exist.
@@ -79,6 +107,7 @@
  *      fused node), ADR-048 (panel dimensions, data contract), ADR-037
  */
 import { isOriginFrame } from '../domain/originFrame.js'
+import { mobilityBetween, MOBILITY } from '../domain/arrangement.js'
 
 /** Panel width — fixed by the left-edge occupancy contract (ADR-048 §2.3). The
  *  CONTENT may be wider; it scrolls inside the panel (ADR-167). */
@@ -138,7 +167,8 @@ const MARGIN = 4        // left/right padding around the columns
  * @typedef {{name: string, type: string, parentId?: string|null}} EntityInfo
  * @typedef {{id: string, sourceId: string, targetId: string,
  *            semanticType?: string|null, jointType?: string|null}} LinkInfo
- * @typedef {{label: string, type: string, parentId: string|null, layer: number,
+ * @typedef {{label: string, type: string, parentId: string|null,
+ *            parentKind: 'owner'|'fixed'|'support'|null, layer: number,
  *            slot: number, x: number, y: number, labelW: number,
  *            overflow: number, entityId: string, frameId: string|null,
  *            fused: boolean}} LayoutNode
@@ -185,8 +215,12 @@ function buildFusion(entityInfos) {
  *
  * @param {Map<string, EntityInfo>|null|undefined} entityInfos every scene entity
  * @param {Iterable<LinkInfo>|null|undefined} links the SpatialLinks
+ * @param {{supports?: Iterable<{subject: string, of: string}>,
+ *          contested?: Iterable<{a: string, b: string}>}|null} [held] the declared
+ *        supports by scene id (`domain/support.js` — S3). Omitted = none.
  * @returns {{nodes: Map<string, LayoutNode>,
- *            edges: Map<string, {source:string, target:string, semanticType:string,
+ *            edges: Map<string, {source:string, target:string, semanticType:string|null,
+ *                                kind:'link'|'support'|'contested', tree:boolean,
  *                                directed:boolean, kinematic:boolean,
  *                                lane:number|null, dropped:boolean,
  *                                cx:number|null, cy:number|null}>,
@@ -195,9 +229,11 @@ function buildFusion(entityInfos) {
  *            contentW: number, contentH: number, svgH: number, graphH: number,
  *            scrollX: boolean, scrollY: boolean}}
  */
-export function computeLayout(entityInfos, links) {
+export function computeLayout(entityInfos, links, held = null) {
   const infos = entityInfos instanceof Map ? entityInfos : new Map()
   const linkList = [...(links ?? [])]
+  const supportList = [...(held?.supports ?? [])]
+  const contestedList = [...(held?.contested ?? [])]
 
   const empty = {
     nodes: new Map(), edges: new Map(), nodeIdByEntity: new Map(),
@@ -222,8 +258,13 @@ export function computeLayout(entityInfos, links) {
   // Link endpoints, plus their ancestors so a linked CF is anchored under its
   // root node even when that root carries no link of its own.
   const seeds = []
-  for (const link of linkList) {
-    for (const endpoint of [link.sourceId, link.targetId]) {
+  const pairs = [
+    ...linkList.map(l => [l.sourceId, l.targetId]),
+    ...supportList.map(s => [s.subject, s.of]),
+    ...contestedList.map(c => [c.a, c.b]),
+  ]
+  for (const pair of pairs) {
+    for (const endpoint of pair) {
       const id = resolve(endpoint)
       if (infos.has(id)) seeds.push(id)
     }
@@ -249,6 +290,7 @@ export function computeLayout(entityInfos, links) {
       label:    info.name,
       type:     info.type,
       parentId: parentOf(id),
+      parentKind: null,     // set below, once every node exists
       layer:    0,          // TF depth — what y carries
       slot:     0,          // column position — what x carries
       x:        0,
@@ -279,13 +321,84 @@ export function computeLayout(entityInfos, links) {
       source,
       target,
       semanticType: link.semanticType ?? 'connects',
+      kind:         'link',
+      tree:         false,
       directed:     DIRECTED_TYPES.has(link.semanticType) || link.jointType != null,
       // Kinematic links (a real URDF joint) read heavier than topological ones.
       kinematic:    link.jointType != null,
+      jointType:    link.jointType ?? null,
       lane: null, dropped: false, cx: null, cy: null,
     })
   }
-  if (edges.size === 0) return empty
+
+  // ── Attachments (ADR-168 S3): owner, then fixed, then support ──────────────
+  for (const nd of nodes.values()) nd.parentKind = nd.parentId != null ? 'owner' : null
+  /** The owner-forest root of a node, or null inside a `parentId` cycle. */
+  const ownerRoot = (id) => {
+    let cur = id
+    for (let hop = 0; hop <= MAX_ANCESTOR_HOPS; hop++) {
+      const pid = nodes.get(cur).parentId
+      if (pid == null || !nodes.has(pid)) return cur
+      cur = pid
+    }
+    return null
+  }
+  const kinematicLinks = [...edges.values()]
+    .filter(e => e.kinematic)
+    .map(e => ({ a: e.source, b: e.target, jointType: e.jointType }))
+  const candidates = []
+  for (const [edgeId, e] of edges) {
+    const m = mobilityBetween(kinematicLinks, e.source, e.target)
+    if (m.kind !== MOBILITY.DECLARED || m.jointType !== 'fixed' || e.jointType !== 'fixed') continue
+    candidates.push({ rank: 0, child: ownerRoot(e.source), parent: e.target, edgeId, from: e.source })
+  }
+  const supportEdges = new Map()
+  for (const s of supportList) {
+    const subject = resolve(s.subject), of = resolve(s.of)
+    if (!nodes.has(subject) || !nodes.has(of) || subject === of) continue
+    const edgeId = `support:${subject}\u2192${of}`
+    if (supportEdges.has(edgeId)) continue
+    supportEdges.set(edgeId, { subject, of })
+    candidates.push({ rank: 1, child: ownerRoot(subject), parent: of, edgeId, from: subject })
+  }
+  const cmp = (a, b) => (a < b ? -1 : a > b ? 1 : 0)
+  candidates.sort((a, b) => (a.rank - b.rank) || cmp(a.edgeId, b.edgeId))
+  /** Does `ancestor` sit on the attachment chain above `id`? */
+  const reaches = (id, ancestor) => {
+    let cur = id
+    for (let hop = 0; hop <= nodes.size && cur != null; hop++) {
+      if (cur === ancestor) return true
+      cur = nodes.get(cur).parentId
+    }
+    return false
+  }
+  const supportArcs = []
+  for (const c of candidates) {
+    const won = c.child != null && nodes.get(c.child).parentId == null && !reaches(c.parent, c.child)
+    if (won) {
+      const nd = nodes.get(c.child)
+      nd.parentId = c.parent
+      nd.parentKind = c.rank === 0 ? 'fixed' : 'support'
+      if (c.rank === 0) edges.get(c.edgeId).tree = true
+    } else if (c.rank === 1) {
+      supportArcs.push(c)
+    }
+  }
+  const declaredArc = (source, target, kind) => ({
+    source, target, semanticType: null, kind, tree: false,
+    directed: false, kinematic: false, jointType: null,
+    lane: null, dropped: false, cx: null, cy: null,
+  })
+  for (const c of supportArcs) edges.set(c.edgeId, declaredArc(c.from, c.parent, 'support'))
+  for (const p of contestedList) {
+    const a = resolve(p.a), b = resolve(p.b)
+    if (!nodes.has(a) || !nodes.has(b) || a === b) continue
+    edges.set(`contested:${a}\u2194${b}`, declaredArc(a, b, 'contested'))
+  }
+  // Nothing declared at all — the panel hides (原則 #31: 0 is a stated result).
+  const attached = [...nodes.values()].some(nd => nd.parentKind === 'fixed' || nd.parentKind === 'support')
+  if (edges.size === 0 && !attached) return empty
+  for (const e of edges.values()) delete e.jointType
   // Canonical edge order. It fixes two things at once: the z-stacking of two
   // crossing arcs, and the LANE each arc is assigned. The caller's link list is
   // ordered by scene mutation history, which changes when an unrelated link is
@@ -344,6 +457,7 @@ export function computeLayout(entityInfos, links) {
   const laneIntervals = []
   let dropped = 0
   for (const [, e] of orderedEdges) {
+    if (e.tree) continue                    // drawn as the elbow, not as a bow
     const su = nodes.get(e.source).slot, sv = nodes.get(e.target).slot
     const a = Math.min(su, sv), b = Math.max(su, sv)
     let lane = -1
@@ -377,7 +491,7 @@ export function computeLayout(entityInfos, links) {
     nd.labelW = SLOT_W - LABEL_PAD
   }
   for (const [, e] of orderedEdges) {
-    if (e.dropped) continue
+    if (e.dropped || e.tree) continue
     const u = nodes.get(e.source), v = nodes.get(e.target)
     const rise = 2 * ARC_RISE * (e.lane + 1)
     // Endpoints in one column (a cotree edge along a TF chain) would bow
@@ -424,8 +538,12 @@ export function computeLayout(entityInfos, links) {
  * label), a bar across its children, and a drop into each child. Pure, so the
  * view draws segments and computes no coordinate (ADR-094 E3).
  *
+ * `attached` marks the line style (ADR-168 S3): a drop is attached when its
+ * child hangs by a fixed link or a support rather than by its owner; the shared
+ * stem and bar are attached only when every child under them is.
+ *
  * @param {Map<string, LayoutNode>} nodes from `computeLayout`
- * @returns {{x1:number, y1:number, x2:number, y2:number}[]}
+ * @returns {{x1:number, y1:number, x2:number, y2:number, attached:boolean}[]}
  */
 export function treeSegments(nodes) {
   /** @type {Map<string, LayoutNode[]>} */
@@ -443,10 +561,12 @@ export function treeSegments(nodes) {
     const p = nodes.get(parentId)
     const barY = p.y + STEM_DY + (LEVEL_H - STEM_DY - NODE_R) / 2
     const xs = kids.map(k => k.x)
-    segs.push({ x1: p.x, y1: p.y + STEM_DY, x2: p.x, y2: barY })
+    const isAttached = (k) => k.parentKind === 'fixed' || k.parentKind === 'support'
+    const allAttached = kids.every(isAttached)
+    segs.push({ x1: p.x, y1: p.y + STEM_DY, x2: p.x, y2: barY, attached: allAttached })
     const lo = Math.min(p.x, ...xs), hi = Math.max(p.x, ...xs)
-    if (hi > lo) segs.push({ x1: lo, y1: barY, x2: hi, y2: barY })
-    for (const k of kids) segs.push({ x1: k.x, y1: barY, x2: k.x, y2: k.y - NODE_R - 1 })
+    if (hi > lo) segs.push({ x1: lo, y1: barY, x2: hi, y2: barY, attached: allAttached })
+    for (const k of kids) segs.push({ x1: k.x, y1: barY, x2: k.x, y2: k.y - NODE_R - 1, attached: isAttached(k) })
   }
   return segs
 }
@@ -553,6 +673,7 @@ export const NODE_SIGNATURE_FIELDS = Object.freeze([
   'label',          // the node's text
   'type',           // dot colour
   'parentId',       // tree elbows
+  'parentKind',     // the elbow's line style (owner vs attached — ADR-168 S3)
   'x', 'y',         // dot + label position
   'labelW',         // label truncation
   'overflow',       // the "+N" badge and its text
@@ -575,6 +696,8 @@ export const NODE_PRESENTATION_IRRELEVANT = Object.freeze([
 export const EDGE_SIGNATURE_FIELDS = Object.freeze([
   'source', 'target',   // endpoints → path geometry
   'semanticType',       // colour + arrowhead marker id
+  'kind',               // link / support / contested — colour and dash (ADR-168 S3)
+  'tree',               // consumed by the tree: drawn as an elbow, not a bow
   'directed', 'kinematic',
   'lane',               // how far the arc bows
   'dropped',            // drawn at all

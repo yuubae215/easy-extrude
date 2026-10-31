@@ -219,3 +219,48 @@ test('without a document the scene\'s unclaimed relations are listed by name and
   r.sceneChanged([])
   assert.equal(r.written.at(-1).unclaimed, null)
 })
+
+// ── S3: the declared supports, by scene id, and the event that re-hangs ─────
+
+test('S3: supports come from the document by scene id; a document edge and an unclaimed change both re-hang', () => {
+  const handlers = {}
+  let doc = { actors, arrangements: [{ ref: 'a1', by: 'ann', subject: 'part_bin', sides: [{ of: 'worktable', contact: 'touching', toward: '+z' }] }],
+    specification: { layout: { unclaimedRelations: [{ subject: 'output_tray', of: 'worktable', cell: 'touching:+z', was: 'above' }] } } }
+  let calls = 0
+  const ctrl = new ArrangementController({
+    ctxService: {
+      on: (ev, fn) => { (handlers[ev] ??= []).push(fn) },
+      arrangementReport: () => null,
+      getDoc: () => doc,
+      sceneIdForRef: (ref) => (ref === 'ghost' ? null : `solid_${ref}`),
+    },
+    store: { getState: () => ({ actions: { contextSetArrangements() {} } }) },
+    createView: () => ({ show() {}, dispose() {} }),
+    scene: { getUnclaimedRelations: () => [], on: (ev, fn) => { (handlers[ev] ??= []).push(fn) } },
+    onDeclarationsChanged: () => { calls++ },
+  })
+  handlers.contextLoaded.forEach(fn => fn())
+  assert.equal(calls, 1, 'the document edge re-hangs the tree (原則 #32)')
+  assert.deepEqual(ctrl.supports(), {
+    supports: [{ subject: 'solid_output_tray', of: 'solid_worktable' }, { subject: 'solid_part_bin', of: 'solid_worktable' }],
+    contested: [],
+  })
+  handlers.unclaimedRelationsChanged.forEach(fn => fn())
+  assert.equal(calls, 2)
+  // Focus and speaker do not move a support — they do not re-hang.
+  ctrl.setFocus(['part_bin'])
+  assert.equal(calls, 2)
+  // A ref the projection made no entity for is left out, not invented.
+  doc = { ...doc, arrangements: [{ ref: 'g', by: 'ann', subject: 'ghost', sides: [{ of: 'worktable', contact: 'touching', toward: '+z' }] }] }
+  assert.deepEqual(ctrl.supports().supports, [{ subject: 'solid_output_tray', of: 'solid_worktable' }])
+})
+
+test('S3: with no document, the scene\'s unclaimed relations (scene ids) are the supports', () => {
+  const ctrl = new ArrangementController({
+    ctxService: { on() {}, arrangementReport: () => null, getDoc: () => null },
+    store: { getState: () => ({ actions: { contextSetArrangements() {} } }) },
+    createView: () => ({ show() {}, dispose() {} }),
+    scene: { getUnclaimedRelations: () => [{ subject: 's1', of: 's2', cell: 'touching:+z', was: 'above' }], on() {} },
+  })
+  assert.deepEqual(ctrl.supports(), { supports: [{ subject: 's1', of: 's2' }], contested: [] })
+})

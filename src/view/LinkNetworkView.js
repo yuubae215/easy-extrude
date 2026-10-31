@@ -98,6 +98,8 @@ const NODE_COLOR = NODE_TYPE_COLORS
 /** Tree edge (TF parent → child): the skeleton, the most legible line here. */
 const TREE_STROKE = 'rgba(255,255,255,0.62)'
 const TREE_WIDTH  = 1.6
+/** An elbow that hangs a thing by a fixed link or a support, not by its owner (ADR-168 S3). */
+const ATTACHED_DASH = '5 2.5'
 
 const SVG_NS = 'http://www.w3.org/2000/svg'
 const FONT   = 'system-ui, -apple-system, sans-serif'
@@ -306,11 +308,14 @@ export class LinkNetworkView {
    * Rebuilds the graph from current scene state.
    * @param {Map<string, {name:string, type:string, parentId?:string|null}>} entityInfos
    * @param {import('../domain/SpatialLink.js').SpatialLink[]} links
+   * @param {{supports: Array<{subject:string, of:string}>, contested: Array<{a:string, b:string}>}|null} [held]
+   *        the declared supports by scene id (ADR-168 S3)
    */
-  update(entityInfos, links) {
-    // All graph derivation — fusion, ancestor expansion, levels, columns, lanes —
-    // is the pure layout's job (ADR-094 E3 / ADR-167). Nothing here recomputes it.
-    const layout = computeLayout(entityInfos, links)
+  update(entityInfos, links, held = null) {
+    // All graph derivation — fusion, ancestor expansion, attachments, levels,
+    // columns, lanes — is the pure layout's job (ADR-094 E3 / ADR-167 / ADR-168
+    // S3). Nothing here recomputes it.
+    const layout = computeLayout(entityInfos, links, held)
     this._nodes          = layout.nodes
     this._edges          = layout.edges
     this._nodeIdByEntity = layout.nodeIdByEntity
@@ -318,7 +323,8 @@ export class LinkNetworkView {
     this._contentH       = layout.contentH
     this._graphH         = layout.graphH
 
-    this._hasContent = layout.edges.size > 0
+    // A support with no link is still something declared (ADR-168 S3).
+    this._hasContent = layout.nodes.size > 0
     this._applyVisibility()
 
     // Elements are created only when the picture itself changed. Everything a
@@ -523,6 +529,7 @@ export class LinkNetworkView {
       line.setAttribute('stroke',         TREE_STROKE)
       line.setAttribute('stroke-width',   String(TREE_WIDTH))
       line.setAttribute('stroke-linecap', 'round')
+      if (seg.attached) line.setAttribute('stroke-dasharray', ATTACHED_DASH)
       this._graphGrp.appendChild(line)
     }
   }
@@ -541,12 +548,15 @@ export class LinkNetworkView {
    */
   _buildCotreeArcs() {
     for (const [edgeId, edge] of this._edges) {
-      if (edge.dropped) continue
+      if (edge.dropped || edge.tree) continue   // a tree-consumed link is its elbow
       const u = this._nodes.get(edge.source), v = this._nodes.get(edge.target)
       if (!u || !v) continue
 
-      const colorInt = LINK_TYPE_COLORS[edge.semanticType] ?? 0x888888
-      const color    = '#' + colorInt.toString(16).padStart(6, '0')
+      // A support that could not hang (or is contested) is not a SpatialLink —
+      // it takes the skeleton's colour, not a semanticType's (ADR-168 S3).
+      const color = edge.kind === 'link'
+        ? '#' + (LINK_TYPE_COLORS[edge.semanticType] ?? 0x888888).toString(16).padStart(6, '0')
+        : TREE_STROKE
 
       const el = document.createElementNS(SVG_NS, 'path')
       el.setAttribute('d', arcPath(edge, u, v))
@@ -653,18 +663,19 @@ export class LinkNetworkView {
   }
 
   /**
-   * Two-line legend naming the two edge classes (ADR-048 §2.2.1's decision,
+   * Legend naming the edge classes (ADR-048 §2.2.1's decision,
    * finally drawn — ADR-094 E2). It is pinned below the scroll area, because a
    * key that scrolls away from the thing it explains is not a key.
    *
    * It answers the report that started ADR-048 §2.2.1 ("nodes look like they
    * have several parents"): the tree is single-parent, the coloured bows are
-   * the constraint graph laid over it.
+   * the constraint graph laid over it. ADR-168 S3 split the tree's line in two:
+   * "TF parent" (defined on) and "attached" (fixed to / resting on).
    */
   _renderLegend() {
     while (this._legendEl.lastChild) this._legendEl.removeChild(this._legendEl.lastChild)
     const y = LEGEND_H - 4
-    const swatch = (x, stroke, dash) => {
+    const swatch = (x, stroke, dash, treeDash = null) => {
       const line = document.createElementNS(SVG_NS, 'line')
       line.setAttribute('x1', x)
       line.setAttribute('y1', y - 2.5)
@@ -674,6 +685,7 @@ export class LinkNetworkView {
       line.setAttribute('stroke-width', dash ? '1.2' : String(TREE_WIDTH))
       line.setAttribute('stroke-linecap', 'round')
       if (dash) line.setAttribute('stroke-dasharray', '3.5 2.5')
+      else if (treeDash) line.setAttribute('stroke-dasharray', treeDash)
       this._legendEl.appendChild(line)
     }
     const caption = (x, txt) => {
@@ -689,11 +701,15 @@ export class LinkNetworkView {
     }
     swatch(10, TREE_STROKE, false)
     caption(27, 'TF parent')
+    // A thing hung by a fixed link or a support (ADR-168 S3) — same skeleton,
+    // dashed, so "defined on" and "attached to" stay two readings.
+    swatch(74, TREE_STROKE, false, ATTACHED_DASH)
+    caption(91, 'attached')
     // The constraint swatch borrows a real semanticType colour rather than a
     // neutral grey, so the legend and the graph share one vocabulary.
     const linkColor = '#' + (LINK_TYPE_COLORS.mounts ?? 0x888888).toString(16).padStart(6, '0')
-    swatch(108, linkColor, true)
-    caption(125, 'constraint')
+    swatch(138, linkColor, true)
+    caption(155, 'constraint')
   }
 
   _toggleCollapse() {

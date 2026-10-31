@@ -16,6 +16,9 @@
  *
  *   → the Relations section's model (`context.arrangements` — sole writer)
  *   → the 3D picture (`ArrangementStatusView` — sole owner)
+ *   → the declared supports by scene id (`supports()` — ADR-168 S3), and a
+ *     `onDeclarationsChanged` call whenever they may have moved, so the LINK
+ *     NETWORK re-hangs on the event that changed them (原則 #32), not on a poll.
  *
  * Holds no logic of its own: which relations a focus brings, what each word
  * draws and how a status is toned are all `view/ArrangementStatusMath.js`; the
@@ -25,6 +28,7 @@
  * @module controller/ArrangementController
  */
 import { arrangementPanel, arrangementPicture, speakerPanel, unclaimedPanel } from '../view/ArrangementStatusMath.js'
+import { supportsOf } from '../domain/support.js'
 
 export class ArrangementController {
   /**
@@ -33,9 +37,11 @@ export class ArrangementController {
    *   store: {getState: () => any},
    *   createView: () => {show: (pic: object|null) => void, dispose: () => void},
    *   scene?: {getUnclaimedRelations: () => ReadonlyArray<object>, on: Function, nameOf?: (id: string) => string},
+   *   onDeclarationsChanged?: () => void,
    * }} deps
    */
-  constructor({ ctxService, store, createView, scene = null }) {
+  constructor({ ctxService, store, createView, scene = null, onDeclarationsChanged = () => {} }) {
+    this._onDeclarationsChanged = onDeclarationsChanged
     this._ctx = ctxService
     this._scene = scene
     this._store = store
@@ -54,7 +60,10 @@ export class ArrangementController {
     this._lostSpeaker = null
     ctxService.on('contextLoaded',  () => this.refresh())
     ctxService.on('contextChanged', () => this.refresh())
-    scene?.on('unclaimedRelationsChanged', () => this._render())
+    scene?.on('unclaimedRelationsChanged', () => {
+      this._render()
+      this._onDeclarationsChanged()
+    })
   }
 
   /** Re-read the relations from the document (the document edge). */
@@ -66,6 +75,7 @@ export class ArrangementController {
       this._speaker = null
     }
     this._render()
+    this._onDeclarationsChanged()
   }
 
   _doc() { return this._ctx.getDoc?.() ?? null }
@@ -100,6 +110,35 @@ export class ArrangementController {
       for (const side of arr.sides ?? []) out.add(`${arr.subject}|${side.of}`)
     }
     return out
+  }
+
+  /**
+   * Which thing rests on which, by scene id (ADR-168 S3) — read from the same
+   * declarations the Relations section lists: the document's claims and
+   * unclaimed relations when there is a document, else the scene's unclaimed
+   * relations (already scene ids). A ref the projection made no entity for is
+   * left out here; the Relations section is where it is named (原則 #11).
+   * @returns {{supports: Array<{subject: string, of: string}>, contested: Array<{a: string, b: string}>}}
+   */
+  supports() {
+    const doc = this._doc()
+    if (!doc) return supportsOf({ unclaimed: this._scene?.getUnclaimedRelations() ?? [] })
+    const held = supportsOf({
+      arrangements: doc.arrangements ?? [],
+      unclaimed:    doc.specification?.layout?.unclaimedRelations ?? [],
+    })
+    const id = (ref) => this._ctx.sceneIdForRef?.(ref) ?? null
+    const supports = []
+    for (const s of held.supports) {
+      const subject = id(s.subject), of = id(s.of)
+      if (subject && of) supports.push({ subject, of })
+    }
+    const contested = []
+    for (const c of held.contested) {
+      const a = id(c.a), b = id(c.b)
+      if (a && b) contested.push({ a, b })
+    }
+    return { supports, contested }
   }
 
   /**
