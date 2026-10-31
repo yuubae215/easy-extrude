@@ -10,7 +10,7 @@ artifacts
 
     context Adr168Scope
     uuid 9a8970be-0306-4bf4-83d5-028a996e407b
-    summary "ADR-168 (Accepted 2026-10-22・段階実装 — S1・S1b・S2 実装済み): above / adjacent を退役し、関係を『接触・向き・可動性』の 3 軸の組として新しい型 Arrangement (主張した人 by + subject + 側 1..2) で言う。概念モデルの正本は docs/SPATIAL_RELATION_MODEL.md。可動性は既存の jointType、面は ADR-152 の語彙を使う。主張は state (配置から導出)・宣言 (文書)・status (軸ごとの離散の照合) の 3 欄。実装は S1 (型とスキーマ — 実装済み) → S1b (語が指す先を画面で確かめる — 実装済み) → S2-1 (話している人と推論の置き換え — 実装済み) → S2-2 (旧語の退役と移行 — 実装済み) → S3 (LINK NETWORK の木)"
+    summary "ADR-168 (Accepted 2026-10-22・段階実装 — S1・S1b・S2・S3 実装済み): above / adjacent を退役し、関係を『接触・向き・可動性』の 3 軸の組として新しい型 Arrangement (主張した人 by + subject + 側 1..2) で言う。概念モデルの正本は docs/SPATIAL_RELATION_MODEL.md。可動性は既存の jointType、面は ADR-152 の語彙を使う。主張は state (配置から導出)・宣言 (文書)・status (軸ごとの離散の照合) の 3 欄。実装は S1 (型とスキーマ — 実装済み) → S1b (語が指す先を画面で確かめる — 実装済み) → S2-1 (話している人と推論の置き換え — 実装済み) → S2-2 (旧語の退役と移行 — 実装済み) → S3 (LINK NETWORK の木 — 実装済み)"
     artifacts
     - "src/domain/arrangement.js"
     - "src/domain/arrangementGeometry.js"
@@ -155,9 +155,12 @@ artifacts
         goal HangingIsDerivedFromTheAxes
         uuid 5c1e2a40-7d3b-4f8e-9a61-2b0c4d7e8f13
         summary "LINK NETWORK の木の親は、subject を固定する相手か下から支える相手として軸から導かれ、単腕ピック&プレースのテンプレでワークが供給ビンの下にぶら下がって見える。候補が複数なら固定が支えに優先し、残りは弧として残る (無言で消さない)"
-        state ToBeDeveloped
-        labels support-exploring
+        labels support-verified
 
-            assumption HangingRegressionPlanned
-            uuid 3f9d7b21-6a4e-4c80-b5d2-e1a7c9f04b68
-            summary "証拠予定 (S3): 満期=GREP:src/view/LinkNetworkLayout.js::mobilityBetween 。LinkNetworkLayout.test.js にテンプレの事実で回帰 — ワークの親が供給ビン側のノード / 根 2 個 / dropped 0。親候補 2 つのワーク・循環する固定の fixture (基数 N)。2026-10-21 の試算 (fastened と支えを木辺にした what-if) は根 9 → 2、深さ 1 → 4、弧 8 → 1、dropped 3 → 0。見た目として読めるかは当事者の実画面でしか測れない (docs/dogfooding/)"
+            solution HangingTests
+            uuid 28f21a72-2ce6-46c9-acb5-0607c435b00c
+            summary "node --test (2026-10-31) — LinkNetworkLayout.test.js: 単腕ピック&プレースのテンプレ (compileLayout → 旧主張の支え) で根 2 (作業台・電源)・深さ 4・描く弧 1・dropped 0、Workpiece 1〜3 の親はビンの床フレーム (fixed)、ビン・トレイ・台座の親は作業台 (support)、robot_base は台座の取り付け面の下。取り付けが無ければ同じ scene は根 8・深さ 2。取り付け 0 個の出力は S3 前と署名まで一致。固定 > 支え (負けた支えは support の弧)、同じ種の 2 候補は到着順に依らず 1 つ、3 本の固定の循環は 1 本が弧、同じ対の運動学リンク 2 本は矛盾で何もぶら下げない、可動の関節はぶら下げない、持ち主の辺は切れない、食い違う対は contested の弧。support.test.js: +z と -z の 2 つの読みは 1 つの支え・食い違い 3 種は contested・順序非依存。ArrangementController.test.js: 文書の ref を scene id へ写し、文書の辺と旧主張の変化で張り直す (焦点では張り直さない)。満期の GREP (LinkNetworkLayout.js::mobilityBetween) は満たされた。見た目として読めるかは当事者の実画面でしか測れない (docs/dogfooding/) — この証拠の外"
+            artifacts
+            - "src/view/LinkNetworkLayout.test.js"
+            - "src/domain/support.test.js"
+            - "src/controller/ArrangementController.test.js"

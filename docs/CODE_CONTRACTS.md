@@ -212,7 +212,7 @@ Detail: `docs/code_contracts/ui_layout.md`
 
 | Rule | Core Takeaway |
 |------|--------------|
-| Three.js Canvas Must Mount in #canvas-container | `SceneView` appends the renderer to `#canvas-container` (z-index 0), never directly to `document.body` — the implicit stacking order is fragile with a React overlay. Explicit contract: canvas 0 → GizmoView 10 → `#react-ui-root` 100. |
+| Three.js Canvas Must Mount in #canvas-container | `SceneView` appends the renderer to `#canvas-container` (z-index 0), never directly to `document.body` — the implicit stacking order is fragile with a React overlay. Explicit contract: canvas 0 → GizmoView 10 → `#react-ui-root` 100. An element mounted straight on `document.body` is outside the root's stacking context and declares a `Z` token (edge panel = `Z.edgePanel`, above `Z.sceneLabel`) — never a literal (`BodyMountStacking.test.js`). |
 | Mobile Toolbar Stability | Fixed slot counts per mode; use `disabled` + `{spacer:true}`, never removal. Object mode 5 slots; CF slots intentionally mirror Solid positions for cross-entity muscle memory; transient operation bars: slot 1 = Cancel/Back, slot 4 = Confirm, regardless of operation. |
 | CF Label Position Order | `_updateWorldPoses()` must run BEFORE `updateLabelPosition()` in the animation loop; calling label update on a stale `_group.position` (previous frame) causes the label to lag one frame and appear to vibrate at startup. |
 | CF Label getBoundingClientRect Cache | `CoordinateFrameView.updateLabelPosition()` caches `getBoundingClientRect()` keyed on canvas client size (per-frame calls return varying values during mobile viewport-resize animations → 0.5-px jitter) and writes the DOM transform only when the rounded position changes. |

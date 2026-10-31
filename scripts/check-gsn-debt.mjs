@@ -418,7 +418,9 @@ const SUPPORT_LABELS = new Map([
 // 2026-10-26: 42 → 41。ADR-168 S2-2 で EachAxisIsItsOwnWord が support-verified へ (LegacyRelations /
 // LayoutSchema / SceneSchema / DocBuilder / ContextService の node --test)。満期 GONE:…SpatialLink.js::'above'
 // が発火し、DEF-071 も同じコミットで決着。
-const DEBT_BASELINE = 41
+// 2026-10-31: 41 → 40。ADR-168 S3 で HangingIsDerivedFromTheAxes が support-verified へ (LinkNetworkLayout /
+// support / ArrangementController の node --test)。満期 GREP:…LinkNetworkLayout.js::mobilityBetween が発火した。
+const DEBT_BASELINE = 40
 
 /**
  * G3 — 満期 trigger を持たない exploring goal の個数 (実測値)。
