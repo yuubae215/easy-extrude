@@ -530,7 +530,7 @@ test("response: every motion phase has a row; an unevaluated one carries a reaso
 test("response: the all-phase analysis names phase, part and obstacle index — never a name", () => {
   const analysis = { kind: "allPhases", candidatesAnalysed: 4, phases: [
     { phase: "lift", collided: 2, hits: [{ part: "held", obstacleIndex: 1, candidates: 2 }] }],
-    armPath: { kind: "undeclared" } };
+    armPath: { kind: "undeclared" }, replays: [] };
   accepts("grasp-search-response", { candidates: [], diagnostics: { ...diagnostics, interferenceAnalysis: analysis } });
   const named = structuredClone(analysis);
   named.phases[0].hits[0].obstacleName = "tray wall";
@@ -538,7 +538,7 @@ test("response: the all-phase analysis names phase, part and obstacle index — 
 });
 
 test("response v10: the arm is measured at the pick pose and along the path — measured, closed, never absent (ADR-158 PR1)", () => {
-  const base = { kind: "allPhases", candidatesAnalysed: 4, phases: [] };
+  const base = { kind: "allPhases", candidatesAnalysed: 4, phases: [], replays: [] };
   const measured = { kind: "measured", pathSamples: 6,
     atPickPose: { candidates: 1, hits: [{ obstacleIndex: 0, candidates: 1 }] },
     phases: [{ phase: "approach", onPath: 2, onPathOnly: 1, noSolutionOnPath: 0, hits: [{ obstacleIndex: 0, candidates: 2 }] }] };
@@ -552,6 +552,36 @@ test("response v10: the arm is measured at the pick pose and along the path — 
   rejects("grasp-search-response", withArm({ kind: "undeclared", atPickPose: measured.atPickPose }));
   // Measured is not judged: no rejection count rides here.
   rejects("grasp-search-response", withArm({ ...measured, phases: [{ ...measured.phases[0], rejected: 1 }] }));
+});
+
+test("response v11: a replay carries the judged samples per returned candidate — progress, never time (ADR-158 replay stage)", () => {
+  const sample = (s, arm, hits = []) => ({ s, tcp: [0.5, 0, 0.1], hits, arm });
+  const approach = { phase: "approach", samples: [
+    sample(0, { kind: "measured", joints: [0, 0, 0, 0, 0, 0], obstacles: [] }),
+    sample(1, { kind: "judged", joints: [0, 0, 0, 0, 0, 0], obstacles: [] }, [{ part: "hand", obstacleIndex: 1 }]),
+  ] };
+  const close = { phase: "close", hits: [] };
+  const lift = { phase: "lift", samples: [sample(0, { kind: "noSolution" }), sample(1, { kind: "undeclared" })] };
+  const withReplays = (replays) => ({ candidates: [], diagnostics: { ...diagnostics,
+    interferenceAnalysis: { kind: "allPhases", candidatesAnalysed: 1, phases: [], armPath: { kind: "undeclared" }, replays } } });
+  accepts("grasp-search-response", withReplays([{ rank: 1, phases: [approach, close, lift] }]));
+  accepts("grasp-search-response", withReplays([]));
+  // Required: no replay is an empty list, never an absent field.
+  const absent = withReplays([]);
+  delete absent.diagnostics.interferenceAnalysis.replays;
+  rejects("grasp-search-response", absent);
+  // Time is progress within the phase — no seconds, no frame rate (D3 / G2).
+  rejects("grasp-search-response", withReplays([{ rank: 1, phases: [{ ...approach, samples: approach.samples.map((x) => ({ ...x, t: 0.4 })) }] }]));
+  rejects("grasp-search-response", withReplays([{ rank: 1, fps: 30, phases: [approach] }]));
+  rejects("grasp-search-response", withReplays([{ rank: 1, phases: [{ ...approach, samples: [sample(1.5, approach.samples[0].arm), approach.samples[1]] }] }]));
+  // Closing the hand is one swept volume: no samples are invented for it.
+  rejects("grasp-search-response", withReplays([{ rank: 1, phases: [{ phase: "close", samples: approach.samples }] }]));
+  // A phase with no decided path has no replay shape (DEF-057).
+  rejects("grasp-search-response", withReplays([{ rank: 1, phases: [{ ...approach, phase: "transit" }] }]));
+  // The arm is never a judged-part hit — whether it was judged is the arm's own kind.
+  rejects("grasp-search-response", withReplays([{ rank: 1, phases: [{ ...approach, samples: [sample(0, approach.samples[0].arm, [{ part: "arm", obstacleIndex: 0 }]), approach.samples[1]] }] }]));
+  // An arm nobody placed carries no joints.
+  rejects("grasp-search-response", withReplays([{ rank: 1, phases: [{ ...approach, samples: [sample(0, { kind: "undeclared", joints: [0] }), approach.samples[1]] }] }]));
 });
 
 test("request: target.lift is a declared direction + distance, and the analysis mode is closed", () => {

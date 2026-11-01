@@ -265,6 +265,80 @@ class ArmPathMeasured(_ContractModel):
 ArmPath = ArmPathUndeclared | ArmPathMeasured
 
 
+class ReplayHitWire(_ContractModel):
+    """再生の標本 1 点で**判定した**部位が触れた障害物 (契約 v11, ADR-158 再生の段)。
+
+    腕はここに来ない — 腕は判定したか測っただけかを `ReplayArm` の kind が言う。
+    """
+
+    part: Literal["tcpPath", "hand", "held"]
+    obstacle_index: int = Field(ge=0)
+
+
+class ReplayArmUndeclared(_ContractModel):
+    """`robot.kinematics` が未宣言 — この標本の腕の姿勢は誰も決めていない (描かない)。"""
+
+    kind: Literal["undeclared"] = "undeclared"
+
+
+class ReplayArmNoSolution(_ContractModel):
+    """測ったが、この点の TCP 姿勢を取る関節解が限界の内側に無い (腕はこの直線をたどれない)。"""
+
+    kind: Literal["noSolution"] = "noSolution"
+
+
+class ReplayArmJudged(_ContractModel):
+    """探索が判定に使った腕の姿勢 (進入相のピック姿勢 — 被覆表の atEndOnly)。"""
+
+    kind: Literal["judged"] = "judged"
+    joints: list[float]
+    obstacles: list[int]
+
+
+class ReplayArmMeasured(_ContractModel):
+    """測っただけの腕の姿勢 (ADR-158 PR1 — 直前の姿勢に近い枝。棄却には数えない)。"""
+
+    kind: Literal["measured"] = "measured"
+    joints: list[float]
+    obstacles: list[int]
+
+
+ReplayArm = ReplayArmUndeclared | ReplayArmNoSolution | ReplayArmJudged | ReplayArmMeasured
+
+
+class ReplaySampleWire(_ContractModel):
+    """経路の相の標本 1 点。`s` は相の中の進み具合で**秒ではない** (ADR-158 D3)。"""
+
+    s: float = Field(ge=0.0, le=1.0)
+    tcp: list[float] = Field(min_length=3, max_length=3)
+    hits: list[ReplayHitWire]
+    arm: ReplayArm = Field(discriminator="kind")
+
+
+class ReplayPathPhaseWire(_ContractModel):
+    """直線の経路を持つ相の標本の列 (s 昇順、両端を含む)。"""
+
+    phase: Literal["approach", "lift"]
+    samples: list[ReplaySampleWire] = Field(min_length=2)
+
+
+class ReplaySweepPhaseWire(_ContractModel):
+    """掃引体積 1 つで判定する相 (爪を閉じる)。時点を持たない — 標本を捏造しない。"""
+
+    phase: Literal["close"]
+    hits: list[ReplayHitWire]
+
+
+ReplayPhase = ReplayPathPhaseWire | ReplaySweepPhaseWire
+
+
+class CandidateReplayWire(_ContractModel):
+    """返した候補 1 件の再生 (契約 v11)。`phases` は評価した相だけを動作の順に。"""
+
+    rank: int = Field(ge=1)
+    phases: list[ReplayPhase]
+
+
 class InterferenceAnalysisAllPhases(_ContractModel):
     """全相分析の結果 (契約 v8, ADR-157 D6)。答え (候補・ファネル) は変えない。"""
 
@@ -276,6 +350,9 @@ class InterferenceAnalysisAllPhases(_ContractModel):
     # 腕をピック姿勢と経路の各点で測った結果 (契約 v10, ADR-158 PR1)。測定であって
     # 棄却ではない — 経路で当たった候補も、ピック姿勢で当たらなければ返る候補に残る。
     arm_path: ArmPath = Field(discriminator="kind")
+    # 返した候補ごとの再生の標本 (契約 v11, ADR-158 再生の段)。rank 順に、返した候補
+    # ちょうどぶん。フレームレートも秒も載らない — 間のフレームはクライアントが導出する。
+    replays: list[CandidateReplayWire]
 
 
 InterferenceAnalysis = InterferenceAnalysisFirstCollision | InterferenceAnalysisAllPhases

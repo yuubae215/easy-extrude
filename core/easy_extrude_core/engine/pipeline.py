@@ -54,6 +54,15 @@ from ..contract import (
     ArmPathMeasured,
     ArmPathPhaseWire,
     ArmPathUndeclared,
+    CandidateReplayWire,
+    ReplayArmJudged,
+    ReplayArmMeasured,
+    ReplayArmNoSolution,
+    ReplayArmUndeclared,
+    ReplayHitWire,
+    ReplayPathPhaseWire,
+    ReplaySampleWire,
+    ReplaySweepPhaseWire,
     InterferencePhaseAnalysisWire,
     InterferencePhaseEvaluated,
     InterferencePhaseUnevaluated,
@@ -86,6 +95,9 @@ from .phases import (
     ArmModel,
     arm_segments_along,
     Hit,
+    PathReplay,
+    SweepReplay,
+    phase_replay,
     MotionPhase,
     UnevaluatedReason,
     phase_hits,
@@ -622,7 +634,9 @@ class SearchDiagnostics:
     interference_analysis: "Optional[InterferenceAnalysisReport]" = None
 
 
-#: 通過候補 1 件 = (総合スコア, 姿勢, objective 内訳, IK 解, 仕様 id | None)。
+#: 通過候補 1 件 = (総合スコア, 姿勢, objective 内訳, IK 解, 仕様 id | None, 候補)。
+#: 候補そのものは再生の標本 (ADR-158 再生の段) を組むために運ぶ — プリグラスプと
+#: 姿勢は候補にしか無い。
 _Scored = tuple
 
 
@@ -636,6 +650,9 @@ class InterferenceAnalysisReport:
     # 腕をピック姿勢と経路の各点で測った結果 (ADR-158 PR1)。None = 運動学が未宣言で
     # 腕の姿勢を誰も決めていない (測っていない — 「当たらなかった」ではない)。
     arm_path: "Optional[ArmPathReport]" = None
+    # 返した候補ごとの再生の標本 (ADR-158 再生の段)。(rank, 評価した相ごとの標本) を
+    # rank 順に、返した候補ちょうどぶん。
+    replays: "tuple[tuple[int, tuple[PathReplay | SweepReplay, ...]], ...]" = ()
 
 
 @dataclass(frozen=True)
@@ -911,7 +928,7 @@ def search_report(
             return None
         objective_scores = evaluate_objectives(candidate, problem, objective_names)
         total = weighted_sum(objective_scores, weights)
-        return (total, candidate.pose, objective_scores, ik_solution, candidate.spec_id)
+        return (total, candidate.pose, objective_scores, ik_solution, candidate.spec_id, candidate)
 
     def evaluate_all(candidates) -> "list[_Scored]":
         return [r for r in (evaluate(c) for c in candidates) if r is not None]
@@ -972,7 +989,7 @@ def search_report(
             ),
             grasp_spec_id=spec_id,
         )
-        for i, (total, pose, objective_scores, ik_solution, spec_id) in enumerate(top)
+        for i, (total, pose, objective_scores, ik_solution, spec_id, _candidate) in enumerate(top)
     ]
     diagnostics = SearchDiagnostics(
         candidates_generated=funnel.generated,
@@ -1014,6 +1031,22 @@ def search_report(
                     for p in evaluated_phases
                 ),
                 arm_path=_arm_path_report(funnel, arm_path_phases) if arm is not None else None,
+                # 返した候補だけを、判定と同じ点で組み直す (純粋・決定的)。集計の側
+                # (上の phases / arm_path) は全候補ぶんで、こちらは返す候補ぶん。
+                replays=tuple(
+                    (
+                        i + 1,
+                        tuple(
+                            phase_replay(
+                                problem, p, candidate,
+                                solution=ik_solution, arm=arm,
+                                solver=solver if arm is not None else None,
+                            )
+                            for p in evaluated_phases
+                        ),
+                    )
+                    for i, (_t, _p, _o, ik_solution, _s, candidate) in enumerate(top)
+                ),
             )
             if analysing
             else None
@@ -1072,7 +1105,46 @@ def _analysis_wire(report: "Optional[InterferenceAnalysisReport]"):
             for p, collided, hits in report.phases
         ],
         arm_path=_arm_path_wire(report.arm_path),
+        replays=[
+            CandidateReplayWire(rank=rank, phases=[_replay_phase_wire(r) for r in phases])
+            for rank, phases in report.replays
+        ],
     )
+
+
+def _replay_hits_wire(hits) -> "list[ReplayHitWire]":
+    return [ReplayHitWire(part=h.part.value, obstacle_index=h.obstacle_index) for h in hits]
+
+
+def _replay_arm_wire(sample):
+    """標本の腕をワイヤの union へ写す唯一の場所 (ADR-158 再生の段)。分岐は値の在否と型で。"""
+    arm = sample.arm
+    if arm is None:
+        return ReplayArmUndeclared()
+    if arm.joints is None:
+        return ReplayArmNoSolution()
+    cls = ReplayArmJudged if sample.arm_judged else ReplayArmMeasured
+    return cls(joints=list(arm.joints), obstacles=list(arm.obstacles))
+
+
+def _replay_phase_wire(replay: "PathReplay | SweepReplay"):
+    """相 1 つの再生をワイヤへ。形 (経路 / 掃引) は型で分ける (原則 #2)。"""
+    if isinstance(replay, SweepReplay):
+        return ReplaySweepPhaseWire(phase=replay.phase.value, hits=_replay_hits_wire(replay.hits))
+    if isinstance(replay, PathReplay):
+        return ReplayPathPhaseWire(
+            phase=replay.phase.value,
+            samples=[
+                ReplaySampleWire(
+                    s=x.s,
+                    tcp=[x.tcp.x, x.tcp.y, x.tcp.z],
+                    hits=_replay_hits_wire(x.hits),
+                    arm=_replay_arm_wire(x),
+                )
+                for x in replay.samples
+            ],
+        )
+    raise TypeError(f"未宣言の再生の形 {type(replay)!r} (ADR-158)")
 
 
 def _most_first(counter: "Counter[int]") -> "tuple[tuple[int, int], ...]":

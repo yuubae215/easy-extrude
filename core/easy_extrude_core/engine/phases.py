@@ -432,3 +432,145 @@ def arm_segments_along(
             at_pick_pose=i == pick_index,
         )
     return tuple(out[i] for i in range(n))
+
+
+# --- 再生の標本 (ADR-158 再生の段 R1 — 判定した標本と測った腕を候補ごとに返す) -------
+#
+# 全相分析は今まで当たりを**候補数に集計**して返していた。再生は「どの瞬間に、どの部位が、
+# 何に当たるか」を絵にするので、集計の前の**標本の列**が要る。ここはそれを、判定
+# (`phase_hits`) と**同じ点・同じ幾何**で組む。判定を書き直すのではなく割り直す —
+# 標本ごとの当たりの和集合が `phase_hits(first_only=False)` と一致することを
+# `core/tests/test_motion_phases.py` が問う (源は 1 つ、これは導出)。
+#
+# 時間軸は相の中の進み具合 s ∈ [0, 1] で秒ではない (ADR-158 D3)。フレームレートも
+# 速さもここには無い — それはクライアントの設定である (G2)。
+
+
+@dataclass(frozen=True)
+class ReplaySample:
+    """経路の相の標本 1 点 (ADR-158 D1)。
+
+    - `tcp` — その点の TCP 位置 (相の直線上。向きは候補の姿勢のまま動かない)。
+    - `hits` — その点で**判定した**部位 (tcpPath / hand / held) が触れたもの。空 = 判定して
+      当たらなかった。tcpPath は線分の判定なので、標本 i の当たりは直前の標本からの
+      区間 [s_{i-1}, s_i] のもの (s=0 の標本は区間を持たない)。
+    - `arm` — 腕。None = 腕の姿勢を誰も決めていない (運動学が未宣言 — 測っていない)。
+      `arm.joints is None` = その点で関節解が限界の内側に無い。
+    - `arm_judged` — 腕のその姿勢が探索の判定に使われたか (被覆表の atEndOnly のピック姿勢)。
+      偽なら**測っただけ** (PR1 の P1 — 棄却には数えない)。
+    """
+
+    s: float
+    tcp: Vec3
+    hits: "tuple[Hit, ...]"
+    arm: "Optional[ArmSample]"
+    arm_judged: bool
+
+
+@dataclass(frozen=True)
+class PathReplay:
+    """直線の経路を持つ相 (approach / lift) の標本の列 (s 昇順)。"""
+
+    phase: MotionPhase
+    samples: "tuple[ReplaySample, ...]"
+
+
+@dataclass(frozen=True)
+class SweepReplay:
+    """経路を持たず、掃引体積 1 つで判定する相 (close — 爪を閉じる)。
+
+    判定は開いた位置から閉じた位置までの**1 つの体積**で、途中の時点を持たない
+    (`_finger_sweep`)。標本を捏造して時点を割らない — 当たりは相全体の事実として返す。
+    """
+
+    phase: MotionPhase
+    hits: "tuple[Hit, ...]"
+
+
+
+def _arm_judged_at(phase: MotionPhase, at_pick_pose: bool) -> bool:
+    """腕のこの姿勢が判定に使われたか — 被覆表 (正本) から読む。未宣言のセルは throw。"""
+    cov = coverage_of(phase, Part.ARM)
+    if cov is Coverage.EVALUATED:
+        return True
+    if cov is Coverage.AT_END_ONLY:
+        return at_pick_pose
+    if cov is Coverage.MEASURED_ONLY:
+        return False
+    raise ValueError(f"{phase.value} × arm は {cov.value} — 経路の標本に腕を置く相ではない (ADR-158)")
+
+
+def phase_replay(
+    problem: Problem,
+    phase: MotionPhase,
+    candidate: GraspCandidate,
+    *,
+    solution: object = None,
+    arm: Optional[ArmModel] = None,
+    solver: Optional[NearSolver] = None,
+    path_steps: int = HAND_PATH_STEPS,
+) -> "PathReplay | SweepReplay":
+    """評価する相 1 つの再生の標本 (純粋, ADR-158 再生の段)。
+
+    判定 (`phase_hits`) と同じ点・同じ幾何。腕は `arm_segments_along` (PR1) の測った列を
+    そのまま使う — 腕を置けるのは関節配置を持つ解と宣言された運動学があるときだけで、
+    それ以外は `arm=None` (未宣言) を標本ごとに宣言する。
+
+    注: 探索の進入相の判定は注入チェッカ (テストの継ぎ目) で置き換えうるが、再生は
+    既定の幾何で組む。返る候補 (= 全相を通過) について両者は同じ答え (当たり無し) を返す。
+    """
+    reason = phase_unevaluated_reason(problem, phase)
+    if reason is not None:
+        raise ValueError(f"{phase.value} は評価しない相 ({reason.value}) — 呼び手は先に理由を問うこと")
+    if phase is MotionPhase.CLOSE:
+        return SweepReplay(phase=phase, hits=phase_hits(
+            problem, phase, candidate, solution=solution, arm=arm, first_only=False,
+        ))
+    if phase not in (MotionPhase.APPROACH, MotionPhase.LIFT):
+        raise ValueError(f"再生の形が宣言されていない相 {phase!r} (ADR-158 — 経路か掃引かを決めること)")
+
+    obstacles = problem.obstacles
+    a, b = _phase_tcp_path(problem, phase, candidate)
+    points = path_points(a, b, path_steps)
+    n = len(points)
+
+    arm_samples: "Optional[tuple[ArmSample, ...]]" = None
+    if arm is not None and solver is not None and isinstance(solution, JointSolution):
+        arm_samples = arm_segments_along(
+            problem, phase, candidate,
+            pick_solution=solution, solver=solver, arm=arm, path_steps=path_steps,
+        )
+
+    if phase is MotionPhase.APPROACH:
+        shape = _hand_shape(problem)
+        held_box = None
+        tcp_path_always = True
+        hand_from = 0
+    else:  # LIFT
+        shape = _closed_shape(problem, candidate)
+        held_box = problem.target.box
+        tcp_path_always = False  # 閉じた手の形が無いときだけ TCP の線分が代理になる
+        hand_from = 1            # t = 0 は閉じた直後そのもの (静止接触は当たりではない)
+
+    out: "list[ReplaySample]" = []
+    for i, p in enumerate(points):
+        hits: "list[Hit]" = []
+        if i >= 1 and (tcp_path_always or shape is None):
+            hits.extend(Hit(Part.TCP_PATH, o) for o in segment_obstacle_hits(points[i - 1], p, obstacles))
+        if shape is not None and i >= hand_from:
+            boxes = hand_obbs(candidate, shape, problem.tool_length, p)
+            hits.extend(Hit(Part.HAND, o) for o in boxes_obstacle_hits(boxes, obstacles))
+        if held_box is not None and i >= 1:
+            held = (_held_box(held_box, p - a),)
+            hits.extend(Hit(Part.HELD, o) for o in boxes_obstacle_hits(held, obstacles))
+        arm_sample = arm_samples[i] if arm_samples is not None else None
+        out.append(ReplaySample(
+            s=i / (n - 1),
+            tcp=p,
+            hits=tuple(hits),
+            arm=arm_sample,
+            arm_judged=(
+                _arm_judged_at(phase, arm_sample.at_pick_pose) if arm_sample is not None else False
+            ),
+        ))
+    return PathReplay(phase=phase, samples=tuple(out))

@@ -20,7 +20,7 @@
     "diagnostics": {
       "type": "object",
       "additionalProperties": false,
-      "description": "Solver-decided facts about the search as a whole (the rejection funnel), so a client can explain an empty or thin result. Contract v4 (ADR-081) widens the funnel to the three validation domains -- visible (Vision) / reachable (Path: reach, IK, interference) / graspable (Grasp). Invariant: candidatesGenerated = rejectedByReach + rejectedByVisibility + rejectedByIk + rejectedByInterference + rejectedByGrasp + feasible (stages are exclusive; the filter short-circuits in the engine's measured cheapest-first order: reach -> IK -> grasp -> visibility -> interference, which decides which single stage a multiply-infeasible candidate is attributed to). Requests that declare no camera / no gripper always report 0 for the corresponding rejection stage. Presentation (wording, colors, meters, ladder-risk mapping, suggestions) is derived client-side and never carried here. Contract v8 (ADR-157) splits rejectedByInterference by motion phase (interferencePhases) and can carry an all-phase analysis (interferenceAnalysis). Contract v10 (ADR-158 PR1) adds the arm measured along the approach / lift paths to the all-phase analysis (interferenceAnalysis.armPath) -- measured, never counted as a rejection.",
+      "description": "Solver-decided facts about the search as a whole (the rejection funnel), so a client can explain an empty or thin result. Contract v4 (ADR-081) widens the funnel to the three validation domains -- visible (Vision) / reachable (Path: reach, IK, interference) / graspable (Grasp). Invariant: candidatesGenerated = rejectedByReach + rejectedByVisibility + rejectedByIk + rejectedByInterference + rejectedByGrasp + feasible (stages are exclusive; the filter short-circuits in the engine's measured cheapest-first order: reach -> IK -> grasp -> visibility -> interference, which decides which single stage a multiply-infeasible candidate is attributed to). Requests that declare no camera / no gripper always report 0 for the corresponding rejection stage. Presentation (wording, colors, meters, ladder-risk mapping, suggestions) is derived client-side and never carried here. Contract v8 (ADR-157) splits rejectedByInterference by motion phase (interferencePhases) and can carry an all-phase analysis (interferenceAnalysis). Contract v10 (ADR-158 PR1) adds the arm measured along the approach / lift paths to the all-phase analysis (interferenceAnalysis.armPath) -- measured, never counted as a rejection. Contract v11 (ADR-158 replay stage) adds, per returned candidate, the samples the judgement used (interferenceAnalysis.replays) -- progress within a phase, never seconds or a frame rate.",
       "properties": {
         "candidatesGenerated": {
           "type": "integer",
@@ -586,13 +586,21 @@
             },
             "armPath": {
               "$ref": "#/$defs/armPath"
+            },
+            "replays": {
+              "type": "array",
+              "description": "Per returned candidate, in rank order and exactly one per returned candidate: the samples the judgement used, phase by phase (ADR-158 replay stage, contract v11). Only evaluated phases appear, in motion order (unevaluated ones are explained by interferencePhases). Time is progress within a phase (s in [0,1]) -- never seconds, never a frame rate: the frames between samples are derived by the client and are judged by nobody.",
+              "items": {
+                "$ref": "#/$defs/candidateReplay"
+              }
             }
           },
           "required": [
             "kind",
             "candidatesAnalysed",
             "phases",
-            "armPath"
+            "armPath",
+            "replays"
           ]
         }
       ]
@@ -724,6 +732,237 @@
             "phases"
           ]
         }
+      ]
+    },
+    "replayHit": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "A part the judgement checked at this sample, and the obstacle it touched. The arm is never here -- whether the arm was judged or only measured is the arm's own kind.",
+      "properties": {
+        "part": {
+          "enum": [
+            "tcpPath",
+            "hand",
+            "held"
+          ],
+          "description": "tcpPath is a segment test: a sample's tcpPath hit belongs to the stretch from the previous sample to this one."
+        },
+        "obstacleIndex": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Index into the request's obstacles[]."
+        }
+      },
+      "required": [
+        "part",
+        "obstacleIndex"
+      ]
+    },
+    "replayArm": {
+      "type": "object",
+      "description": "The arm at one sample, as a CLOSED KIND-DISCRIMINATED union. judged = the pose the search judged (the approach phase's pick pose); measured = a pose only measured along the path (ADR-158 PR1 -- never counted as a rejection); noSolution = measured, but no joint solution within limits at this point; undeclared = robot.kinematics is not declared, nobody decided the arm's joints (draw no arm).",
+      "discriminator": {
+        "propertyName": "kind"
+      },
+      "oneOf": [
+        {
+          "type": "object",
+          "title": "replayArmUndeclared",
+          "description": "No kinematics declared -- the arm was not placed.",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "undeclared"
+            }
+          },
+          "required": [
+            "kind"
+          ]
+        },
+        {
+          "type": "object",
+          "title": "replayArmNoSolution",
+          "description": "No joint solution within limits at this point.",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "noSolution"
+            }
+          },
+          "required": [
+            "kind"
+          ]
+        },
+        {
+          "type": "object",
+          "title": "replayArmJudged",
+          "description": "The arm pose the search judged.",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "judged"
+            },
+            "joints": {
+              "type": "array",
+              "items": {
+                "type": "number"
+              },
+              "description": "Joint values in chain order."
+            },
+            "obstacles": {
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "description": "Indices into the request's obstacles[] the arm (links + tool segment) touches at this sample."
+            }
+          },
+          "required": [
+            "kind",
+            "joints",
+            "obstacles"
+          ]
+        },
+        {
+          "type": "object",
+          "title": "replayArmMeasured",
+          "description": "An arm pose only measured (not used to reject).",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "measured"
+            },
+            "joints": {
+              "type": "array",
+              "items": {
+                "type": "number"
+              },
+              "description": "Joint values in chain order."
+            },
+            "obstacles": {
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "description": "Indices into the request's obstacles[] the arm (links + tool segment) touches at this sample."
+            }
+          },
+          "required": [
+            "kind",
+            "joints",
+            "obstacles"
+          ]
+        }
+      ]
+    },
+    "candidateReplay": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "rank": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "The returned candidate this replay belongs to."
+        },
+        "phases": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/replayPhase"
+          }
+        }
+      },
+      "required": [
+        "rank",
+        "phases"
+      ]
+    },
+    "replayPhase": {
+      "description": "One evaluated phase. A phase with a straight TCP path (approach, lift) carries its samples; closing the hand is judged as ONE swept volume with no instants inside it, so it carries that volume's hits only -- no samples are invented.",
+      "oneOf": [
+        {
+          "type": "object",
+          "title": "replayPathPhase",
+          "additionalProperties": false,
+          "properties": {
+            "phase": {
+              "enum": [
+                "approach",
+                "lift"
+              ]
+            },
+            "samples": {
+              "type": "array",
+              "minItems": 2,
+              "description": "In motion order, both ends included.",
+              "items": {
+                "$ref": "#/$defs/replaySample"
+              }
+            }
+          },
+          "required": [
+            "phase",
+            "samples"
+          ]
+        },
+        {
+          "type": "object",
+          "title": "replaySweepPhase",
+          "additionalProperties": false,
+          "properties": {
+            "phase": {
+              "const": "close"
+            },
+            "hits": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/replayHit"
+              }
+            }
+          },
+          "required": [
+            "phase",
+            "hits"
+          ]
+        }
+      ]
+    },
+    "replaySample": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "s": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Progress within the phase (0 = phase start, 1 = end). Not seconds."
+        },
+        "tcp": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "items": {
+            "type": "number"
+          },
+          "description": "TCP position at this sample (on the phase's straight line; the orientation is the candidate's and does not change)."
+        },
+        "hits": {
+          "type": "array",
+          "description": "Empty = judged here and touched nothing.",
+          "items": {
+            "$ref": "#/$defs/replayHit"
+          }
+        },
+        "arm": {
+          "$ref": "#/$defs/replayArm"
+        }
+      },
+      "required": [
+        "s",
+        "tcp",
+        "hits",
+        "arm"
       ]
     }
   }

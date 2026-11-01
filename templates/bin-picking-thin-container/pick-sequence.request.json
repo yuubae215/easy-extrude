@@ -1,5 +1,5 @@
 {
-  "contractVersion": 10,
+  "contractVersion": 11,
   "layoutVersion": "layout/1.0",
   "scene": {
     "entities": [

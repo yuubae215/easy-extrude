@@ -57,7 +57,12 @@ contractVersion は public スキーマの `version: "layout/x.y"` とは別系�
 # を追加。ピック姿勢で当たるのか途中の経路で当たるのかを、候補数と障害物で答える。
 # **測定であって棄却ではない** — 探索の答え (候補・ファネル・相の内訳) は 1 ビットも
 # 変わらない。閉じた層への必須追加なので版上げ。
-CONTRACT_VERSION = 10
+# v11: 再生の標本 (ADR-158 再生の段)。全相分析に**必須**の `replays` (返した候補ごと、
+# 評価した相ごとに、経路の相は標本の列 {s, tcp, hits, arm}、爪を閉じる相は掃引 1 つの
+# hits)。腕は閉じた kind 判別 (undeclared / noSolution / judged / measured) で、判定に
+# 使った姿勢と測っただけの姿勢を区別する。秒・fps は載せない (D3) — 間のフレームは
+# クライアントが導出する。閉じた層への必須追加なので版上げ。
+CONTRACT_VERSION = 11
 
 
 class ContractVersionMismatch(ValueError):
