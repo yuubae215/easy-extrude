@@ -66,6 +66,8 @@ function fakeStore() {
       contextSetGraspTargets(t) { state.context.graspTargets = t },
       // ADR-157 D6 — the all-phase analysis, its own slot (same sole writer).
       contextSetGraspAnalysis(a) { state.context.graspAnalysis = a },
+      // ADR-158 R2 — the replay's display state (same sole writer).
+      contextSetGraspReplay(r) { state.context.graspReplay = r },
       // ADR-164 D2 — the derived grasp relations (same sole writer).
       contextSetGraspRelations(r) { state.context.graspRelations = r },
       // ADR-164 D3 — the derived camera roster (same sole writer).
@@ -550,6 +552,7 @@ function fakeGhost() {
     setWorldCap(cap)     { this.calls.push(['cap', cap]) },
     clear()              { this.calls.push(['clear']) },
     setHandOnArm(onArm)  { this.calls.push(['handOnArm', onArm]) },
+    showReplayFrame(f)   { this.calls.push(['replay', f]) },
     tick(...args)        { this.calls.push(['tick', args]) },
     dispose()            { this.calls.push(['dispose']) },
   }
@@ -1660,3 +1663,119 @@ test('ADR-164 D2: a relation whose hand left the scene is counted broken and lig
   assert.deepEqual(gc.relationSceneIds('widget'), ['s_widget'])
 })
 
+
+// ── ADR-158 R2: the replay drives the arm and the ghost from the judged samples ─
+
+const PICK = [0.1, -1.0, 1.2, -1.8, -1.5708, 0.0]
+const PRE  = PICK.map(q => q + 0.2)
+const REPLAY_ROWS = [
+  { phase: 'transit', kind: 'unevaluated', reason: 'notYetDecided' },
+  { phase: 'approach', kind: 'evaluated', rejected: 0 },
+  { phase: 'close', kind: 'evaluated', rejected: 0 },
+  { phase: 'lift', kind: 'unevaluated', reason: 'liftUndeclared' },
+  { phase: 'transport', kind: 'unevaluated', reason: 'notYetDecided' },
+  { phase: 'place', kind: 'unevaluated', reason: 'notYetDecided' },
+]
+const replayOf = (rank) => ({ rank, phases: [
+  { phase: 'approach', samples: [
+    { s: 0, tcp: [1, 2, 3.1], hits: [], arm: { kind: 'measured', joints: PRE, obstacles: [0] } },
+    { s: 1, tcp: [1, 2, 3], hits: [], arm: { kind: 'judged', joints: PICK, obstacles: [] } },
+  ] },
+  { phase: 'close', hits: [] },
+] })
+
+function replaySetup() {
+  const r = armSetup([
+    { rank: 1, pose: EE_POSE, score: { totalScore: 0.9, reachSolution: solved(SOLVED_A) } },
+    { rank: 2, pose: EE_POSE, score: { totalScore: 0.8, reachSolution: solved(SOLVED_B) } },
+  ])
+  const { store } = r
+  const grasp = { ...store.getState().context.grasp,
+    request: { graspSearch: { obstacles: [{ kind: 'box', center: [0, 0, 0], halfExtents: [0.1, 0.1, 0.1], orientation: [0, 0, 0, 1] }] } },
+    diagnostics: { interferencePhases: REPLAY_ROWS } }
+  store.getState().actions.contextSetGrasp(grasp)
+  store.getState().actions.contextSetGraspAnalysis({ status: 'done', request: grasp.request,
+    analysis: { kind: 'allPhases', replays: [replayOf(1), replayOf(2)] }, obstacleLabels: ['pedestal'] })
+  r.gc.selectCandidate(1)
+  return r
+}
+
+const lastReplayFrame = (ghosts) => ghosts.at(-1).calls.filter(c => c[0] === 'replay').at(-1)?.[1]
+
+test('replay: stepping draws the judged sample — the measured arm is translucent, the judged pick pose solid', () => {
+  const { gc, stages, store, ghosts } = replaySetup()
+  gc.stepReplay(1)                                    // opens on the first sample
+  assert.equal(store.getState().context.graspReplay.rank, 1)
+  assert.deepEqual(stages.calls.at(-1), ['f_base', { authority: 'measured', joints: PRE }])
+  const f0 = lastReplayFrame(ghosts)
+  assert.equal(f0.kind, 'sample')
+  assert.deepEqual(f0.position, [1000, 2000, 3100], 'wire metres → scene mm, once')
+  assert.equal(f0.struck.length, 1, 'the measured arm hit outlines the request box')
+  assert.equal(f0.struck[0].judged, false)
+  assert.deepEqual(f0.struck[0].shape.halfExtents, [100, 100, 100])
+  gc.stepReplay(1)
+  assert.deepEqual(stages.calls.at(-1), ['f_base', { authority: 'solved', joints: PICK }])
+  assert.equal(lastReplayFrame(ghosts).kind, 'sample', 'the s = 1 sample on the boundary, not the next segment')
+  assert.equal(lastReplayFrame(ghosts).struck.length, 0)
+})
+
+test('replay: a scrub between samples draws a derived frame that strikes nothing', () => {
+  const { gc, ghosts } = replaySetup()
+  gc.scrubReplay(0.25 + 0.5)                           // transit (0.25) + half the approach
+  const f = lastReplayFrame(ghosts)
+  assert.equal(f.kind, 'between')
+  assert.deepEqual(f.struck, [])
+})
+
+test('replay: selecting another candidate ends it — twice in a row, never one frame stale (原則 #32)', () => {
+  const { gc, stages, store } = replaySetup()
+  for (const [from, to, joints] of [[1, 2, SOLVED_B], [2, 1, SOLVED_A]]) {
+    if (store.getState().context.grasp.selectedRank !== from) gc.selectCandidate(from)
+    gc.stepReplay(1)
+    assert.equal(store.getState().context.graspReplay.rank, from)
+    gc.selectCandidate(to)
+    assert.equal(store.getState().context.graspReplay, null)
+    assert.deepEqual(stages.calls.at(-1), ['f_base', drawn(joints)], 'the arm goes back to the candidate')
+  }
+})
+
+test('replay: hovering another row while it is open does not pull the arm away (one writer)', () => {
+  const { gc, stages } = replaySetup()
+  gc.stepReplay(1)
+  gc.hoverCandidate(2)
+  assert.deepEqual(stages.calls.at(-1), ['f_base', { authority: 'measured', joints: PRE }])
+})
+
+test('replay: a stale analysis ends the replay on the next tick (freshness is derived)', () => {
+  const { gc, store } = replaySetup()
+  gc.stepReplay(1)
+  const g = store.getState().context.grasp
+  store.getState().actions.contextSetGrasp({ ...g, request: { graspSearch: { obstacles: [] } } })   // re-searched
+  gc.tick(1)
+  assert.equal(store.getState().context.graspReplay, null)
+})
+
+test('replay: play advances from the clock and stops at the end', () => {
+  const { gc, store } = replaySetup()
+  gc.tick(10)
+  gc.playReplay()
+  assert.equal(store.getState().context.graspReplay.playing, true)
+  gc.tick(10.6)
+  const at = store.getState().context.graspReplay.at
+  assert.ok(at > 0.4 && at < 0.6, `at ${at}`)
+  gc.tick(100)
+  const end = store.getState().context.graspReplay
+  assert.equal(end.playing, false)
+  assert.equal(end.at, 0.25 + 1 + 1 + 0.25 * 3)
+})
+
+test('replay: without an analysis the step says why instead of doing nothing (原則 #11)', () => {
+  const { gc, store, ctrl } = replaySetup()
+  store.getState().actions.contextSetGraspAnalysis(null)
+  const toasts = []
+  gc._ctrl._uiView = { showToast: (m) => toasts.push(m) }
+  gc.stepReplay(1)
+  assert.equal(store.getState().context.graspReplay ?? null, null)
+  assert.match(toasts.at(-1), /Analyse all phases/)
+  void ctrl
+})

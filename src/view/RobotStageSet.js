@@ -233,13 +233,15 @@ export class RobotStageSet {
    *
    * @param {string|null} id  the robot whose arm shows the solution; `null`
    *   rests every arm (no candidate hovered/selected, or no search subject)
-   * @param {{authority: 'solved'|'unverified', joints: readonly number[]}|null}
+   * @param {{authority: 'solved'|'unverified'|'measured', joints: readonly number[]}|null}
    *   preview  what the subject draws and on whose authority — the contract's
    *   solved configuration, or the client's unverified approximation of a
    *   candidate `core/` left `undeclared` (ADR-144 D4 widened this argument
    *   rather than adding a second entry point, so the number of writers is
-   *   unchanged). `null` rests the subject too, rather than posing it into a
-   *   configuration nobody produced.
+   *   unchanged). ADR-158 R2 widened it once more, the same way: a replay's
+   *   `measured` arm (measured, interpolated or held between judged samples)
+   *   comes through this one entry point too. `null` rests the subject too,
+   *   rather than posing it into a configuration nobody produced.
    */
   previewSolution(id, preview) {
     // The rule (subject draws, everyone else rests) is pure and pinned at N=2 in

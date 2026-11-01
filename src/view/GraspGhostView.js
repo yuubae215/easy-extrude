@@ -26,6 +26,15 @@
  * `revealFrame` (GraspGhostMath); reduced motion jumps to the final stage
  * (static fully-formed ghost — information preserved, movement dropped, #30).
  *
+ * The replay (ADR-158 R2, a Fact — D5) drives the SAME glyph through
+ * `showReplayFrame`: the glyph stands at the frame's TCP with the hand as open as
+ * the phase says, drawn full on a judged sample and faint between samples (a
+ * derived pose nobody judged — G1). The obstacles a judged sample struck are
+ * outlined in the caution tone (the panel's hit colour) from the request's own obstacle boxes —
+ * the very shapes the solver tested — solid for a judged hit, dashed for an arm
+ * that was only measured. While a replay is shown it owns the glyph; the reveal
+ * slide (a Delight) does not play over it.
+ *
  * @module view/GraspGhostView
  */
 import * as THREE from 'three'
@@ -35,6 +44,8 @@ import {
 } from './GraspGhostMath.js'
 import { prefersReducedMotion } from '../theme/motion.js'
 import { MM_PER_METER } from '../domain/worldUnits.js'
+import { easeOutQuad } from './MotionMath.js'
+import { COLOR } from '../theme/tokens.js'
 
 /**
  * Base frame the contract's `cartesianFrame` is *assumed* to be expressed in.
@@ -61,6 +72,10 @@ const HOVER_OPACITY     = 0.4   // candidate row hover = preview (ADR-059 §B-3)
 const SELECT_OPACITY    = 0.9   // click select = committed ghost
 const FADE_MS           = 150
 const APPROACH_START    = 1.5   // glyph-lengths back along the approach vector
+const BETWEEN_OPACITY   = 0.4   // a replay frame between judged samples — drawn, not judged (ADR-158 D2)
+// A hit is said in the caution tone — the same colour the panel's hit lines use
+// (not the accent: that means the entity being operated on — ADR-100).
+const HIT_HEX           = parseInt(COLOR.cautionTone.slice(1), 16)
 
 /** Build one finger box (unit glyph space; approach along local −Z, TCP at origin). */
 function fingerGeometry() {
@@ -168,6 +183,68 @@ export class GraspGhostView {
     this._scoreHex    = NEUTRAL_GLYPH_COLOR
     this._reduced     = false     // sampled per reveal (ADR-065 Phase 5)
     this._scoreRevealed = false   // beat-3 gate for the caption
+    // Opacity fade as a function of the clock (from → to over FADE_MS on `fade`).
+    this._fadeFrom    = 0
+    this._fadeTo      = 0
+    this._fadeStart   = 0
+
+    // ── Replay (ADR-158 R2) ───────────────────────────────────────────────────
+    this._replay      = null      // the frame on screen, or null = candidate mode
+    this._struck      = new THREE.Group()
+    this._struck.renderOrder = 3
+    scene.add(this._struck)
+    this._struckSig   = ''
+    this._struckMat   = new THREE.LineBasicMaterial({ color: HIT_HEX, transparent: true, opacity: 0.95, depthTest: false })
+    this._struckDash  = new THREE.LineDashedMaterial({
+      color: HIT_HEX, transparent: true, opacity: 0.95, depthTest: false, dashSize: 12, gapSize: 8,
+    })
+  }
+
+  /**
+   * Show one replay frame (ADR-158 R2), or leave the replay (`null`). The
+   * frame is already derived (`replayFrame` → mm by the controller); this view
+   * only draws it.
+   *
+   * @param {{position:number[], orientation:number[], kind:'sample'|'between'|'sweep'|'unjudged',
+   *          closure:number, caption:string,
+   *          struck:{judged:boolean, shape:{kind:'box', center:number[], halfExtents:number[], orientation:number[]}
+   *                 |{kind:'sphere', center:number[], radius:number}}[]}|null} frame
+   */
+  showReplayFrame(frame) {
+    this._replay = frame
+    if (!frame) { this._setStruck([]); return }
+    const [px, py, pz] = frame.position
+    const [qx, qy, qz, qw] = frame.orientation
+    this._group.position.set(px, py, pz)
+    this._group.quaternion.set(qx, qy, qz, qw)
+    this._group.visible = true
+    this._mode = 'select'
+    this._label.textContent = frame.caption
+    this._setStruck(frame.struck)
+  }
+
+  /** Rebuild the struck-obstacle outlines only when the set changes (PictureWatch sees the rest). */
+  _setStruck(struck) {
+    const sig = struck.map(s => `${s.judged ? 'j' : 'm'}:${JSON.stringify(s.shape)}`).join('|')
+    if (sig === this._struckSig) return
+    this._struckSig = sig
+    for (const line of [...this._struck.children]) {
+      this._struck.remove(line)
+      line.geometry.dispose()
+    }
+    for (const { judged, shape } of struck) {
+      const geo = shape.kind === 'sphere'
+        ? new THREE.SphereGeometry(shape.radius, 12, 8)
+        : new THREE.BoxGeometry(shape.halfExtents[0] * 2, shape.halfExtents[1] * 2, shape.halfExtents[2] * 2)
+      const eg = new THREE.EdgesGeometry(geo)
+      geo.dispose()
+      const line = new THREE.LineSegments(eg, judged ? this._struckMat : this._struckDash)
+      if (!judged) line.computeLineDistances()
+      line.position.set(...shape.center)
+      if (shape.kind === 'box') line.quaternion.set(...shape.orientation)
+      line.renderOrder = 3
+      this._struck.add(line)
+    }
   }
 
   /**
@@ -179,6 +256,7 @@ export class GraspGhostView {
    *           mode: 'hover'|'select', rank?: number }} spec
    */
   showCandidate({ frame, score, mode, rank }) {
+    if (this._replay) return     // the replay owns the glyph while it is shown (ADR-158 R2)
     const [px, py, pz] = frame.position
     const [qx, qy, qz, qw] = frame.orientation
     this._group.position.set(px, py, pz)
@@ -203,6 +281,12 @@ export class GraspGhostView {
     this._shownRank = rank ?? null
     if (mode === 'select' && !wasSelectSame) {
       this._animStart = this._lastTick || 0
+      // The switch has a seam (inventory G3 — ADR-158 R2 / DEF-069): the glyph
+      // drops to the preview level and fades back up with the slide, so a new
+      // candidate never just swaps in at full strength.
+      this._fadeFrom  = Math.min(this._opacity, HOVER_OPACITY)
+      this._fadeTo    = SELECT_OPACITY
+      this._fadeStart = this._animStart
       // Read the preference once per reveal (same per-spawn discipline as the
       // MotionGovernor) — the single boundary is src/theme/motion.js.
       this._reduced = prefersReducedMotion()
@@ -248,6 +332,7 @@ export class GraspGhostView {
 
   /** Hide the ghost (kept alive for the next hover — cheap show/hide cycle). */
   clear() {
+    this.showReplayFrame(null)
     this._mode = null
     this._shownRank = null
     this._group.visible = false
@@ -270,16 +355,24 @@ export class GraspGhostView {
    */
   tick(t, camera, renderer) {
     this._lastTick = t
-    const targetOpacity = this._mode === 'select' ? SELECT_OPACITY
+    const replay = this._replay
+    const targetOpacity = replay
+      ? (replay.kind === 'sample' || replay.kind === 'sweep' ? SELECT_OPACITY : BETWEEN_OPACITY)
+      : this._mode === 'select' ? SELECT_OPACITY
       : this._mode === 'hover' ? HOVER_OPACITY : 0
+    if (targetOpacity !== this._fadeTo) {
+      this._fadeFrom  = this._opacity
+      this._fadeTo    = targetOpacity
+      this._fadeStart = t
+    }
     if (this._reduced && this._mode === 'select') {
       // Reduced motion: the fade is dropped along with the slide — the ghost is
       // a static, fully-formed cue (information preserved, movement dropped).
       this._opacity = targetOpacity
     } else {
-      // Frame-rate independent-enough exponential-ish step toward the target.
-      const step = Math.min(1, 16 / FADE_MS * 2)
-      this._opacity += (targetOpacity - this._opacity) * step
+      // Opacity fades on the `fade` curve as a function of the clock (M2).
+      const p = easeOutQuad((t - this._fadeStart) / FADE_MS)
+      this._opacity = this._fadeFrom + (this._fadeTo - this._fadeFrom) * p
     }
     this._fillMat.opacity   = this._opacity * 0.35
     this._lineMat.opacity   = this._opacity
@@ -291,8 +384,11 @@ export class GraspGhostView {
     // Three-beat reveal (ADR-065 Phase 5): approach slide → finger close →
     // score flood. Hover previews pass Infinity = final stage immediately;
     // reduced motion jumps there too (revealFrame owns both rules).
-    const elapsed = this._mode === 'select' ? t - this._animStart : Infinity
+    // A replay frame is the final stage at its own TCP: no slide (the replay's
+    // motion is the samples), the hand as closed as the phase says.
+    const elapsed = replay ? Infinity : this._mode === 'select' ? t - this._animStart : Infinity
     const beat = revealFrame(elapsed, this._reduced)
+    if (replay) beat.close = replay.closure
 
     // Beat 1 — approach slide: glyph starts APPROACH_START glyph-lengths back
     // along +Z (local; the approach direction is −Z) and eases out to the TCP.
@@ -336,6 +432,10 @@ export class GraspGhostView {
   /** Symmetric teardown of everything the constructor / setTargetGeometry added. */
   dispose() {
     this.setTargetGeometry(null)
+    this._setStruck([])
+    this._scene.remove(this._struck)
+    this._struckMat.dispose()
+    this._struckDash.dispose()
     this._scene.remove(this._group)
     for (const d of this._disposables) d.geometry?.dispose()
     this._fillMat.dispose()

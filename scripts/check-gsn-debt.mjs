@@ -420,7 +420,10 @@ const SUPPORT_LABELS = new Map([
 // が発火し、DEF-071 も同じコミットで決着。
 // 2026-10-31: 41 → 40。ADR-168 S3 で HangingIsDerivedFromTheAxes が support-verified へ (LinkNetworkLayout /
 // support / ArrangementController の node --test)。満期 GREP:…LinkNetworkLayout.js::mobilityBetween が発火した。
-const DEBT_BASELINE = 40
+// 2026-11-01: 40 → 38。ADR-158 再生の段 R2 で WhatIsDrawnAsAHitWasJudged と FrameRateNeverReachesTheWire が
+// support-verified へ (GraspReplayMath / GraspController の node --test)。満期 PATH:src/view/GraspReplayMath.test.js
+// が発火した。残る 2 つ (場面に効く / 進入スライドと区別できる) は絵の証拠 = e2e/grasp-replay.spec.js へ張り替え。
+const DEBT_BASELINE = 38
 
 /**
  * G3 — 満期 trigger を持たない exploring goal の個数 (実測値)。

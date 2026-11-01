@@ -12,6 +12,7 @@
  *
  * @module view/GraspGhostMath
  */
+import { easeOutExpo, easeOutQuad } from './MotionMath.js'
 
 /**
  * The capability gate (ADR-059 §A-1): a candidate earns a spatial ghost only when
@@ -114,8 +115,8 @@ export const REVEAL_TIMELINE = Object.freeze({ approachMs: 400, closeMs: 240, sc
 
 /**
  * Stage progress of the three-beat reveal at `elapsedMs` since the select.
- * Sequential beats; `approach`/`close` are ease-out curves (they drive motion),
- * `score` is linear (it drives a colour/opacity ramp).
+ * Sequential beats; `approach`/`close` drive position, so they land
+ * (`easeOutExpo`); `score` drives a colour ramp, so it fades (`easeOutQuad`).
  *
  * Reduced motion — and any non-finite elapsed (the hover path passes Infinity;
  * a malformed clock must not hide facts, PHILOSOPHY #11) — jumps to the final
@@ -129,11 +130,12 @@ export function revealFrame(elapsedMs, reduced = false) {
   if (reduced || !Number.isFinite(elapsedMs)) return { approach: 1, close: 1, score: 1 }
   const { approachMs, closeMs, scoreMs } = REVEAL_TIMELINE
   const seg = (t0, dur) => Math.min(1, Math.max(0, (elapsedMs - t0) / dur))
-  const easeOut = (p) => 1 - (1 - p) * (1 - p)
+  // The motion identity's curves by role (CLAUDE.md §モーション・アイデンティティ,
+  // ADR-158 R2 / DEF-069): position = `land`, colour = `fade`.
   return {
-    approach: easeOut(seg(0, approachMs)),
-    close:    easeOut(seg(approachMs, closeMs)),
-    score:    seg(approachMs + closeMs, scoreMs),
+    approach: easeOutExpo(seg(0, approachMs)),
+    close:    easeOutExpo(seg(approachMs, closeMs)),
+    score:    easeOutQuad(seg(approachMs + closeMs, scoreMs)),
   }
 }
 

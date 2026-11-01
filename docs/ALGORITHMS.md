@@ -29,6 +29,7 @@
 | 干渉 (進入経路) | 線分 vs 障害物の表面距離 | `core/…/engine/feasibility.py: NaivePathCollisionChecker` | core のみ |
 | 干渉 (腕リンク + ツール) | FK チェーンの各リンクを線分近似 + フランジ→TCP のツール区間 (ADR-150) | `core/…/engine/feasibility.py: NaiveArmSweepCollisionChecker` | core のみ |
 | 干渉の動作相 | 6 相の列 (transit / approach / close / lift / transport / place)。相ごとに動く部位を宣言表 `PHASE_COVERAGE` が持ち、棄却は最初に当たった相へ帰属 (ADR-157) — §3.2c | `core/…/engine/phases.py` | core のみ |
+| 再生のフレーム (導出) | 判定した標本の間を、TCP は相の直線上で線形、腕は関節空間で線形 (どの関節も `|Δq| ≤ π/2` のときだけ — 超えたら直前の標本を保持)。時間 → (相, s) は相ごとの区間の連結 (ADR-158 R2) — §3.2c | `src/view/GraspReplayMath.js: replayFrame` | front (表示 — core は補間しないので第二の源ではない) |
 | 爪を閉じる掃引 | 開いた位置から閉じた位置までの爪の並進を 1 つの箱で (厳密、離散化なし) | `core/…/engine/phases.py: _finger_sweep` | core のみ |
 | 引き上げ | 閉じた手 + 携行物 (対象 box を相対 1e-6 縮めた OBB) を宣言した方向・距離の線分上 t ∈ (0, 1] の 6 点に置いて分離軸判定 | `core/…/engine/phases.py: phase_hits(LIFT)` | core のみ |
 | 可視性 | カメラ→把持点の線分遮蔽 + 視野円錐 | `core/…/engine/feasibility.py: sightline_occlusion_miss` | core のみ |
@@ -287,6 +288,22 @@ $$H_k(c) = \bigcup_{i} h_{k,i}(c)\;\cup\;\{(\text{arm}, o) \mid o \in \text{arm}
 - 爪を閉じる相は 1 つの掃引体積なので標本に割らない (時点を捏造しない)。
 
 等式は `core/tests/test_motion_phases.py` が全候補・全評価相で問う。時間は `s` だけで秒・fps は無い (ADR-158 D3)。
+
+**再生のフレーム (ADR-158 再生の段 R2 — フロントの導出、判定しない)。** 時間軸は相を動作の順に
+並べた区間の連結で、判定した相 (経路・掃引) の長さを 1、判定していない相を `UNJUDGED_SPAN = 1/4` とする:
+
+$$x \in [0, T],\quad T = \sum_k \ell_k,\qquad x \mapsto (k, u),\ u = (x - x_k)/\ell_k \in [0,1]$$
+
+再生ヘッドは時計の関数 $x(t) = \min(T,\ x_0 + (t - t_0)/\tau)$ ($\tau$ = `REPLAY_PHASE_MS`) で、積算しない
+(fps に依らない)。経路の相で $|u - s_i| \le$ `SAMPLE_SNAP` なら**標本のフレーム** (ワイヤの tcp・当たり・腕
+そのもの)。それ以外は $s_i < u < s_{i+1}$ の**補間のフレーム**で、
+
+$$\text{tcp}(u) = \text{tcp}_i + w(\text{tcp}_{i+1} - \text{tcp}_i),\quad w = \frac{u - s_i}{s_{i+1} - s_i},\qquad h(u) = \varnothing$$
+
+TCP は相の直線そのもの (core の `path_points` が同じ直線上の等分点なので厳密)。腕は
+$\max_j |q_{i+1,j} - q_{i,j}| \le \pi/2$ のときだけ $q(u) = q_i + w(q_{i+1} - q_i)$ — 超えたら解の枝が
+飛んだとみなし $q_i$ を保持する (誰も解いていない回転を描かない)。補間の当たりは常に空 (判定していない)。
+掃引の相は 1 つの判定なので区間全体に同じ当たり、判定していない相は最寄りの標本の姿勢を保持する。
 
 ### 3.3 near-miss (ADR-079 / ADR-081)
 

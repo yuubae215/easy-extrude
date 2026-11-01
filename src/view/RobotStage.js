@@ -1,7 +1,7 @@
 // @ts-nocheck
 import * as THREE from 'three'
 import URDFLoader from 'urdf-loader'
-import { jointValuesFor } from '../domain/robotConfig.js'
+import { jointValuesFor, drawsTranslucent } from '../domain/robotConfig.js'
 import { ROBOT_JOINT_NAMES, ROBOT_URDF_TEXT } from './robotSkeleton.js'
 import { MM_PER_METER } from '../domain/worldUnits.js'
 import {
@@ -601,7 +601,7 @@ export class RobotStage {
    * writers of one visual fact race to last-write-wins. So the choice — rest or
    * preview — is made HERE, in one place, and nothing else writes joints.
    *
-   * @param {{authority: 'solved'|'unverified', joints: readonly number[]}|null}
+   * @param {{authority: 'solved'|'unverified'|'measured', joints: readonly number[]}|null}
    *   preview  what to draw and ON WHOSE AUTHORITY (`previewPayloadFor`):
    *   `solved` carries the six angles `reachSolution.kind === 'solved'` decided
    *   in `core/`; `unverified` carries the configuration the client solved for a
@@ -621,7 +621,9 @@ export class RobotStage {
     // decides how it looks. An approximation drawn solid is indistinguishable
     // from a solution, which is the one failure mode ADR-144 accepts a cost to
     // avoid; a second owner for the material would race this write (原則 #4).
-    this._setUnverifiedLook(preview?.authority === 'unverified')
+    // ADR-158 R2: `measured` (a replay's measured / interpolated / held arm) is
+    // drawn like `unverified` — the table that says so is `drawsTranslucent`.
+    this._setUnverifiedLook(drawsTranslucent(preview))
   }
 
   /**
