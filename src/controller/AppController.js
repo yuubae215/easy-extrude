@@ -14,7 +14,6 @@ import {
   computeOutwardFaceNormal,
   getCentroid,
   collectSnapTargets,
-  DEFAULT_HALF_EXTENT,
 } from '../model/CuboidModel.js'
 import { SceneService }    from '../service/SceneService.js'
 import { Solid }           from '../domain/Solid.js'
@@ -1474,43 +1473,22 @@ export class AppController {
   }
 
   /**
-   * One-time tidy of the boot starter cube (ADR-089 follow-up): the default
-   * Solid is centred on the origin, so half of it sinks below the ground plane.
-   * REST it — lift the centroid by exactly one half-extent so the base sits on
-   * z=0 — through the aggregate `setPose` API (§1.1 — no direct field pokes).
-   * No-op when the active object is not a Solid (defensive; the boot path
-   * always adds one first).
-   *
-   * This method no longer RESIZES. It used to halve `localCorners` and write a
-   * literal `0.5` centroid, which was a second writer of the default-size fact:
-   * when ADR-136 rescaled `createInitialCorners()` to mm it did not reach this
-   * line, so the metre-era `0.5` left the starter cube 24.5mm underground —
-   * exactly the defect this tidy exists to prevent. Size now has one owner
-   * (`DEFAULT_HALF_EXTENT`) and this method only places it (ADR-137).
-   */
-  /**
    * THE default scene: one starter cube resting on the ground, framed with the
    * opening shot. Boot and the Home "Empty project" card both start here, so
    * "the default scene" has one definition — the Empty card used to just close
    * Home and keep whatever was loaded, which matched this only on first boot.
    */
   _seedStarterScene() {
+    // The cube is born resting on the ground (`createInitialCorners`), so there
+    // is no lift here: a lift after `objectAdded` left the lifecycle voxels
+    // converging a half-extent below the cube on the Empty template.
     this._addObject()
-    this._restStarterCube()
     // Boot is a "frame the scene" entry point like any other (ADR-137). Without
     // this the camera keeps its constructed pose, which is a THIRD source for
     // "how big is the world" beside the starter cube and the unit authority —
     // and the one ADR-136 left in metres. The minimum radius keeps the opening
     // shot the one this app has always had (see BOOT_VIEW_RADIUS).
     this._frameScene(BOOT_VIEW_RADIUS)
-  }
-
-  _restStarterCube() {
-    const solid = this._activeObj
-    if (!(solid instanceof Solid)) return
-    solid.setPose(new THREE.Vector3(0, 0, DEFAULT_HALF_EXTENT), solid.orientation, solid.localCorners)
-    solid.meshView.updateGeometry(solid.corners)
-    solid.meshView.updateBoxHelper?.()
   }
 
   // ─── Active-object accessors ──────────────────────────────────────────────
