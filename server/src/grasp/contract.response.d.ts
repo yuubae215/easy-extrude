@@ -29,6 +29,14 @@ export type InterferenceAnalysis = InterferenceAnalysisFirstCollision | Interfer
  * The arm measured at the pick pose and along each phase's straight TCP path (ADR-158 PR1, contract v10). A MEASUREMENT, not a judgement: the search still judges the arm at the pick pose only (approach x arm = atEndOnly), so a candidate whose arm touches something only on the path stays among the returned candidates. Population = candidatesAnalysed. Each path point solves IK again and takes the solution nearest the previous point's, starting from the representative solution judged at the pick pose -- the same branch is followed, never searched for one that misses. A CLOSED KIND-DISCRIMINATED union: `undeclared` = robot.kinematics is not declared, nobody decided the arm's joints, nothing was measured (not 'no hits').
  */
 export type ArmPath = ArmPathUndeclared | ArmPathMeasured;
+/**
+ * One evaluated phase. A phase with a straight TCP path (approach, lift) carries its samples; closing the hand is judged as ONE swept volume with no instants inside it, so it carries that volume's hits only -- no samples are invented.
+ */
+export type ReplayPhase = ReplayPathPhase | ReplaySweepPhase;
+/**
+ * The arm at one sample, as a CLOSED KIND-DISCRIMINATED union. judged = the pose the search judged (the approach phase's pick pose); measured = a pose only measured along the path (ADR-158 PR1 -- never counted as a rejection); noSolution = measured, but no joint solution within limits at this point; undeclared = robot.kinematics is not declared, nobody decided the arm's joints (draw no arm).
+ */
+export type ReplayArm = ReplayArmUndeclared | ReplayArmNoSolution | ReplayArmJudged | ReplayArmMeasured;
 
 /**
  * grasp-search service -> BFF output. Top-N ranking with score breakdown. Wire form uses camelCase.
@@ -43,7 +51,7 @@ export interface GraspSearchResponse {
    */
   candidates: PoseCandidate[];
   /**
-   * Solver-decided facts about the search as a whole (the rejection funnel), so a client can explain an empty or thin result. Contract v4 (ADR-081) widens the funnel to the three validation domains -- visible (Vision) / reachable (Path: reach, IK, interference) / graspable (Grasp). Invariant: candidatesGenerated = rejectedByReach + rejectedByVisibility + rejectedByIk + rejectedByInterference + rejectedByGrasp + feasible (stages are exclusive; the filter short-circuits in the engine's measured cheapest-first order: reach -> IK -> grasp -> visibility -> interference, which decides which single stage a multiply-infeasible candidate is attributed to). Requests that declare no camera / no gripper always report 0 for the corresponding rejection stage. Presentation (wording, colors, meters, ladder-risk mapping, suggestions) is derived client-side and never carried here. Contract v8 (ADR-157) splits rejectedByInterference by motion phase (interferencePhases) and can carry an all-phase analysis (interferenceAnalysis). Contract v10 (ADR-158 PR1) adds the arm measured along the approach / lift paths to the all-phase analysis (interferenceAnalysis.armPath) -- measured, never counted as a rejection.
+   * Solver-decided facts about the search as a whole (the rejection funnel), so a client can explain an empty or thin result. Contract v4 (ADR-081) widens the funnel to the three validation domains -- visible (Vision) / reachable (Path: reach, IK, interference) / graspable (Grasp). Invariant: candidatesGenerated = rejectedByReach + rejectedByVisibility + rejectedByIk + rejectedByInterference + rejectedByGrasp + feasible (stages are exclusive; the filter short-circuits in the engine's measured cheapest-first order: reach -> IK -> grasp -> visibility -> interference, which decides which single stage a multiply-infeasible candidate is attributed to). Requests that declare no camera / no gripper always report 0 for the corresponding rejection stage. Presentation (wording, colors, meters, ladder-risk mapping, suggestions) is derived client-side and never carried here. Contract v8 (ADR-157) splits rejectedByInterference by motion phase (interferencePhases) and can carry an all-phase analysis (interferenceAnalysis). Contract v10 (ADR-158 PR1) adds the arm measured along the approach / lift paths to the all-phase analysis (interferenceAnalysis.armPath) -- measured, never counted as a rejection. Contract v11 (ADR-158 replay stage) adds, per returned candidate, the samples the judgement used (interferenceAnalysis.replays) -- progress within a phase, never seconds or a frame rate.
    */
   diagnostics: {
     candidatesGenerated: number;
@@ -259,6 +267,10 @@ export interface InterferenceAnalysisAllPhases {
     }[];
   }[];
   armPath: ArmPath;
+  /**
+   * Per returned candidate, in rank order and exactly one per returned candidate: the samples the judgement used, phase by phase (ADR-158 replay stage, contract v11). Only evaluated phases appear, in motion order (unevaluated ones are explained by interferencePhases). Time is progress within a phase (s in [0,1]) -- never seconds, never a frame rate: the frames between samples are derived by the client and are judged by nobody.
+   */
+  replays: CandidateReplay[];
 }
 export interface ArmPathUndeclared {
   kind: "undeclared";
@@ -308,4 +320,95 @@ export interface ArmPathHit {
    */
   obstacleIndex: number;
   candidates: number;
+}
+export interface CandidateReplay {
+  /**
+   * The returned candidate this replay belongs to.
+   */
+  rank: number;
+  phases: ReplayPhase[];
+}
+export interface ReplayPathPhase {
+  phase: "approach" | "lift";
+  /**
+   * In motion order, both ends included.
+   *
+   * @minItems 2
+   */
+  samples: [ReplaySample, ReplaySample, ...ReplaySample[]];
+}
+export interface ReplaySample {
+  /**
+   * Progress within the phase (0 = phase start, 1 = end). Not seconds.
+   */
+  s: number;
+  /**
+   * TCP position at this sample (on the phase's straight line; the orientation is the candidate's and does not change).
+   *
+   * @minItems 3
+   * @maxItems 3
+   */
+  tcp: [number, number, number];
+  /**
+   * Empty = judged here and touched nothing.
+   */
+  hits: ReplayHit[];
+  arm: ReplayArm;
+}
+/**
+ * A part the judgement checked at this sample, and the obstacle it touched. The arm is never here -- whether the arm was judged or only measured is the arm's own kind.
+ */
+export interface ReplayHit {
+  /**
+   * tcpPath is a segment test: a sample's tcpPath hit belongs to the stretch from the previous sample to this one.
+   */
+  part: "tcpPath" | "hand" | "held";
+  /**
+   * Index into the request's obstacles[].
+   */
+  obstacleIndex: number;
+}
+/**
+ * No kinematics declared -- the arm was not placed.
+ */
+export interface ReplayArmUndeclared {
+  kind: "undeclared";
+}
+/**
+ * No joint solution within limits at this point.
+ */
+export interface ReplayArmNoSolution {
+  kind: "noSolution";
+}
+/**
+ * The arm pose the search judged.
+ */
+export interface ReplayArmJudged {
+  kind: "judged";
+  /**
+   * Joint values in chain order.
+   */
+  joints: number[];
+  /**
+   * Indices into the request's obstacles[] the arm (links + tool segment) touches at this sample.
+   */
+  obstacles: number[];
+}
+/**
+ * An arm pose only measured (not used to reject).
+ */
+export interface ReplayArmMeasured {
+  kind: "measured";
+  /**
+   * Joint values in chain order.
+   */
+  joints: number[];
+  /**
+   * Indices into the request's obstacles[] the arm (links + tool segment) touches at this sample.
+   */
+  obstacles: number[];
+}
+export interface ReplaySweepPhase {
+  phase: "close";
+  hits: ReplayHit[];
 }

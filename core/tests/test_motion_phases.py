@@ -494,3 +494,130 @@ def _dist_point_segment(p, a, b) -> float:
     q = a + ab.scaled(t)
     d = p - q
     return math.sqrt(d.x * d.x + d.y * d.y + d.z * d.z)
+
+
+# --- 再生の標本 (ADR-158 再生の段 R1) --------------------------------------------
+#
+# 固定する性質:
+# - 標本ごとの当たりは判定 (`phase_hits`) を標本へ**割り直した**もので、和集合が判定と一致する
+#   (源は 1 つ — 再生の当たりは判定の導出であって第二の判定ではない)。
+# - 返した候補ごとに 1 つ、rank 順。返す候補が 0 なら replays も 0 (宣言された 0)。
+# - 時間は相の中の s だけ。秒・fps の欄は無い (D3)。
+# - 腕は判定した姿勢 (進入相のピック姿勢) と測っただけの姿勢を kind で区別し、
+#   運動学が未宣言なら `undeclared` を宣言する (0 件の当たりに見せない)。
+
+
+def _all_candidates(problem):
+    from easy_extrude_core.engine import generate_candidates
+
+    if problem.grasp_specs:
+        return [c for spec in problem.grasp_specs for c in generate_spec_candidates(problem, spec)]
+    return list(generate_candidates(problem))
+
+
+def _replay_hit_set(replay) -> "set[tuple[str, int]]":
+    from easy_extrude_core.engine.phases import PathReplay
+
+    if not isinstance(replay, PathReplay):
+        return {(h.part.value, h.obstacle_index) for h in replay.hits}
+    out = set()
+    for x in replay.samples:
+        out |= {(h.part.value, h.obstacle_index) for h in x.hits}
+        if x.arm is not None and x.arm_judged:
+            out |= {("arm", o) for o in x.arm.obstacles}
+    return out
+
+
+def _evaluated(problem):
+    from easy_extrude_core.engine.phases import phase_unevaluated_reason
+
+    return [p for p in PHASE_ORDER if phase_unevaluated_reason(problem, p) is None]
+
+
+@pytest.mark.parametrize("name", sorted(_SCENES))
+def test_replay_hits_are_the_judgement_split_by_sample(name):
+    from easy_extrude_core.engine.phases import phase_replay
+
+    problem = problem_from_declaration(_request(**_SCENES[name]).grasp_search)
+    seen = 0
+    for c in _all_candidates(problem):
+        for phase in _evaluated(problem):
+            judged = {(h.part.value, h.obstacle_index)
+                      for h in phase_hits(problem, phase, c, first_only=False)}
+            assert _replay_hit_set(phase_replay(problem, phase, c)) == judged
+            seen += len(judged)
+    assert seen > 0  # 当たりの在る場面で問うた (空集合どうしの一致で緑にしない)
+
+
+def test_replay_hits_with_the_arm_are_the_judgement_split_by_sample():
+    from easy_extrude_core.engine.phases import phase_replay
+
+    problem, solver, arm = _pedestal_problem(_pedestal_raw(**_PEDESTAL_LIFT))
+    arm_hits = 0
+    for c in _all_candidates(problem):
+        sol = solver.solve(c, problem.robot)
+        if sol is None:
+            continue
+        for phase in _evaluated(problem):
+            judged = {(h.part.value, h.obstacle_index)
+                      for h in phase_hits(problem, phase, c, solution=sol, arm=arm, first_only=False)}
+            got = _replay_hit_set(phase_replay(problem, phase, c, solution=sol, arm=arm, solver=solver))
+            assert got == judged
+            arm_hits += sum(1 for part, _ in judged if part == "arm")
+    assert arm_hits > 0  # 台座に当たる腕が在る (PR1 の実測: ピック姿勢で 4 候補)
+
+
+def _keys(o) -> "set[str]":
+    if isinstance(o, dict):
+        return set(o) | {k for v in o.values() for k in _keys(v)}
+    if isinstance(o, list):
+        return {k for v in o for k in _keys(v)}
+    return set()
+
+
+def test_replays_are_one_per_returned_candidate_and_carry_progress_not_time():
+    wire = _wire_raw(_pedestal_raw(**_PEDESTAL_LIFT), "allPhases")
+    analysis = wire["diagnostics"]["interferenceAnalysis"]
+    replays = analysis["replays"]
+    assert wire["candidates"]  # 返す候補が在る場面
+    assert [r["rank"] for r in replays] == [c["rank"] for c in wire["candidates"]]
+    # 時間は s だけ — 秒・フレームレートの欄は無い (D3 / G2)。
+    assert not _keys(replays) & {"t", "time", "seconds", "fps", "frameRate", "duration"}
+    evaluated = [p["phase"] for p in analysis["phases"]]
+    for replay, cand in zip(replays, wire["candidates"]):
+        assert [p["phase"] for p in replay["phases"]] == evaluated
+        for p in replay["phases"]:
+            if p["phase"] == "close":
+                assert set(p) == {"phase", "hits"}  # 掃引は時点を持たない
+                continue
+            s = [x["s"] for x in p["samples"]]
+            assert s == sorted(s) and s[0] == 0.0 and s[-1] == 1.0
+            # 返る候補は全相を通過している — 判定した部位の当たりは 1 つも無い。
+            assert all(x["hits"] == [] for x in p["samples"])
+            kinds = [x["arm"]["kind"] for x in p["samples"]]
+            if p["phase"] == "approach":
+                # ピック姿勢 (s=1) だけが判定した腕で、それは候補の代表解そのもの。
+                assert kinds[-1] == "judged" and set(kinds[:-1]) <= {"measured", "noSolution"}
+                assert p["samples"][-1]["arm"]["joints"] == cand["score"]["reachSolution"]["joints"]
+                assert p["samples"][-1]["tcp"] == pytest.approx(cand["pose"]["frame"]["position"])
+            else:
+                assert set(kinds) <= {"measured", "noSolution"}  # lift × arm = measuredOnly
+
+
+def test_without_declared_kinematics_every_replay_arm_is_undeclared():
+    wire = _wire(**{**_SCENES["close"], "obstacles": []}, analysis="allPhases")
+    replays = wire["diagnostics"]["interferenceAnalysis"]["replays"]
+    assert replays
+    arms = {x["arm"]["kind"] for r in replays for p in r["phases"] for x in p.get("samples", [])}
+    assert arms == {"undeclared"}
+
+
+def test_no_returned_candidate_means_no_replay():
+    wire = _wire(**_SCENES["lift"], analysis="allPhases")
+    assert wire["candidates"] == []
+    assert wire["diagnostics"]["interferenceAnalysis"]["replays"] == []
+
+
+def test_firstcollision_carries_no_replay():
+    wire = _wire(**_SCENES["close"])
+    assert wire["diagnostics"]["interferenceAnalysis"] == {"kind": "firstCollision"}

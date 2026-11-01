@@ -10,7 +10,7 @@ artifacts
 
     context Adr158Scope
     uuid a34735da-3513-421e-85c5-9e4919f4893e
-    summary "ADR-158 (Accepted 2026-10-15 段階実装 — PR1 で腕を経路に沿って測る。起票 2026-09-30): 全相分析を求めたとき判定した標本 (相・s・関節・TCP・当たり) を返し (D1)、間のフレームはクライアントが関節空間の線形補間で導出して判定済みと描き分け (D2)、時間軸は相ごとの s で秒ではなく再生速度とフレームレートはクライアントの設定 (D3)、再生は表示の状態で鮮度は分析から導出 (D4)、動きの役割は Fact で既存の進入スライド (Delight) と別物として描く (D5)"
+    summary "ADR-158 (Accepted 2026-10-15 段階実装 — PR1 で腕を経路に沿って測る、再生の段 R1 (2026-11-01) で返した候補の判定した標本をワイヤへ — 契約 v11。起票 2026-09-30): 全相分析を求めたとき判定した標本 (相・s・関節・TCP・当たり) を返し (D1)、間のフレームはクライアントが関節空間の線形補間で導出して判定済みと描き分け (D2)、時間軸は相ごとの s で秒ではなく再生速度とフレームレートはクライアントの設定 (D3)、再生は表示の状態で鮮度は分析から導出 (D4)、動きの役割は Fact で既存の進入スライド (Delight) と別物として描く (D5)"
 
     context RequirementCameFromTheOwner
     uuid aa40d116-b36d-4a2b-afe0-a7facda403a9
@@ -61,7 +61,7 @@ artifacts
 
             assumption WhatIsDrawnAsAHitWasJudgedWillBeSettled
             uuid 30226a08-b275-40fe-afe7-f0831fb79e1d
-            summary "証拠予定: 実装 PR の純粋層テストで、当たりの強調が付くフレームの集合が core の返した当たり標本の集合とちょうど一致し、補間のフレームには 0 個であることを数える。満期=PATH:src/view/GraspReplayMath.test.js"
+            summary "証拠予定: 実装 PR の純粋層テストで、当たりの強調が付くフレームの集合が core の返した当たり標本の集合とちょうど一致し、補間のフレームには 0 個であることを数える。**源の側は R1 (2026-11-01) で入った**: ワイヤの標本の当たりは判定の割り直しで、和集合が phase_hits と一致する (core の test_replay_hits_are_the_judgement_split_by_sample / ..._with_the_arm_...、変異 2 つで fail を確認)。残りは描く側。満期=PATH:src/view/GraspReplayMath.test.js"
 
         goal FrameRateNeverReachesTheWire
         uuid 9d9b0e0b-35a6-479d-9f8e-e33d8df92419
@@ -70,7 +70,7 @@ artifacts
 
             assumption FrameRateCensusIsPlanned
             uuid 04884584-465a-4503-aaff-b2fe33da5a0d
-            summary "証拠予定: 再生の段の PR で response スキーマの census (fps / seconds / duration / frameRate の語が欄に無い) と、同じ応答を 2 つの再生速度で描いて標本のフレームが一致するテストを置く。満期=PATH:src/view/GraspReplayMath.test.js (2026-10-15 張り替え: 初めの満期 ADR-158 は段階実装の Accepted で先に来たが、PR1 は測定だけで再生を描かない)"
+            summary "証拠予定: 再生の段の PR で response スキーマの census (fps / seconds / duration / frameRate の語が欄に無い) と、同じ応答を 2 つの再生速度で描いて標本のフレームが一致するテストを置く。**ワイヤの半分は R1 (2026-11-01, 契約 v11) で入った**: core の test_replays_are_one_per_returned_candidate_and_carry_progress_not_time (欄名の census) と packages/grasp-contract の v11 テスト (t / fps / s>1 を拒否)。残りはクライアントの半分 (2 つの再生速度で同じ標本のフレーム)。満期=PATH:src/view/GraspReplayMath.test.js (2026-10-15 張り替え: 初めの満期 ADR-158 は段階実装の Accepted で先に来たが、PR1 は測定だけで再生を描かない)"
 
         goal TheReplayServesTheScenesItWasDesignedFor
         uuid ec2af048-2832-46ab-a54d-7eed67386447

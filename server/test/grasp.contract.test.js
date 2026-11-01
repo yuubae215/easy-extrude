@@ -424,10 +424,15 @@ test('v8: an unevaluated phase row may not carry a count, and every phase needs 
     kind: 'allPhases', candidatesAnalysed: 3,
     phases: [{ phase: 'lift', collided: 2, hits: [{ part: 'held', obstacleIndex: 0, candidates: 2 }] }],
     armPath: { kind: 'undeclared' },
+    replays: [],
   }
   assert.deepEqual(validateResponse(analysed), { valid: true, errors: [] })
   // v10 (ADR-158 PR1): the arm measured along the path is required, and "not measured" is a branch.
   const unmeasured = structuredClone(analysed)
   delete unmeasured.diagnostics.interferenceAnalysis.armPath
   assert.equal(validateResponse(unmeasured).valid, false, 'an arm nobody measured must say so, not be absent')
+  // v11 (ADR-158 replay stage): the replays are required (0 returned candidates = an empty list, not an absent field).
+  const unreplayed = structuredClone(analysed)
+  delete unreplayed.diagnostics.interferenceAnalysis.replays
+  assert.equal(validateResponse(unreplayed).valid, false, 'no replay must be an empty list, not an absent field')
 })
