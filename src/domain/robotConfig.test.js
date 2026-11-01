@@ -160,3 +160,18 @@ test('権威は N 台の割り当てを素通りする — 主語の腕だけが
   assert.deepEqual(got.get('r2'), { authority: 'unverified', joints: APPROXIMATION.joints })
   assert.equal(got.get('r1'), null, '近似でも「主語以外は rest」は変わらない')
 })
+
+// ── ADR-158 R2 — the arm's look is decided by who produced the joints ─────────
+import { drawsTranslucent, TRANSLUCENT_BY_AUTHORITY } from './robotConfig.js'
+
+test('drawsTranslucent: solved is solid; unverified and the replay\'s measured are translucent; null rests solid', () => {
+  assert.equal(drawsTranslucent({ authority: 'solved', joints: [] }), false)
+  assert.equal(drawsTranslucent({ authority: 'unverified', joints: [] }), true)
+  assert.equal(drawsTranslucent({ authority: 'measured', joints: [] }), true)
+  assert.equal(drawsTranslucent(null), false)
+  assert.deepEqual(Object.keys(TRANSLUCENT_BY_AUTHORITY).sort(), ['measured', 'solved', 'unverified'])
+})
+
+test('drawsTranslucent throws on an authority nobody declared — never falls through to solid (原則 #31)', () => {
+  assert.throws(() => drawsTranslucent({ authority: 'guessed', joints: [] }), /未宣言/)
+})

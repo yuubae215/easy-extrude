@@ -69,10 +69,15 @@ import { relationRef } from '../domain/selection.js'
 import { massDeclarationGaps } from '../domain/targetMass.js'
 import { liftDeclarationGaps } from '../domain/targetLift.js'
 import { analysisAvailability } from '../view/GraspPhaseMath.js'
+import {
+  replayFor, phaseTimeline, replayFrame, replayCaption,
+  struckObstacles, stepStop, sampleStops, playheadAt,
+} from '../view/GraspReplayMath.js'
+import { prefersReducedMotion } from '../theme/motion.js'
 import { wireTargetFor, wireObstacle } from '../domain/graspWire.js'
 import { resolveSearchLayout, SOURCE } from '../domain/searchGeometry.js'
 import { declarationPicture } from '../view/GraspDeclarationMath.js'
-import { mmPointToM, mPointToMM } from '../domain/worldUnits.js'
+import { mmPointToM, mPointToMM, mToMM } from '../domain/worldUnits.js'
 import { needsClientSolvedPreview, previewPayloadFor } from '../domain/robotConfig.js'
 import { flangeTargetInBaseFrame } from '../robotics/graspPoseGauge.js'
 import { axialToolLengthM, axialToolLengthMm, toolMountOf, toolMountGap } from '../domain/robotTool.js'
@@ -146,6 +151,12 @@ export class GraspController {
     this._ghost = null
     /** transient hovered rank (never in the grasp FSM slice — ADR-059 §C) */
     this._hoverRank = null
+    /** where a play started — `{t0 (ms), at0}`; the playhead is a function of the clock (ADR-158 R2) */
+    this._playAnchor = null
+    /** last loop clock (ms) — a play starts from it */
+    this._lastTickMs = 0
+    /** the axis position last drawn — a paused replay is not re-written each frame */
+    this._appliedAt = null
     /**
      * Which robot a grasp is solved for (ADR-090 Decision 3). The user's CHOICE
      * lives here (the scene owns the roster; this owns the pick), and it is only
@@ -185,6 +196,11 @@ export class GraspController {
     registerCallback('onRunInterferenceAnalysis', () => this.runInterferenceAnalysis())
     registerCallback('onSelectGraspCandidate', (rank)  => this.selectCandidate(rank))
     registerCallback('onHoverGraspCandidate',  (rank)  => this.hoverCandidate(rank))
+    registerCallback('onReplayPlay',           ()      => this.playReplay())
+    registerCallback('onReplayPause',          ()      => this.pauseReplay())
+    registerCallback('onReplayScrub',          (at)    => this.scrubReplay(at))
+    registerCallback('onReplayStep',           (dir)   => this.stepReplay(dir))
+    registerCallback('onReplayClose',          ()      => this.closeReplay())
     registerCallback('onSelectCamera',         (id)    => this.selectCamera(id))
     registerCallback('onSetCamera',            (id, camera) => this.setCamera(id, camera))
     registerCallback('onCopyViewToCamera',     (id)    => this.copyViewToCamera(id))
@@ -1376,6 +1392,9 @@ export class GraspController {
     }
     const searched = grasp.request
     const obstacleLabels = grasp.obstacleLabels ?? []
+    // A new analysis replaces the samples the replay is drawing (原則 #32 — the
+    // obligation sits on the event that fires it).
+    this._endReplay()
     ui.contextSetGraspAnalysis({ status: 'running', request: searched })
     try {
       const res = await bff.graspSearch({
@@ -1396,6 +1415,156 @@ export class GraspController {
     }
   }
 
+  // ── Replay of the judged samples (ADR-158 replay stage R2) ───────────────────
+
+  /**
+   * The selected candidate's replay and its time line, or null when there is
+   * none — `replayFor` is the ONE place that says why (fresh analysis, a
+   * selection, samples for that rank), shared with the panel.
+   */
+  _replayContext() {
+    const { grasp, graspAnalysis } = this._store.getState().context
+    const rank = grasp?.selectedRank ?? null
+    const r = replayFor(graspAnalysis ?? null, grasp ?? null, rank)
+    if (r.kind !== 'ready') return { ready: false, reason: r.reason }
+    return {
+      ready: true, rank, grasp, replay: r.replay,
+      timeline: phaseTimeline(r.replay, grasp.diagnostics?.interferencePhases ?? null),
+    }
+  }
+
+  /**
+   * Play the replay from where it stands (from the start when it ended or was
+   * not open). Under reduced motion there is no play — the frame-by-frame step
+   * is the replay (ADR-158 D5 / S5); the panel offers no ▶ then, and this path
+   * opens the replay on its first sample instead of moving.
+   */
+  playReplay() {
+    const cx = this._replayContext()
+    if (!cx.ready) { this._ctrl._uiView?.showToast?.(cx.reason, { type: 'warn' }); return }
+    const cur = this._store.getState().context.graspReplay
+    const resume = cur && cur.rank === cx.rank && cur.at < cx.timeline.total ? cur.at : 0
+    if (prefersReducedMotion()) {
+      this._writeReplay({ rank: cx.rank, at: cur?.rank === cx.rank ? cur.at : (sampleStops(cx.timeline)[0] ?? 0), playing: false })
+      return
+    }
+    this._playAnchor = { t0: this._lastTickMs, at0: resume }
+    this._writeReplay({ rank: cx.rank, at: resume, playing: true })
+  }
+
+  pauseReplay() {
+    const cur = this._store.getState().context.graspReplay
+    if (!cur) return
+    this._playAnchor = null
+    this._writeReplay({ ...cur, playing: false })
+  }
+
+  /** Move the playhead to `at` on the time line's axis (a scrub stops a play). */
+  scrubReplay(at) {
+    const cx = this._replayContext()
+    if (!cx.ready) { this._ctrl._uiView?.showToast?.(cx.reason, { type: 'warn' }); return }
+    this._playAnchor = null
+    const x = Math.min(cx.timeline.total, Math.max(0, Number(at) || 0))
+    this._writeReplay({ rank: cx.rank, at: x, playing: false })
+  }
+
+  /** Step to the next / previous judged sample (dir = +1 / −1). */
+  stepReplay(dir) {
+    const cx = this._replayContext()
+    if (!cx.ready) { this._ctrl._uiView?.showToast?.(cx.reason, { type: 'warn' }); return }
+    const cur = this._store.getState().context.graspReplay
+    const at = cur?.rank === cx.rank
+      ? stepStop(cx.timeline, cur.at, dir)
+      : (sampleStops(cx.timeline)[0] ?? 0)
+    this._playAnchor = null
+    this._writeReplay({ rank: cx.rank, at, playing: false })
+  }
+
+  /** Close the replay; the ghost and the arm go back to the selected candidate. */
+  closeReplay() {
+    this._endReplay()
+    this._syncGhost()
+  }
+
+  _writeReplay(next) {
+    this._store.getState().actions.contextSetGraspReplay?.(next)
+    this._appliedAt = null
+    this._tickReplay(this._lastTickMs)
+  }
+
+  /** End the replay (idempotent). Called from the events that end it (#32). */
+  _endReplay() {
+    this._playAnchor = null
+    this._appliedAt = null
+    if (this._store.getState().context.graspReplay != null) {
+      this._store.getState().actions.contextSetGraspReplay?.(null)
+    }
+    this._ghost?.showReplayFrame(null)
+  }
+
+  /**
+   * Advance a playing replay from the clock and draw its frame. A replay whose
+   * analysis went stale, or whose candidate is no longer the selected one, ends
+   * here — derived, so none of the many ways a search can be replaced has to
+   * remember it (原則 #23).
+   */
+  _tickReplay(tMs) {
+    const state = this._store.getState().context.graspReplay
+    if (!state) return
+    const cx = this._replayContext()
+    if (!cx.ready || cx.rank !== state.rank) {
+      this._endReplay()
+      this._syncGhost()
+      return
+    }
+    let at = state.at
+    if (state.playing && this._playAnchor) {
+      const head = playheadAt(this._playAnchor, tMs, cx.timeline.total)
+      at = head.at
+      if (head.ended) this._playAnchor = null
+      this._store.getState().actions.contextSetGraspReplay?.({ ...state, at, playing: !head.ended })
+    }
+    if (at === this._appliedAt) return
+    this._appliedAt = at
+    this._applyReplayFrame(cx, replayFrame(cx.timeline, at))
+  }
+
+  /** Perform the writes for one derived frame: the arm, then the glyph (原則 #3 — the frame is pure). */
+  _applyReplayFrame(cx, frame) {
+    const stages = this._ctrl._sceneView?.robotStages
+    const robotEntity = this._selectedRobot()
+    if (stages) stages.previewSolution(robotEntity?.id ?? null, frame.arm)
+    const armShown = frame.arm != null && robotEntity != null && stages?.isVisible?.(robotEntity.id) === true
+
+    const candidate = (cx.grasp.candidates ?? []).find(c => c.rank === cx.rank)
+    const wireFrame = candidate ? renderableEndEffectorFrame(candidate.pose) : null
+    if (!wireFrame) { this._ghost?.showReplayFrame(null); return }
+    if (!this._ghost) {
+      if (!this._createGhostView) return
+      this._ghost = this._createGhostView()
+    }
+    const tcp = frame.tcp ?? wireFrame.position
+    const obstacles = cx.grasp.request?.graspSearch?.obstacles ?? []
+    const struck = struckObstacles(frame, obstacles)
+      .filter(s => s.shape)
+      .map(({ judged, shape }) => ({
+        judged,
+        shape: shape.kind === 'sphere'
+          ? { kind: 'sphere', center: mPointToMM(shape.center), radius: mToMM(shape.radius) }
+          : { kind: 'box', center: mPointToMM(shape.center),
+            halfExtents: mPointToMM(shape.halfExtents), orientation: shape.orientation },
+      }))
+    const radius = this._sceneRadius()
+    this._ghost.setWorldCap(radius > 0 ? radius * 0.5 : Infinity)
+    this._ghost.setTargetGeometry(null)
+    this._ghost.showReplayFrame({
+      position: mPointToMM(tcp), orientation: wireFrame.orientation,
+      kind: frame.kind, closure: frame.closure, struck,
+      caption: `#${cx.rank} · ${replayCaption(frame, cx.timeline)}`,
+    })
+    this._ghost.setHandOnArm(armShown)
+  }
+
   // ── Select / hover: drive the stage-1 spatial ghost (ADR-057 §5 seat, ADR-059) ─
 
   /**
@@ -1408,6 +1577,8 @@ export class GraspController {
   selectCandidate(rank) {
     const cur = this._store.getState().context.grasp
     if (cur?.status !== 'results') return
+    // Selecting another candidate ends the replay of the previous one (#32).
+    if (this._store.getState().context.graspReplay?.rank !== rank) this._endReplay()
     this._store.getState().actions.contextSetGrasp({ ...cur, selectedRank: rank })
     this._syncGhost()
   }
@@ -1435,6 +1606,8 @@ export class GraspController {
    * @param {number} t — elapsed seconds
    */
   tick(t) {
+    this._lastTickMs = t * 1000
+    this._tickReplay(this._lastTickMs)
     if (!this._ghost) return
     const sv = this._ctrl._sceneView
     this._ghost.tick(t * 1000, sv?.activeCamera, sv?.renderer)
@@ -1442,6 +1615,7 @@ export class GraspController {
 
   /** Fully dispose the ghost (overlay exit / contextEnd — PHILOSOPHY #9). */
   disposeGhost() {
+    this._endReplay()
     this._hoverRank = null
     if (this._ghost) {
       this._ghost.dispose()
@@ -1463,6 +1637,10 @@ export class GraspController {
   _syncGhost() {
     const cur = this._store.getState().context.grasp
     if (cur?.status !== 'results') return this._clearGhost()
+
+    // While a replay is open it owns the ghost and the arm (one writer — 原則 #4);
+    // hovering another row does not pull them away from the frame on screen.
+    if (this._store.getState().context.graspReplay) { this._appliedAt = null; return this._tickReplay(this._lastTickMs) }
 
     const rank = this._hoverRank ?? cur.selectedRank
     const candidate = rank == null ? null : (cur.candidates ?? []).find(c => c.rank === rank)
@@ -1602,6 +1780,7 @@ export class GraspController {
 
   /** Hide the ghost and drop the transient hover (state transitions out of results). */
   _clearGhost() {
+    this._endReplay()
     this._hoverRank = null
     this._ghost?.clear()
     // Leaving `results` ends the preview too — the obligation belongs to the

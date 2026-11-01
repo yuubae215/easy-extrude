@@ -11,9 +11,8 @@
  * reason or part that nobody wrote words for must fail loudly rather than
  * render as a blank row that reads like "fine".
  *
- * 未実装 (DEF-059): replaying the phases over time in the viewport — the
- * original "share it at 30fps" ask, lifted to "receive the phase facts once,
- * derive the replay here". Only the facts half is in.
+ * The replay of the judged samples (ADR-158 replay stage R2) is its sibling,
+ * `GraspReplayMath.js` — it reads these word tables, never copies them.
  *
  * Pure (no THREE / no DOM / no store).
  *

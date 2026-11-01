@@ -10,7 +10,7 @@ artifacts
 
     context Adr158Scope
     uuid a34735da-3513-421e-85c5-9e4919f4893e
-    summary "ADR-158 (Accepted 2026-10-15 段階実装 — PR1 で腕を経路に沿って測る、再生の段 R1 (2026-11-01) で返した候補の判定した標本をワイヤへ — 契約 v11。起票 2026-09-30): 全相分析を求めたとき判定した標本 (相・s・関節・TCP・当たり) を返し (D1)、間のフレームはクライアントが関節空間の線形補間で導出して判定済みと描き分け (D2)、時間軸は相ごとの s で秒ではなく再生速度とフレームレートはクライアントの設定 (D3)、再生は表示の状態で鮮度は分析から導出 (D4)、動きの役割は Fact で既存の進入スライド (Delight) と別物として描く (D5)"
+    summary "ADR-158 (Accepted 2026-10-15 段階実装 — PR1 で腕を経路に沿って測る、再生の段 R1 (2026-11-01) で返した候補の判定した標本をワイヤへ — 契約 v11、R2 (2026-11-01) でフロントが標本を再生する。起票 2026-09-30): 全相分析を求めたとき判定した標本 (相・s・関節・TCP・当たり) を返し (D1)、間のフレームはクライアントが関節空間の線形補間で導出して判定済みと描き分け (D2)、時間軸は相ごとの s で秒ではなく再生速度とフレームレートはクライアントの設定 (D3)、再生は表示の状態で鮮度は分析から導出 (D4)、動きの役割は Fact で既存の進入スライド (Delight) と別物として描く (D5)"
 
     context RequirementCameFromTheOwner
     uuid aa40d116-b36d-4a2b-afe0-a7facda403a9
@@ -57,20 +57,30 @@ artifacts
         goal WhatIsDrawnAsAHitWasJudged
         uuid 505d9b54-eb76-4b2c-ab97-f8863f1e1277
         summary "当たりの強調が付くのは core が当たりと判定した標本だけで、補間のフレームには付かない。当たり始めの時刻は標本の分解能でしか言わない"
-        labels support-exploring
+        labels support-verified
 
-            assumption WhatIsDrawnAsAHitWasJudgedWillBeSettled
+            solution OnlyJudgedFramesCarryHits
             uuid 30226a08-b275-40fe-afe7-f0831fb79e1d
-            summary "証拠予定: 実装 PR の純粋層テストで、当たりの強調が付くフレームの集合が core の返した当たり標本の集合とちょうど一致し、補間のフレームには 0 個であることを数える。**源の側は R1 (2026-11-01) で入った**: ワイヤの標本の当たりは判定の割り直しで、和集合が phase_hits と一致する (core の test_replay_hits_are_the_judgement_split_by_sample / ..._with_the_arm_...、変異 2 つで fail を確認)。残りは描く側。満期=PATH:src/view/GraspReplayMath.test.js"
+            summary "源の側 (R1, 2026-11-01): ワイヤの標本の当たりは判定の割り直しで、和集合が phase_hits と一致する (core の test_replay_hits_are_the_judgement_split_by_sample / ..._with_the_arm_...、変異 2 つで fail を確認)。描く側 (R2, 2026-11-01): src/view/GraspReplayMath.test.js の 'replay G1' が時間軸を 2001 点で走査して between / unjudged のフレームの当たりが 0 個であること、標本の上でだけ当たりが出て SAMPLE_SNAP を外すと消えることを問う。腕の当たりは judged / measured を区別して運ぶ (measured は破線)。src/controller/GraspController.test.js の 'a scrub between samples draws a derived frame that strikes nothing' が、ゴーストへ渡る輪郭が補間のフレームで空であることを問う。当たり始めの時刻はパネルが「2 つの標本の間で触れ始めた瞬間は分からない」と言う"
+            artifacts
+            - "src/view/GraspReplayMath.test.js"
+            - "src/view/GraspReplayMath.js"
+            - "src/controller/GraspController.test.js"
+            - "core/tests/test_motion_phases.py"
 
         goal FrameRateNeverReachesTheWire
         uuid 9d9b0e0b-35a6-479d-9f8e-e33d8df92419
         summary "契約に fps・秒・再生速度の欄が無く、同じ応答から 30fps・60fps・コマ送りのどれでも描ける。通信量は再生の長さに依らない"
-        labels support-exploring
+        labels support-verified
 
-            assumption FrameRateCensusIsPlanned
+            solution FrameRateIsTheClientsAxis
             uuid 04884584-465a-4503-aaff-b2fe33da5a0d
-            summary "証拠予定: 再生の段の PR で response スキーマの census (fps / seconds / duration / frameRate の語が欄に無い) と、同じ応答を 2 つの再生速度で描いて標本のフレームが一致するテストを置く。**ワイヤの半分は R1 (2026-11-01, 契約 v11) で入った**: core の test_replays_are_one_per_returned_candidate_and_carry_progress_not_time (欄名の census) と packages/grasp-contract の v11 テスト (t / fps / s>1 を拒否)。残りはクライアントの半分 (2 つの再生速度で同じ標本のフレーム)。満期=PATH:src/view/GraspReplayMath.test.js (2026-10-15 張り替え: 初めの満期 ADR-158 は段階実装の Accepted で先に来たが、PR1 は測定だけで再生を描かない)"
+            summary "ワイヤの半分 (R1, 契約 v11): core の test_replays_are_one_per_returned_candidate_and_carry_progress_not_time (欄名の census) と packages/grasp-contract の v11 テスト (t / fps / s>1 を拒否)。クライアントの半分 (R2): src/view/GraspReplayMath.test.js の 'replay D3/G2' が再生ヘッドを時計の関数として問う (30fps と 60fps で同じ時刻は同じ位置、同じ時刻を 2 回聞いても同じ — 積算しない) と、'replay D3' がスキーマの再生の欄に秒・fps・速度の語が無いこと。コマ送りは 'stepping visits every judged sample' (標本と掃引を順に、両向きに)。再生は分析 1 回の上に乗るだけで、再生中にリクエストは出ない (GraspController の再生のメソッドは bff を呼ばない)"
+            artifacts
+            - "src/view/GraspReplayMath.test.js"
+            - "src/view/GraspReplayMath.js"
+            - "core/tests/test_motion_phases.py"
+            - "packages/grasp-contract/test/contract.test.mjs"
 
         goal TheReplayServesTheScenesItWasDesignedFor
         uuid ec2af048-2832-46ab-a54d-7eed67386447
@@ -79,7 +89,7 @@ artifacts
 
             assumption TheReplayServesTheScenesItWasDesignedForWillBeSettled
             uuid d4a734f4-5d5c-47ee-bfa4-3a282aef5ae0
-            summary "証拠予定: 実装 PR の e2e で、S1 (棄却候補の当たり標本で止まり、部位と障害物の名前が出る) と S5 (reduced-motion の 390px 幅でコマ送りが同じ標本を出す) を実機で通す。満期=PATH:e2e/grasp-replay.spec.js"
+            summary "証拠予定: e2e で S1 (棄却候補の当たり標本で止まり、部位と障害物の名前が出る) と S5 (reduced-motion の 390px 幅でコマ送りが同じ標本を出す) を実機で通す。**R2 (2026-11-01) で入ったもの**: 再生そのもの (返した候補の標本・コマ送り・reduced では ▶ を出さずコマ送りだけ)。**入っていないもの**: S1 の主眼 — R1 は返した候補の標本しか載せず、返る候補は全相を通過しているので判定した部位の当たりは 0 件、見えるのは腕の測った当たりだけ (棄却候補の再生は DEF-075)。e2e が置けないのは CI の e2e がスタブで動き、スタブは標本を捏造しない (ADR-157 D6) から — 実機の core を立てる e2e のレーンが要る。満期=PATH:e2e/grasp-replay.spec.js"
 
         goal TheReplayIsNotMistakenForTheRevealSlide
         uuid 88920e35-c1da-4d8d-bf1c-cf6db6f76e43
@@ -88,4 +98,4 @@ artifacts
 
             assumption TheReplayIsNotMistakenForTheRevealSlideWillBeSettled
             uuid c5616205-a117-4976-be7b-fad54e983b93
-            summary "証拠予定: 実装 PR で再生を MotionGovernor に Fact tier として登録し、既存の進入スライド (REVEAL_TIMELINE、Delight) と描画の役割が別のトークンになっていることをテストで問う。満期=PATH:src/view/GraspReplayMath.js"
+            summary "証拠予定: 再生と進入スライドが画面で区別できることを実機の絵で問う。**R2 (2026-11-01) で入ったもの**: 再生は ▶ / コマ送り / スクラブを押したときだけ始まり、開いている間はゴーストの唯一の書き手で、進入スライドは再生のフレームの上では走らない (GraspGhostView — 再生のフレームは revealFrame の最終段に固定)。パネルは標本 / 補間 / 掃引 / 判定していない区間を語で言う。**張り替え (2026-11-01)**: 初めの満期は「再生を MotionGovernor に Fact tier として登録する」だったが、当事者合意 ⑤ で再生は transient ではなく利用者が操作する持続的な表示とし、所有者を GraspController + GraspGhostView に置いた — Governor に登録するという証拠の形がもう無い。GraspGhostView は THREE を要るので純粋レーンで描き分けを問えず、残る証拠は絵 (e2e のスクリーンショット)。満期=PATH:e2e/grasp-replay.spec.js"

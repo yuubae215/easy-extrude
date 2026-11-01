@@ -330,6 +330,13 @@ export const useUIStore = create((set, get) => ({
     //   { status:'done',    request, analysis, obstacleLabels }
     //   { status:'failed',  request, message }
     graspAnalysis: null,
+    // ADR-158 R2 — the replay of ONE returned candidate's judged samples, a
+    // display state on top of `graspAnalysis` (sole writer GraspController).
+    // Never saved and never on the wire (D4); its freshness is the analysis's.
+    //   null                        — no replay open (0 is legitimate: no analysis,
+    //                                 stub lane, nothing selected — the card says why)
+    //   { rank, at, playing }       — `at` is the position on `phaseTimeline`'s axis
+    graspReplay: null,
     // ADR-090 — the scene's robot roster as a DERIVED read-model for the grasp
     // panel's selector. Sole writer GraspController.refreshRobots() (原則 #4);
     // the SCENE stays the authority on which robots exist (§1.1 — nothing writes
@@ -594,7 +601,7 @@ export const useUIStore = create((set, get) => ({
       // by openAssetViewer / closeAssetViewer alone (原則 #9). Blanking it from a
       // floor lifecycle reducer is what forced two extra `_disposeAssetPreview()`
       // calls to exist — the asymmetry was the container's, not the asset's.
-      context: { ...state.context, provenance: null, grasp: null, graspAnalysis: null, authorSeed: null, ...payload, active: true },
+      context: { ...state.context, provenance: null, grasp: null, graspAnalysis: null, graspReplay: null, authorSeed: null, ...payload, active: true },
     })),
     contextSetMatrix: (conflictMatrix, negotiationClusters, resolutionOrder) => set(state => ({
       context: { ...state.context, conflictMatrix, negotiationClusters, resolutionOrder },
@@ -696,6 +703,11 @@ export const useUIStore = create((set, get) => ({
     contextSetGraspAnalysis: (graspAnalysis) => set(state => ({
       context: { ...state.context, graspAnalysis },
     })),
+    // ADR-158 R2 — the replay's display state `null | {rank, at, playing}`
+    // (sole writer GraspController). Never saved, never on the wire (D4).
+    contextSetGraspReplay: (graspReplay) => set(state => ({
+      context: { ...state.context, graspReplay },
+    })),
     // ADR-090 — replace the derived robot roster wholesale (sole writer
     // GraspController; the scene is the authority, this is the panel's read-model).
     contextSetRobots: (robots) => set(state => ({
@@ -776,7 +788,7 @@ export const useUIStore = create((set, get) => ({
       // closing the floor emptied the semantic side, which is the exact shape
       // ADR-105 D4 named: a lifecycle reducer writing a derived fact it does not
       // own. The e2e ("場を閉じたまま意味側から変数を選べる") is what caught it.
-      context: { ...state.context, active: false, mode: null, personaFilter: null, form: [], checks: [], requirements: [], provenance: null, whyTree: null, grasp: null, graspAnalysis: null, authorSeed: null, agendaRows: [], criteriaLine: null },
+      context: { ...state.context, active: false, mode: null, personaFilter: null, form: [], checks: [], requirements: [], provenance: null, whyTree: null, grasp: null, graspAnalysis: null, graspReplay: null, authorSeed: null, agendaRows: [], criteriaLine: null },
     })),
   },
 }))

@@ -137,6 +137,32 @@ export function previewPayloadFor(reachSolution, approximation = null) {
 }
 
 /**
+ * Which preview authorities draw the arm translucent — the arm's look, decided
+ * from WHO produced the joints (ADR-144 D4, widened by ADR-158 R2).
+ *
+ * - `solved`     — `core/` decided this configuration for the search: solid.
+ * - `unverified` — the client solved it for a candidate `core/` left
+ *                  `undeclared` (ADR-147): translucent.
+ * - `measured`   — `core/` placed it only to MEASURE the path (ADR-158 PR1), or
+ *                  the replay interpolated / held it between judged samples:
+ *                  translucent, the same look (当事者合意 2026-11-01 ② — no new
+ *                  colour, ADR-100; the caption says which).
+ *
+ * Throws on an authority nobody declared (原則 #31): a new producer of joints
+ * must say how it is drawn rather than fall through to solid.
+ */
+export const TRANSLUCENT_BY_AUTHORITY = Object.freeze({ solved: false, unverified: true, measured: true })
+
+/** @param {{authority: string}|null|undefined} preview @returns {boolean} */
+export function drawsTranslucent(preview) {
+  if (preview == null) return false
+  if (!Object.prototype.hasOwnProperty.call(TRANSLUCENT_BY_AUTHORITY, preview.authority)) {
+    throw new Error(`robotConfig: 未宣言の腕の authority "${preview.authority}" — TRANSLUCENT_BY_AUTHORITY に行を足すこと (原則 #31)`)
+  }
+  return TRANSLUCENT_BY_AUTHORITY[preview.authority]
+}
+
+/**
  * Which joint payload each robot's skeleton should draw, given the search
  * subject (ADR-135 D3, the N-robot half).
  *

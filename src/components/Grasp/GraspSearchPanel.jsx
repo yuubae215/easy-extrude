@@ -12,7 +12,8 @@ import { facesForGripperKind } from '../../domain/graspTargets.js'
 import { graspFeatureGaps, graspFeatureSummary } from '../../domain/graspFeature.js'
 import { sourceLabel } from '../../domain/searchGeometry.js'
 import { MASS_DECLARATION_STATE } from '../../domain/targetMass.js'
-import { phaseRows, analysisSummary, analysisFreshness, analysisAvailability } from '../../view/GraspPhaseMath.js'
+import { phaseRows, analysisSummary, analysisFreshness, analysisAvailability, PART_LABEL } from '../../view/GraspPhaseMath.js'
+import { replayFor, phaseTimeline, replayFrame, replayCaption } from '../../view/GraspReplayMath.js'
 import { DeltaChip, useReducedMotion } from '../Feedback/FeedbackPrimitives.jsx'
 import { barMotion } from '../../view/ChromeMath.js'
 import { NumField, SortChip, PICKER } from './GraspFields.jsx'
@@ -166,6 +167,7 @@ export function GraspSearchPanel() {
   const graspTargets = useUIStore(s => s.context.graspTargets)
   const graspRelations = useUIStore(s => s.context.graspRelations)
   const graspAnalysis = useUIStore(s => s.context.graspAnalysis)
+  const graspReplay   = useUIStore(s => s.context.graspReplay)
   const bffConnected  = useUIStore(s => s.bffConnected)
   const callbacks = useUIStore(s => s.callbacks)
 
@@ -428,6 +430,8 @@ export function GraspSearchPanel() {
           grasp, analysisState: graspAnalysis ?? null,
         })}
         onRun={() => callbacks.onRunInterferenceAnalysis?.()}
+        replayState={graspReplay ?? null}
+        callbacks={callbacks}
       />
 
       {/* Sort controls + candidates */}
@@ -791,7 +795,7 @@ function InterferencePhaseRows({ rows }) {
  * search and the rest of the app keep working while it runs; a result for a
  * search that has since been re-run is kept and marked stale (derived).
  */
-function InterferenceAnalysisCard({ grasp, analysisState, availability, onRun }) {
+function InterferenceAnalysisCard({ grasp, analysisState, availability, onRun, replayState, callbacks }) {
   const freshness = analysisFreshness(analysisState, grasp)
   const done = analysisState?.status === 'done'
   const summary = done ? analysisSummary(analysisState.analysis, analysisState.obstacleLabels) : null
@@ -841,6 +845,94 @@ function InterferenceAnalysisCard({ grasp, analysisState, availability, onRun })
           ))}
           <ArmPathMeasurement armPath={summary.armPath} />
         </div>
+      )}
+      {done && (
+        <ReplayControls grasp={grasp} analysisState={analysisState} replayState={replayState} callbacks={callbacks} />
+      )}
+    </div>
+  )
+}
+
+/**
+ * The replay of the selected candidate's judged samples (ADR-158 R2 — a Fact,
+ * D5). The time line has every phase in motion order: judged phases carry their
+ * samples (ticks), a phase nobody judged is a short greyed stretch with its
+ * reason. The line under it says what the frame IS — a judged sample, a pose
+ * drawn between two (not judged), the one swept volume of closing the hand —
+ * and what it struck. Under reduced motion there is no ▶: stepping sample by
+ * sample is the replay (S5). Unavailable → the controls keep their slot,
+ * disabled, with the reason (原則 #15 / #11).
+ */
+function ReplayControls({ grasp, analysisState, replayState, callbacks }) {
+  const reduced = useReducedMotion()
+  const r = replayFor(analysisState, grasp, grasp?.selectedRank ?? null)
+  const ready = r.kind === 'ready'
+  const timeline = ready ? phaseTimeline(r.replay, grasp.diagnostics?.interferencePhases ?? null) : null
+  const open = ready && replayState?.rank === grasp.selectedRank
+  const at = open ? replayState.at : 0
+  const frame = open ? replayFrame(timeline, at) : null
+  const names = analysisState?.obstacleLabels ?? []
+  const btn = (enabled) => ({
+    padding: '2px 8px', borderRadius: '4px', border: `1px solid ${COLOR.border}`, fontSize: '11px',
+    background: enabled ? COLOR.surfaceRaised : COLOR.surfaceSunken, color: COLOR.textPrimary,
+    cursor: enabled ? 'pointer' : 'default', opacity: enabled ? 1 : 0.5,
+  })
+  return (
+    <div style={{ marginTop: '8px', fontSize: '10px', color: COLOR.textSecondary }} data-testid="grasp-replay">
+      <div style={{ marginBottom: '4px' }}>replay — the judged samples of the selected candidate</div>
+      <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+        <button style={btn(ready)} disabled={!ready} title="previous judged sample"
+          onClick={() => callbacks.onReplayStep?.(-1)}>◀</button>
+        {!reduced && (
+          <button style={btn(ready)} disabled={!ready}
+            onClick={() => (open && replayState.playing ? callbacks.onReplayPause?.() : callbacks.onReplayPlay?.())}>
+            {open && replayState.playing ? '❚❚ Pause' : '▶ Replay'}
+          </button>
+        )}
+        <button style={btn(ready)} disabled={!ready} title="next judged sample"
+          onClick={() => callbacks.onReplayStep?.(1)}>▶|</button>
+        <button style={btn(open)} disabled={!open} onClick={() => callbacks.onReplayClose?.()}>✕</button>
+        {reduced && <span>frame by frame (reduced motion)</span>}
+      </div>
+      {!ready && <div style={{ marginTop: '4px' }}>{r.reason}</div>}
+      {ready && (
+        <>
+          <div style={{ display: 'flex', marginTop: '6px', height: '14px', borderRadius: '3px', overflow: 'hidden', border: `1px solid ${COLOR.border}` }}>
+            {timeline.segments.map(seg => (
+              <div key={seg.phase} title={seg.kind === 'unjudged' ? `${seg.label} — ${seg.note}` : seg.label}
+                style={{
+                  flex: `${seg.length} 0 0`, position: 'relative', fontSize: '9px', lineHeight: '14px',
+                  textAlign: 'center', whiteSpace: 'nowrap', overflow: 'hidden',
+                  background: seg.kind === 'unjudged' ? COLOR.surfaceSunken : COLOR.surfaceRaised,
+                  color: seg.kind === 'unjudged' ? COLOR.textSecondary : COLOR.textPrimary,
+                  borderRight: `1px solid ${COLOR.border}`,
+                }}>
+                {seg.kind === 'unjudged' ? '·' : seg.label}
+              </div>
+            ))}
+          </div>
+          <input type="range" min={0} max={timeline.total} step={0.001} value={at}
+            aria-label="replay position"
+            onChange={(e) => callbacks.onReplayScrub?.(Number(e.target.value))}
+            style={{ width: '100%', margin: '2px 0 0' }} />
+          {frame && (
+            <div style={{ marginTop: '2px' }}>
+              <div style={{ color: frame.kind === 'sample' || frame.kind === 'sweep' ? COLOR.textPrimary : COLOR.textSecondary }}>
+                {replayCaption(frame, timeline)}
+              </div>
+              {frame.armNote && <div>{frame.armNote}</div>}
+              {frame.hits.map((h, i) => (
+                <div key={i} style={{ paddingLeft: '10px', color: COLOR.cautionTone }}>
+                  · {PART_LABEL[h.part] ?? h.part} × {names[h.obstacleIndex] ?? `obstacle #${h.obstacleIndex}`}
+                  {h.judged ? '' : ' (measured, not used to reject)'}
+                </div>
+              ))}
+              {frame.kind === 'between' && (
+                <div>the exact moment a touch begins between two samples is not known — step to a sample</div>
+              )}
+            </div>
+          )}
+        </>
       )}
     </div>
   )
