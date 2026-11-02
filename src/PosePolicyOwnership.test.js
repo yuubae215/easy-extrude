@@ -80,6 +80,21 @@ const POSE_WRITE_RULES = [
     why: '方針 (床・支持・床下の宣言) は入口が適用する。ハンドラが直接 move すると、その経路だけ床が無い状態が生まれる — 症状 1〜5 はすべてこの形だった (ADR-097 §Decision 3)',
   },
   {
+    name: '回転の書き込み (entity.rotate — スナップショットからの回転)',
+    owners: [POSE_ENTRY],
+    match: /\.rotate\s*\(\s*(?:this\.)?_?\w*[sS]tart(?:Orientation)?\b/,
+    use: 'SceneService.applyPreviewRotation(obj, { segStartOrientation, segStartPos, pivot }, deltaQ)',
+    why: '回転も床を割る — 床に置いたキューブを X 軸に 45° 回すと角が 20.7mm 潜り、次の Grab で床 clamp がその分跳ね上げていた。'
+       + 'Ctrl+ドラッグの即時回転は AppController が自分で obj.rotate していたので、入口が 2 つあった (ADR-169)',
+  },
+  {
+    name: '面押し出しの書き込み (solid.extrudeFace)',
+    owners: [POSE_ENTRY],
+    match: /\.extrudeFace\s*\(/,
+    use: 'SceneService.applyPreviewFaceExtrude(...) (要求 → 方針が許した距離を返す) / restoreFaceExtrude(...) (cancel・undo・redo の復元)',
+    why: '押し出しは形を変えるが床を割る点では並進と同じ事故になる。ハンドラが直接 extrudeFace すると、その経路だけ床が無い (ADR-169)',
+  },
+  {
     name: '退役した床作りの補助 (_applyStackSnap)',
     owners: [],
     match: /_applyStackSnap/,
@@ -251,7 +266,9 @@ const DECLARED_EXCEPTIONS = [
   {
     file: 'src/command/SolidRotateCommand.js',
     match: /restorePose\s*\(/,
-    why: '回転の undo。ADR-097 の方針は並進にのみ課される (回転で床を割る問題は観測されておらず、予防的に広げない — §5 過剰モデリング禁止)',
+    why: '回転の undo — 復元であって要求ではない (MoveCommand と同じ理由)。'
+       + 'ADR-097 は方針を並進にだけ課した (回転で床を割る問題が未観測だった)。2026-11-02 に観測され、ADR-169 が'
+       + '回転の入口 applyPreviewRotation にも方針を通した。restore は方針を通った pose を戻すだけなので再 clamp しない',
   },
   {
     file: 'src/controller/handler/RotationHandler.js',
@@ -329,6 +346,38 @@ test('入口は実在し、実際に方針を適用している (規則が空回
   const body  = entry.slice(0, entry.indexOf('_applyStackAssist(segStartCorners'))
   assert.ok(/_policyDelta\(obj,/.test(body),
     'applyPreviewTranslation が _policyDelta を通らずに move している')
+})
+
+test('回転・面押し出し・スケッチ押し出しの入口が実在し、方針を通っている (ADR-169)', () => {
+  // 規則 (書き手は入口だけ) は、入口自体が方針を通らなくなっても緑を出す —
+  // 入口の本体が方針を引いていることを逆向きに固定する。
+  const lines = stripComments(readFileSync(repoPath(POSE_ENTRY), 'utf8'))
+  const bodyOf = (name) => {
+    const m = extractMethodBody(lines, name)
+    assert.ok(m, `${POSE_ENTRY} に ${name}() が無い — 入口の所有者が失われている`)
+    return m.body.join('\n')
+  }
+  const rot = bodyOf('applyPreviewRotation')
+  assert.match(rot, /\.rotate\s*\(/, 'applyPreviewRotation が回転を書いていない')
+  assert.match(rot, /this\._policyDelta\s*\(/,
+    'applyPreviewRotation が _policyDelta を通っていない — 回転で床を割り、次の Grab で跳ねる')
+  assert.match(rot, /this\._restingSeatDeltaZ\s*\(/,
+    'applyPreviewRotation が「載っていた物は載ったまま」を通っていない — 回して戻すと浮き、次の Grab で落ちる')
+  assert.match(bodyOf('applyPreviewFaceExtrude'), /resolveFaceExtrudeDistance\s*\(/,
+    'applyPreviewFaceExtrude が床の決定を引いていない')
+  assert.match(bodyOf('allowedProfileHeight'), /resolveFaceExtrudeDistance\s*\(/,
+    'allowedProfileHeight が床の決定を引いていない')
+  assert.match(bodyOf('extrudeProfile'), /this\.allowedProfileHeight\s*\(/,
+    'extrudeProfile が許された高さを通っていない — 下向きの押し出しが床下に生まれる')
+
+  // スケッチ押し出しのプレビューと確定は同じ 1 か所から高さを読む (描いたものが作られる)。
+  const app = stripComments(readFileSync(repoPath('src/controller/AppController.js'), 'utf8'))
+  for (const name of ['_applyExtrudePreview', '_confirmExtrudePhase']) {
+    const m = extractMethodBody(app, name)
+    assert.ok(m, `AppController に ${name}() が無い`)
+    assert.match(m.body.join('\n'), /this\._allowedExtrudeHeight\s*\(/,
+      `${name} が _allowedExtrudeHeight() を通っていない — プレビューと結果が別の高さを読む`)
+  }
 })
 
 test('支持プローブの表は、宣言表を引くメソッドの集合と一致する (ADR-102 / 原則 #31)', () => {

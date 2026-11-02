@@ -89,8 +89,8 @@ import { fixedJointFollowers, drivesSourcePose } from '../domain/fixedJointFollo
 import { getIFCClassEntry } from '../domain/IFCClassRegistry.js'
 import { hollowBodyGap, sizeOfCorners } from '../domain/hollowBody.js'
 import {
-  PLACEMENT, SUPPORT_TOLERANCE,
-  placementOf, hasGroundInvariant, resolvePlacementDelta, supportUnder,
+  PLACEMENT, PLACEMENT_KIND, SUPPORT_TOLERANCE,
+  placementOf, placementFor, hasGroundInvariant, resolvePlacementDelta, resolveFaceExtrudeDistance, supportUnder,
   stackAssistApplies, supportProbeOf, footprintSamplesFor, bottomZFor,
   probeNeedsWorldOrigin, providesSupportSurface,
 } from '../domain/placement.js'
@@ -3415,9 +3415,27 @@ export class SceneService extends EventEmitter {
   }
 
   /**
-   * Applies a rotation delta to an object during a live Rotate preview.
+   * **THE rotation write entry** — applies a rotation delta during a live Rotate
+   * preview (numeric input and confirm come through here too).
    * Dispatches by entity type: CoordinateFrame uses ROS TF local rotation;
    * Solid uses the primary triple snapshot. Mesh views are updated in the same call.
+   *
+   * ADR-169: the declared placement policy applies to rotation as well. A cube
+   * resting on the floor and rotated 45° about X used to sink a corner 20.7mm
+   * below grade, and the next grab popped it up by that much (the `grounded`
+   * clamp only ran on translation). Two rules, in this order:
+   *  1. a body that RESTED at the segment start (on the floor or on another
+   *     body — `supportUnder`) keeps its bottom at that height: it is lifted
+   *     or lowered, so rotating back in a later gesture brings it back down
+   *     instead of leaving it floating (`_restingSeatDeltaZ`);
+   *  2. the placement policy then gets the last word, the same way it does for
+   *     translation (`_policyDelta`): for `grounded` the bottom never ends
+   *     below the floor (a declared footing passes through).
+   * The input is the pose this call just derived from (segment start, deltaQ),
+   * never the previous frame's (PHILOSOPHY #24).
+   * A CoordinateFrame rotates about its own origin, so its origin Z — the
+   * robot_base probe — cannot change and needs no lift.
+   *
    * @param {import('../domain/Solid.js').Solid|import('../domain/CoordinateFrame.js').CoordinateFrame} obj
    * @param {{ segStartOrientation: import('three').Quaternion, segStartPos?: import('three').Vector3, pivot?: import('three').Vector3 }} snap
    * @param {import('three').Quaternion} deltaQ
@@ -3432,10 +3450,118 @@ export class SceneService extends EventEmitter {
     } else if (obj instanceof Solid) {
       if (segStartOrientation && segStartPos) {
         obj.rotate(segStartOrientation, segStartPos, pivot, deltaQ)
+        const rotatedCorners = obj.corners.map(c => c.clone())
+        // A body that RESTED at the segment start still rests at the same bottom
+        // height (it is lowered as well as lifted — rotating back brings it back
+        // down); a floating one keeps its pivot. The policy gets the last word.
+        const seatZ = this._restingSeatDeltaZ(obj, segStartOrientation, segStartPos, rotatedCorners) ?? 0
+        const lift = this._policyDelta(obj, rotatedCorners, new Vector3(0, 0, seatZ), new Set([obj.id]))
+        if (lift.lengthSq() > 0) {
+          this._applyEntityDelta(obj, rotatedCorners, obj._position.clone(), lift)
+        }
       }
       obj.meshView?.updateGeometry(obj.corners)
       obj.meshView?.updateBoxHelper()
     }
+  }
+
+  /**
+   * The Z shift that keeps a rotated body resting where it rested (ADR-169), or
+   * `null` when it was not resting at the segment start (floating — rotate about
+   * the pivot, the floor clamp alone applies).
+   *
+   * Everything is derived from the segment-start snapshot and the pose this
+   * rotation just produced — never from the previous frame (PHILOSOPHY #24).
+   * Other entities' surfaces are read live; they do not move during this body's
+   * own rotation (the same reading `_applyStackAssist` makes).
+   *
+   * @param {Solid} obj
+   * @param {import('three').Quaternion} segStartOrientation
+   * @param {Vector3} segStartPos
+   * @param {Vector3[]} rotatedCorners
+   * @returns {number|null}
+   */
+  _restingSeatDeltaZ(obj, segStartOrientation, segStartPos, rotatedCorners) {
+    if (!hasGroundInvariant(placementOf(obj))) return null
+    const startCorners = obj.localCorners.map(l => l.clone().applyQuaternion(segStartOrientation).add(segStartPos))
+    const startBottomZ = this._segmentStartBottomZ(obj, startCorners)
+    const rotatedBottomZ = this._segmentStartBottomZ(obj, rotatedCorners)
+    if (startBottomZ === null || rotatedBottomZ === null) return null
+    const samples = this._destinationSamples(obj, startCorners, new Vector3())
+    if (samples.length === 0) return null
+    const surfaceZ = this.highestSurfaceZAt(samples, new Set([obj.id]))
+    if (!supportUnder({ bottomZ: startBottomZ, surfaceZ })) return null
+    return startBottomZ - rotatedBottomZ
+  }
+
+  /**
+   * **THE face-extrude write entry** (ADR-169) — extrudes `face` of `solid` by
+   * the REQUESTED distance after the placement policy has had its say, and
+   * returns the distance it actually applied (the handler commits that one, so
+   * undo/redo replay exactly what the user saw).
+   *
+   * The floor STOPS the face, as it stops a grab (`resolveFaceExtrudeDistance`):
+   * pulling a bottom face down ends at Z=0 unless the solid is a declared
+   * footing (S during a grab). Handlers hold no clamp of their own (ADR-097
+   * §Decision 3); `src/PosePolicyOwnership.test.js` counts the `extrudeFace`
+   * calls outside this module.
+   *
+   * @param {Solid} solid
+   * @param {import('../graph/Face.js').Face} face
+   * @param {Vector3[]} savedLocalFaceCorners  body-frame face corners at extrude start
+   * @param {Vector3}   localNormal            body-frame face normal (unit)
+   * @param {number}    requested              signed distance the gesture / input asks for
+   * @returns {number} the distance applied
+   */
+  applyPreviewFaceExtrude(solid, face, savedLocalFaceCorners, localNormal, requested) {
+    if (!(solid instanceof Solid)) return 0
+    const toWorld = (l) => l.clone().applyQuaternion(solid.orientation).add(solid._position)
+    const applied = resolveFaceExtrudeDistance({
+      placement:        placementOf(solid),
+      belowGradeIntent: solid.belowGradeIntent === true,
+      faceStartZs:      savedLocalFaceCorners.map(l => toWorld(l).z),
+      normalZ:          localNormal.clone().applyQuaternion(solid.orientation).z,
+      requested,
+    })
+    this.restoreFaceExtrude(solid, face, savedLocalFaceCorners, localNormal, applied)
+    return applied
+  }
+
+  /**
+   * Writes a face extrusion WITHOUT consulting the policy — restoration only:
+   * cancel (distance 0), undo (0) and redo (a distance that already passed
+   * `applyPreviewFaceExtrude`). Re-clamping a restoration would make undo
+   * asymmetric (the same reason MoveCommand restores corners verbatim).
+   * @param {Solid} solid
+   * @param {import('../graph/Face.js').Face} face
+   * @param {Vector3[]} savedLocalFaceCorners
+   * @param {Vector3}   localNormal
+   * @param {number}    dist
+   */
+  restoreFaceExtrude(solid, face, savedLocalFaceCorners, localNormal, dist) {
+    solid.extrudeFace(face, savedLocalFaceCorners, localNormal, dist)
+    solid.meshView?.updateGeometry(solid.corners)
+    solid.meshView?.updateBoxHelper()
+    this.invalidateWorldPose(solid.id)
+  }
+
+  /**
+   * The sketch-extrude height the placement policy allows (ADR-169). A sketch
+   * lies on the ground plane (`buildCuboidFromRect` builds from Z=0) and becomes
+   * a Solid, so it is asked under the Solid's policy: a downward extrusion would
+   * be born entirely below grade with nobody having declared it, and stops at
+   * the floor instead. Preview and confirm both read this, so what is drawn is
+   * what is made.
+   * @param {number} requested  signed height the gesture / input asks for
+   * @returns {number}
+   */
+  allowedProfileHeight(requested) {
+    return resolveFaceExtrudeDistance({
+      placement:   placementFor(PLACEMENT_KIND.SOLID),
+      faceStartZs: [0],
+      normalZ:     1,
+      requested,
+    })
   }
 
   /**
@@ -3464,7 +3590,7 @@ export class SceneService extends EventEmitter {
   extrudeProfile(id, height) {
     const profile = this._model.getObject(id)
     if (!(profile instanceof Profile)) return null
-    const solid = profile.extrude(height)
+    const solid = profile.extrude(this.allowedProfileHeight(height))
     this._syncIdentityVisuals(solid)
     this._model.removeObject(id)
     this._model.addObject(solid)

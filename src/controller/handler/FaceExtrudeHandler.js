@@ -64,8 +64,10 @@ export class FaceExtrudeHandler {
       normal:        new THREE.Vector3(),
       /** Body-frame face normal — passed to Solid.extrudeFace(). @type {THREE.Vector3} */
       localNormal:   new THREE.Vector3(),
-      /** Current signed extrusion distance (world units). */
+      /** Current signed extrusion distance (world units) the pointer asks for. */
       dist:          0,
+      /** The distance actually applied after the floor (ADR-169) — what is drawn. */
+      appliedDist:   0,
       /** Drag plane aligned with the face normal; mouse ray intersects this. */
       dragPlane:     new THREE.Plane(),
       /** World-space drag start point (ray × dragPlane at operation start). */
@@ -186,10 +188,9 @@ export class FaceExtrudeHandler {
     const obj = ctrl._activeObj
     if (!ctrl._opState.is(S_FACE_EXTRUDE)) return
     if (!(obj instanceof Solid) || !s.face) return
-    obj.extrudeFace(s.face, s.savedLocalFaceCorners, s.localNormal, s.dist)
-    obj.meshView.updateGeometry(obj.corners)
-    obj.meshView.updateBoxHelper()
-    this._syncFront(s.dist)
+    // The service applies the floor (ADR-169) and says what it applied.
+    s.appliedDist = ctrl._service.applyPreviewFaceExtrude(obj, s.face, s.savedLocalFaceCorners, s.localNormal, s.dist)
+    this._syncFront(s.appliedDist)
   }
 
   /**
@@ -204,10 +205,8 @@ export class FaceExtrudeHandler {
     if (!(obj instanceof Solid) || !s.face) return
     const parsed = parseFloat(s.inputStr)
     const dist   = isNaN(parsed) ? 0 : parsed
-    obj.extrudeFace(s.face, s.savedLocalFaceCorners, s.localNormal, dist)
-    obj.meshView.updateGeometry(obj.corners)
-    obj.meshView.updateBoxHelper()
-    this._syncFront(dist)
+    s.appliedDist = ctrl._service.applyPreviewFaceExtrude(obj, s.face, s.savedLocalFaceCorners, s.localNormal, dist)
+    this._syncFront(s.appliedDist)
   }
 
   /**
@@ -220,12 +219,12 @@ export class FaceExtrudeHandler {
     const obj = ctrl._activeObj
 
     // Apply final distance from input or mouse
-    const dist = s.hasInput ? (parseFloat(s.inputStr) || 0) : s.dist
+    const requested = s.hasInput ? (parseFloat(s.inputStr) || 0) : s.dist
 
     if (obj instanceof Solid && s.face) {
-      obj.extrudeFace(s.face, s.savedLocalFaceCorners, s.localNormal, dist)
-      obj.meshView.updateGeometry(obj.corners)
-      obj.meshView.updateBoxHelper()
+      // Commit what the floor allowed (ADR-169), so undo/redo replay exactly
+      // the shape the user saw — restoration does not re-clamp.
+      const dist = ctrl._service.applyPreviewFaceExtrude(obj, s.face, s.savedLocalFaceCorners, s.localNormal, requested)
 
       // Record undo snapshot — store corner delta as a post-hoc command
       const endCorners = obj.corners.map(c => c.clone())
@@ -240,16 +239,10 @@ export class FaceExtrudeHandler {
       const cmd = {
         label: 'Face Extrude',
         execute() {
-          obj.extrudeFace(face, savedLocalFC, localNormal, commitDist)
-          obj.meshView.updateGeometry(obj.corners)
-          obj.meshView.updateBoxHelper()
-          service.invalidateWorldPose(obj.id)
+          service.restoreFaceExtrude(obj, face, savedLocalFC, localNormal, commitDist)
         },
         undo() {
-          obj.extrudeFace(face, savedLocalFC, localNormal, 0)
-          obj.meshView.updateGeometry(obj.corners)
-          obj.meshView.updateBoxHelper()
-          service.invalidateWorldPose(obj.id)
+          service.restoreFaceExtrude(obj, face, savedLocalFC, localNormal, 0)
         },
       }
       ctrl._commandStack.push(cmd)
@@ -276,9 +269,7 @@ export class FaceExtrudeHandler {
 
     // Restore original shape by re-extruding at dist = 0
     if (obj instanceof Solid && s.face) {
-      obj.extrudeFace(s.face, s.savedLocalFaceCorners, s.localNormal, 0)
-      obj.meshView.updateGeometry(obj.corners)
-      obj.meshView.updateBoxHelper()
+      ctrl._service.restoreFaceExtrude(obj, s.face, s.savedLocalFaceCorners, s.localNormal, 0)
     }
 
     // Clear snap display
@@ -297,12 +288,11 @@ export class FaceExtrudeHandler {
   updateStatus() {
     const { _ctrl: ctrl } = this
     const s = this.state
-    const dist = s.hasInput ? (parseFloat(s.inputStr) || 0) : s.dist
     const parts = [{ text: 'Extrude Face', bold: true, color: '#ffffff' }]
     if (s.hasInput) {
       parts.push({ text: s.inputStr + '_', color: '#ffeb3b' })
     } else {
-      parts.push({ text: `D: ${dist.toFixed(3)}`, color: '#ffeb3b' })
+      parts.push({ text: `D: ${s.appliedDist.toFixed(3)}`, color: '#ffeb3b' })
     }
     if (s.snapping && s.snappedTarget) {
       parts.push({ text: `Snapped: ${s.snappedTarget.type}`, color: '#69f0ae' })
@@ -392,6 +382,7 @@ export class FaceExtrudeHandler {
     s.normal.set(0, 0, 0)
     s.localNormal.set(0, 0, 0)
     s.dist                  = 0
+    s.appliedDist           = 0
     s.inputStr              = ''
     s.hasInput              = false
     s.snapping              = false

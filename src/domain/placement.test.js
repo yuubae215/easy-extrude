@@ -26,6 +26,7 @@ import {
   placementKindOf,
   hasGroundInvariant,
   resolvePlacementDelta,
+  resolveFaceExtrudeDistance,
   supportUnder,
   dragPlaneNormalFor,
   // ADR-098 — 支持プローブの宣言
@@ -419,4 +420,68 @@ test('支持を問える実体は、支持へ座らせられる (G3 — 問い�
     assert.ok(!seatable || probeable,
       `${kind} は補助の対象なのに支持を問えない — 座らせる先が求まらない`)
   }
+})
+
+// ── resolveFaceExtrudeDistance — 形を変える操作にも同じ床 (ADR-169) ─────────────
+
+test('ADR-169: pulling a resting bottom face down stops at the floor (grounded)', () => {
+  // Bottom face of a cube resting on Z=0, outward normal -Z. Pulling it "out"
+  // (positive distance along the normal) would push it below grade.
+  const got = resolveFaceExtrudeDistance({
+    placement: PLACEMENT.GROUNDED, faceStartZs: [0, 0, 0, 0], normalZ: -1, requested: 80,
+  })
+  assert.equal(got, 0)
+  // Pushing it inward (up) is free.
+  assert.equal(resolveFaceExtrudeDistance({
+    placement: PLACEMENT.GROUNDED, faceStartZs: [0, 0, 0, 0], normalZ: -1, requested: -30,
+  }), -30)
+})
+
+test('ADR-169: an elevated bottom face may come down exactly to the floor and no further', () => {
+  const got = resolveFaceExtrudeDistance({
+    placement: PLACEMENT.GROUNDED, faceStartZs: [40, 40, 40, 40], normalZ: -1, requested: 100,
+  })
+  assert.equal(got, 40)
+})
+
+test('ADR-169: the top face pushed down through the body stops at the floor', () => {
+  const got = resolveFaceExtrudeDistance({
+    placement: PLACEMENT.GROUNDED, faceStartZs: [100, 100, 100, 100], normalZ: 1, requested: -150,
+  })
+  assert.equal(got, -100)
+})
+
+test('ADR-169: a tilted face is bounded by its lowest vertex', () => {
+  // normal pointing 45° down; vertices at 10 and 50 — the 10 one hits first.
+  const nz = -Math.SQRT1_2
+  const got = resolveFaceExtrudeDistance({
+    placement: PLACEMENT.GROUNDED, faceStartZs: [10, 10, 50, 50], normalZ: nz, requested: 1000,
+  })
+  assert.ok(Math.abs(got - 10 / Math.SQRT1_2) < 1e-9, `got ${got}`)
+})
+
+test('ADR-169: free, declared below grade, and vertical faces pass through', () => {
+  const req = { faceStartZs: [0, 0, 0, 0], normalZ: -1, requested: 80 }
+  assert.equal(resolveFaceExtrudeDistance({ ...req, placement: PLACEMENT.FREE }), 80)
+  assert.equal(resolveFaceExtrudeDistance({ ...req, placement: PLACEMENT.GROUNDED, belowGradeIntent: true }), 80)
+  assert.equal(resolveFaceExtrudeDistance({ ...req, placement: PLACEMENT.GROUNDED, normalZ: 0 }), 80)
+})
+
+test('ADR-169: a vertex already below grade (undeclared old data) is not sunk further, nor lifted', () => {
+  // Face starts at -20: it may stay there (d = 0) but not go deeper.
+  assert.equal(resolveFaceExtrudeDistance({
+    placement: PLACEMENT.GROUNDED, faceStartZs: [-20, -20, -20, -20], normalZ: -1, requested: 50,
+  }), 0)
+  assert.equal(resolveFaceExtrudeDistance({
+    placement: PLACEMENT.GROUNDED, faceStartZs: [-20, -20, -20, -20], normalZ: -1, requested: -10,
+  }), -10)
+})
+
+test('ADR-169: a sketch on the floor extruded downward is stopped at height 0 (Solid policy)', () => {
+  // SceneService.allowedProfileHeight asks exactly this question.
+  const ask = requested => resolveFaceExtrudeDistance({
+    placement: placementFor(PLACEMENT_KIND.SOLID), faceStartZs: [0], normalZ: 1, requested,
+  })
+  assert.equal(ask(120), 120)
+  assert.equal(ask(-120), 0)
 })

@@ -1563,8 +1563,12 @@ export class AppController {
           const quat  = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), angle)
           const obj   = this._activeObj
           if (obj instanceof Solid && this._objRotateStartOrientation) {
-            obj.rotate(this._objRotateStartOrientation, this._objRotateStartPos, this._objRotateCentroid, quat)
-            obj.meshView.updateGeometry(obj.corners)
+            // The one rotation entry, so the floor applies here too (ADR-169).
+            this._service.applyPreviewRotation(obj, {
+              segStartOrientation: this._objRotateStartOrientation,
+              segStartPos:         this._objRotateStartPos,
+              pivot:               this._objRotateCentroid,
+            }, quat)
           } else {
             this._objRotateStartCorners.forEach((c, i) => {
               this._corners[i].copy(c).sub(this._objRotateCentroid).applyQuaternion(quat).add(this._objRotateCentroid)
@@ -3029,11 +3033,25 @@ export class AppController {
     if (!hasFinePointer()) this._controls.enabled = false
   }
 
-  _applyExtrudePreview() {
+  /**
+   * The sketch-extrude height to draw and to make: what the gesture / input asks
+   * for, after the floor (ADR-169 — a downward extrusion stops at Z=0). Preview
+   * and confirm both read this one place, so what is drawn is what is made.
+   */
+  _allowedExtrudeHeight() {
+    return this._service.allowedProfileHeight(this._requestedExtrudeHeight())
+  }
+
+  /** The height the gesture / typed input asks for, before the floor. */
+  _requestedExtrudeHeight() {
     const parsed = parseFloat(this._extrudePhase.inputStr)
-    const height = this._extrudePhase.hasInput
+    return this._extrudePhase.hasInput
       ? (isNaN(parsed) ? 0 : parsed)
       : this._extrudePhase.height
+  }
+
+  _applyExtrudePreview() {
+    const height = this._allowedExtrudeHeight()
     const corners = buildCuboidFromRect(this._sketch.p1, this._sketch.p2, height)
     this._meshView.updateGeometry(corners)
     this._meshView.showSketchRect(this._sketch.p1, this._sketch.p2)
@@ -3049,11 +3067,16 @@ export class AppController {
   }
 
   _confirmExtrudePhase() {
-    const parsed = parseFloat(this._extrudePhase.inputStr)
-    const height = this._extrudePhase.hasInput
-      ? (isNaN(parsed) ? 0 : parsed)
-      : this._extrudePhase.height
-    if (Math.abs(height) < 0.001) { this._cancelExtrudePhase(); return }
+    const height = this._allowedExtrudeHeight()
+    if (Math.abs(height) < 0.001) {
+      // The floor turned a real request into nothing (ADR-169): say so, never a
+      // silent no-op (PHILOSOPHY #11). Back to the sketch, so it can be redone.
+      if (Math.abs(this._requestedExtrudeHeight()) >= 0.001) {
+        this._uiView.showToast('Stopped at ground level — extrude upward, or place below grade with G then S', { type: 'warn' })
+      }
+      this._cancelExtrudePhase()
+      return
+    }
 
     // Capture Profile ref before the swap for undo (ADR-022 Phase 2)
     const profileRef = this._scene.getObject(this._scene.activeId)

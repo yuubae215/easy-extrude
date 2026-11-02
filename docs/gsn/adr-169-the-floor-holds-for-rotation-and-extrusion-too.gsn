@@ -1,0 +1,59 @@
+GOALS adr169_the_floor_holds_for_rotation_and_extrusion_too
+
+goal NoGestureLeavesTheFloorBrokenForTheNextGrab
+uuid 5861941c-f6b9-4421-92ef-60d59d9ae88a
+summary "回転・面押し出し・スケッチ押し出しのどれを通っても、grounded の実体は床を割らず、載っていた物は載ったままになる。次の Grab が床 clamp / stack assist で跳ねる・落ちることが無い"
+state UnderReview
+labels adr-169, placement, term-p-operate, change-manipulation
+artifacts
+- "docs/adr/ADR-169-the-floor-holds-for-rotation-and-extrusion-too.md"
+- "docs/adr/ADR-097-support-is-entity-state-not-gesture-side-effect.md"
+
+    context Adr169Scope
+    uuid e3b37007-e931-4709-8951-dbf585b735be
+    summary "ADR-169 (Accepted 2026-11-02): ADR-097 が並進にだけ課した方針を applyPreviewRotation (Ctrl+ドラッグ統合)・applyPreviewFaceExtrude / restoreFaceExtrude・allowedProfileHeight へ。決定は placement.js の resolvePlacementDelta (既存) と resolveFaceExtrudeDistance (新)"
+
+    context RequirementCameFromTheOwner
+    uuid 0442012d-3e90-49e0-b9ff-8e32b13febfe
+    summary "当事者の言葉: 「地面の制約つけたけど、そのせいで微妙に UX 悪くなってる部分あるなぁ」→「回転で跳ねるか確かめて、1 を進めて」"
+
+    assumption ReadingsOfD1D2AreClaudes
+    uuid 42434590-4f07-492a-ab63-3bb4f5fdb37a
+    summary "反証されうる仮説: 回転は『載ったまま回る』、押し出しは『床で止まる』が当事者の期待する読みである。Claude が選んだ読みであり、当事者が別の読み (例: 押し出しで床下を自動宣言) を選べば D1/D2 を改訂する"
+
+    strategy ByOneEntryPerShapeChangingGesture
+    uuid 8fe08c3a-4185-4d3c-876d-a140c7a657f2
+    summary "形・姿勢を変える操作ごとに書き込みの入口を SceneService の 1 か所に限り、その入口が方針の純粋な決定を引くことを、書き手の個数と入口の本体の両方で機械に問う"
+
+        goal TheDecisionIsAPureTable
+        uuid e92381cc-5b23-4c54-94b3-4a3fdabcff6a
+        summary "押し出しの距離は placement.js の純粋関数で決まり、床で止まる・上へは自由・傾いた面は最下の頂点で止まる・free / 宣言済み床下 / 鉛直面は素通し・元から床下の頂点はそれ以上沈めず引き上げもしない"
+        labels support-verified
+
+            solution PlacementTableIsExecuted
+            uuid f6a34c1b-e54d-4c53-98fe-aa8f23c0d6eb
+            summary "node --test src/domain/placement.test.js: ADR-169 の 7 ケース (スケッチの下向き押し出しが 0 になることを含む)"
+            artifacts
+            - "src/domain/placement.test.js"
+
+        goal OnlyTheServiceWritesRotationAndExtrusion
+        uuid 454ac1c2-b8bc-4626-a0bb-7f660cefcc38
+        summary "extrudeFace とスナップショット回転を書く場所は SceneService だけで、その入口は _policyDelta / _restingSeatDeltaZ / resolveFaceExtrudeDistance / allowedProfileHeight を引いている"
+        labels support-verified
+
+            solution PoseCensusIsExecuted
+            uuid dccc8070-edeb-4996-9129-c5af16e20c47
+            summary "node --test src/PosePolicyOwnership.test.js: 規則 2 本を足し、修正前のコードで 7 件 (AppController の Ctrl+ドラッグ回転 1・FaceExtrudeHandler の extrudeFace 6) を file:line つきで検出することを確認した"
+            artifacts
+            - "src/PosePolicyOwnership.test.js"
+
+        goal TheRealAppNoLongerJumps
+        uuid 4d54e7e1-54fd-460a-ac76-326b5b329f37
+        summary "実アプリで、修正前に床を割っていた 4 つの操作の後の最下点 Z がすべて 0 になり、浮いている立方体は中心で回る"
+        labels support-verified
+
+            solution PlaywrightMeasurementOnDevServer
+            uuid 93a5a839-aeee-4080-9938-ea7e29833c30
+            summary "dev server + Playwright で window.__easyExtrude.worldScale().minSolidZ を測った (2026-11-02): R X 45 は −20.71→0、R X 45 の後に R X −45 は +20.71→0、上面を E −150 は −50→0、スケッチを −100 は −100→作られず警告、Z=200 の立方体の 45° 回転は 179.29。e2e spec にはまだ降ろしていない"
+            artifacts
+            - "docs/adr/ADR-169-the-floor-holds-for-rotation-and-extrusion-too.md"

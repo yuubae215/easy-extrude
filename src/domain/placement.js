@@ -486,6 +486,55 @@ export function resolvePlacementDelta({
 }
 
 /**
+ * **形を変える操作にも同じ床** (ADR-169) — 面を法線方向へ押し出す距離を、方針が
+ * 許す距離へ写す純粋関数。`resolvePlacementDelta` の「形」版。
+ *
+ * 押し出しは pose ではなく形を変えるが、床を割る点では並進と同じ事故になる
+ * (割れた底は次の Grab で `grounded` の床 clamp に引き上げられ、跳ねる)。
+ * 並進と同じく**床で止める** — 床下は S で宣言してから (G3)。持ち上げはしない:
+ * 底面を下へ引いた人に「本体が上へ逃げる」を返すのは、要求の符号を裏返すことになる。
+ *
+ * 動くのは面の頂点だけで、各頂点は `z + normalZ·d` へ行く。各頂点が守る床は
+ * `min(0, z)` — 始めから床下にある頂点 (宣言の無い古いデータ) を**それ以上**沈め
+ * ないだけで、引き上げはしない (要求していない動きを作らない)。
+ *
+ *   free / 宣言済みの床下      : 素通し
+ *   grounded / supported       : d を [lo, hi] へ clamp。
+ *                                normalZ > 0 の頂点は d ≥ (floor − z)/normalZ、
+ *                                normalZ < 0 の頂点は d ≤ (floor − z)/normalZ
+ *   |normalZ| ≈ 0 (鉛直な面)   : Z が動かないので素通し
+ *
+ * @param {object}   p
+ * @param {string}   p.placement           `PLACEMENT` メンバ (押し出した結果の実体の方針)
+ * @param {boolean}  [p.belowGradeIntent]  床下を宣言済みか
+ * @param {number[]} p.faceStartZs         動く面の頂点の world Z (操作開始時点)
+ * @param {number}   p.normalZ             面法線 (world, 単位) の Z 成分
+ * @param {number}   p.requested           要求された押し出し距離 (符号付き)
+ * @returns {number} 適用する距離
+ */
+export function resolveFaceExtrudeDistance({
+  placement,
+  belowGradeIntent = false,
+  faceStartZs,
+  normalZ,
+  requested,
+}) {
+  if (!Number.isFinite(requested)) return requested
+  if (!hasGroundInvariant(placement) || belowGradeIntent) return requested
+  if (!Number.isFinite(normalZ) || Math.abs(normalZ) < 1e-9) return requested
+  let lo = -Infinity
+  let hi = Infinity
+  for (const z of faceStartZs) {
+    if (!Number.isFinite(z)) continue
+    const bound = (Math.min(0, z) - z) / normalZ
+    if (normalZ > 0) lo = Math.max(lo, bound)
+    else             hi = Math.min(hi, bound)
+  }
+  const d = Math.min(hi, Math.max(lo, requested))
+  return d === 0 ? 0 : d   // never -0 (a stopped face would print "-0.000")
+}
+
+/**
  * 支持の**導出** (ADR-097 §Decision 2) — 保存フィールドにはしない。幾何が源で
  * あり、支持は幾何の関数である。保存すると「実体を動かしたが支持フィールドが
  * 古い」という第二の源のドリフトが生まれ、それは今日 mounts の Z 二重書き込みが
