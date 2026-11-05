@@ -423,7 +423,9 @@ const SUPPORT_LABELS = new Map([
 // 2026-11-01: 40 → 38。ADR-158 再生の段 R2 で WhatIsDrawnAsAHitWasJudged と FrameRateNeverReachesTheWire が
 // support-verified へ (GraspReplayMath / GraspController の node --test)。満期 PATH:src/view/GraspReplayMath.test.js
 // が発火した。残る 2 つ (場面に効く / 進入スライドと区別できる) は絵の証拠 = e2e/grasp-replay.spec.js へ張り替え。
-const DEBT_BASELINE = 38
+// 2026-11-05: 38 → 42。ADR-170 (Proposed — 床は地区への所属から) を起票し、実装前の 4 goal を exploring で
+// 宣言した。満期はどれも機械可読 (満期=ADR-170 — Accepted で発火) なので分子 (G3) は動かない。
+const DEBT_BASELINE = 42
 
 /**
  * G3 — 満期 trigger を持たない exploring goal の個数 (実測値)。

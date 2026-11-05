@@ -1,0 +1,57 @@
+GOALS adr170_the_floor_comes_from_belonging_to_a_district
+
+goal WhereAThingStandsIsDeclaredByPlace
+uuid 3244f147-eeb7-40cc-b5ca-57a17a9aca86
+summary "物がどこに属し、どの床に立つかが場所 (地区) の宣言として文書に残り、何も定義していないシーンでも最初の一手が詰まらない"
+state ToBeDeveloped
+labels adr-170, placement, term-p-operate, change-manipulation
+artifacts
+- "docs/adr/ADR-170-the-floor-comes-from-belonging-to-a-district.md"
+
+    context Adr170Scope
+    uuid 08335655-2227-4c8c-a6a0-a3e01223cdf7
+    summary "ADR-170 (Proposed 2026-11-05): 重なりは導出 (D1)、所有者の違う重なりは交渉 (D2)、所属は contains の宣言 (D3)、床は所属から (D4)、1 実体 1 高さ (D5)、地区が高さを持つ (D6)。O1 ロボット台座 / O2 所有者 / O3 S キーが未決"
+
+    context RequirementCameFromTheOwner
+    uuid e8ecbc1f-821f-481d-9bdd-e38f37540fa0
+    summary "当事者の言葉: 「オブジェクトを地面の上に置くときは、かならずマップオブジェクトを先に定義すること、とするのはどう？」→「一手目で詰まるのは課題」→「地区は0も可とする。その場合は、z=0より下にもオブジェクトを置ける」"
+
+    strategy BySeparatingOverlapFromBelonging
+    uuid 4d120f2e-cfbe-410b-ad92-f2251b299927
+    summary "重なっている (足元から導出) と所属している (宣言) を別の事実にし、床は後者からだけ来るようにする"
+
+        goal ASceneWithNoDistrictBlocksNothing
+        uuid 8099e7f3-f11c-4488-9f8f-0071d5493325
+        summary "地区が 0 個のシーンでは全実体が床を持たず、Empty テンプレの最初の Box も Z<0 への移動も止まらない (知らせは出る)"
+        labels support-exploring
+
+            assumption ASceneWithNoDistrictBlocksNothingWillBeSettled
+            uuid c1428c17-ebf0-41da-8d22-782cd6e1d7e6
+            summary "未着手。証拠予定: S2 で placement.test.js に『所属なし = 床なし』の表を置き、実アプリで地区 0 のシーンの Grab が Z<0 へ行けることを測る。満期=ADR-170"
+
+        goal BelongingSurvivesLeavingTheDistrict
+        uuid 24bd5fed-3581-42f7-8a26-0f977494762d
+        summary "所属している実体を地区の外へ動かしても床は保たれ、『所属しているが地区の外』が状態として見える"
+        labels support-exploring
+
+            assumption BelongingSurvivesLeavingTheDistrictWillBeSettled
+            uuid 66649e49-7836-4ac6-8eaa-7382fb4e3645
+            summary "未着手。証拠予定: S2/S3 で、所属の宣言が幾何から書き換えられないこと (所属の書き手の個数) と状態の表を node --test で問う。満期=ADR-170"
+
+        goal OneThingStandsOnOneHeight
+        uuid 57fec11f-7ff0-4ed5-8fa0-807d91fff21f
+        summary "1 つの実体は 1 つの高さの地区にしか所属できず、違う高さへの所属は理由つきで拒否される"
+        labels support-exploring
+
+            assumption OneThingStandsOnOneHeightWillBeSettled
+            uuid 0894160a-9707-44c0-817b-306dca5b060b
+            summary "未着手。証拠予定: S1 で文書の検査 (Validator) に D5 を足し、違う高さの 2 地区への contains が error になる fixture を置く。満期=ADR-170"
+
+        goal OverlapAcrossOwnersGoesToNegotiation
+        uuid d2e6a10d-423f-49d7-ba70-5c0ae8318fb8
+        summary "所有者の違う地区の重なりは ADR-049 の衝突として表に出て交渉に回り、描くことは止まらない"
+        labels support-exploring
+
+            assumption OverlapAcrossOwnersGoesToNegotiationWillBeSettled
+            uuid 160d4ef8-6476-4a3a-a6ea-908a72c52ffb
+            summary "未着手。O2 (所有者とは誰か) が決まってから。証拠予定: S3 で RequirementGraph の衝突に地区の重なりが現れる fixture。満期=ADR-170"

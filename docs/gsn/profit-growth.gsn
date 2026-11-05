@@ -384,6 +384,12 @@ labels meta-goal, term-profit
                                     artifacts
                                     - "docs/gsn/adr-169-the-floor-holds-for-rotation-and-extrusion-too.gsn"
 
+                                    solution Adr170Tree
+                                    uuid fa8b277c-065f-430c-9c72-78db5bd29ea8
+                                    summary "ADR-170 の論証木 (top goal WhereAThingStandsIsDeclaredByPlace) を吊る。床が種類ではなく地区への所属から来る — 何も定義しないシーンでも詰まらず、地区を描けば床が宣言される。この木の goal ごとの証拠と鮮度の正本は木の側 — ここは寄与する項だけを持つ (ADR-153 D2)"
+                                    artifacts
+                                    - "docs/gsn/adr-170-the-floor-comes-from-belonging-to-a-district.gsn"
+
                                 goal SelectionAndViewpointArePredictable
                                 uuid bcecad1d-2a02-4e3c-ae15-bdd95b1d7d3d
                                 summary "何を選んだか・どこから見ているかが、どの窓から触っても 1 つの事実として動き、見えている一番手前のものが選ばれ、他人の主張や編集が無言で消えない。選択が窓ごとに違う画面では、操作の結果を予測できない"
