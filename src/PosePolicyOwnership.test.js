@@ -102,6 +102,22 @@ const POSE_WRITE_RULES = [
     why: 'クイックドラッグが他ハンドラの private メソッドへ手を伸ばして呼んでいたこと自体が、唯一の権威ある入口が無いことの最も直接的な現れだった (PHILOSOPHY #1)',
   },
   {
+    name: '退役した種類による床 (PLACEMENT.GROUNDED / grounded)',
+    owners: [],
+    match: /PLACEMENT\.GROUNDED\b|['"]grounded['"]/,
+    use: 'PLACEMENT.RESTING (面に載る物体) + floorOf() (床は所属から — src/domain/zone.js)',
+    why: '床は種類ではなく地区への所属から来る (ADR-170 S2 / DEF-076)。`PLACEMENT.GROUNDED` はもう undefined なので、書けば'
+       + '「free 以外」の分岐を素通りして緑を出す — 退役した形は数えて 0 に保つ (原則 #31 / ADR-103)',
+  },
+  {
+    name: '所属から床を組み立てる (zonesOf の直接呼び出し)',
+    owners: ['src/domain/zone.js'],   // floorOf と D5 の問いが在る場所 (定義側)
+    match: /\bzonesOf\s*\(/,
+    use: 'SceneService._floorZOf(obj) / floorZOf(id) → floorOf() — 床の決定は 1 か所',
+    why: '床は「属するゾーンの高さ」で、それを答えるのは floorOf() ただ 1 つ (ADR-170 S2)。呼び手が zonesOf と '
+       + 'plateElevationOf を並べ直すと、D5 が破れた時の答え (床なし) や移動中のゾーンの読み方 (#24) が呼び手ごとに分かれる',
+  },
+  {
     name: '退役した実体種による配置分岐 (_isMapObject / _mapObjectPlateDelta)',
     owners: [],
     match: /_isMapObject|_mapObjectPlateDelta/,
@@ -325,6 +341,32 @@ test('pose を書く入口のうち、方針を適用していないものは 0 
   }
 
   assert.deepEqual(violations, [], `\n${violations.join('\n\n')}\n`)
+})
+
+test('「床を持つか」は 1 か所で決まり、pose 決定の閉包の中に在る (ADR-170 S2 / 原則 #31)', () => {
+  // 母集団 = pose 決定の呼び出し閉包。床を読むメソッドが閉包に入り、その中で
+  // floorOf() を引くのは _floorZOf ただ 1 本であることを両方向に問う。
+  const { methods, closure } = poseDecisionClosure()
+  assert.ok(closure.has('_floorZOf'), '_floorZOf が pose 決定の閉包に居ない — 並進が床を読んでいない')
+  const callers = [...methods.values()].filter(m => m.body.some(l => /\bfloorOf\s*\(/.test(l))).map(m => m.name)
+  assert.deepEqual(callers, ['_floorZOf'],
+    `floorOf() を引くメソッドが _floorZOf 以外にある: ${callers.join(', ')} — 床の決定が 2 か所になる`)
+  // 床を読む側も、決定の素材 (plateElevationOf) を自分で組まない。読み手の読み方 (移動中のゾーン) は
+  // _gestureElevationReader が 1 か所で持つ。
+  const elevReaders = [...methods.values()]
+    .filter(m => closure.has(m.name) && m.body.some(l => /\bplateElevationOf\s*\(/.test(l)))
+    .map(m => m.name).sort()
+  assert.deepEqual(elevReaders, ['_gestureElevationReader', '_policyDelta'].sort(),
+    '閉包の中で板の高さを読む場所が増えた/減った — _policyDelta はゾーン自身の高さ (level)、'
+    + '_gestureElevationReader は移動中のゾーンの床。それ以外は floorOf を通すこと')
+  // 押し出しも同じ 1 か所から床を読む (ADR-169 の 2 つの入口)
+  const lines = stripComments(readFileSync(repoPath(POSE_ENTRY), 'utf8'))
+  assert.match(extractMethodBody(lines, 'applyPreviewFaceExtrude').body.join('\n'), /this\._floorZOf\s*\(/,
+    'applyPreviewFaceExtrude が所属の床を読んでいない')
+  for (const name of ['setBelowGradeIntent', '_adoptBelowGradeIntent', 'checkGroundClearance']) {
+    assert.match(extractMethodBody(lines, name).body.join('\n'), /this\._floorZOf\s*\(/,
+      `${name} が所属の床を読んでいない — 床下の宣言・知らせが種類の床 (Z=0) のまま残る`)
+  }
 })
 
 test('入口は実在し、実際に方針を適用している (規則が空回りしていない)', () => {

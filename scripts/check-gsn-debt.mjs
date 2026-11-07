@@ -429,7 +429,11 @@ const SUPPORT_LABELS = new Map([
 // ZoneElevationOwnership の node --test + e2e/zone-elevation.spec.js)。ADR-170 が Accepted になり満期=ADR-170 が
 // 発火するので、残る 3 goal の満期は S2 (GONE:…placement.js::SOLID の grounded 行) / S3 (GREP:…zone.js::zoneOverlaps) へ
 // 張り替えた (どれも機械可読 — G3 は動かない)。
-const DEBT_BASELINE = 41
+// 2026-11-07: 41 → 39。ADR-170 S2 (床の入れ替え) で ASceneWithNoDistrictBlocksNothing と
+// BelongingSurvivesLeavingTheDistrict が support-verified へ (zone / placement / PosePolicyOwnership の node --test +
+// e2e/smoke.spec.js・e2e/zone-elevation.spec.js)。満期 GONE:…placement.js::SOLID の grounded 行が発火し、DEF-076 も
+// 同じコミットで決着。新しい goal AFloorThatArrivesLaterMovesNothing は証拠つきで起こしたので分子に入らない。
+const DEBT_BASELINE = 39
 
 /**
  * G3 — 満期 trigger を持たない exploring goal の個数 (実測値)。

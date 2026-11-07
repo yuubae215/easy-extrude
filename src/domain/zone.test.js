@@ -12,7 +12,7 @@ import { Vertex } from '../graph/Vertex.js'
 import { AnnotatedRegion } from './AnnotatedRegion.js'
 import {
   isZone, isZonePlaceType, plateElevationOf, zonesOf, distinctElevations,
-  containsRefusal, elevationChangeRefusal, placeTypeRefusal, zoneElevationConflicts,
+  containsRefusal, elevationChangeRefusal, placeTypeRefusal, zoneElevationConflicts, floorOf,
 } from './zone.js'
 
 function region(id, z, placeType = 'Zone', name = id) {
@@ -101,4 +101,29 @@ test('a whole document — every thing whose zones disagree, and nothing else', 
     ],
   })
   assert.deepEqual(got.map(g => g.thingId), ['w2'])
+})
+
+// ── S2 — the floor comes from belonging (D4) ────────────────────────────────
+
+test('S2 — the floor is the height of the zones a thing belongs to; no belonging, no floor (0 / 1 / N)', () => {
+  const up = region('up', 4000), up2 = region('up2', 4000), down = region('down', -3000), note = region('n', 0, null)
+  const w = thing('w')
+  const floor = (links, ...objs) => floorOf({ thing: w, ...world([w, ...objs], links) })
+  assert.equal(floor([], up), null, '0 zones — a scene with nothing defined has no floor (G2)')
+  assert.equal(floor([contains('n', 'w')], note), null, 'a contains from a note is not belonging — no floor')
+  assert.equal(floor([contains('up', 'w')], up), 4000, '1 zone — its elevation')
+  assert.equal(floor([contains('up', 'w'), contains('up2', 'w')], up, up2), 4000, 'N zones at one height — that height')
+  assert.equal(floor([contains('down', 'w')], down), -3000, 'a basement floor is negative')
+  assert.equal(floor([contains('up', 'w'), contains('down', 'w')], up, down), null,
+    'two heights (D5 broken — unreachable through the guarded entries) gives no floor rather than picking one by draw order')
+  assert.equal(floorOf({ thing: null, links: [], getObject: () => null }), null)
+})
+
+test('S2 — a zone moving in the same gesture is read through elevationOf, not its plate', () => {
+  const up = region('up', 4000), w = thing('w')
+  const { links, getObject } = world([w, up], [contains('up', 'w')])
+  assert.equal(floorOf({ thing: w, links, getObject, elevationOf: () => 4500 }), 4500)
+  const tilted = region('t', 0)
+  tilted.corners[0].z = 50   // not level → gives no floor
+  assert.equal(floorOf({ thing: w, ...world([w, tilted], [contains('t', 'w')]) }), null)
 })

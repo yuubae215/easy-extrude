@@ -10,7 +10,7 @@
  *                                       branch existed at all)
  *
  * The user's "the cube's Grab is really hard to move" came out of that last
- * pair: a grounded entity dragged on a camera-facing plane acquires Z from the
+ * pair: a resting entity dragged on a camera-facing plane acquires Z from the
  * camera's orientation, and the stack assist then pulls that Z back — input and
  * result twist twice. Making the plane a function of the DECLARED PLACEMENT
  * instead of the entity's class removes the twist for every kind at once, and
