@@ -268,7 +268,7 @@ export class GrabOperationHandler {
     this._snapFxPrev   = { geometry: null, stack: null } // fresh gesture — no engagement carried over
 
     // Drag plane follows the DECLARED PLACEMENT, not the entity's class
-    // (ADR-097 §Decision 5): supported / grounded slide along the support plane,
+    // (ADR-097 §Decision 5): supported / resting slide along the support plane,
     // free entities keep the camera-facing plane.
     s.dragPlane.setFromNormalAndCoplanarPoint(
       resolveDragPlaneNormal(ctrl._activeObj, {
@@ -607,7 +607,12 @@ export class GrabOperationHandler {
     const clearance = ctrl._service.checkGroundClearance(ctrl._selectedIds)
     if (!clearance.belowGrade) return
     s.groundWarned = true
-    ctrl._uiView.showToast('Below ground level (Z < 0) — fine for footings/piles; S re-enables stack assist', { type: 'warn' })
+    // The level is the thing's floor when it belongs to a zone, the ground plane
+    // when it belongs to nothing (ADR-170 S2 — the notice stays either way, D4).
+    const where = clearance.floorZ === null
+      ? 'Below ground level (Z < 0)'
+      : `Below its zone floor (Z < ${Math.round(clearance.floorZ)} mm)`
+    ctrl._uiView.showToast(`${where} — fine for footings/piles; S re-enables stack assist`, { type: 'warn' })
   }
 
   /**
@@ -617,12 +622,16 @@ export class GrabOperationHandler {
    *
    * ADR-097 §Decision 6 (G3): the escape hatch is no longer gesture-local. Since
    * the floor is now an invariant of the pose entry rather than a side effect of
-   * the assist, switching the assist off would leave `grounded` entities still
+   * the assist, switching the assist off would leave floored entities still
    * unable to go under — the ability the S key used to grant would vanish
    * silently (#11). So S also DECLARES below-grade intent on the selected
-   * grounded entities, and that declaration survives the gesture: footings and
-   * piles become entities that were *declared* to be under grade, and
-   * `checkGroundClearance()`'s warning regains its original meaning.
+   * entities that have a floor, and that declaration survives the gesture:
+   * footings and piles become entities that were *declared* to be under their
+   * floor, and `checkGroundClearance()`'s warning regains its original meaning.
+   *
+   * ADR-170 S2 / O3: the floor comes from belonging to a zone. For a thing that
+   * belongs to nothing there is no floor to declare it under, so S only turns
+   * the assist off (`setBelowGradeIntent` declines and writes nothing).
    */
   toggleStackMode() {
     const { _ctrl: ctrl } = this
@@ -806,7 +815,7 @@ export class GrabOperationHandler {
     const { _ctrl: ctrl } = this
     const s = this.state
     const pivot = s.pivot
-    // Same policy as start() — a pivot change must not silently swap a grounded
+    // Same policy as start() — a pivot change must not silently swap a resting
     // entity back onto the camera plane (this path had no entity branch at all).
     s.dragPlane.setFromNormalAndCoplanarPoint(
       resolveDragPlaneNormal(ctrl._activeObj, {

@@ -10,7 +10,7 @@ artifacts
 
     context Adr170Scope
     uuid 08335655-2227-4c8c-a6a0-a3e01223cdf7
-    summary "ADR-170 (Accepted 2026-11-07 — S1 実装済み; 起票 2026-11-05): 重なりは導出 (D1)、所有者の違う重なりは交渉 (D2)、所属は contains の宣言 (D3)、床は所属から (D4)、1 実体 1 高さ (D5)、地区が高さを持つ (D6)。O1 ロボット台座 / O2 所有者 / O3 S キーが未決"
+    summary "ADR-170 (Accepted 2026-11-07 — S1・S2 実装済み; 起票 2026-11-05): 重なりは導出 (D1)、所有者の違う重なりは交渉 (D2)、所属は contains の宣言 (D3)、床は所属から (D4)、1 実体 1 高さ (D5)、地区が高さを持つ (D6)。O1 ロボット台座 = 例外にしない / O3 S キー = 床を持つ物の床下の宣言として残す (2026-11-07 当事者)。O2 所有者が未決"
 
     context RequirementCameFromTheOwner
     uuid e8ecbc1f-821f-481d-9bdd-e38f37540fa0
@@ -23,20 +23,46 @@ artifacts
         goal ASceneWithNoDistrictBlocksNothing
         uuid 8099e7f3-f11c-4488-9f8f-0071d5493325
         summary "地区が 0 個のシーンでは全実体が床を持たず、Empty テンプレの最初の Box も Z<0 への移動も止まらない (知らせは出る)"
-        labels support-exploring
+        labels support-verified
 
-            assumption ASceneWithNoDistrictBlocksNothingWillBeSettled
-            uuid c1428c17-ebf0-41da-8d22-782cd6e1d7e6
-            summary "未着手 (S2)。証拠予定: placement.test.js に『所属なし = 床なし』の表を置き、実アプリで地区 0 のシーンの Grab が Z<0 へ行けることを測る。満期は種類の床の行が消えたとき (DEF-076 と同じ番地): 満期=GONE:src/domain/placement.js::\[PLACEMENT_KIND\.SOLID\]:\s+PLACEMENT\.GROUNDED 。"
+            solution NoBelongingNoFloorIsExecuted
+            uuid d0544a75-76ab-4540-8479-08a814ce0a6f
+            summary "node --test src/domain/zone.test.js (floorOf: 所属 0 → null / 1 → 高さ / N 同じ高さ → その高さ / 2 つの高さ → null) + src/domain/placement.test.js (床なしの resting は止まらない・grounded の退役・方針語の外は throw) + src/PosePolicyOwnership.test.js (床の決定は _floorZOf 1 か所 — 2 つ目の読み手を足すと落ちることを確認)"
+            artifacts
+            - "src/domain/zone.test.js"
+            - "src/domain/placement.test.js"
+            - "src/PosePolicyOwnership.test.js"
+
+            solution NoBelongingNoFloorInTheApp
+            uuid 1a71b020-a564-4f39-92bc-e25e73b03029
+            summary "e2e (2026-11-07, S2): smoke.spec.js — 起動時の Cube は resting・floorZ null で、Z 拘束の Grab で Z<0 へ行け、宣言は書かれず『Below ground level』が出る。S は床の無い物に何も宣言しない。zone-elevation.spec.js — 所属の無い Box も同じ。積み上げ補助と水平ドラッグは残る (ADR-098 の 3 本と ADR-097 症状 4 が緑のまま)"
+            artifacts
+            - "e2e/smoke.spec.js"
+            - "e2e/zone-elevation.spec.js"
 
         goal BelongingSurvivesLeavingTheDistrict
         uuid 24bd5fed-3581-42f7-8a26-0f977494762d
         summary "所属している実体を地区の外へ動かしても床は保たれ、『所属しているが地区の外』が状態として見える"
-        labels support-exploring
+        labels support-verified
 
-            assumption BelongingSurvivesLeavingTheDistrictWillBeSettled
-            uuid 66649e49-7836-4ac6-8eaa-7382fb4e3645
-            summary "一部入った (S1): 所属は contains の宣言で、物を外へ動かしても消えない (既存のリンク) — 外にいる間は既存の判定が Escaped outside the Zone を出す。入っていないもの: 床を保つ (S2)。満期は種類の床の行が消えたとき: 満期=GONE:src/domain/placement.js::\[PLACEMENT_KIND\.SOLID\]:\s+PLACEMENT\.GROUNDED 。"
+            solution FloorFollowsBelongingNotFootprint
+            uuid 6c01b9a6-87cf-4995-9a05-f6efd2b679c2
+            summary "S1: 所属は contains の宣言で、外へ動かしても消えない — 外にいる間は既存の判定が Escaped outside the Zone を出す。S2: 床は floorOf (所属とゾーンの高さだけ — 足元を読まない)。e2e/zone-elevation.spec.js: 4000 のゾーンの所属物を板の外 (x=3500) へ運んでも floorZ 4000 で、Z の Grab はそこで止まる"
+            artifacts
+            - "src/domain/zone.js"
+            - "e2e/zone-elevation.spec.js"
+
+        goal AFloorThatArrivesLaterMovesNothing
+        uuid 83b15c22-4c73-4c8f-b690-380d64609877
+        summary "床が物の上へ後から来ても (所属の宣言・ゾーンを上げる・Region をゾーンにする)、物は動かず、次の掴みで床まで跳ね上げられない — 守る床は min(floorZ, 開始時の底) (S2 Q3、ADR-169 の押し出しと同じ規則)"
+        labels support-verified
+
+            solution FloorArrivingLaterIsExecuted
+            uuid 76bff606-1f1f-48be-b5a6-f16a88de956d
+            summary "src/domain/placement.test.js (S2 Q3: 水平に動かしても Z 0 のまま・沈めない・上へは動ける・同じ要求を 2 回通しても同じ、押し出しも同じ) + e2e/zone-elevation.spec.js (ゾーンを 4000 へ上げても所属物の底は 0 のまま、続く 2 回の X の掴みで跳ねない)。走らせていないもの: ゾーンと所属物を同時に掴む操作 — いまの画面には両方を選ぶ入口が無い"
+            artifacts
+            - "src/domain/placement.test.js"
+            - "e2e/zone-elevation.spec.js"
 
         goal OneThingStandsOnOneHeight
         uuid 57fec11f-7ff0-4ed5-8fa0-807d91fff21f

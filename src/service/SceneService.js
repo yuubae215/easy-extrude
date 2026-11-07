@@ -89,13 +89,13 @@ import { fixedJointFollowers, drivesSourcePose } from '../domain/fixedJointFollo
 import { getIFCClassEntry } from '../domain/IFCClassRegistry.js'
 import { hollowBodyGap, sizeOfCorners } from '../domain/hollowBody.js'
 import {
-  PLACEMENT, PLACEMENT_KIND, SUPPORT_TOLERANCE,
-  placementOf, placementFor, hasGroundInvariant, resolvePlacementDelta, resolveFaceExtrudeDistance, supportUnder,
+  PLACEMENT, SUPPORT_TOLERANCE,
+  placementOf, restsOnSurfaces, resolvePlacementDelta, resolveFaceExtrudeDistance, supportUnder,
   stackAssistApplies, supportProbeOf, footprintSamplesFor, bottomZFor,
   probeNeedsWorldOrigin, providesSupportSurface,
 } from '../domain/placement.js'
 import {
-  containsRefusal, elevationChangeRefusal, placeTypeRefusal, plateElevationOf,
+  containsRefusal, elevationChangeRefusal, placeTypeRefusal, plateElevationOf, floorOf, isZone,
 } from '../domain/zone.js'
 
 /**
@@ -2691,7 +2691,7 @@ export class SceneService extends EventEmitter {
   /**
    * Import-time placement reconciliation (ADR-097 §Consequences).
    *
-   * A saved scene may hold a `grounded` entity below grade — a footing that was
+   * A saved scene may hold a `resting` entity below its floor — a footing that was
    * placed deliberately before the policy existed, or a robot base someone put in
    * a pit. The policy must not silently move it: rewriting loaded data without
    * saying so is the worst failure mode there is (PHILOSOPHY #11). So the load
@@ -2707,9 +2707,14 @@ export class SceneService extends EventEmitter {
    */
   _adoptBelowGradeIntent() {
     for (const obj of this._model.objects.values()) {
-      if (placementOf(obj) !== PLACEMENT.GROUNDED) continue
+      if (placementOf(obj) !== PLACEMENT.RESTING) continue
+      // The floor is the one its zones give (ADR-170 S2). Belonging to nothing,
+      // a thing has no floor to be under — nothing to adopt (a pre-S2 scene with
+      // no zones reads as "no floors": D4).
+      const floorZ = this._floorZOf(obj)
+      if (floorZ === null) continue
       const bottomZ = this._bottomZOf(obj)
-      if (bottomZ !== null && Number.isFinite(bottomZ) && bottomZ < -SUPPORT_TOLERANCE) {
+      if (bottomZ !== null && Number.isFinite(bottomZ) && bottomZ < floorZ - SUPPORT_TOLERANCE) {
         obj.belowGradeIntent = true
       }
     }
@@ -2857,7 +2862,10 @@ export class SceneService extends EventEmitter {
 
   /**
    * Ground clearance predicate (ADR-071): reports whether any selected
-   * entity's geometry currently dips below the ground plane (Z = 0).
+   * entity's geometry currently dips below the level it should stand on — its
+   * floor when it belongs to a zone (ADR-170 S2 — the zone's elevation), the
+   * ground plane (Z = 0) when it belongs to nothing (D4: no floor, but the
+   * "Below ground level" notice stays). Visible, never blocking.
    *
    * Pure read over current world corners — it never mutates or clamps. The
    * caller decides how to assist (warning toast, snap offer); keeping the
@@ -2872,23 +2880,31 @@ export class SceneService extends EventEmitter {
    *   source (§1.1) — which is exactly how this one silently became 1 µm when
    *   ADR-136 moved the world-unit to mm and only one of the two copies was
    *   reconsidered. Now there is one (ADR-137 D1).
-   * @returns {{ belowGrade: boolean, lowestZ: number, suggestedLift: number }}
-   *   suggestedLift is the +Z delta that would rest the lowest point on grade.
+   * @returns {{ belowGrade: boolean, lowestZ: number, suggestedLift: number, floorZ: number|null }}
+   *   suggestedLift is the +Z delta that would rest the deepest point on its
+   *   level; `floorZ` is the floor that point dipped under (null = the ground
+   *   plane of a thing that belongs to nothing).
    */
   checkGroundClearance(selectedIds, tolerance = SUPPORT_TOLERANCE) {
+    let worst = null   // { depth, lowestZ, floorZ }
     let lowestZ = Infinity
     for (const id of selectedIds) {
       const obj = this._model.getObject(id)
       if (!obj?.corners?.length) continue
-      for (const c of obj.corners) {
-        if (c.z < lowestZ) lowestZ = c.z
-      }
+      const floorZ = this._floorZOf(obj)
+      const level = floorZ ?? 0
+      let low = Infinity
+      for (const c of obj.corners) if (c.z < low) low = c.z
+      if (low < lowestZ) lowestZ = low
+      const depth = level - low
+      if (!worst || depth > worst.depth) worst = { depth, lowestZ: low, floorZ }
     }
-    if (!Number.isFinite(lowestZ)) return { belowGrade: false, lowestZ: 0, suggestedLift: 0 }
+    if (!worst) return { belowGrade: false, lowestZ: 0, suggestedLift: 0, floorZ: null }
     return {
-      belowGrade:    lowestZ < -tolerance,
+      belowGrade:    worst.depth > tolerance,
       lowestZ,
-      suggestedLift: Math.max(0, -lowestZ),
+      suggestedLift: Math.max(0, worst.depth),
+      floorZ:        worst.floorZ,
     }
   }
 
@@ -3098,7 +3114,10 @@ export class SceneService extends EventEmitter {
    * statement that survives the gesture, so `checkGroundClearance()`'s warning
    * regains its meaning ("an entity that never declared this went under").
    *
-   * Only `grounded` entities carry the flag — for `supported` there is no escape
+   * Only a `resting` entity that HAS a floor carries the flag (ADR-170 S2 / O3) —
+   * the floor comes from the zones it belongs to, and below-grade means "below
+   * that floor". A thing that belongs to nothing has no floor to go under, so S
+   * only turns the stack assist off for it. For `supported` there is no escape
    * hatch (a map object under the ground has no support), and `free` entities
    * were never blocked.
    *
@@ -3108,14 +3127,66 @@ export class SceneService extends EventEmitter {
    */
   setBelowGradeIntent(id, intent) {
     const obj = this._model.getObject(id)
-    if (!obj || placementOf(obj) !== PLACEMENT.GROUNDED) return false
+    if (!obj || placementOf(obj) !== PLACEMENT.RESTING || this._floorZOf(obj) === null) return false
     obj.belowGradeIntent = Boolean(intent)
     return true
   }
 
-  /** Reads the declared below-grade intent (absent = not declared = false). */
+  /**
+   * Reads the declared below-grade intent (absent = not declared = false). A
+   * flag left on a thing that has since lost its floor (its `contains` was
+   * removed) says nothing — there is no floor to be under — so it reads false.
+   */
   belowGradeIntentOf(id) {
-    return this._model.getObject(id)?.belowGradeIntent === true
+    const obj = this._model.getObject(id)
+    return obj?.belowGradeIntent === true && this._floorZOf(obj) !== null
+  }
+
+  /**
+   * **The floor of an entity** (ADR-170 D4 / S2) — the elevation of the zones it
+   * belongs to, or `null` (no floor). Thin delegation to the one decision
+   * (`floorOf` in src/domain/zone.js); `src/PosePolicyOwnership.test.js` counts
+   * the callers that would assemble it themselves.
+   *
+   * @param {*} obj
+   * @param {((zone:any) => number|null)|null} [elevationOf]  how to read a zone's
+   *   height — during a gesture, a zone that moves with its member is read from
+   *   the segment start + the delta the policy gave it (`_gestureElevationReader`),
+   *   never from the plate the gesture is writing (PHILOSOPHY #24)
+   * @returns {number|null}
+   */
+  _floorZOf(obj, elevationOf = null) {
+    return floorOf({
+      thing:     obj,
+      links:     this._model.links.values(),
+      getObject: id => this._model.getObject(id),
+      ...(elevationOf ? { elevationOf } : {}),
+    })
+  }
+
+  /** Public read of the floor (`null` = none) — the e2e probe and the panels read this. */
+  floorZOf(id) {
+    const obj = this._model.getObject(id)
+    return obj ? this._floorZOf(obj) : null
+  }
+
+  /**
+   * How a translation gesture reads a zone's height: a zone in the moving set is
+   * at its segment-start elevation plus the delta the policy already gave it
+   * (`appliedDeltas` — zones are resolved first); any other zone is read from its
+   * plate, which this gesture does not write.
+   * @param {Map<string, import('three').Vector3[]>} segStartCorners
+   * @param {Map<string, import('three').Vector3>} appliedDeltas
+   * @returns {(zone:any) => number|null}
+   */
+  _gestureElevationReader(segStartCorners, appliedDeltas) {
+    return (zone) => {
+      const start = segStartCorners.get(zone.id)
+      if (!start) return plateElevationOf(zone.corners)
+      const e = plateElevationOf(start)
+      const d = appliedDeltas.get(zone.id)
+      return e === null ? null : e + (d ? d.z : 0)
+    }
   }
 
   /**
@@ -3271,9 +3342,11 @@ export class SceneService extends EventEmitter {
    * @param {import('three').Vector3[]} startCorners
    * @param {import('three').Vector3} worldDelta
    * @param {Set<string>} movingIds  entities moving together (excluded from the probe)
+   * @param {string[]|null} [refusals]  collects the reasons a zone height was refused
+   * @param {((zone:any) => number|null)|null} [elevationOf]  how to read the floor's zones (see `_floorZOf`)
    * @returns {import('three').Vector3} the delta the policy allows
    */
-  _policyDelta(obj, startCorners, worldDelta, movingIds, refusals = null) {
+  _policyDelta(obj, startCorners, worldDelta, movingIds, refusals = null, elevationOf = null) {
     const placement = placementOf(obj)
     if (placement === PLACEMENT.LEVEL) {
       // A zone's Z changes only when asked, and never to a height that would put
@@ -3292,21 +3365,25 @@ export class SceneService extends EventEmitter {
       })
       return new Vector3(d.x, d.y, d.z)
     }
-    if (!hasGroundInvariant(placement)) return worldDelta.clone()
+    if (!restsOnSurfaces(placement)) return worldDelta.clone()
 
     const startBottomZ = this._segmentStartBottomZ(obj, startCorners)
     if (startBottomZ === null || !Number.isFinite(startBottomZ)) return worldDelta.clone()
 
-    // `grounded` only needs the ground plane, so the ray probe is skipped —
-    // it is `supported` that has to know which surface it lands on.
+    // `resting` only needs its floor (from belonging — ADR-170 S2), so the ray
+    // probe is skipped — it is `supported` that has to know which surface it lands on.
     let supportZ = null
+    let floorZ = null
     if (placement === PLACEMENT.SUPPORTED) {
       const samples = this._destinationSamples(obj, startCorners, worldDelta)
       supportZ = samples.length ? this.highestSurfaceAt(samples, movingIds).z : null
+    } else {
+      floorZ = this._floorZOf(obj, elevationOf)
     }
 
     const d = resolvePlacementDelta({
       placement,
+      floorZ,
       belowGradeIntent: obj.belowGradeIntent === true,
       requested:        { x: worldDelta.x, y: worldDelta.y, z: worldDelta.z },
       startBottomZ,
@@ -3362,16 +3439,23 @@ export class SceneService extends EventEmitter {
     const appliedDeltas = new Map()
     /** @type {string[]} reasons the policy refused part of the request (ADR-170 D5) */
     const refusals = []
-    for (const [id, startCorners] of segStartCorners) {
+    // Zones first: a member's floor is its zone's height, and when the zone moves
+    // in the same gesture that height is the zone's segment start plus the delta
+    // the policy gave it (ADR-170 S2) — so the zone's delta has to be known
+    // before its members are asked. Never the plate being written (#24).
+    const order = [...segStartCorners].sort(([a], [b]) =>
+      Number(!isZone(this._model.getObject(a))) - Number(!isZone(this._model.getObject(b))))
+    const elevationOf = this._gestureElevationReader(segStartCorners, appliedDeltas)
+    for (const [id, startCorners] of order) {
       const obj = this._model.getObject(id)
       if (!obj) continue
-      const delta = this._policyDelta(obj, startCorners, worldDelta, movingIds, refusals)
+      const delta = this._policyDelta(obj, startCorners, worldDelta, movingIds, refusals, elevationOf)
       appliedDeltas.set(id, delta)
       this._applyEntityDelta(obj, startCorners, segStartPositions?.get(id), delta)
     }
 
     const stackContact = stackAssist
-      ? this._applyStackAssist(segStartCorners, segStartPositions, appliedDeltas, activeId, movingIds)
+      ? this._applyStackAssist(segStartCorners, segStartPositions, appliedDeltas, activeId, movingIds, elevationOf)
       : null
     return { stacking: stackContact !== null, stackContact, refused: refusals[0] ?? null }
   }
@@ -3450,7 +3534,7 @@ export class SceneService extends EventEmitter {
    * @param {Set<string>} movingIds
    * @returns {{x:number,y:number,z:number}|null} contact point, or null when not stacking
    */
-  _applyStackAssist(segStartCorners, segStartPositions, appliedDeltas, activeId, movingIds) {
+  _applyStackAssist(segStartCorners, segStartPositions, appliedDeltas, activeId, movingIds, elevationOf = null) {
     const grabbed = activeId ? this._model.getObject(activeId) : null
     if (!grabbed || !stackAssistApplies(placementOf(grabbed))) return null
 
@@ -3482,8 +3566,8 @@ export class SceneService extends EventEmitter {
       const selObj = this._model.getObject(id)
       if (!selObj || !stackAssistApplies(placementOf(selObj))) continue
       // The policy still gets the last word: an assisted delta that would push a
-      // grounded entity below grade is clamped like any other request.
-      const delta = this._policyDelta(selObj, segStartCorners.get(id), assisted, movingIds)
+      // resting entity below its floor is clamped like any other request.
+      const delta = this._policyDelta(selObj, segStartCorners.get(id), assisted, movingIds, null, elevationOf)
       this._applyEntityDelta(selObj, segStartCorners.get(id), segStartPositions?.get(id), delta)
     }
 
@@ -3502,15 +3586,15 @@ export class SceneService extends EventEmitter {
    *
    * ADR-169: the declared placement policy applies to rotation as well. A cube
    * resting on the floor and rotated 45° about X used to sink a corner 20.7mm
-   * below grade, and the next grab popped it up by that much (the `grounded`
+   * below grade, and the next grab popped it up by that much (the floor
    * clamp only ran on translation). Two rules, in this order:
    *  1. a body that RESTED at the segment start (on the floor or on another
    *     body — `supportUnder`) keeps its bottom at that height: it is lifted
    *     or lowered, so rotating back in a later gesture brings it back down
    *     instead of leaving it floating (`_restingSeatDeltaZ`);
    *  2. the placement policy then gets the last word, the same way it does for
-   *     translation (`_policyDelta`): for `grounded` the bottom never ends
-   *     below the floor (a declared footing passes through).
+   *     translation (`_policyDelta`): for `resting` the bottom never ends
+   *     below its floor (a declared footing, and a thing with no floor, pass through).
    * The input is the pose this call just derived from (segment start, deltaQ),
    * never the previous frame's (PHILOSOPHY #24).
    * A CoordinateFrame rotates about its own origin, so its origin Z — the
@@ -3562,7 +3646,7 @@ export class SceneService extends EventEmitter {
    * @returns {number|null}
    */
   _restingSeatDeltaZ(obj, segStartOrientation, segStartPos, rotatedCorners) {
-    if (!hasGroundInvariant(placementOf(obj))) return null
+    if (!restsOnSurfaces(placementOf(obj))) return null
     const startCorners = obj.localCorners.map(l => l.clone().applyQuaternion(segStartOrientation).add(segStartPos))
     const startBottomZ = this._segmentStartBottomZ(obj, startCorners)
     const rotatedBottomZ = this._segmentStartBottomZ(obj, rotatedCorners)
@@ -3597,7 +3681,7 @@ export class SceneService extends EventEmitter {
     if (!(solid instanceof Solid)) return 0
     const toWorld = (l) => l.clone().applyQuaternion(solid.orientation).add(solid._position)
     const applied = resolveFaceExtrudeDistance({
-      placement:        placementOf(solid),
+      floorZ:           this._floorZOf(solid),
       belowGradeIntent: solid.belowGradeIntent === true,
       faceStartZs:      savedLocalFaceCorners.map(l => toWorld(l).z),
       normalZ:          localNormal.clone().applyQuaternion(solid.orientation).z,
@@ -3626,18 +3710,21 @@ export class SceneService extends EventEmitter {
   }
 
   /**
-   * The sketch-extrude height the placement policy allows (ADR-169). A sketch
-   * lies on the ground plane (`buildCuboidFromRect` builds from Z=0) and becomes
-   * a Solid, so it is asked under the Solid's policy: a downward extrusion would
-   * be born entirely below grade with nobody having declared it, and stops at
-   * the floor instead. Preview and confirm both read this, so what is drawn is
-   * what is made.
+   * The sketch-extrude height the floor allows (ADR-169). A sketch lies on the
+   * ground plane (`buildCuboidFromRect` builds from Z=0) and becomes a Solid.
+   * Since ADR-170 S2 the floor comes from belonging, and the Solid a sketch
+   * becomes belongs to nothing yet (the proposal to belong is S3), so it has no
+   * floor and a downward extrusion is not stopped — the same as grabbing any
+   * thing that belongs to nothing below Z = 0 with the assist off. The question
+   * is still asked here, through the one decision, so that the day a sketch is
+   * born into a zone the floor applies without a second rule. Preview and
+   * confirm both read this, so what is drawn is what is made.
    * @param {number} requested  signed height the gesture / input asks for
    * @returns {number}
    */
   allowedProfileHeight(requested) {
     return resolveFaceExtrudeDistance({
-      placement:   placementFor(PLACEMENT_KIND.SOLID),
+      floorZ:      null,   // a sketch-born Solid belongs to nothing (ADR-170 D4)
       faceStartZs: [0],
       normalZ:     1,
       requested,

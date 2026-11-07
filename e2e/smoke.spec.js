@@ -784,10 +784,12 @@ test('選んだシーンのロボットは目を触らずに描かれ、行と�
 const placementRows = (page) => page.evaluate(() => window.__easyExtrude.placementState())
 const byName = (rows, name) => rows.find(r => r.name === name)
 
-test('Z 拘束の Grab で床を抜けない (ADR-097 症状 2)', async ({ page }) => {
-  // 「キューブも Z 拘束するとなぜか突き抜ける」— 軸拘束は「垂直方向の意図」として
-  // stack assist を降ろす設計で、降ろした先に床が無かった。床は補助ではなく方針が
-  // 持つようになったので、もう一緒には降りない。
+test('Z 拘束の Grab: どこにも属さない Cube は床を持たず、潜れるが知らせは出る (ADR-170 D4)', async ({ page }) => {
+  // ADR-097 症状 2 (「Z 拘束するとなぜか突き抜ける」) の回帰はここに在ったが、ADR-170 S2 で
+  // 床は種類ではなく所属から来るようになった。起動時の Cube はどこにも属さないので床を
+  // 持たない (何も定義しなくても一手目が詰まらない — G2)。Z 拘束が床を迂回しないこと
+  // (症状 2 そのもの) は、床を持つ物で e2e/zone-elevation.spec.js が問う。
+  // ここで問うのは対の側: 床が無いことは「無言で潜る」ではない — 宣言は書かれず、知らせは出る。
   const errors = await boot(page)
   const canvas = await page.locator('#canvas-container canvas').boundingBox()
   const cx = canvas.x + canvas.width / 2
@@ -799,18 +801,21 @@ test('Z 拘束の Grab で床を抜けない (ADR-097 症状 2)', async ({ page 
   await page.mouse.move(cx, cy + 400, { steps: 15 })   // 画面下 = 世界の下へ
   await page.keyboard.press('Enter')
 
+  await expect(page.getByText(/Below ground level \(Z < 0\)/).first()).toBeVisible()
   const cube = byName(await placementRows(page), 'Cube')
-  expect(cube.placement).toBe('grounded')
+  expect(cube.placement).toBe('resting')
+  expect(cube.floorZ, 'どこにも属さない Cube が床を持っている (種類の床が残っている — DEF-076)').toBeNull()
   expect(cube.belowGradeIntent, '宣言していないのに床下の意図が立っている').toBe(false)
-  expect(cube.bottomZ, `Z 拘束のドラッグで床を抜けた (bottomZ=${cube.bottomZ})`).toBeGreaterThan(-0.001)
+  expect(cube.bottomZ, `床の無い Cube が Z=0 で止められた (bottomZ=${cube.bottomZ})`).toBeLessThan(-0.001)
 
   expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
 })
 
-test('S が床下を「宣言」にし、宣言はジェスチャを越えて残る (ADR-097 G3)', async ({ page }) => {
-  // 今日の「Grab 中に S を押して stack assist を切る」はジェスチャ局所で、シーンに
-  // 何も残らなかった — だから次に触ったときにまた潜る/戻るが再現しない。宣言に
-  // 昇格させると、基礎・杭は「そう宣言された実体」になる。
+test('S は床の無い物には何も宣言しない — 補助を切るだけ (ADR-170 S2 / O3)', async ({ page }) => {
+  // ADR-097 G3 (S が床下を宣言にし、宣言がジェスチャを越えて残る) は、床を持つ物の
+  // 規則として e2e/zone-elevation.spec.js に移った。床は所属から来る (S2) ので、どこにも
+  // 属さない Cube には「床の下」が無く、S は積み上げ補助を切るだけ。宣言が残らないので、
+  // 次の掴みは Stack から始まる。
   const errors = await boot(page)
   const canvas = await page.locator('#canvas-container canvas').boundingBox()
   const cx = canvas.x + canvas.width / 2
@@ -818,21 +823,21 @@ test('S が床下を「宣言」にし、宣言はジェスチャを越えて残
 
   await page.mouse.move(cx, cy)
   await page.keyboard.press('g')
-  await page.keyboard.press('s')                       // Free = 床下を宣言する
+  await page.keyboard.press('s')                       // Free = 補助を切る (床が無いので宣言はしない)
   await expect(page.getByText('Free (S: stack)')).toBeVisible()
   await page.keyboard.press('z')
   await page.mouse.move(cx, cy + 400, { steps: 15 })
   await page.keyboard.press('Enter')                   // ジェスチャ終了
 
   const cube = byName(await placementRows(page), 'Cube')
-  expect(cube.belowGradeIntent, '宣言がジェスチャ終了で消えている (今日の stackMode と同じ失敗)').toBe(true)
-  expect(cube.bottomZ, '宣言したのに潜れていない — 逃げ道が塞がっている (G3)').toBeLessThan(-0.001)
+  expect(cube.floorZ).toBeNull()
+  expect(cube.belowGradeIntent, '床の無い物に床下の宣言が書かれた — 宣言する床が無い').toBe(false)
+  expect(cube.bottomZ, '床の無い物が潜れていない').toBeLessThan(-0.001)
 
-  // 宣言は次のジェスチャにも効く: 掴み直しただけで補助が復活し、宣言された基礎が
-  // ピットから黙って持ち上げられる、ということが起きない。
+  // 宣言が無いので、次のジェスチャは既定の Stack から始まる。
   await page.mouse.move(cx, cy)
   await page.keyboard.press('g')
-  await expect(page.getByText('Free (S: stack)')).toBeVisible()
+  await expect(page.getByText('Free (S: stack)')).toHaveCount(0)
   await page.keyboard.press('Escape')
 
   expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
@@ -893,9 +898,9 @@ test('supported な実体で支持を持たないものは 0 個 (ADR-097 / 原�
   const floating = supported.filter(r => r.support === null)
   expect(floating.map(r => `${r.name} (bottomZ=${r.bottomZ})`), '浮いている supported 実体').toEqual([])
 
-  // grounded 側の対の不変条件: 宣言していない実体は床下に居ない。
-  const sunk = rows.filter(r => r.placement === 'grounded' && !r.belowGradeIntent && r.bottomZ < -0.001)
-  expect(sunk.map(r => `${r.name} (bottomZ=${r.bottomZ})`), '宣言なしで床下に居る grounded 実体').toEqual([])
+  // resting 側の対の不変条件: 床を持ち、宣言していない実体は床下に居ない (床は所属から — ADR-170 S2)。
+  const sunk = rows.filter(r => r.placement === 'resting' && r.floorZ !== null && !r.belowGradeIntent && r.bottomZ < r.floorZ - 0.001)
+  expect(sunk.map(r => `${r.name} (bottomZ=${r.bottomZ}, floorZ=${r.floorZ})`), '宣言なしで床下に居る実体').toEqual([])
 
   expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
 })
@@ -913,9 +918,10 @@ test('supported な実体で支持を持たないものは 0 個 (ADR-097 / 原�
 // stack assist を通る経路なので、補助そのものを問うている。
 
 /** 選択中の実体を数値 Grab で 1 軸だけ動かす (画面座標に依存しないジェスチャ)。 */
-async function numericGrab(page, axis, distance) {
+async function numericGrab(page, axis, distance, { escapeAssist = false } = {}) {
   await page.keyboard.press('g')
   await page.keyboard.press(axis)
+  if (escapeAssist) await page.keyboard.press('s')
   for (const ch of distance.toFixed(3)) {
     await page.keyboard.press(ch === '-' ? 'Minus' : ch === '.' ? 'Period' : ch)
   }
@@ -957,7 +963,10 @@ async function carryRobotOverCube(page, { escapeAssist = false } = {}) {
     await page.keyboard.press(ch === '-' ? 'Minus' : ch === '.' ? 'Period' : ch)
   }
   await page.keyboard.press('Enter')
-  await numericGrab(page, 'y', cube.footprint.y - robot.footprint.y)
+  // S は床を持つ物にだけ床下を宣言し、宣言だけがジェスチャを越える (ADR-097 G3)。
+  // ロボットはどこにも属さず床を持たない (ADR-170 S2 / O1) ので、S はそのジェスチャの
+  // 補助を切るだけ — 2 つ目のジェスチャでも押す。
+  await numericGrab(page, 'y', cube.footprint.y - robot.footprint.y, { escapeAssist })
   return { cube, after: await page.evaluate(() => window.__easyExtrude.placementState()) }
 }
 
@@ -968,8 +977,8 @@ test('ロボットもキューブと同じ規則で面に載る (ADR-098 G1/G2 �
   // 前提: 両者は同じ方針を宣言している。症状が方針の差でないことを先に固定する
   // — ここが違っていたら、以下の差は「正しく違う」であって欠陥ではない。
   const atBoot = await placementRows(page)
-  expect(byName(atBoot, 'Cube').placement, 'キューブの方針').toBe('grounded')
-  expect(byName(atBoot, 'robot_base').placement, 'ロボットの方針').toBe('grounded')
+  expect(byName(atBoot, 'Cube').placement, 'キューブの方針').toBe('resting')
+  expect(byName(atBoot, 'robot_base').placement, 'ロボットの方針 (例外にしない — ADR-170 O1)').toBe('resting')
   expect(byName(atBoot, 'robot_base').footprint, 'ロボットの足跡が宣言されていない').not.toBeNull()
 
   const { cube, after } = await carryRobotOverCube(page)
@@ -1100,7 +1109,7 @@ test('同じ不変条件が corners で測る実体にも成り立つ (ADR-101 �
   // 追加時点で選択済みなので、選び直す必要はない)。
   await page.evaluate(() => document.activeElement?.blur())
 
-  const added = (await placementRows(page)).filter(r => r.placement === 'grounded' && r.footprint).at(-1)
+  const added = (await placementRows(page)).filter(r => r.placement === 'resting' && r.footprint).at(-1)
   const samples = await samplesUnderRepeatedRequest(page, added.name, { select: false })
   const zs = samples.map(s => Number(s.bottomZ.toFixed(6)))
 

@@ -177,8 +177,9 @@ export class CoordinateFrame {
     /**
      * Declared intent to sit below grade (ADR-097 §Decision 6 / G3).
      *
-     * Only meaningful for frames whose declared placement is `grounded` — today
-     * `robot_base`. `false` means "nobody has declared this", which is why it is
+     * Only meaningful for frames whose declared placement is `resting` — today
+     * `robot_base` — and only while it HAS a floor, i.e. belongs to a zone
+     * (ADR-170 S2 / O3). `false` means "nobody has declared this", which is why it is
      * the blocking value: an entity that ends up under the floor without anyone
      * saying so is the accident this ADR separates from the intent.
      *

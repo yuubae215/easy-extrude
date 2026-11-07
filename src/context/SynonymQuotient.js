@@ -145,6 +145,13 @@ export const QUOTIENT_TABLE = Object.freeze([
     synonyms: ['elevation', 'floor level', 'level', '床の高さ', '床高', 'フロアの高さ', '階の高さ'],
     gloss: { says: 'ゾーンの板の Z — そのゾーンに属する物が立つ床の高さ (地下は負)', notSays: '物そのものの高さ・ゾーンの下に何があるか (ゾーンは下の面に貼り付かない — ADR-170 S1)' },
     example: { ja: '組立エリアの床の高さは 4000 mm', term: '床の高さ' } },
+  // The floor is a THING's, the elevation is a ZONE's: the floor of a thing is
+  // the elevation of the zones it belongs to, and nothing else (ADR-170 D4/S2 —
+  // never its kind). No belonging, no floor.
+  { key: 'floor', en: 'floor', ja: '床', cat: 'place',
+    synonyms: ['floor', 'its floor', '床', '足元の床', '立つ床'],
+    gloss: { says: '物が属するゾーンの高さ — 物はその高さより下へは (S で宣言しない限り) 行かない。所属が無ければ床も無い', notSays: '物がいま何に載っているか (それは支持 — 導出)・物の種類 (床は種類から来ない — ADR-170 S2)' },
+    example: { ja: 'このワークの床は組立エリアの高さにある', term: '床' } },
 
   // ── Spatial relation (ADR-168 — Arrangement axis values ⇄ NL) ─────────────
   // key === the domain's declarable value (domain/arrangement.js), pinned both

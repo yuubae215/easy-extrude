@@ -14,14 +14,26 @@
  * だけで clamp を持たない。方針の適用は pose 書き込みの唯一の入口
  * (`SceneService.applyPreviewTranslation`) が行う (原則 #1)。
  *
- * ## 3 つの方針
+ * ## 4 つの方針
  *
  *   supported : 必ず何かの上。支持を失う pose は存在できない。Z は支持面から
  *               導出され、入力の Z 成分は捨てる。
- *   grounded  : 床下へは行けない。ただし belowGradeIntent を立てれば行ける。
+ *   resting   : 面に載る物体。水平に動き、載る補助 (stack assist) を受ける。
+ *               **床は方針ではなく所属が持つ** (ADR-170 S2): 属するゾーンがあれば
+ *               その高さより下へは行けない (belowGradeIntent を立てれば行ける)。
+ *               どこにも属さなければ床を持たない。
  *   free      : 自由。支持の概念を持たない。
  *   level     : その高さの面の中で動く。Z は宣言で、ドラッグは水平、Z を変えるのは
  *               数値か Z 拘束だけ。下の面に貼り付かない (ADR-170 — ゾーンの板)。
+ *
+ * ## 床は種類から来ない (ADR-170 S2)
+ *
+ * ADR-097 から S2 までの `grounded` は 2 つの事実を 1 語で運んでいた — 「床を割らない」と
+ * 「面に載る物体 (水平ドラッグ・載る補助)」。床を所属へ移すには割るしかなかった
+ * (床を外した物体を `free` にすると、箱がカメラ正対面で動き、積み上がらなくなる)。
+ * 後者が方針の語 `resting`、前者は物の `floor` = `zone.js` の `floorOf()` (所属から導く。
+ * 保存しない)。純粋な決定 (`resolvePlacementDelta` / `resolveFaceExtrudeDistance`) は
+ * 床を引数 `floorZ` で受け取り、Z=0 を知らない。
  *
  * `free` は既定ではない。**種ごとに表で宣言する**のがこの決定の要点で、新しい
  * 実体種を足すときにこの欄を空にできない (原則 #31 — 正当な「支持なし」は
@@ -77,11 +89,29 @@ export const SUPPORT_TOLERANCE = mm(1)
 /** 配置方針の語彙 (ADR-097 §Decision 1)。 */
 export const PLACEMENT = Object.freeze({
   SUPPORTED: 'supported',
-  GROUNDED:  'grounded',
+  /** ADR-170 S2: 面に載る物体。床は種類ではなく所属から (`floorOf`) — `grounded` の後継。 */
+  RESTING:   'resting',
   FREE:      'free',
   /** ADR-170: 宣言された高さの水平面に居る (ゾーン)。床の不変条件は持たない — 地下は負の高さ。 */
   LEVEL:     'level',
 })
+
+const PLACEMENT_WORDS = new Set(Object.values(PLACEMENT))
+
+/**
+ * 方針語の外の値 (`undefined` を含む) で throw する。
+ *
+ * ADR-170 S2 で `PLACEMENT.GROUNDED` を消したとき、テストに残った 3 か所の
+ * `PLACEMENT.GROUNDED` (= `undefined`) は「free 以外は水平」の分岐を素通りして
+ * **緑を出した**。退役した語は違反を見逃すのではなく緑を出す (原則 #31 / ADR-103)
+ * ので、純粋な決定の入口で語彙を問う — 種ごとの既定表が未宣言の種で throw するのと同じ形。
+ * @param {*} placement
+ */
+function assertPlacementWord(placement) {
+  if (!PLACEMENT_WORDS.has(placement)) {
+    throw new Error(`[placement] not a placement word: ${String(placement)} (one of ${[...PLACEMENT_WORDS].join(' / ')})`)
+  }
+}
 
 /**
  * 方針表が引かれる「種」。全メンバが `PLACEMENT_BY_KIND` に行を持たねばならず、
@@ -96,7 +126,7 @@ export const PLACEMENT_KIND = Object.freeze({
   SOLID:             'solid',
   /** ImportedMesh — STEP 等の取り込み形状。 */
   IMPORTED_MESH:     'importedMesh',
-  /** robot_base CF — ロボットが立つ床は実在する床である (ADR-083)。 */
+  /** robot_base CF — 物体と同じ規則で面に載る。床は所属から (ADR-170 O1 — 例外にしない)。 */
   ROBOT_BASE_FRAME:  'robotBaseFrame',
   /** ユーザー CF / body frame (Origin) / tcp — 空間の目印であって物体ではない。 */
   COORDINATE_FRAME:  'coordinateFrame',
@@ -119,13 +149,15 @@ export const PLACEMENT_BY_KIND = Object.freeze({
   // ゾーンの板の Z はその床の高さという**宣言**で、下に何があるかから導かない
   // (ADR-170 S1 — 2F や地下を、スラブを描かずに言うため)。ADR-072 の「浮かない板」から外れる唯一の注釈。
   [PLACEMENT_KIND.ZONE]:             PLACEMENT.LEVEL,
-  // 基礎・杭・ピットは正当な要求なので禁止しない — 宣言させる (G3)。
-  // 未着手の退役 (DEF-076 / ADR-170 S2): 床は種類ではなく地区への所属から来る形に
-  // 置き換わり、Solid・ImportedMesh のこの行は消える。S1 は語彙とゾーンだけ。
-  [PLACEMENT_KIND.SOLID]:            PLACEMENT.GROUNDED,
-  [PLACEMENT_KIND.IMPORTED_MESH]:    PLACEMENT.GROUNDED,
-  // ロボットが床に埋まった状態でコアAPI へ base pose を送っても解は無意味 (ADR-083)。
-  [PLACEMENT_KIND.ROBOT_BASE_FRAME]: PLACEMENT.GROUNDED,
+  // 物体は面に載る。床は種類ではなく所属から来る (ADR-170 S2 — DEF-076 の満期で
+  // `grounded` の行は消えた)。属するゾーンの床の下 (基礎・杭・ピット) は禁止しない —
+  // S で宣言させる (G3 / O3)。
+  [PLACEMENT_KIND.SOLID]:            PLACEMENT.RESTING,
+  [PLACEMENT_KIND.IMPORTED_MESH]:    PLACEMENT.RESTING,
+  // ロボットも例外にしない (ADR-170 O1 — 2026-11-07 当事者)。かつての理由「床に埋まった
+  // base pose は無意味 (ADR-083)」は ADR-083 の本文に無く、地下の台座は負の高さの
+  // ゾーンに属させれば言える。属するなら床はそのゾーンの高さ。
+  [PLACEMENT_KIND.ROBOT_BASE_FRAME]: PLACEMENT.RESTING,
   // CF は物体ではない。床下の座標系は正当 (地下の基準点・ピットの原点)。
   [PLACEMENT_KIND.COORDINATE_FRAME]: PLACEMENT.FREE,
   // 計測線は「何かの上」ではなく「二点の間」に在る。支持の概念を持たない。
@@ -196,9 +228,15 @@ export function placementOf(entity) {
   return kind === null ? PLACEMENT.FREE : placementFor(kind)
 }
 
-/** その方針が床の不変条件を持つか (= 支持を問う意味があるか)。 */
-export function hasGroundInvariant(placement) {
-  return placement === PLACEMENT.SUPPORTED || placement === PLACEMENT.GROUNDED
+/**
+ * その方針の実体は面に載るか (= 支持を問う意味があるか)。`supported` と `resting`。
+ *
+ * S2 までは `hasGroundInvariant` と呼んでいた — 「床を持つ」と「面に載る」が同じ
+ * 方針語 (`grounded`) に入っていたからである。床は所属から来るようになったので
+ * (`floorOf`)、この問いが答えるのは「載る」だけになった (ADR-170 S2)。
+ */
+export function restsOnSurfaces(placement) {
+  return placement === PLACEMENT.SUPPORTED || placement === PLACEMENT.RESTING
 }
 
 /**
@@ -206,22 +244,25 @@ export function hasGroundInvariant(placement) {
  *
  * ADR-097 は `_applyStackSnap` から「床を作る」責務を剥がしたが、残った補助
  * (`SceneService._applyStackAssist`) には `instanceof Solid` の門が 2 枚残っていた。
- * 帰結として方針表の `grounded` が種によって 2 つの意味を持っていた —
+ * 帰結として方針表の `grounded` (S2 以降 `resting`) が種によって 2 つの意味を持っていた —
  * Solid では「床を割らない**かつ**直下の面に載る」、robot_base では
  * 「床を割らない**だけ**」。当事者の「キューブはスタックするのにロボットは
  * スタックしない」は、方針の差ではなく**同じ方針語の下に別実装が残っていた**
  * ことの現れである。
  *
  * 除外の理由が「種」から「方針」へ移るのがこの関数の意味であって、判定そのものは
- * `hasGroundInvariant` と一致する — 床の不変条件を持つ実体はすべて「何かの上に
- * 載せる」補助の対象になる。同じ述語を 2 本書くと第二の源になる (§1.1) ので
- * **委譲**する。将来この 2 つの問いが分かれたときに、分岐点はここ 1 箇所になる。
+ * `restsOnSurfaces` と一致する — 面に載る実体はすべて「何かの上に載せる」補助の
+ * 対象になる。同じ述語を 2 本書くと第二の源になる (§1.1) ので **委譲**する。
+ *
+ * ADR-098 はここに「将来この 2 つの問いが分かれたとき、分岐点はここ 1 箇所」と
+ * 書いた。分かれたのは別の 2 つだった (ADR-170 S2): **床**と**載る**。床は所属へ
+ * 移り (`floorOf`)、載る補助は方針に残る — 何も定義していないシーンの箱も積み上がる。
  *
  * @param {string} placement `PLACEMENT` メンバ
  * @returns {boolean}
  */
 export function stackAssistApplies(placement) {
-  return hasGroundInvariant(placement)
+  return restsOnSurfaces(placement)
 }
 
 // ── 支持プローブの宣言 (ADR-098 §Decision 2) ────────────────────────────────
@@ -467,16 +508,21 @@ export function probeNeedsWorldOrigin(probe) {
  *   supported : 入力の Z を捨て、行き先の支持面 `supportZ` へ底面を座らせる。
  *               `supportZ` が null (支持面が求まらない) なら Z を動かさない —
  *               推測で浮かせない。
- *   grounded  : Z は上向きにのみ clamp する (底面が床を割らない)。
- *               `belowGradeIntent` が立っていれば素通し (G3 — 宣言された床下)。
+ *   resting   : 床 (`floorZ`) があれば Z は上向きにのみ clamp する (底面が床を割らない)。
+ *               `floorZ` が null (どこにも属さない — ADR-170 D4) か `belowGradeIntent`
+ *               が立っていれば素通し (G3 — 宣言された床下)。
+ *               床が物の**上に**後から来た場合 (所属の宣言・ゾーンを上げた — S2 Q3) は
+ *               動かさない・沈めない・引き上げない: 守る床は `min(floorZ, startBottomZ)`。
+ *               床より下に居る物を次の掴みで床まで跳ね上げない (ADR-169 の押し出しと同じ規則)。
  *
- * `grounded` が「床へ吸い付く」のではなく「床を割らない」だけなのは意図的で、
+ * `resting` が「床へ吸い付く」のではなく「床を割らない」だけなのは意図的で、
  * 上から載せる補助 (stack assist, ADR-071) と役割を分けるため。床は方針が持ち、
  * 「他の実体の上に載せる」は補助が持つ。
  *
  * @param {object}  p
  * @param {string}  p.placement          `PLACEMENT` メンバ
- * @param {boolean} [p.belowGradeIntent] 床下を宣言済みか (`grounded` のみ意味を持つ)
+ * @param {number|null} [p.floorZ]      `resting` のみ: 物の床 (`floorOf`)。null = 床なし
+ * @param {boolean} [p.belowGradeIntent] 床下を宣言済みか (`resting` かつ床があるときのみ意味を持つ)
  * @param {{x:number,y:number,z:number}} p.requested  ハンドラが求めた world delta
  * @param {number}  p.startBottomZ       セグメント開始時点の最下点 Z
  * @param {number|null} [p.supportZ]     行き先 XY 直下の支持面 Z (地面込みなので通常 >= 0)
@@ -485,12 +531,14 @@ export function probeNeedsWorldOrigin(probe) {
  */
 export function resolvePlacementDelta({
   placement,
+  floorZ = null,
   belowGradeIntent = false,
   requested,
   startBottomZ,
   supportZ = null,
   elevationRefusal = null,
 }) {
+  assertPlacementWord(placement)
   const { x, y, z } = requested
   if (placement === PLACEMENT.FREE) return { x, y, z }
 
@@ -505,10 +553,12 @@ export function resolvePlacementDelta({
     return { x, y, z: supportZ - startBottomZ }
   }
 
-  // grounded
-  if (belowGradeIntent) return { x, y, z }
-  // 底面が床 (Z=0) を割らない最小の Z。上へは自由に動ける。
-  return { x, y, z: Math.max(z, -startBottomZ) }
+  // resting — the floor comes from belonging, not from the kind (ADR-170 S2)
+  if (floorZ === null || !Number.isFinite(floorZ) || belowGradeIntent) return { x, y, z }
+  // 底面が床を割らない最小の Z。上へは自由に動ける。床より下から始まった物は
+  // その高さを床とする — 沈めないが、引き上げもしない (S2 Q3)。
+  const floor = Math.min(floorZ, startBottomZ)
+  return { x, y, z: Math.max(z, floor - startBottomZ) }
 }
 
 /**
@@ -516,22 +566,25 @@ export function resolvePlacementDelta({
  * 許す距離へ写す純粋関数。`resolvePlacementDelta` の「形」版。
  *
  * 押し出しは pose ではなく形を変えるが、床を割る点では並進と同じ事故になる
- * (割れた底は次の Grab で `grounded` の床 clamp に引き上げられ、跳ねる)。
+ * (割れた底は次の Grab で床 clamp に引き上げられ、跳ねる)。
  * 並進と同じく**床で止める** — 床下は S で宣言してから (G3)。持ち上げはしない:
  * 底面を下へ引いた人に「本体が上へ逃げる」を返すのは、要求の符号を裏返すことになる。
  *
  * 動くのは面の頂点だけで、各頂点は `z + normalZ·d` へ行く。各頂点が守る床は
- * `min(0, z)` — 始めから床下にある頂点 (宣言の無い古いデータ) を**それ以上**沈め
- * ないだけで、引き上げはしない (要求していない動きを作らない)。
+ * `min(floorZ, z)` — 始めから床下にある頂点 (宣言の無い古いデータ・後から上に来た床)
+ * を**それ以上**沈めないだけで、引き上げはしない (要求していない動きを作らない)。
  *
- *   free / 宣言済みの床下      : 素通し
- *   grounded / supported       : d を [lo, hi] へ clamp。
+ * 床は方針ではなく所属から来る (ADR-170 S2) ので、この関数は方針を受け取らない —
+ * 床が在るか (`floorZ`) だけを問う。
+ *
+ *   床なし / 宣言済みの床下    : 素通し
+ *   床あり                     : d を [lo, hi] へ clamp。
  *                                normalZ > 0 の頂点は d ≥ (floor − z)/normalZ、
  *                                normalZ < 0 の頂点は d ≤ (floor − z)/normalZ
  *   |normalZ| ≈ 0 (鉛直な面)   : Z が動かないので素通し
  *
  * @param {object}   p
- * @param {string}   p.placement           `PLACEMENT` メンバ (押し出した結果の実体の方針)
+ * @param {number|null} [p.floorZ]        物の床 (`floorOf`)。null = 床なし (どこにも属さない)
  * @param {boolean}  [p.belowGradeIntent]  床下を宣言済みか
  * @param {number[]} p.faceStartZs         動く面の頂点の world Z (操作開始時点)
  * @param {number}   p.normalZ             面法線 (world, 単位) の Z 成分
@@ -539,20 +592,20 @@ export function resolvePlacementDelta({
  * @returns {number} 適用する距離
  */
 export function resolveFaceExtrudeDistance({
-  placement,
+  floorZ = null,
   belowGradeIntent = false,
   faceStartZs,
   normalZ,
   requested,
 }) {
   if (!Number.isFinite(requested)) return requested
-  if (!hasGroundInvariant(placement) || belowGradeIntent) return requested
+  if (floorZ === null || !Number.isFinite(floorZ) || belowGradeIntent) return requested
   if (!Number.isFinite(normalZ) || Math.abs(normalZ) < 1e-9) return requested
   let lo = -Infinity
   let hi = Infinity
   for (const z of faceStartZs) {
     if (!Number.isFinite(z)) continue
-    const bound = (Math.min(0, z) - z) / normalZ
+    const bound = (Math.min(floorZ, z) - z) / normalZ
     if (normalZ > 0) lo = Math.max(lo, bound)
     else             hi = Math.min(hi, bound)
   }
@@ -589,7 +642,7 @@ export function supportUnder({ bottomZ, surfaceZ, surfaceEntityId = null, tolera
  * 接地面に沿って滑り、自由な実体だけがカメラ正対面で動く。「カメラ平面で動かした
  * 結果を stack snap が Z で引き戻す」二重のねじれが、ここで消える。
  *
- * `grounded` / `supported` の返り値が `cameraNormal` を**読まない**ことに意味が
+ * `resting` / `supported` の返り値が `cameraNormal` を**読まない**ことに意味が
  * ある — 接地面に沿う動きがカメラ姿勢に依存しないことが、関数の形から言える。
  *
  * @param {object} p
@@ -599,6 +652,7 @@ export function supportUnder({ bottomZ, surfaceZ, surfaceEntityId = null, tolera
  * @returns {{x:number,y:number,z:number}} 平面法線
  */
 export function dragPlaneNormalFor({ placement, hostNormal = null, cameraNormal }) {
+  assertPlacementWord(placement)
   if (placement === PLACEMENT.FREE) return cameraNormal
   return hostNormal ?? { x: 0, y: 0, z: 1 }
 }

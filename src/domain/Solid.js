@@ -53,6 +53,8 @@ export class Solid {
      * Declared intent to sit below grade (ADR-097 §Decision 6 / G3) — footings,
      * piles, pits. `false` = nobody declared it, which is the blocking value:
      * "I noticed it had sunk" and "I decided to sink it" must not look alike.
+     * "Below grade" is below the floor its zone gives; a Solid that belongs to
+     * nothing has no floor and never carries it (ADR-170 S2 / O3).
      * Written only through `SceneService.setBelowGradeIntent()`; re-derived from
      * geometry on import rather than serialized.
      * @type {boolean}

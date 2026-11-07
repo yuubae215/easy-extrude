@@ -4,12 +4,12 @@
  * ADR-097 が閉じると宣言した検査のうち、純粋関数で閉じられる分:
  *   - 3 方針 × (支持あり / なし) × (Z 成分あり / なし) の全組み合わせ
  *   - 種の列挙に対する方針表の**個数**検査 (在るものを辿らない — 原則 #31)
- *   - ドラッグ平面が方針の関数であること (grounded がカメラを読まない)
+ *   - ドラッグ平面が方針の関数であること (resting がカメラを読まない)
  *
  * ADR-098 が閉じると宣言した分 (同ファイル後半):
  *   - 支持プローブ表の**両向き**個数検査 (欠落 0 / 余り 0) と未宣言の種で throw
  *   - プローブの純粋実行 (最下面 / 原点 / 持たない) と未知の値での throw
- *   - stack assist の適用可否が方針の関数であること (grounded が 1 つの意味に戻る)
+ *   - stack assist の適用可否が方針の関数であること (resting が 1 つの意味に戻る)
  *
  * シーンを要する検査 (不変条件・症状回帰) は `src/PosePolicy.test.js`。
  */
@@ -24,7 +24,7 @@ import {
   placementFor,
   placementOf,
   placementKindOf,
-  hasGroundInvariant,
+  restsOnSurfaces,
   resolvePlacementDelta,
   resolveFaceExtrudeDistance,
   supportUnder,
@@ -96,8 +96,8 @@ test('実体の種別が方針へ写る (種ごとの宣言が実体に届いて
     [new AnnotatedPoint('a1', 'P', [new Vertex('v', new Vector3())], null),  PLACEMENT.SUPPORTED],
     [new AnnotatedLine('a2', 'L', [new Vertex('v', new Vector3())], null),   PLACEMENT.SUPPORTED],
     [new AnnotatedRegion('a3', 'R', [new Vertex('v', new Vector3())], null), PLACEMENT.SUPPORTED],
-    [makeSolid(),                                                            PLACEMENT.GROUNDED],
-    [new ImportedMesh('im1', 'IM', null),                                    PLACEMENT.GROUNDED],
+    [makeSolid(),                                                            PLACEMENT.RESTING],
+    [new ImportedMesh('im1', 'IM', null),                                    PLACEMENT.RESTING],
     [new MeasureLine('ml1', 'ML', [new Vertex('v', new Vector3())], null),   PLACEMENT.FREE],
     [new CoordinateFrame('cf1', 'Origin', 's1', null),                       PLACEMENT.FREE],
   ]
@@ -107,11 +107,11 @@ test('実体の種別が方針へ写る (種ごとの宣言が実体に届いて
   }
 })
 
-test('robot_base CF は grounded — 同じ CoordinateFrame でもロールで分かれる', () => {
+test('robot_base CF は resting — 同じ CoordinateFrame でもロールで分かれる (床は所属から — O1)', () => {
   const base = new CoordinateFrame('cf_b', 'robot_base', null, null)
   base.robotRole = ROBOT_ROLE.BASE
   assert.equal(placementKindOf(base), PLACEMENT_KIND.ROBOT_BASE_FRAME)
-  assert.equal(placementOf(base), PLACEMENT.GROUNDED)
+  assert.equal(placementOf(base), PLACEMENT.RESTING)
 
   const tcp = new CoordinateFrame('cf_t', 'tcp', null, null)
   tcp.robotRole = ROBOT_ROLE.TCP
@@ -124,10 +124,24 @@ test('分類できない実体は free — ただし「宣言」であって既�
   assert.equal(placementOf({ id: 'link1' }), PLACEMENT.FREE)
 })
 
-test('床の不変条件を持つのは supported と grounded だけ', () => {
-  assert.equal(hasGroundInvariant(PLACEMENT.SUPPORTED), true)
-  assert.equal(hasGroundInvariant(PLACEMENT.GROUNDED),  true)
-  assert.equal(hasGroundInvariant(PLACEMENT.FREE),      false)
+test('面に載るのは supported と resting だけ', () => {
+  assert.equal(restsOnSurfaces(PLACEMENT.SUPPORTED), true)
+  assert.equal(restsOnSurfaces(PLACEMENT.RESTING),   true)
+  assert.equal(restsOnSurfaces(PLACEMENT.FREE),      false)
+})
+
+test('ADR-170 S2: grounded は退役した — 床を種類で配る方針語はもう無い (DEF-076)', () => {
+  // 退役の腐敗は違反を見逃すのではなく緑を出す (原則 #31 / ADR-103) — 消えたこと自体を数える。
+  assert.equal(Object.values(PLACEMENT).includes('grounded'), false, '`grounded` が方針の語彙に戻っている')
+  assert.equal('GROUNDED' in PLACEMENT, false)
+  for (const [kind, placement] of Object.entries(PLACEMENT_BY_KIND)) {
+    assert.notEqual(placement, 'grounded', `${kind} が種類で床を持っている`)
+  }
+  // 消えた語を書いた呼び手は undefined を渡す — それを素通りさせない (語彙の外は throw)
+  const ghost = PLACEMENT.GROUNDED
+  assert.throws(() => resolvePlacementDelta({ placement: ghost, requested: { x: 0, y: 0, z: 0 }, startBottomZ: 0 }), /not a placement word/)
+  assert.throws(() => dragPlaneNormalFor({ placement: ghost, cameraNormal: { x: 0, y: 0, z: 1 } }), /not a placement word/)
+  assert.throws(() => resolvePlacementDelta({ placement: 'grounded', requested: { x: 0, y: 0, z: 0 }, startBottomZ: 0 }), /not a placement word/)
 })
 
 // ── resolvePlacementDelta — 3 方針 × 支持有無 × Z 成分有無 ────────────────────
@@ -147,14 +161,15 @@ test('表テスト: 3 方針 × (支持あり/なし) × (Z 成分あり/なし)
     [PLACEMENT.SUPPORTED, true,  0,    { x: 0, y: 0, z: -8 }, { x: 0, y: 0, z: -2 }, 'supported に belowGradeIntent の逃げ道は無い'],
     [PLACEMENT.SUPPORTED, false, null, { x: 1, y: 1, z: 4 },  { x: 1, y: 1, z: 0 },  '支持面が求まらないなら Z を動かさない (推測で浮かせない)'],
 
-    [PLACEMENT.GROUNDED,  false, 0,    { x: 1, y: 0, z: 5 },  { x: 1, y: 0, z: 5 },  '上へは自由 (床は天井ではない)'],
-    [PLACEMENT.GROUNDED,  false, 0,    { x: 0, y: 0, z: -1 }, { x: 0, y: 0, z: -1 }, '床を割らない範囲の下降はそのまま'],
-    [PLACEMENT.GROUNDED,  false, 0,    { x: 0, y: 0, z: -9 }, { x: 0, y: 0, z: -2 }, '床を割る分だけ clamp (底面が Z=0 で止まる)'],
-    [PLACEMENT.GROUNDED,  true,  0,    { x: 0, y: 0, z: -9 }, { x: 0, y: 0, z: -9 }, '宣言された床下は通す (G3 — 基礎・杭)'],
-    [PLACEMENT.GROUNDED,  false, 3,    { x: 0, y: 0, z: -9 }, { x: 0, y: 0, z: -2 }, 'grounded は屋根へ吸い付かない — 床を割らないだけ'],
+    // resting は床 Z=0 のゾーンに属している (floorZ = 0) — 床の無い場合は下の S2 の表
+    [PLACEMENT.RESTING,   false, 0,    { x: 1, y: 0, z: 5 },  { x: 1, y: 0, z: 5 },  '上へは自由 (床は天井ではない)'],
+    [PLACEMENT.RESTING,   false, 0,    { x: 0, y: 0, z: -1 }, { x: 0, y: 0, z: -1 }, '床を割らない範囲の下降はそのまま'],
+    [PLACEMENT.RESTING,   false, 0,    { x: 0, y: 0, z: -9 }, { x: 0, y: 0, z: -2 }, '床を割る分だけ clamp (底面が Z=0 で止まる)'],
+    [PLACEMENT.RESTING,   true,  0,    { x: 0, y: 0, z: -9 }, { x: 0, y: 0, z: -9 }, '宣言された床下は通す (G3 — 基礎・杭)'],
+    [PLACEMENT.RESTING,   false, 3,    { x: 0, y: 0, z: -9 }, { x: 0, y: 0, z: -2 }, 'resting は屋根へ吸い付かない — 床を割らないだけ'],
   ]
   for (const [placement, belowGradeIntent, supportZ, requested, expected, why] of rows) {
-    const got = resolvePlacementDelta({ placement, belowGradeIntent, requested, startBottomZ, supportZ })
+    const got = resolvePlacementDelta({ placement, floorZ: 0, belowGradeIntent, requested, startBottomZ, supportZ })
     assert.deepEqual(got, expected, `${placement} / intent=${belowGradeIntent} / supportZ=${supportZ}: ${why}`)
   }
 })
@@ -169,12 +184,45 @@ test('supported は Z 拘束の有無に関わらず同じ結果を出す (症�
   assert.equal(zAxis.z, 0)
 })
 
-test('grounded の clamp は冪等 (2 回適用しても同じ pose)', () => {
+test('resting の床 clamp は冪等 (2 回適用しても同じ pose)', () => {
   // 導出値を入力へ戻す閉路 (原則 #24) を作っていないことの検査。
-  const p = { placement: PLACEMENT.GROUNDED, startBottomZ: 0, supportZ: 0 }
+  const p = { placement: PLACEMENT.RESTING, floorZ: 0, startBottomZ: 0, supportZ: 0 }
   const once  = resolvePlacementDelta({ ...p, requested: { x: 0, y: 0, z: -5 } })
   const twice = resolvePlacementDelta({ ...p, requested: once })
   assert.deepEqual(twice, once)
+})
+
+// ── ADR-170 S2 — 床は所属から (floorZ は floorOf が導く。ここは純粋な決定だけ) ─────
+
+test('S2: 床の無い resting は床で止まらない — 何も定義していないシーン (D4 / G2)', () => {
+  const got = resolvePlacementDelta({
+    placement: PLACEMENT.RESTING, floorZ: null, requested: { x: 1, y: 0, z: -900 }, startBottomZ: 0,
+  })
+  assert.deepEqual(got, { x: 1, y: 0, z: -900 })
+})
+
+test('S2: 床はゾーンの高さ — 4000 の床を割らず、地下 −3000 の床まで下りられる', () => {
+  const ask = (floorZ, startBottomZ, z, belowGradeIntent = false) => resolvePlacementDelta({
+    placement: PLACEMENT.RESTING, floorZ, belowGradeIntent, requested: { x: 0, y: 0, z }, startBottomZ,
+  }).z
+  assert.equal(ask(4000, 4500, -2000), -500, '2F の床 4000 で止まる')
+  assert.equal(ask(4000, 4500, -2000, true), -2000, 'S で宣言すれば床下へ (O3)')
+  assert.equal(ask(-3000, 0, -5000), -3000, '地下の床は負の高さ')
+})
+
+test('S2 Q3: 床が物の上に後から来ても、跳ねない — 沈めず、引き上げない', () => {
+  // 所属を宣言した / ゾーンを上げた: 床 4000、物の底は 0。次の掴みで 4000 へ跳ね上げない。
+  const ask = (z) => resolvePlacementDelta({
+    placement: PLACEMENT.RESTING, floorZ: 4000, requested: { x: 5, y: 0, z }, startBottomZ: 0,
+  })
+  assert.deepEqual(ask(0),   { x: 5, y: 0, z: 0 }, '水平に動かしても Z は 0 のまま (跳ねない)')
+  assert.deepEqual(ask(-10), { x: 5, y: 0, z: 0 }, 'それ以上は沈めない')
+  assert.deepEqual(ask(100), { x: 5, y: 0, z: 100 }, '上へは動ける')
+  // 同じ要求を 2 回通しても同じ (1 フレーム古い状態を読む形を隠さない)
+  const once = ask(0)
+  assert.deepEqual(resolvePlacementDelta({
+    placement: PLACEMENT.RESTING, floorZ: 4000, requested: once, startBottomZ: 0,
+  }), once)
 })
 
 // ── supportUnder — 導出の述語 ──────────────────────────────────────────────
@@ -202,7 +250,7 @@ test('支持の導出は 1 mm 許容の内側では成立する', () => {
 test('ドラッグ平面は方針の関数 — 接地した実体はカメラ姿勢を読まない (G2)', () => {
   const cameraNormal = { x: 0.3, y: -0.5, z: -0.81 }
   assert.deepEqual(dragPlaneNormalFor({ placement: PLACEMENT.FREE, cameraNormal }), cameraNormal)
-  assert.deepEqual(dragPlaneNormalFor({ placement: PLACEMENT.GROUNDED, cameraNormal }),  { x: 0, y: 0, z: 1 })
+  assert.deepEqual(dragPlaneNormalFor({ placement: PLACEMENT.RESTING, cameraNormal }),   { x: 0, y: 0, z: 1 })
   assert.deepEqual(dragPlaneNormalFor({ placement: PLACEMENT.SUPPORTED, cameraNormal }), { x: 0, y: 0, z: 1 })
 })
 
@@ -217,9 +265,9 @@ test('mounts ホストがあれば supported はホストの平面に沿う (ADR
     { x: 1, y: 0, z: 0 })
 })
 
-test('カメラ姿勢を変えても grounded の平面は動かない (症状 4 の機構的原因)', () => {
-  const a = dragPlaneNormalFor({ placement: PLACEMENT.GROUNDED, cameraNormal: { x: 1, y: 0, z: 0 } })
-  const b = dragPlaneNormalFor({ placement: PLACEMENT.GROUNDED, cameraNormal: { x: 0, y: 0, z: -1 } })
+test('カメラ姿勢を変えても resting の平面は動かない (症状 4 の機構的原因)', () => {
+  const a = dragPlaneNormalFor({ placement: PLACEMENT.RESTING, cameraNormal: { x: 1, y: 0, z: 0 } })
+  const b = dragPlaneNormalFor({ placement: PLACEMENT.RESTING, cameraNormal: { x: 0, y: 0, z: -1 } })
   assert.deepEqual(a, b)
 })
 
@@ -391,20 +439,20 @@ test('probeNeedsWorldOrigin は原点系の宣言でだけ真 (呼び手が幾�
 
 test('stack assist の適用可否は方針が決める — 種ではない', () => {
   assert.equal(stackAssistApplies(PLACEMENT.SUPPORTED), true)
-  assert.equal(stackAssistApplies(PLACEMENT.GROUNDED),  true)
+  assert.equal(stackAssistApplies(PLACEMENT.RESTING),   true)
   assert.equal(stackAssistApplies(PLACEMENT.FREE),      false)
 })
 
-test('grounded は 1 つの意味しか持たない — Solid と robot_base が同じ答えを出す (G2)', () => {
+test('resting は 1 つの意味しか持たない — Solid と robot_base が同じ答えを出す (G2)', () => {
   // 当事者の報告「キューブはスタックするのにロボットはスタックしない」が、
   // 方針の差ではなく実装の差だったことを、方針の側から固定する。
   const base = new CoordinateFrame('cf_b', 'robot_base', null, null)
   base.robotRole = ROBOT_ROLE.BASE
   const cube = makeSolid()
 
-  assert.equal(placementOf(cube), placementOf(base), '同じ grounded であること')
+  assert.equal(placementOf(cube), placementOf(base), '同じ resting であること')
   assert.equal(stackAssistApplies(placementOf(cube)), stackAssistApplies(placementOf(base)),
-    'grounded が種によって 2 つの意味を持っている (ADR-098 が消した欠陥)')
+    'resting が種によって 2 つの意味を持っている (ADR-098 が消した欠陥)')
 
   // 逆向き — 「全部に効かせた」ではなく「方針どおりに効いた」ことを区別する。
   const userCf = new CoordinateFrame('cf1', 'ref', null, null)
@@ -424,29 +472,29 @@ test('支持を問える実体は、支持へ座らせられる (G3 — 問い�
 
 // ── resolveFaceExtrudeDistance — 形を変える操作にも同じ床 (ADR-169) ─────────────
 
-test('ADR-169: pulling a resting bottom face down stops at the floor (grounded)', () => {
+test('ADR-169: pulling a resting bottom face down stops at the floor (a thing with a floor at 0)', () => {
   // Bottom face of a cube resting on Z=0, outward normal -Z. Pulling it "out"
   // (positive distance along the normal) would push it below grade.
   const got = resolveFaceExtrudeDistance({
-    placement: PLACEMENT.GROUNDED, faceStartZs: [0, 0, 0, 0], normalZ: -1, requested: 80,
+    floorZ: 0, faceStartZs: [0, 0, 0, 0], normalZ: -1, requested: 80,
   })
   assert.equal(got, 0)
   // Pushing it inward (up) is free.
   assert.equal(resolveFaceExtrudeDistance({
-    placement: PLACEMENT.GROUNDED, faceStartZs: [0, 0, 0, 0], normalZ: -1, requested: -30,
+    floorZ: 0, faceStartZs: [0, 0, 0, 0], normalZ: -1, requested: -30,
   }), -30)
 })
 
 test('ADR-169: an elevated bottom face may come down exactly to the floor and no further', () => {
   const got = resolveFaceExtrudeDistance({
-    placement: PLACEMENT.GROUNDED, faceStartZs: [40, 40, 40, 40], normalZ: -1, requested: 100,
+    floorZ: 0, faceStartZs: [40, 40, 40, 40], normalZ: -1, requested: 100,
   })
   assert.equal(got, 40)
 })
 
 test('ADR-169: the top face pushed down through the body stops at the floor', () => {
   const got = resolveFaceExtrudeDistance({
-    placement: PLACEMENT.GROUNDED, faceStartZs: [100, 100, 100, 100], normalZ: 1, requested: -150,
+    floorZ: 0, faceStartZs: [100, 100, 100, 100], normalZ: 1, requested: -150,
   })
   assert.equal(got, -100)
 })
@@ -455,35 +503,42 @@ test('ADR-169: a tilted face is bounded by its lowest vertex', () => {
   // normal pointing 45° down; vertices at 10 and 50 — the 10 one hits first.
   const nz = -Math.SQRT1_2
   const got = resolveFaceExtrudeDistance({
-    placement: PLACEMENT.GROUNDED, faceStartZs: [10, 10, 50, 50], normalZ: nz, requested: 1000,
+    floorZ: 0, faceStartZs: [10, 10, 50, 50], normalZ: nz, requested: 1000,
   })
   assert.ok(Math.abs(got - 10 / Math.SQRT1_2) < 1e-9, `got ${got}`)
 })
 
 test('ADR-169: free, declared below grade, and vertical faces pass through', () => {
   const req = { faceStartZs: [0, 0, 0, 0], normalZ: -1, requested: 80 }
-  assert.equal(resolveFaceExtrudeDistance({ ...req, placement: PLACEMENT.FREE }), 80)
-  assert.equal(resolveFaceExtrudeDistance({ ...req, placement: PLACEMENT.GROUNDED, belowGradeIntent: true }), 80)
-  assert.equal(resolveFaceExtrudeDistance({ ...req, placement: PLACEMENT.GROUNDED, normalZ: 0 }), 80)
+  assert.equal(resolveFaceExtrudeDistance({ ...req, floorZ: null }), 80, 'no floor (belongs to nothing — ADR-170 S2)')
+  assert.equal(resolveFaceExtrudeDistance({ ...req, floorZ: 0, belowGradeIntent: true }), 80)
+  assert.equal(resolveFaceExtrudeDistance({ ...req, floorZ: 0, normalZ: 0 }), 80)
 })
 
 test('ADR-169: a vertex already below grade (undeclared old data) is not sunk further, nor lifted', () => {
   // Face starts at -20: it may stay there (d = 0) but not go deeper.
   assert.equal(resolveFaceExtrudeDistance({
-    placement: PLACEMENT.GROUNDED, faceStartZs: [-20, -20, -20, -20], normalZ: -1, requested: 50,
+    floorZ: 0, faceStartZs: [-20, -20, -20, -20], normalZ: -1, requested: 50,
   }), 0)
   assert.equal(resolveFaceExtrudeDistance({
-    placement: PLACEMENT.GROUNDED, faceStartZs: [-20, -20, -20, -20], normalZ: -1, requested: -10,
+    floorZ: 0, faceStartZs: [-20, -20, -20, -20], normalZ: -1, requested: -10,
   }), -10)
 })
 
-test('ADR-169: a sketch on the floor extruded downward is stopped at height 0 (Solid policy)', () => {
-  // SceneService.allowedProfileHeight asks exactly this question.
-  const ask = requested => resolveFaceExtrudeDistance({
-    placement: placementFor(PLACEMENT_KIND.SOLID), faceStartZs: [0], normalZ: 1, requested,
-  })
-  assert.equal(ask(120), 120)
-  assert.equal(ask(-120), 0)
+test('ADR-170 S2: a sketch-born solid belongs to nothing, so a downward extrusion is not stopped', () => {
+  // SceneService.allowedProfileHeight asks exactly this question (floorZ: null).
+  const ask = (floorZ, requested) => resolveFaceExtrudeDistance({ floorZ, faceStartZs: [0], normalZ: 1, requested })
+  assert.equal(ask(null, 120), 120)
+  assert.equal(ask(null, -120), -120, 'no floor — ADR-170 D4 (ADR-169 stopped this at 0 by kind)')
+  assert.equal(ask(0, -120), 0, 'the day a sketch is born into a zone at 0, the floor stops it')
+})
+
+test('ADR-170 S2: a face is held by the floor its zone gives, and a floor above a face does not lift it', () => {
+  assert.equal(resolveFaceExtrudeDistance({ floorZ: 4000, faceStartZs: [4100, 4100], normalZ: -1, requested: 500 }), 100)
+  assert.equal(resolveFaceExtrudeDistance({ floorZ: 4000, faceStartZs: [0, 0], normalZ: -1, requested: 50 }), 0,
+    'a floor that came above the face later: not sunk further')
+  assert.equal(resolveFaceExtrudeDistance({ floorZ: 4000, faceStartZs: [0, 0], normalZ: -1, requested: -50 }), -50,
+    'nor lifted')
 })
 
 // ── level — ゾーンの板 (ADR-170 S1) ───────────────────────────────────────────
@@ -495,7 +550,7 @@ test('ADR-170: a Zone is its own kind and its policy is level; an untyped Region
   assert.equal(placementOf(zone), PLACEMENT.LEVEL)
   const note = new AnnotatedRegion('r1', 'R', [new Vertex('v', new Vector3())], null)
   assert.equal(placementOf(note), PLACEMENT.SUPPORTED)
-  assert.equal(hasGroundInvariant(PLACEMENT.LEVEL), false, 'a basement is a zone below Z = 0')
+  assert.equal(restsOnSurfaces(PLACEMENT.LEVEL), false, 'a basement is a zone below Z = 0')
 })
 
 test('ADR-170: level moves Z only when asked, and a refused height keeps the plate where it is', () => {

@@ -30,7 +30,8 @@ export class ImportedMesh {
     this.ifcClass = null
     /**
      * Declared intent to sit below grade (ADR-097 §Decision 6 / G3).
-     * `false` = undeclared = blocked. Written only through
+     * `false` = undeclared = blocked. Below the floor its zone gives — no zone,
+     * no floor, no flag (ADR-170 S2). Written only through
      * `SceneService.setBelowGradeIntent()`; re-derived on import, not serialized.
      * @type {boolean}
      */
