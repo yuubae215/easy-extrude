@@ -54,7 +54,10 @@ ADR を Supersede したとき。対象の絞り込み: $ARGUMENTS
    (Status の変更は人の採択事項 — 勝手に Accepted にしない)。
 
 5. **レポート → 承認後に Write.** 変更予定の全ファイルと差分を提示し、承認を得てから書く。
-   レポート様式:
+   レポートは `.claude/READABLE-OUTPUT.md` の形で出す — 先頭に要約 (3 行以内: 見た木の数 /
+   落ちた証拠の数 / 判断が要る件数) と「判断が要ること」を置き、下の表はその根拠として後ろに。
+   `Disapproved` `ToBeDeveloped` `support-exploring` などの状態名は初出で平易に言い換える
+   (例:「Disapproved (証拠を取り直したら主張が成り立たなかった)」)。レポート様式:
 
    ```
    # GSN maintenance report (HEAD <hash>, YYYY-MM-DD)

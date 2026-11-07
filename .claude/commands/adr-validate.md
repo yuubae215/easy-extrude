@@ -84,14 +84,21 @@ Key contracts to enforce:
 **ADR-017** — WebSocket Session Design.
 - WebSocket path: `/api/ws`. One session per connection. `SessionManager` handles lifecycle.
 
+## 報告の書き方 — 読み手のために
+
+報告は `.claude/READABLE-OUTPUT.md` の形で出す: **要約 (3 行以内) → 直すべき指摘を重い順に →
+詳細**。分類ラベル (`[ADR-NNN]` `[GAP]`) やチェック項目の記号は根拠の札であって説明ではないので、各指摘は
+「何が起きているか」「なぜ困るか」を平易な文で書き、記号・§番号は文末の括弧に置く。
+
 ### 5. Report findings
 
 For each violation:
 
 ```
 [ADR-NNN] File:line — Description of the violation
-  ADR rule: <quoted snippet from the ADR decision>
-  Suggested fix: <one-line suggestion>
+  なぜ困るか: <これを放置すると何が起きるか、1 文>
+  ADR が決めたこと: <決定の中身を平易な 1 文で> (引用: "<quoted snippet from the ADR decision>")
+  直し方: <one-line suggestion>
 ```
 
 If no violations are found, output: `✓ ADR-validate: all checked ADRs satisfied in <file list>`.
