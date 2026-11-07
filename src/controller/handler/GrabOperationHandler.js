@@ -123,6 +123,8 @@ export class GrabOperationHandler {
       stacking:        false,
       /** True once the below-grade warning toast fired this gesture (ADR-071, #11). */
       groundWarned:    false,
+      /** The policy refusal already shown this gesture (ADR-170 D5) — shown once, not every frame. @type {string|null} */
+      refusalShown:    null,
       /** Bottom-face centre at the landing surface while stacking (flash anchor). @type {{x:number,y:number,z:number}|null} */
       stackContact:    null,
       /** Last delta applied via _applyDeltaToAll; used for live coordinate display. */
@@ -230,6 +232,7 @@ export class GrabOperationHandler {
       s.stackMode = false
     }
     s.groundWarned    = false
+    s.refusalShown    = null
     s.startMouse.copy(ctrl._mouse)
     s.startCorners = ctrl._corners.map(c => c.clone())
     // Snapshot corners of every selected object for multi-object grab
@@ -361,6 +364,7 @@ export class GrabOperationHandler {
     s.stackMode     = true   // back to the assistive default (ADR-071)
     s.stacking      = false
     s.groundWarned  = false
+    s.refusalShown  = null
     this._snapFxPrev = { geometry: null, stack: null }
     ctrl._meshView.clearPivotDisplay()
     ctrl._meshView.clearSnapDisplay()
@@ -426,6 +430,7 @@ export class GrabOperationHandler {
     s.stackMode     = true   // back to the assistive default (ADR-071)
     s.stacking      = false
     s.groundWarned  = false
+    s.refusalShown  = null
     this._snapFxPrev = { geometry: null, stack: null }
     ctrl._opState.send('CANCEL')
     // Rubber-band: end drag animation; stay highlighted since entity is still selected.
@@ -842,7 +847,7 @@ export class GrabOperationHandler {
     s.lastDelta.copy(delta)
     // The handler asks; the entry decides. Every clamp this method used to run
     // afterwards now lives inside applyPreviewTranslation (ADR-097 §Decision 3).
-    const { stacking, stackContact } = ctrl._service.applyPreviewTranslation(
+    const { stacking, stackContact, refused } = ctrl._service.applyPreviewTranslation(
       s.segmentStartCorners,
       s.segmentStartPositions,
       delta,
@@ -850,6 +855,13 @@ export class GrabOperationHandler {
     )
     s.stacking = stacking
     if (stackContact) s.stackContact = stackContact
+    // The entry kept part of the request from happening (a zone height that
+    // would put a member on two floors — ADR-170 D5): say why, once per
+    // gesture, never a silent stop (原則 #11).
+    if (refused && s.refusalShown !== refused) {
+      s.refusalShown = refused
+      ctrl._uiView.showToast(refused, { type: 'warn' })
+    }
   }
 
   /**

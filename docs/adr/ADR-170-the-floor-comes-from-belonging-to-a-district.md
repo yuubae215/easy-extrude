@@ -1,11 +1,11 @@
 # 170. 床は地区への所属から来る — 重なりは導出、所属は宣言、床の高さは地区が持つ
 
-- Status: Proposed (2026-11-05 — D1〜D6 は当事者の答えから起こした。O1〜O3 が決まり、段ごとに `/whiteboard` の合意を得てから実装する)
+- Status: Accepted (2026-11-07 — 当事者が S1 の俯瞰で Q1〜Q4 に推奨どおり合意「あなたの推奨で良さそう」。**段階実装: S1 実装済み** (語彙と文書・ゾーンの高さ・D5 — 下の「実装メモ (S1)」)。S2 (床の入れ替え) / S3 (提示・交渉) は未着手で、各段の前に `/whiteboard` の合意を得る。O1〜O3 は未決) — 起票時: Proposed (2026-11-05)
 - Date: 2026-11-05
 - Deciders: yuubae215 (要求: 「オブジェクトを地面の上に置くときは、かならずマップオブジェクトを先に定義すること、とするのはどう？」/「マップオブジェクトは、実はどっちもです。前者は、ケヴィンリンチの都市のモデルをベースに… 後者は、工場の各階フロアまでモデル化を広げた場合」/「一手目で詰まるのは課題」/ 重なり・交渉・所属・地区 0 個・高さの違う地区・関係で決める の各回答 — 下の D), Claude (起票)
 - 状態台帳: `docs/STATE_LEDGER.md` §提案中の実体 の「地区への所属」「地区 (存在と高さ)」行
 - 段: なし (IA 再設計の順序表には載せない — 実装の段は本 ADR の §段 が持つ)
-- Retires: GREP:src/domain/placement.js::\[PLACEMENT_KIND\.SOLID\]:\s+PLACEMENT\.GROUNDED · GREP:src/domain/placement.js::\[PLACEMENT_KIND\.IMPORTED_MESH\]:\s+PLACEMENT\.GROUNDED
+- Retires: なし — 退役させる種類の `grounded` (Solid・ImportedMesh の行) は S2 で消える。S1 で Accepted にした時点では消せないので、退役ではなく**残し**として `docs/DEFERRAL_LEDGER.md` DEF-076 に降ろした (ADR-125。起票時はここに 2 番地を書いていた — ADR-168 / DEF-071 と同じ形)
 - Supersedes / Superseded by: ADR-097 の「床は種ごとの宣言」を「床は所属の関係から」へ置き換える (方針の入口・純粋な決定・床下の宣言の機構は継承)。ADR-169 の回転・押し出しの床は、床を持つ実体にだけ効く形に読み替わる。ADR-026 (Lynch 分類) の District に高さと所属を足す
 
 ## Context — Goal と力学
@@ -68,10 +68,13 @@ floorZ(e)    = belongs(e) = ∅ ? none : the one d.z                     — D4
 
 ## 段
 
-- **S1 語彙と文書**: 地区の高さ (D6)、所属 = `contains` (D3)、D5 の検査、重なりの導出 (D1)。
+- **S1 語彙と文書** (実装済み 2026-11-07): ゾーンの高さ (D6)、所属 = `contains` (D3)、D5 の検査。
+  重なりの導出 (D1) は使う側 (交渉) と一緒に S3 へ移した (俯瞰 Q4)。
 - **S2 床の入れ替え**: 方針を種類から所属へ (D4)。`PosePolicyOwnership.test.js` の母集団に
   「床を持つか」の決定を入れる。既存シーンの読み (地区 0 = 床なし) の移行。
-- **S3 提示**: 所属の提案と「地区の外」状態 (D3)、所有者の違う重なりの交渉 (D2)。
+- **S3 提示**: 重なりの導出 (D1)、所有者の違う重なりの交渉 (D2)。所属の提案と「地区の外」の状態 (D3) は
+  既存の推論 (`SemanticInferencer` の Contains) と `contains` の違反 (「Escaped outside the Zone」) が既に持っていた —
+  S3 で足すのは、それを所属の語で言い直すことだけ。
 
 各段は `/whiteboard` の §0〜§6 を出して合意を得てから実装する (CLAUDE.md §ADR の段の実装)。
 
@@ -83,3 +86,46 @@ floorZ(e)    = belongs(e) = ∅ ? none : the one d.z                     — D4
 - **床は地区の中にだけ在る (重なりで決める)**: 地区の端から物をはみ出させた瞬間に床が消える。
   所属の宣言なら物について回る。
 - **高い方の地区の高さを取る**: 描き順で同じ物が上下する。D5 で多重の高さそのものを拒否する。
+
+## 実装メモ (S1 — 2026-11-07)
+
+俯瞰 (`/whiteboard`) で当事者が合意した読み (Q1〜Q4、すべて推奨どおり):
+
+- **Q1 ゾーンの高さは宣言。** 板の頂点が共有する Z をそのまま高さと読む — 別の欄は足さない (板は既に
+  1 つの Z を持ち、scene / Layout の頂点に保存されている。欄を足せば頂点の Z と 2 か所に書く — §1.1)。
+- **Q2 地区 = `placeType: 'Zone'` の Region だけ。** 種類の無い Region はメモ。同一性は `isZone()`
+  ただ 1 つ (`IDENTITY_RULES`)。`AnnotatedRegionView` の 3 か所の `=== 'Zone'` も同じ述語へ寄せた。
+- **Q3 高さの変更で D5 が破れるなら、理由を出して止める。**
+- **Q4 重なりの導出 (D1) は S3 へ。** S1 では誰も呼ばない。
+
+語彙 (辞書を先に): `QUOTIENT_TABLE` に分類 `place` (scoped) を足し、`zone` / `contains` / `elevation` を置いた。
+概念モデルは `docs/SPATIAL_RELATION_MODEL.md` §6 — §3 は 2 つの物の間の語なので混ぜず、§6 と辞書と
+コードを `src/SpatialRelationModelDoc.test.js` が両向きに縛る。**Lynch の District はコード上もう無く
+(ADR-029 で Zone)、当事者の「地区」はこの Zone を指す。**
+
+**俯瞰より踏み込んだところ (俯瞰と実装の食い違い — 原則 #19):** Q1 (b) の帰結として、ゾーンに配置方針
+`level` を足した。俯瞰は「注釈を下の面に貼り付ける処理 (Q1 の答え次第)」を blast radius に挙げただけで、
+新しい方針の語は §0 に書いていなかった。既存の `supported` は動かすたびに板の Z を下の面から導き直すので、
+宣言した高さ (2F・地下) は最初のドラッグで上書きされる。`level` = 水平に動き、Z は数値か Z 拘束でだけ変わり、
+床の不変条件を持たない (地下は負の高さ)。マウント (ADR-032) の毎フレームの追従も Z を保つ。
+
+D5 を破れる入口は 4 つで、それぞれ名前の付いた問いを持つ (`src/domain/zone.js`):
+
+| 入口 | 問い | 呼び手 |
+|---|---|---|
+| 所属を宣言する | `containsRefusal` | `createSpatialLink` (受け止め) / `LinkCreationHandler.createDirect` (理由を出す) |
+| ゾーンの高さを変える | `elevationChangeRefusal` | `_policyDelta` の `level` 枝 → `applyPreviewTranslation` が `refused` を返し、Grab と N パネルが理由を出す |
+| Region をゾーンにする | `placeTypeRefusal` | N パネルの Place Type |
+| ファイルを読む | `zoneElevationConflicts` | `LayoutValidator` (報告して読み込まない) |
+
+undo / redo は問いを通さない (通った状態へ戻るだけ)。呼び手の個数は `src/ZoneElevationOwnership.test.js` が
+`src/**` から導出して数える — 問いを先に引かない呼び手が 1 つ増えれば落ちる (UI の 2 つの問いを外すと
+2 件を file:line つきで出すことを確認)。
+
+**検証:** `pnpm test` 全件 green (`zone.test.js` 8、`placement.test.js` +3、`LayoutValidatorZone.test.js` 5、
+`SpatialRelationModelDoc.test.js` +2、`ZoneElevationOwnership.test.js` 3、`IdentityContainment` の新しい規則は
+旧 `AnnotatedRegionView` の 3 か所を検出)。`e2e/zone-elevation.spec.js` 3 passed — 4000 / −3000 のゾーンが
+`level` でその高さに居て X に動かしても Z を保つ / 2 階に分かれる高さの変更が理由つきで止まり、単独のゾーンは
+地下へ行ける / 2 階にまたがるファイルは読み込まれず理由が出る。D5 の問いを外すと 2 本目が落ちることも確認した。
+**e2e が見ていないもの:** L キーで `contains` を作る経路と N パネルの Place Type の経路は、単体 (`zone.test.js`) と
+呼び手の census だけで問うていて、画面で押してはいない。

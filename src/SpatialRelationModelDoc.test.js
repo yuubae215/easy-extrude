@@ -70,3 +70,40 @@ test('every phrase of the dictionary is in the document\'s phrase table, and the
   assert.deepEqual(inCode.filter(k => !inDoc.includes(k)), [], 'phrases in PHRASE_TABLE but not in docs/SPATIAL_RELATION_MODEL.md §3')
   assert.deepEqual(inDoc.filter(k => !inCode.includes(k)), [], 'phrases in the document but not in PHRASE_TABLE')
 })
+
+// ── §6 — the place words (ADR-170) ───────────────────────────────────────────
+// Same discipline as §3, for the words between a thing and a PLACE. The
+// population is §6's own table and the dictionary's `place` category; each
+// word is also pinned to what it names in code.
+
+function placeTableWords() {
+  const start = doc.indexOf('## 6.')
+  assert.ok(start >= 0, '§6 (the place words) is missing from the model document')
+  const end = doc.indexOf('\n## ', start + 1)
+  return doc.slice(start, end < 0 ? undefined : end)
+    .split('\n')
+    .filter(l => l.startsWith('| ') && !l.startsWith('| 語') && !l.startsWith('|---'))
+    .flatMap(row => [...row.split('|')[1].matchAll(/`([^`]+)`/g)].map(m => m[1]))
+}
+
+test('§6 and the dictionary\'s place category name the same words, both ways (ADR-170)', () => {
+  const docWords  = new Set(placeTableWords())
+  const dictWords = new Set(QUOTIENT_TABLE.filter(e => e.cat === 'place').map(e => e.key))
+  assert.deepEqual([...dictWords].filter(w => !docWords.has(w)), [], 'in the dictionary (cat place) but not in §6')
+  assert.deepEqual([...docWords].filter(w => !dictWords.has(w)), [], 'in §6 but not in the dictionary (cat place)')
+})
+
+test('each place word names something the code has (ADR-170)', async () => {
+  const { ZONE_PLACE_TYPE, plateElevationOf } = await import('./domain/zone.js')
+  const { SEMANTIC_TYPES } = await import('./domain/SpatialLink.js')
+  const { PLACE_TYPE_MAP } = await import('./domain/PlaceTypeRegistry.js')
+  const named = {
+    zone:      () => PLACE_TYPE_MAP.has(ZONE_PLACE_TYPE),
+    contains:  () => SEMANTIC_TYPES.includes('contains'),
+    elevation: () => typeof plateElevationOf === 'function',
+  }
+  for (const w of placeTableWords()) {
+    assert.ok(named[w], `§6 word "${w}" has no pin to code here — say what it names`)
+    assert.ok(named[w](), `§6 word "${w}" names nothing in code`)
+  }
+})

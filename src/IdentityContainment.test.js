@@ -45,6 +45,16 @@ import { collectSources, stripComments, relPath, repoPath } from './census/sourc
 /** @type {IdentityRule[]} */
 const IDENTITY_RULES = [
   {
+    // ADR-170 S1。「この Region はゾーンか」は所属と床の高さ (D5) の母集団を決める。
+    // 呼び出し側で placeType === 'Zone' を書き直すと、名前の付いていない Region を
+    // ゾーンと数える判定がいつか生まれ、1 実体 1 高さの検査がその Region を見落とす。
+    name: 'ゾーンの同一性 (placeType の値比較)',
+    owners: ['src/domain/zone.js'],
+    use: "isZone(obj) / isZonePlaceType(placeType)  — import from 'src/domain/zone.js'",
+    all: [/placeType\s*[!=]==?|[!=]==?\s*[\w.]*placeType/i, /['"`]Zone['"`]|ZONE_PLACE_TYPE/],
+    why: 'どれがゾーンかが 2 か所で決まると、所属 (contains) と床の高さの規則 (ADR-170 D5) が別々の母集団を数える',
+  },
+  {
     name: 'robot_base の同一性 (名前 + 親が null)',
     owners: ['src/domain/robotFrames.js'],
     use: "isRobotBaseFrame(obj)  — import { isRobotBaseFrame } from 'src/domain/robotFrames.js'",

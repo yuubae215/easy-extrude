@@ -880,6 +880,9 @@ export class AppController {
       const obj = this._activeObj
       if (!obj) return
       const oldType = obj.placeType ?? null
+      // Becoming a zone makes what the region contains belong to it (ADR-170 D5).
+      const refused = this._service.placeTypeRefusal(obj.id, placeType)
+      if (refused) { this._uiView.showToast(refused, { type: 'warn' }); this._updateNPanel(); return }
       this._service.setPlaceType(obj.id, placeType)        // apply first (post-hoc push pattern)
       const cmd = createSetPlaceTypeCommand(obj.id, oldType, placeType ?? null, this._service)
       this._commandStack.push(cmd)
@@ -931,7 +934,8 @@ export class AppController {
       const startCorners = new Map([[obj.id, corners.map(c => c.clone())]])
       const startPositions = (obj instanceof Solid)
         ? new Map([[obj.id, obj._position.clone()]]) : null
-      this._service.applyPreviewTranslation(startCorners, startPositions, delta)
+      const { refused } = this._service.applyPreviewTranslation(startCorners, startPositions, delta)
+      if (refused) { this._uiView.showToast(refused, { type: 'warn' }); this._updateNPanel() }
       if (this._objSelected) obj.meshView.updateBoxHelper()
     })
 

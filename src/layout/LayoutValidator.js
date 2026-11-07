@@ -17,6 +17,7 @@ import {
 import { hollowBodyGap, trayNormalFormGap } from '../domain/hollowBody.js'
 import { viewerFrameGap } from '../domain/viewerFrame.js'
 import { isRetiredRelationWord, unclaimedIssues } from './LegacyRelations.js'
+import { isZonePlaceType, plateElevationOf, zoneElevationConflicts } from '../domain/zone.js'
 
 export function validateLayoutDsl(dsl) {
   const errors = []
@@ -176,6 +177,26 @@ export function validateLayoutDsl(dsl) {
     } else if (!c.semanticType || !VALID_SEMANTIC_TYPES.includes(c.semanticType)) {
       errors.push(`constraints[${i}].semanticType "${c.semanticType}" is not valid. Use one of: ${VALID_SEMANTIC_TYPES.join(', ')}`)
     }
+  }
+
+  // Zones (ADR-170 S1): a zone's plate is level — its vertices share one Z, and
+  // that Z is the floor its members stand on. One thing belongs to zones of one
+  // elevation only (D5): a file that says otherwise is reported, never rewritten.
+  const zones = []
+  for (const [i, e] of dsl.entities.entries()) {
+    if (!e || e.type !== 'AnnotatedRegion' || !isZonePlaceType(e.placeType)) continue
+    const elevation = plateElevationOf((e.vertices ?? []).map(v => ({ z: v?.z ?? 0 })))
+    if (elevation === null) {
+      errors.push(`entities[${i}] (Zone "${e.ref}") vertices must share one Z — a zone's plate is level and that Z is its elevation (ADR-170)`)
+    }
+    zones.push({ id: e.ref, name: e.name, elevation })
+  }
+  const contains = (dsl.constraints ?? [])
+    .filter(c => c && c.semanticType === 'contains')
+    .map(c => ({ zoneId: c.source, thingId: c.target }))
+  for (const { thingId, zones: zs } of zoneElevationConflicts({ zones, contains })) {
+    const where = zs.map(z => `"${z.id}" (${z.elevation === null ? 'not level' : `Z = ${z.elevation}`})`).join(', ')
+    errors.push(`"${thingId}" belongs to zones at more than one elevation: ${where} — one thing stands on one floor (ADR-170 D5)`)
   }
 
   // Unclaimed relations (ADR-168 S2-2): what a retired word said, kept until

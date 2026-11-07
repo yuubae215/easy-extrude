@@ -485,3 +485,29 @@ test('ADR-169: a sketch on the floor extruded downward is stopped at height 0 (S
   assert.equal(ask(120), 120)
   assert.equal(ask(-120), 0)
 })
+
+// ── level — ゾーンの板 (ADR-170 S1) ───────────────────────────────────────────
+
+test('ADR-170: a Zone is its own kind and its policy is level; an untyped Region stays supported', () => {
+  const zone = new AnnotatedRegion('z1', 'Z', [new Vertex('v', new Vector3())], null)
+  zone.placeType = 'Zone'
+  assert.equal(placementKindOf(zone), PLACEMENT_KIND.ZONE)
+  assert.equal(placementOf(zone), PLACEMENT.LEVEL)
+  const note = new AnnotatedRegion('r1', 'R', [new Vertex('v', new Vector3())], null)
+  assert.equal(placementOf(note), PLACEMENT.SUPPORTED)
+  assert.equal(hasGroundInvariant(PLACEMENT.LEVEL), false, 'a basement is a zone below Z = 0')
+})
+
+test('ADR-170: level moves Z only when asked, and a refused height keeps the plate where it is', () => {
+  const ask = (requested, elevationRefusal = null) =>
+    resolvePlacementDelta({ placement: PLACEMENT.LEVEL, requested, startBottomZ: 0, elevationRefusal })
+  assert.deepEqual(ask({ x: 10, y: 20, z: 0 }), { x: 10, y: 20, z: 0 }, 'a horizontal drag')
+  assert.deepEqual(ask({ x: 0, y: 0, z: 4000 }), { x: 0, y: 0, z: 4000 }, 'Z typed or Z-constrained')
+  assert.deepEqual(ask({ x: 0, y: 0, z: -3000 }), { x: 0, y: 0, z: -3000 }, 'no floor under a zone — a basement')
+  assert.deepEqual(ask({ x: 5, y: 0, z: 4000 }, 'two floors'), { x: 5, y: 0, z: 0 })
+})
+
+test('ADR-170: a zone is dragged on the horizontal plane, whatever the camera does', () => {
+  const n = dragPlaneNormalFor({ placement: PLACEMENT.LEVEL, cameraNormal: { x: 0.3, y: 0.3, z: 0.9 } })
+  assert.deepEqual(n, { x: 0, y: 0, z: 1 })
+})

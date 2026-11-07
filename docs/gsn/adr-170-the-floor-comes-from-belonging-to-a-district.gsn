@@ -3,14 +3,14 @@ GOALS adr170_the_floor_comes_from_belonging_to_a_district
 goal WhereAThingStandsIsDeclaredByPlace
 uuid 3244f147-eeb7-40cc-b5ca-57a17a9aca86
 summary "物がどこに属し、どの床に立つかが場所 (地区) の宣言として文書に残り、何も定義していないシーンでも最初の一手が詰まらない"
-state ToBeDeveloped
+state UnderReview
 labels adr-170, placement, term-p-operate, change-manipulation
 artifacts
 - "docs/adr/ADR-170-the-floor-comes-from-belonging-to-a-district.md"
 
     context Adr170Scope
     uuid 08335655-2227-4c8c-a6a0-a3e01223cdf7
-    summary "ADR-170 (Proposed 2026-11-05): 重なりは導出 (D1)、所有者の違う重なりは交渉 (D2)、所属は contains の宣言 (D3)、床は所属から (D4)、1 実体 1 高さ (D5)、地区が高さを持つ (D6)。O1 ロボット台座 / O2 所有者 / O3 S キーが未決"
+    summary "ADR-170 (Accepted 2026-11-07 — S1 実装済み; 起票 2026-11-05): 重なりは導出 (D1)、所有者の違う重なりは交渉 (D2)、所属は contains の宣言 (D3)、床は所属から (D4)、1 実体 1 高さ (D5)、地区が高さを持つ (D6)。O1 ロボット台座 / O2 所有者 / O3 S キーが未決"
 
     context RequirementCameFromTheOwner
     uuid e8ecbc1f-821f-481d-9bdd-e38f37540fa0
@@ -27,7 +27,7 @@ artifacts
 
             assumption ASceneWithNoDistrictBlocksNothingWillBeSettled
             uuid c1428c17-ebf0-41da-8d22-782cd6e1d7e6
-            summary "未着手。証拠予定: S2 で placement.test.js に『所属なし = 床なし』の表を置き、実アプリで地区 0 のシーンの Grab が Z<0 へ行けることを測る。満期=ADR-170"
+            summary "未着手 (S2)。証拠予定: placement.test.js に『所属なし = 床なし』の表を置き、実アプリで地区 0 のシーンの Grab が Z<0 へ行けることを測る。満期は種類の床の行が消えたとき (DEF-076 と同じ番地): 満期=GONE:src/domain/placement.js::\[PLACEMENT_KIND\.SOLID\]:\s+PLACEMENT\.GROUNDED 。"
 
         goal BelongingSurvivesLeavingTheDistrict
         uuid 24bd5fed-3581-42f7-8a26-0f977494762d
@@ -36,16 +36,26 @@ artifacts
 
             assumption BelongingSurvivesLeavingTheDistrictWillBeSettled
             uuid 66649e49-7836-4ac6-8eaa-7382fb4e3645
-            summary "未着手。証拠予定: S2/S3 で、所属の宣言が幾何から書き換えられないこと (所属の書き手の個数) と状態の表を node --test で問う。満期=ADR-170"
+            summary "一部入った (S1): 所属は contains の宣言で、物を外へ動かしても消えない (既存のリンク) — 外にいる間は既存の判定が Escaped outside the Zone を出す。入っていないもの: 床を保つ (S2)。満期は種類の床の行が消えたとき: 満期=GONE:src/domain/placement.js::\[PLACEMENT_KIND\.SOLID\]:\s+PLACEMENT\.GROUNDED 。"
 
         goal OneThingStandsOnOneHeight
         uuid 57fec11f-7ff0-4ed5-8fa0-807d91fff21f
-        summary "1 つの実体は 1 つの高さの地区にしか所属できず、違う高さへの所属は理由つきで拒否される"
-        labels support-exploring
+        summary "1 つの実体は 1 つの高さのゾーンにしか所属できず、違う高さへの所属は理由つきで拒否される — 所属の宣言・ゾーンの高さの変更・Region をゾーンにする・ファイルの 4 入口のどれからも"
+        labels support-verified
 
-            assumption OneThingStandsOnOneHeightWillBeSettled
-            uuid 0894160a-9707-44c0-817b-306dca5b060b
-            summary "未着手。証拠予定: S1 で文書の検査 (Validator) に D5 を足し、違う高さの 2 地区への contains が error になる fixture を置く。満期=ADR-170"
+            solution ZoneRulesAreExecuted
+            uuid e92ec6ab-8cb1-48c8-bfde-b69f3599d68a
+            summary "node --test src/domain/zone.test.js (4 入口それぞれの拒否と理由・同じ高さは許す・地下は許す・ゾーンでない Region は所属ではない) + src/layout/LayoutValidatorZone.test.js (2 階にまたがるファイルを報告) + src/ZoneElevationOwnership.test.js (問いを先に引かない呼び手 0 — UI の 2 つの問いを外すと 2 件を file:line で検出することを確認)"
+            artifacts
+            - "src/domain/zone.test.js"
+            - "src/layout/LayoutValidatorZone.test.js"
+            - "src/ZoneElevationOwnership.test.js"
+
+            solution ZoneRefusalReachesThePerson
+            uuid 620f9f72-6f63-48ab-b000-0074b856353b
+            summary "e2e/zone-elevation.spec.js 3 passed (2026-11-07): 4000 / −3000 のゾーンが level でその高さに居る / 2 階に分かれる高さの変更が toast の理由つきで止まり Z は 0 のまま / 2 階にまたがるファイルは読み込まれない。_policyDelta の問いを外すと 2 本目が落ちる。L キーと Place Type の経路は画面では押していない (単体と census のみ)"
+            artifacts
+            - "e2e/zone-elevation.spec.js"
 
         goal OverlapAcrossOwnersGoesToNegotiation
         uuid d2e6a10d-423f-49d7-ba70-5c0ae8318fb8
@@ -54,4 +64,4 @@ artifacts
 
             assumption OverlapAcrossOwnersGoesToNegotiationWillBeSettled
             uuid 160d4ef8-6476-4a3a-a6ea-908a72c52ffb
-            summary "未着手。O2 (所有者とは誰か) が決まってから。証拠予定: S3 で RequirementGraph の衝突に地区の重なりが現れる fixture。満期=ADR-170"
+            summary "未着手 (S3)。O2 (所有者とは誰か) が決まってから。証拠予定: 重なりの導出 (D1 — S1 の俯瞰 Q4 で S3 へ移した) と、RequirementGraph の衝突に所有者の違うゾーンの重なりが現れる fixture。満期=GREP:src/domain/zone.js::zoneOverlaps"

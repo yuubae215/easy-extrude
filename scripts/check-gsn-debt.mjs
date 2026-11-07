@@ -425,7 +425,11 @@ const SUPPORT_LABELS = new Map([
 // が発火した。残る 2 つ (場面に効く / 進入スライドと区別できる) は絵の証拠 = e2e/grasp-replay.spec.js へ張り替え。
 // 2026-11-05: 38 → 42。ADR-170 (Proposed — 床は地区への所属から) を起票し、実装前の 4 goal を exploring で
 // 宣言した。満期はどれも機械可読 (満期=ADR-170 — Accepted で発火) なので分子 (G3) は動かない。
-const DEBT_BASELINE = 42
+// 2026-11-07: 42 → 41。ADR-170 S1 で OneThingStandsOnOneHeight が support-verified へ (zone / LayoutValidatorZone /
+// ZoneElevationOwnership の node --test + e2e/zone-elevation.spec.js)。ADR-170 が Accepted になり満期=ADR-170 が
+// 発火するので、残る 3 goal の満期は S2 (GONE:…placement.js::SOLID の grounded 行) / S3 (GREP:…zone.js::zoneOverlaps) へ
+// 張り替えた (どれも機械可読 — G3 は動かない)。
+const DEBT_BASELINE = 41
 
 /**
  * G3 — 満期 trigger を持たない exploring goal の個数 (実測値)。

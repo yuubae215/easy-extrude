@@ -94,6 +94,9 @@ import {
   stackAssistApplies, supportProbeOf, footprintSamplesFor, bottomZFor,
   probeNeedsWorldOrigin, providesSupportSurface,
 } from '../domain/placement.js'
+import {
+  containsRefusal, elevationChangeRefusal, placeTypeRefusal, plateElevationOf,
+} from '../domain/zone.js'
 
 /**
  * Minimum 2D (XY-projected) distance from any polyline segment to any point.
@@ -1342,6 +1345,11 @@ export class SceneService extends EventEmitter {
         const seatZ = this.highestSurfaceAt(
           corners.map(c => ({ x: c.x, y: c.y })), [sourceId]).z
         corners.forEach(c => { c.z = seatZ })
+      } else if (placementOf(source) === PLACEMENT.LEVEL) {
+        // A zone's Z is its declared elevation (ADR-170): a host carries it
+        // across the plane but never up or down — the same one-writer rule.
+        const keepZ = plateElevationOf(source.corners)
+        if (keepZ !== null) corners.forEach(c => { c.z = keepZ })
       }
 
       source.vertices.forEach((v, i) => { if (corners[i]) v.position.copy(corners[i]) })
@@ -2479,6 +2487,54 @@ export class SceneService extends EventEmitter {
    * @param {string} id
    * @param {string|null} placeType  e.g. 'Route', 'Zone', 'Hub', or null to unclassify
    */
+  /**
+   * Why `sourceId —semanticType→ targetId` may not be declared, or `null`
+   * (ADR-170 D5 — only `contains` from a zone is governed: it is belonging).
+   * @param {string} sourceId
+   * @param {string} targetId
+   * @param {string} semanticType
+   * @returns {string|null}
+   */
+  spatialLinkRefusal(sourceId, targetId, semanticType) {
+    if (semanticType !== 'contains') return null
+    return containsRefusal({
+      zone:      this._model.getObject(sourceId),
+      thing:     this._model.getObject(targetId),
+      links:     this._model.links.values(),
+      getObject: id => this._model.getObject(id),
+    })
+  }
+
+  /**
+   * Why the zone `obj` may not stand at `newZ`, or `null` (ADR-170 D5).
+   * @param {*} obj
+   * @param {number} newZ
+   * @returns {string|null}
+   */
+  zoneElevationRefusal(obj, newZ) {
+    return elevationChangeRefusal({
+      zone: obj, newZ,
+      links:     this._model.links.values(),
+      getObject: id => this._model.getObject(id),
+    })
+  }
+
+  /**
+   * Why entity `id` may not take `placeType`, or `null` — becoming a zone makes
+   * what the region contains belong to it (ADR-170 D5). Asked by the user
+   * entry; `setPlaceType` itself stays the plain write that undo/redo replay.
+   * @param {string} id
+   * @param {string|null} placeType
+   * @returns {string|null}
+   */
+  placeTypeRefusal(id, placeType) {
+    return placeTypeRefusal({
+      region: this._model.getObject(id), newPlaceType: placeType,
+      links:     this._model.links.values(),
+      getObject: oid => this._model.getObject(oid),
+    })
+  }
+
   setPlaceType(id, placeType) {
     const obj = this._model.getObject(id)
     if (!obj) return
@@ -2562,6 +2618,9 @@ export class SceneService extends EventEmitter {
    * @returns {SpatialLink}
    */
   createSpatialLink(sourceId, targetId, jointType, semanticType, properties = {}) {
+    // One thing stands on one height (ADR-170 D5). Callers ask
+    // `spatialLinkRefusal` first to say why; this is the backstop, not the message.
+    if (this.spatialLinkRefusal(sourceId, targetId, semanticType)) return null
     const id   = `link_${Date.now()}`
     const link = new SpatialLink(id, sourceId, targetId, jointType, semanticType, properties)
     this._model.addLink(link)
@@ -3214,8 +3273,25 @@ export class SceneService extends EventEmitter {
    * @param {Set<string>} movingIds  entities moving together (excluded from the probe)
    * @returns {import('three').Vector3} the delta the policy allows
    */
-  _policyDelta(obj, startCorners, worldDelta, movingIds) {
+  _policyDelta(obj, startCorners, worldDelta, movingIds, refusals = null) {
     const placement = placementOf(obj)
+    if (placement === PLACEMENT.LEVEL) {
+      // A zone's Z changes only when asked, and never to a height that would put
+      // one of its members on two floors (ADR-170 D5). The reason goes back to
+      // the caller through `refusals` so the gesture can say why (原則 #11).
+      const startZ = plateElevationOf(startCorners)
+      const refusal = (worldDelta.z !== 0 && startZ !== null)
+        ? this.zoneElevationRefusal(obj, startZ + worldDelta.z)
+        : null
+      if (refusal) refusals?.push(refusal)
+      const d = resolvePlacementDelta({
+        placement,
+        requested:        { x: worldDelta.x, y: worldDelta.y, z: worldDelta.z },
+        startBottomZ:     startZ ?? 0,
+        elevationRefusal: refusal,
+      })
+      return new Vector3(d.x, d.y, d.z)
+    }
     if (!hasGroundInvariant(placement)) return worldDelta.clone()
 
     const startBottomZ = this._segmentStartBottomZ(obj, startCorners)
@@ -3268,9 +3344,11 @@ export class SceneService extends EventEmitter {
    *   (ADR-071's remaining value: "put it on top of that", never "make a floor").
    *   Which entities that reaches is decided by their declared policy, not by
    *   their type (ADR-098 §Decision 1).
-   * @returns {{stacking: boolean, stackContact: {x:number,y:number,z:number}|null}}
+   * @returns {{stacking: boolean, stackContact: {x:number,y:number,z:number}|null, refused: string|null}}
    *   the stack-assist outcome, for the caller's snap FX (the handler owns the
-   *   feedback, the service owns the geometry).
+   *   feedback, the service owns the geometry), and the reason the policy kept
+   *   part of the request from happening — today only a zone height that would
+   *   put a member on two floors (ADR-170 D5). The caller shows it (原則 #11).
    */
   applyPreviewTranslation(segStartCorners, segStartPositions, worldDelta, options = {}) {
     const { stackAssist = false, activeId = null } = options
@@ -3282,10 +3360,12 @@ export class SceneService extends EventEmitter {
     // result back onto the input (PHILOSOPHY #24, ADR-101).
     /** @type {Map<string, import('three').Vector3>} */
     const appliedDeltas = new Map()
+    /** @type {string[]} reasons the policy refused part of the request (ADR-170 D5) */
+    const refusals = []
     for (const [id, startCorners] of segStartCorners) {
       const obj = this._model.getObject(id)
       if (!obj) continue
-      const delta = this._policyDelta(obj, startCorners, worldDelta, movingIds)
+      const delta = this._policyDelta(obj, startCorners, worldDelta, movingIds, refusals)
       appliedDeltas.set(id, delta)
       this._applyEntityDelta(obj, startCorners, segStartPositions?.get(id), delta)
     }
@@ -3293,7 +3373,7 @@ export class SceneService extends EventEmitter {
     const stackContact = stackAssist
       ? this._applyStackAssist(segStartCorners, segStartPositions, appliedDeltas, activeId, movingIds)
       : null
-    return { stacking: stackContact !== null, stackContact }
+    return { stacking: stackContact !== null, stackContact, refused: refusals[0] ?? null }
   }
 
   /**
