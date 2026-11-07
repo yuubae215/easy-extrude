@@ -171,6 +171,9 @@ export class LinkCreationHandler {
    */
   createDirect(sourceId, targetId, option) {
     const { _ctrl: ctrl } = this
+    // One thing stands on one height (ADR-170 D5): a refused belonging says why.
+    const refused = ctrl._service.spatialLinkRefusal(sourceId, targetId, option.semanticType)
+    if (refused) { ctrl._uiView.showToast(refused, { type: 'warn' }); return }
     const link = ctrl._service.createSpatialLink(sourceId, targetId, option.jointType, option.semanticType, option.properties ?? {})
     ctrl._commandStack.push(createSpatialLinkCommand(link, ctrl._service))
     ctrl._uiView.showToast(`Link created: ${option.label}`)

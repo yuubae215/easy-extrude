@@ -51,6 +51,7 @@ import { getPlaceTypeEntry } from '../domain/PlaceTypeRegistry.js'
 import { prefersReducedMotion, onReducedMotionChange } from '../theme/motion.js'
 import { EntityLabel } from './EntityLabel.js'
 import { idleClock } from './MotionMath.js'
+import { isZonePlaceType } from '../domain/zone.js'
 import { edgeBand, lightCurtain } from './FloorLightGeometry.js'
 import {
   phaseFor, zoneFillFrame, zoneRimFrame, floorLightGains, lightTint,
@@ -206,7 +207,7 @@ export class AnnotatedRegionView {
       })
       const mesh = new THREE.Mesh(this._rimGeo, mat)
       mesh.renderOrder = 1
-      mesh.visible = (placeType === 'Zone')
+      mesh.visible = isZonePlaceType(placeType)
       this._group.add(mesh)
       this._rims.push({ mesh, mat })
     }
@@ -368,7 +369,7 @@ export class AnnotatedRegionView {
     else if (this._group.scale.x !== 1) this._group.scale.setScalar(1)
 
     // The light: role × view angle × (Zone) per-entity breath.
-    const isZone = this._placeType === 'Zone'
+    const isZone = isZonePlaceType(this._placeType)
     const gain = selectedEmphasis(this._placeType, sel, { urgent: this._containsViolated })
     const view = floorLightGains(elevation)
     const breath = isZone
@@ -466,7 +467,7 @@ export class AnnotatedRegionView {
     this._placeType = placeType
     this._applyColors()
     this._fillMat.opacity = FILL_OPACITY
-    const isZone = placeType === 'Zone'
+    const isZone = isZonePlaceType(placeType)
     for (const r of this._rims) r.mesh.visible = isZone
     this._label?.setAccent(this._cssColor(placeType))
   }

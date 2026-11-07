@@ -81,6 +81,8 @@ const KIND_FINGERPRINT = Object.freeze({
  */
 const CENSUS_REGISTRY = [
   // ── pose の入口と方針 (ADR-097 / ADR-098 / ADR-101 / ADR-102) ──
+  { file: 'src/ZoneElevationOwnership.test.js', table: 'GUARDED_WRITES', kind: KIND.SHAPE_CENSUS,
+    why: '1 実体 1 高さ (ADR-170 D5) を破れる書き込みの呼び手を src/** から数え、問いを先に引かない呼び手を 0 に保つ — 復元 (undo/redo・作った直後) は理由つきで宣言' },
   { file: 'src/PosePolicyOwnership.test.js', table: 'POSE_WRITE_RULES',            kind: KIND.SHAPE_CENSUS,
     why: 'pose を書く呼び出しの形を並べ、所有者の外の個数を src/** 全体で数える' },
   { file: 'src/PosePolicyOwnership.test.js', table: 'LIVE_PROBES',                 kind: KIND.SHAPE_CENSUS,

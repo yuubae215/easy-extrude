@@ -14,7 +14,6 @@ import {
   computeOutwardFaceNormal,
   getCentroid,
   collectSnapTargets,
-  DEFAULT_HALF_EXTENT,
 } from '../model/CuboidModel.js'
 import { SceneService }    from '../service/SceneService.js'
 import { Solid }           from '../domain/Solid.js'
@@ -881,6 +880,9 @@ export class AppController {
       const obj = this._activeObj
       if (!obj) return
       const oldType = obj.placeType ?? null
+      // Becoming a zone makes what the region contains belong to it (ADR-170 D5).
+      const refused = this._service.placeTypeRefusal(obj.id, placeType)
+      if (refused) { this._uiView.showToast(refused, { type: 'warn' }); this._updateNPanel(); return }
       this._service.setPlaceType(obj.id, placeType)        // apply first (post-hoc push pattern)
       const cmd = createSetPlaceTypeCommand(obj.id, oldType, placeType ?? null, this._service)
       this._commandStack.push(cmd)
@@ -932,7 +934,8 @@ export class AppController {
       const startCorners = new Map([[obj.id, corners.map(c => c.clone())]])
       const startPositions = (obj instanceof Solid)
         ? new Map([[obj.id, obj._position.clone()]]) : null
-      this._service.applyPreviewTranslation(startCorners, startPositions, delta)
+      const { refused } = this._service.applyPreviewTranslation(startCorners, startPositions, delta)
+      if (refused) { this._uiView.showToast(refused, { type: 'warn' }); this._updateNPanel() }
       if (this._objSelected) obj.meshView.updateBoxHelper()
     })
 
@@ -1474,43 +1477,22 @@ export class AppController {
   }
 
   /**
-   * One-time tidy of the boot starter cube (ADR-089 follow-up): the default
-   * Solid is centred on the origin, so half of it sinks below the ground plane.
-   * REST it — lift the centroid by exactly one half-extent so the base sits on
-   * z=0 — through the aggregate `setPose` API (§1.1 — no direct field pokes).
-   * No-op when the active object is not a Solid (defensive; the boot path
-   * always adds one first).
-   *
-   * This method no longer RESIZES. It used to halve `localCorners` and write a
-   * literal `0.5` centroid, which was a second writer of the default-size fact:
-   * when ADR-136 rescaled `createInitialCorners()` to mm it did not reach this
-   * line, so the metre-era `0.5` left the starter cube 24.5mm underground —
-   * exactly the defect this tidy exists to prevent. Size now has one owner
-   * (`DEFAULT_HALF_EXTENT`) and this method only places it (ADR-137).
-   */
-  /**
    * THE default scene: one starter cube resting on the ground, framed with the
    * opening shot. Boot and the Home "Empty project" card both start here, so
    * "the default scene" has one definition — the Empty card used to just close
    * Home and keep whatever was loaded, which matched this only on first boot.
    */
   _seedStarterScene() {
+    // The cube is born resting on the ground (`createInitialCorners`), so there
+    // is no lift here: a lift after `objectAdded` left the lifecycle voxels
+    // converging a half-extent below the cube on the Empty template.
     this._addObject()
-    this._restStarterCube()
     // Boot is a "frame the scene" entry point like any other (ADR-137). Without
     // this the camera keeps its constructed pose, which is a THIRD source for
     // "how big is the world" beside the starter cube and the unit authority —
     // and the one ADR-136 left in metres. The minimum radius keeps the opening
     // shot the one this app has always had (see BOOT_VIEW_RADIUS).
     this._frameScene(BOOT_VIEW_RADIUS)
-  }
-
-  _restStarterCube() {
-    const solid = this._activeObj
-    if (!(solid instanceof Solid)) return
-    solid.setPose(new THREE.Vector3(0, 0, DEFAULT_HALF_EXTENT), solid.orientation, solid.localCorners)
-    solid.meshView.updateGeometry(solid.corners)
-    solid.meshView.updateBoxHelper?.()
   }
 
   // ─── Active-object accessors ──────────────────────────────────────────────
@@ -1585,8 +1567,12 @@ export class AppController {
           const quat  = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), angle)
           const obj   = this._activeObj
           if (obj instanceof Solid && this._objRotateStartOrientation) {
-            obj.rotate(this._objRotateStartOrientation, this._objRotateStartPos, this._objRotateCentroid, quat)
-            obj.meshView.updateGeometry(obj.corners)
+            // The one rotation entry, so the floor applies here too (ADR-169).
+            this._service.applyPreviewRotation(obj, {
+              segStartOrientation: this._objRotateStartOrientation,
+              segStartPos:         this._objRotateStartPos,
+              pivot:               this._objRotateCentroid,
+            }, quat)
           } else {
             this._objRotateStartCorners.forEach((c, i) => {
               this._corners[i].copy(c).sub(this._objRotateCentroid).applyQuaternion(quat).add(this._objRotateCentroid)
@@ -3051,11 +3037,25 @@ export class AppController {
     if (!hasFinePointer()) this._controls.enabled = false
   }
 
-  _applyExtrudePreview() {
+  /**
+   * The sketch-extrude height to draw and to make: what the gesture / input asks
+   * for, after the floor (ADR-169 — a downward extrusion stops at Z=0). Preview
+   * and confirm both read this one place, so what is drawn is what is made.
+   */
+  _allowedExtrudeHeight() {
+    return this._service.allowedProfileHeight(this._requestedExtrudeHeight())
+  }
+
+  /** The height the gesture / typed input asks for, before the floor. */
+  _requestedExtrudeHeight() {
     const parsed = parseFloat(this._extrudePhase.inputStr)
-    const height = this._extrudePhase.hasInput
+    return this._extrudePhase.hasInput
       ? (isNaN(parsed) ? 0 : parsed)
       : this._extrudePhase.height
+  }
+
+  _applyExtrudePreview() {
+    const height = this._allowedExtrudeHeight()
     const corners = buildCuboidFromRect(this._sketch.p1, this._sketch.p2, height)
     this._meshView.updateGeometry(corners)
     this._meshView.showSketchRect(this._sketch.p1, this._sketch.p2)
@@ -3071,11 +3071,16 @@ export class AppController {
   }
 
   _confirmExtrudePhase() {
-    const parsed = parseFloat(this._extrudePhase.inputStr)
-    const height = this._extrudePhase.hasInput
-      ? (isNaN(parsed) ? 0 : parsed)
-      : this._extrudePhase.height
-    if (Math.abs(height) < 0.001) { this._cancelExtrudePhase(); return }
+    const height = this._allowedExtrudeHeight()
+    if (Math.abs(height) < 0.001) {
+      // The floor turned a real request into nothing (ADR-169): say so, never a
+      // silent no-op (PHILOSOPHY #11). Back to the sketch, so it can be redone.
+      if (Math.abs(this._requestedExtrudeHeight()) >= 0.001) {
+        this._uiView.showToast('Stopped at ground level — extrude upward, or place below grade with G then S', { type: 'warn' })
+      }
+      this._cancelExtrudePhase()
+      return
+    }
 
     // Capture Profile ref before the swap for undo (ADR-022 Phase 2)
     const profileRef = this._scene.getObject(this._scene.activeId)

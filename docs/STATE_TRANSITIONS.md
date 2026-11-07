@@ -1447,6 +1447,33 @@ flowchart LR
 
 **基数:** 全体 `0..N`、ワークごとに `0..1` (宣言した上限 — `graspFeature` が Solid に 0..1)。
 
+## ゾーンへの所属 — 所属なし / 所属 (中) / 所属 (外) (ADR-170 S1)
+
+実装は `src/domain/zone.js` (保存するのは人の宣言 `ゾーン —contains→ 物` だけで、中か外かは足元から**導出**)。
+核 §1.4 の閾値 (3 状態) を跨いだので、クラスを書く前にここへ起こした。中 ↔ 外は物の移動から導く値で、
+遷移として書く入口は無い (外にいる間は既存の `contains` の判定が「Escaped outside the Zone」を出す — 止めない)。
+
+```
+              所属なし ◄──────────── contains を消す (undo を含む)
+                 │
+                 │ contains を宣言 — guard: D5 (containsRefusal)
+                 ▼
+     ┌──── 所属 (中) ◄────┐
+     │                    │   物を動かす (導出 — 遷移の入口は無い)
+     └───► 所属 (外) ─────┘
+```
+
+- **guard (宣言):** その物がすでに属しているゾーンと**同じ高さ**のゾーンであること (D5 —
+  `containsRefusal`)。ゾーンでない Region からの `contains` は所属ではなく、この機械の外。
+- **D5 が破れる他の入口 (遷移ではないが同じ guard を持つ):** ゾーンの高さを変える
+  (`elevationChangeRefusal` — 並進の入口 `_policyDelta`) / Region をゾーンにする
+  (`placeTypeRefusal` — N パネル) / ファイルを読む (`zoneElevationConflicts` — `LayoutValidator`、
+  報告して読み込まない)。呼び手の個数は `src/ZoneElevationOwnership.test.js` が数える。
+- **禁止:** 高さの違う 2 つのゾーンに属する (同じ物が 2 つの階に在る)。
+- **基数:** 所属先 `0..N`、ただし高さは `0..1`。**0 は正当** (S2 から: 床を持たない — D4)。
+- **undo / redo:** 宣言・高さ・種類の復元は guard を通さない (すでに guard を通った状態へ戻るだけ —
+  通すと undo が非対称になる。ADR-097 の MoveCommand と同じ理由)。
+
 ## Related ADRs
 
 - **ADR-002**: Two-step Sketch → Extrude workflow

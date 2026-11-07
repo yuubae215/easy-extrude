@@ -33,25 +33,39 @@ export const FACES = [
  *
  * EXPORTED because it is the ONE authority for "how big is a default solid"
  * (§1.1). Every consumer of that fact derives from it — the corner factory
- * below, the boot starter's ground rest (`AppController._restStarterCube`) and
- * the multi-add stagger (`SceneService`). ADR-136 converted two of those three
- * and left the third writing a metre-era `0.5`, which sank the starter cube
- * 24.5mm below the ground plane: a size fact with three writers has no owner.
+ * below and the multi-add stagger (`SceneService`). ADR-136 once converted two
+ * of three consumers and left the third writing a metre-era `0.5`, which sank
+ * the starter cube 24.5mm below the ground plane: a size fact with three
+ * writers has no owner.
  */
 export const DEFAULT_HALF_EXTENT = 50
 
-/** Pure factory that creates the initial corner array */
+/**
+ * Pure factory that creates the initial corner array: a default cube centred
+ * on the origin in XY and RESTING on the ground plane (bottom face at Z=0).
+ *
+ * The rest is decided HERE, at birth, not applied afterwards. It used to be
+ * born centred on the origin (half below grade) and lifted later by the boot
+ * starter only (`AppController._restStarterCube`), which made two defects:
+ *  - the lifecycle voxels (anchored on `objectAdded`) converged at the
+ *    pre-lift centre, a half-extent below the cube the Empty template showed;
+ *  - an Add-menu cube stayed half underground, so the `grounded` floor clamp
+ *    (ADR-097) popped it up by a half-extent the first time it was grabbed.
+ * A second writer of "where a new solid stands" is gone with the lift.
+ */
 export function createInitialCorners() {
   const h = DEFAULT_HALF_EXTENT
+  const b = 0       // bottom: on the ground plane
+  const t = 2 * h   // top
   return [
-    new THREE.Vector3(-h, -h, -h), // 0 back-right-bottom
-    new THREE.Vector3( h, -h, -h), // 1 front-right-bottom
-    new THREE.Vector3( h,  h, -h), // 2 front-left-bottom
-    new THREE.Vector3(-h,  h, -h), // 3 back-left-bottom
-    new THREE.Vector3(-h, -h,  h), // 4 back-right-top
-    new THREE.Vector3( h, -h,  h), // 5 front-right-top
-    new THREE.Vector3( h,  h,  h), // 6 front-left-top
-    new THREE.Vector3(-h,  h,  h), // 7 back-left-top
+    new THREE.Vector3(-h, -h, b), // 0 back-right-bottom
+    new THREE.Vector3( h, -h, b), // 1 front-right-bottom
+    new THREE.Vector3( h,  h, b), // 2 front-left-bottom
+    new THREE.Vector3(-h,  h, b), // 3 back-left-bottom
+    new THREE.Vector3(-h, -h, t), // 4 back-right-top
+    new THREE.Vector3( h, -h, t), // 5 front-right-top
+    new THREE.Vector3( h,  h, t), // 6 front-left-top
+    new THREE.Vector3(-h,  h, t), // 7 back-left-top
   ]
 }
 

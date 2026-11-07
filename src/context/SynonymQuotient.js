@@ -127,6 +127,25 @@ export const QUOTIENT_TABLE = Object.freeze([
   { key: 'depend_on', en: 'depends on', ja: 'に依存する', cat: 'verb',
     synonyms: ['depend', 'depends on', 'dependsOn', 'requires', 'needs', '依存', '依存する', '必要とする'] },
 
+  // ── Place (ADR-170 — where a thing belongs, and the floor it stands on) ─────
+  // A zone is a Region whose placeType is 'Zone' (domain/zone.js `isZone`); what
+  // belongs to it is a declared `contains` link; its elevation is the Z of its
+  // plate. Scoped (CATEGORY_SCOPE): "area" / "level" must not change how the
+  // shared 5W1H lookup reads. Pinned to the code and to
+  // docs/SPATIAL_RELATION_MODEL.md §6 by src/SpatialRelationModelDoc.test.js.
+  { key: 'zone', en: 'zone', ja: 'ゾーン', cat: 'place',
+    synonyms: ['zone', 'district', 'area', 'ゾーン', '地区', '区域', 'エリア'],
+    gloss: { says: '性格を共有する区域 — placeType が Zone の Region。高さを 1 つ持つ', notSays: '何が属しているか (所属は宣言 — contains)・中の物の床 (床は所属から来る — ADR-170 D4)' },
+    example: { ja: '組立エリアは 2F にある', term: 'エリア' } },
+  { key: 'contains', en: 'belongs to', ja: '所属している', cat: 'place',
+    synonyms: ['contains', 'belongs to', 'belongs', 'member of', '所属', '所属している', '所属する', '属する', '属している'],
+    gloss: { says: '物がゾーンに属すると宣言されている — Zone —contains→ 物', notSays: '物がいまゾーンの中にあるか (外へ出しても所属は外れない)・足元が重なっているか (重なりは導出 — ADR-170 D1)' },
+    example: { ja: 'ワークは組立エリアに所属している', term: '所属している' } },
+  { key: 'elevation', en: 'elevation', ja: '床の高さ', cat: 'place',
+    synonyms: ['elevation', 'floor level', 'level', '床の高さ', '床高', 'フロアの高さ', '階の高さ'],
+    gloss: { says: 'ゾーンの板の Z — そのゾーンに属する物が立つ床の高さ (地下は負)', notSays: '物そのものの高さ・ゾーンの下に何があるか (ゾーンは下の面に貼り付かない — ADR-170 S1)' },
+    example: { ja: '組立エリアの床の高さは 4000 mm', term: '床の高さ' } },
+
   // ── Spatial relation (ADR-168 — Arrangement axis values ⇄ NL) ─────────────
   // key === the domain's declarable value (domain/arrangement.js), pinned both
   // ways by src/SpatialRelationModelDoc.test.js. Scoped: never reached by the
@@ -203,6 +222,7 @@ export const CATEGORY_SCOPE = Object.freeze({
   what:     'global',
   verb:     'global',
   spatial:  'scoped',
+  place:    'scoped',
 })
 
 /**

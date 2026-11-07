@@ -20,6 +20,8 @@
  *               導出され、入力の Z 成分は捨てる。
  *   grounded  : 床下へは行けない。ただし belowGradeIntent を立てれば行ける。
  *   free      : 自由。支持の概念を持たない。
+ *   level     : その高さの面の中で動く。Z は宣言で、ドラッグは水平、Z を変えるのは
+ *               数値か Z 拘束だけ。下の面に貼り付かない (ADR-170 — ゾーンの板)。
  *
  * `free` は既定ではない。**種ごとに表で宣言する**のがこの決定の要点で、新しい
  * 実体種を足すときにこの欄を空にできない (原則 #31 — 正当な「支持なし」は
@@ -58,6 +60,7 @@ import { AnnotatedLine }   from './AnnotatedLine.js'
 import { AnnotatedRegion } from './AnnotatedRegion.js'
 import { CoordinateFrame } from './CoordinateFrame.js'
 import { isRobotBaseFrame } from './robotFrames.js'
+import { isZone } from './zone.js'
 import { mm } from './worldUnits.js'
 
 /**
@@ -76,6 +79,8 @@ export const PLACEMENT = Object.freeze({
   SUPPORTED: 'supported',
   GROUNDED:  'grounded',
   FREE:      'free',
+  /** ADR-170: 宣言された高さの水平面に居る (ゾーン)。床の不変条件は持たない — 地下は負の高さ。 */
+  LEVEL:     'level',
 })
 
 /**
@@ -83,8 +88,10 @@ export const PLACEMENT = Object.freeze({
  * *在るもの*を辿るのではなく**列挙して個数を検査**する (原則 #31)。
  */
 export const PLACEMENT_KIND = Object.freeze({
-  /** AnnotatedPoint / AnnotatedLine / AnnotatedRegion — マップオブジェクト。 */
+  /** AnnotatedPoint / AnnotatedLine / ゾーンでない AnnotatedRegion — マップオブジェクト。 */
   ANNOTATION:        'annotation',
+  /** placeType が Zone の AnnotatedRegion — 物が属し、その高さに床を持つ場所 (ADR-170)。 */
+  ZONE:              'zone',
   /** Solid — 押し出された建物・部品。 */
   SOLID:             'solid',
   /** ImportedMesh — STEP 等の取り込み形状。 */
@@ -109,7 +116,12 @@ export const PLACEMENT_BY_KIND = Object.freeze({
   // 散文の不変条件だったもの: "must stay pinned to the ground plane or a
   // building roof, never floating" (SceneService._isMapObject の JSDoc)。
   [PLACEMENT_KIND.ANNOTATION]:       PLACEMENT.SUPPORTED,
+  // ゾーンの板の Z はその床の高さという**宣言**で、下に何があるかから導かない
+  // (ADR-170 S1 — 2F や地下を、スラブを描かずに言うため)。ADR-072 の「浮かない板」から外れる唯一の注釈。
+  [PLACEMENT_KIND.ZONE]:             PLACEMENT.LEVEL,
   // 基礎・杭・ピットは正当な要求なので禁止しない — 宣言させる (G3)。
+  // 未着手の退役 (DEF-076 / ADR-170 S2): 床は種類ではなく地区への所属から来る形に
+  // 置き換わり、Solid・ImportedMesh のこの行は消える。S1 は語彙とゾーンだけ。
   [PLACEMENT_KIND.SOLID]:            PLACEMENT.GROUNDED,
   [PLACEMENT_KIND.IMPORTED_MESH]:    PLACEMENT.GROUNDED,
   // ロボットが床に埋まった状態でコアAPI へ base pose を送っても解は無意味 (ADR-083)。
@@ -134,9 +146,13 @@ export const PLACEMENT_BY_KIND = Object.freeze({
  */
 export function placementKindOf(entity) {
   if (!entity) return null
+  // ゾーンは AnnotatedRegion の**内側**で分かれる — robot_base と同じ形で、判定は
+  // ドメインの名前付き述語 `isZone()` を呼ぶ (placeType を並べ直さない — IDENTITY_RULES)。
+  if (entity instanceof AnnotatedRegion) {
+    return isZone(entity) ? PLACEMENT_KIND.ZONE : PLACEMENT_KIND.ANNOTATION
+  }
   if (entity instanceof AnnotatedPoint ||
-      entity instanceof AnnotatedLine  ||
-      entity instanceof AnnotatedRegion) return PLACEMENT_KIND.ANNOTATION
+      entity instanceof AnnotatedLine) return PLACEMENT_KIND.ANNOTATION
   if (entity instanceof Solid)           return PLACEMENT_KIND.SOLID
   if (entity instanceof ImportedMesh)    return PLACEMENT_KIND.IMPORTED_MESH
   if (entity instanceof MeasureLine)     return PLACEMENT_KIND.MEASURE_LINE
@@ -251,6 +267,7 @@ export const BOTTOM_PROBE = Object.freeze({
  */
 export const SUPPORT_PROBE_BY_KIND = Object.freeze({
   [PLACEMENT_KIND.ANNOTATION]:       Object.freeze({ footprint: FOOTPRINT_PROBE.BOTTOM_FACE_AND_CENTROID, bottom: BOTTOM_PROBE.MIN_CORNER_Z }),
+  [PLACEMENT_KIND.ZONE]:             Object.freeze({ footprint: FOOTPRINT_PROBE.BOTTOM_FACE_AND_CENTROID, bottom: BOTTOM_PROBE.MIN_CORNER_Z }),
   [PLACEMENT_KIND.SOLID]:            Object.freeze({ footprint: FOOTPRINT_PROBE.BOTTOM_FACE_AND_CENTROID, bottom: BOTTOM_PROBE.MIN_CORNER_Z }),
   [PLACEMENT_KIND.IMPORTED_MESH]:    Object.freeze({ footprint: FOOTPRINT_PROBE.BOTTOM_FACE_AND_CENTROID, bottom: BOTTOM_PROBE.MIN_CORNER_Z }),
   [PLACEMENT_KIND.ROBOT_BASE_FRAME]: Object.freeze({ footprint: FOOTPRINT_PROBE.ORIGIN_POINT,             bottom: BOTTOM_PROBE.ORIGIN_Z    }),
@@ -289,6 +306,8 @@ const NO_PROBE = Object.freeze({ footprint: FOOTPRINT_PROBE.NONE, bottom: BOTTOM
 export const SUPPORT_SURFACE_BY_KIND = Object.freeze({
   // 建物・取り込み形状・マップ注釈 (床板・屋根) は上に物が載る面を持つ。
   [PLACEMENT_KIND.ANNOTATION]:       true,
+  // ゾーンの板は床板 — 上に注釈を描ける面である (ゾーンでない Region と同じ)。
+  [PLACEMENT_KIND.ZONE]:             true,
   [PLACEMENT_KIND.SOLID]:            true,
   [PLACEMENT_KIND.IMPORTED_MESH]:    true,
   // フレームは空間の目印であって面ではない。robot_base も同様 — ロボットは床に
@@ -461,6 +480,7 @@ export function probeNeedsWorldOrigin(probe) {
  * @param {{x:number,y:number,z:number}} p.requested  ハンドラが求めた world delta
  * @param {number}  p.startBottomZ       セグメント開始時点の最下点 Z
  * @param {number|null} [p.supportZ]     行き先 XY 直下の支持面 Z (地面込みなので通常 >= 0)
+ * @param {string|null} [p.elevationRefusal] `level` のみ: この Z の変更を拒む理由 (ADR-170 D5)。null = 許す
  * @returns {{x:number, y:number, z:number}} 適用後の world delta
  */
 export function resolvePlacementDelta({
@@ -469,9 +489,15 @@ export function resolvePlacementDelta({
   requested,
   startBottomZ,
   supportZ = null,
+  elevationRefusal = null,
 }) {
   const { x, y, z } = requested
   if (placement === PLACEMENT.FREE) return { x, y, z }
+
+  // level (ADR-170): Z moves only when asked — a drag on the horizontal plane
+  // asks for none. A height that would put a member on two floors (D5) is
+  // refused by keeping the plate where it is; the caller says why (原則 #11).
+  if (placement === PLACEMENT.LEVEL) return { x, y, z: elevationRefusal ? 0 : z }
 
   if (placement === PLACEMENT.SUPPORTED) {
     // 支持面が求まらないうちは Z を動かさない (推測で浮かせない — 原則 #11)。
@@ -483,6 +509,55 @@ export function resolvePlacementDelta({
   if (belowGradeIntent) return { x, y, z }
   // 底面が床 (Z=0) を割らない最小の Z。上へは自由に動ける。
   return { x, y, z: Math.max(z, -startBottomZ) }
+}
+
+/**
+ * **形を変える操作にも同じ床** (ADR-169) — 面を法線方向へ押し出す距離を、方針が
+ * 許す距離へ写す純粋関数。`resolvePlacementDelta` の「形」版。
+ *
+ * 押し出しは pose ではなく形を変えるが、床を割る点では並進と同じ事故になる
+ * (割れた底は次の Grab で `grounded` の床 clamp に引き上げられ、跳ねる)。
+ * 並進と同じく**床で止める** — 床下は S で宣言してから (G3)。持ち上げはしない:
+ * 底面を下へ引いた人に「本体が上へ逃げる」を返すのは、要求の符号を裏返すことになる。
+ *
+ * 動くのは面の頂点だけで、各頂点は `z + normalZ·d` へ行く。各頂点が守る床は
+ * `min(0, z)` — 始めから床下にある頂点 (宣言の無い古いデータ) を**それ以上**沈め
+ * ないだけで、引き上げはしない (要求していない動きを作らない)。
+ *
+ *   free / 宣言済みの床下      : 素通し
+ *   grounded / supported       : d を [lo, hi] へ clamp。
+ *                                normalZ > 0 の頂点は d ≥ (floor − z)/normalZ、
+ *                                normalZ < 0 の頂点は d ≤ (floor − z)/normalZ
+ *   |normalZ| ≈ 0 (鉛直な面)   : Z が動かないので素通し
+ *
+ * @param {object}   p
+ * @param {string}   p.placement           `PLACEMENT` メンバ (押し出した結果の実体の方針)
+ * @param {boolean}  [p.belowGradeIntent]  床下を宣言済みか
+ * @param {number[]} p.faceStartZs         動く面の頂点の world Z (操作開始時点)
+ * @param {number}   p.normalZ             面法線 (world, 単位) の Z 成分
+ * @param {number}   p.requested           要求された押し出し距離 (符号付き)
+ * @returns {number} 適用する距離
+ */
+export function resolveFaceExtrudeDistance({
+  placement,
+  belowGradeIntent = false,
+  faceStartZs,
+  normalZ,
+  requested,
+}) {
+  if (!Number.isFinite(requested)) return requested
+  if (!hasGroundInvariant(placement) || belowGradeIntent) return requested
+  if (!Number.isFinite(normalZ) || Math.abs(normalZ) < 1e-9) return requested
+  let lo = -Infinity
+  let hi = Infinity
+  for (const z of faceStartZs) {
+    if (!Number.isFinite(z)) continue
+    const bound = (Math.min(0, z) - z) / normalZ
+    if (normalZ > 0) lo = Math.max(lo, bound)
+    else             hi = Math.min(hi, bound)
+  }
+  const d = Math.min(hi, Math.max(lo, requested))
+  return d === 0 ? 0 : d   // never -0 (a stopped face would print "-0.000")
 }
 
 /**
