@@ -929,8 +929,8 @@ export class AppController {
       // The numeric-entry path (ADR-097 §Context "数値入力"): it wrote pose
       // directly and was subject to neither the placement policy nor the stack
       // assist — the eighth site the ADR predicted, already present. It now goes
-      // through the same entry as every gesture, so typing Z = -5 into a
-      // grounded entity clamps exactly like dragging it down does.
+      // through the same entry as every gesture, so typing Z = -5 into an
+      // entity that has a floor clamps exactly like dragging it down does.
       const startCorners = new Map([[obj.id, corners.map(c => c.clone())]])
       const startPositions = (obj instanceof Solid)
         ? new Map([[obj.id, obj._position.clone()]]) : null
@@ -1395,6 +1395,8 @@ export class AppController {
           name:             o.name,
           placement:        this._service.placementOf(o),
           belowGradeIntent: this._service.belowGradeIntentOf(o.id),
+          // ADR-170 S2: the floor comes from the zones it belongs to (null = none).
+          floorZ:           this._service.floorZOf(o.id),
           support:          this._service.supportOf(o.id),
           bottomZ:          this._service._bottomZOf(o),
           footprint:        samples.length === 0 ? null : {
@@ -3784,7 +3786,7 @@ export class AppController {
 
         // ADR-097 §Decision 5: the quick-drag plane had no entity branch at all —
         // every entity was dragged on the camera-facing plane, which is what made
-        // a grounded entity acquire Z from the camera and then fight the stack
+        // a resting entity acquire Z from the camera and then fight the stack
         // assist for it. It now follows the same policy as the G-key grab.
         this._objDragPlane.setFromNormalAndCoplanarPoint(
           resolveDragPlaneNormal(obj, {

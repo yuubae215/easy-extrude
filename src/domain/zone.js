@@ -23,6 +23,8 @@
  * (A loaded document is checked by `LayoutValidator` through `zoneElevationConflicts`
  * — a file is reported, never silently rewritten.)
  *
+ * What the rule buys (S2): `floorOf` — the one floor a thing stands on.
+ *
  * Pure: no THREE, no DOM. Links and objects are read through the arguments.
  *
  * @see docs/adr/ADR-170-the-floor-comes-from-belonging-to-a-district.md
@@ -101,6 +103,36 @@ export function distinctElevations(elevations) {
     if (!same) out.push(e)
   }
   return out
+}
+
+/**
+ * **THE floor of a thing** (ADR-170 D4 / S2) — the elevation of the zones it
+ * belongs to, or `null` when it has no floor. The only place the floor is
+ * decided: the placement policy no longer gives one by kind, and a caller that
+ * assembles `zonesOf` + `plateElevationOf` itself is a second source
+ * (`src/PosePolicyOwnership.test.js` counts them).
+ *
+ *   belongs to nothing                      → null (no floor — D4; a scene with 0 zones)
+ *   belongs to zones that share one height  → that height
+ *   belongs to zones at two heights         → null — unreachable through the
+ *     guarded entries (D5), and picking one would make the same thing stand
+ *     higher or lower by the order the zones were drawn (rejected in the ADR).
+ *     A loaded file in that state is reported by LayoutValidator, not read.
+ *   a zone whose plate is not level         → gives no floor
+ *
+ * `elevationOf` lets a caller read a zone that is moving in the same gesture
+ * from its segment start + the request (PHILOSOPHY #24 — never from the plate
+ * this very gesture is writing).
+ *
+ * @param {{ thing:any, links:Iterable<any>, getObject:(id:string)=>any,
+ *           elevationOf?:(zone:any)=>number|null }} p
+ * @returns {number|null}
+ */
+export function floorOf({ thing, links, getObject, elevationOf = (z) => plateElevationOf(z.corners) }) {
+  if (!thing) return null
+  const heights = distinctElevations(zonesOf(thing.id, links, getObject).map(elevationOf))
+    .filter(e => e !== null)
+  return heights.length === 1 ? heights[0] : null
 }
 
 const fmt = (e) => (e === null ? 'a plate that is not level' : `Z = ${Math.round(e)} mm`)
