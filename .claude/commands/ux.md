@@ -99,14 +99,21 @@ Read these before evaluating:
 - [ ] `setObjectSelected(true)` is restored when returning to Object mode from Edit mode (CODE_CONTRACTS §1 — State Restoration on Mode Exit).
 - [ ] Measure distance label (amber) is visible and updates position every animation frame via `MeasureLineView.updateLabelPosition(camera)`.
 
+## 報告の書き方 — 読み手のために
+
+報告は `.claude/READABLE-OUTPUT.md` の形で出す: **要約 (3 行以内) → 直すべき指摘を重い順に →
+詳細**。分類ラベル (`TOOLBAR` `ORBIT` など) やチェック項目の記号は根拠の札であって説明ではないので、各指摘は
+「何が起きているか」「なぜ困るか」を平易な文で書き、記号・§番号は文末の括弧に置く。
+
 ### 5. Report findings
 
 For each issue:
 
 ```
 [CATEGORY] File:line — Description
-  Rule violated: <checklist item letter>
-  Suggested fix: <one-line suggestion>
+  なぜ困るか: <これを放置すると何が起きるか、1 文>
+  守るべき約束: <規則の中身を平易な 1 文で> (チェック項目 <記号> / <根拠の文書 §>)
+  直し方: <one-line suggestion>
 ```
 
 Categories: **TOOLBAR** · **TOUCH** · **ORBIT** · **STATUS** · **GRAB** · **READONLY** · **MEASURE** · **A11Y** · **KEYBOARD** · **VISUAL**

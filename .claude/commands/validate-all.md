@@ -69,6 +69,10 @@ Also read:
 
 ## Output format
 
+報告全体を `.claude/READABLE-OUTPUT.md` の形で出す: 下の要約と「重い順の上位 5 件」を**先頭**に置き、
+各 validator の節はその後ろ (根拠) に並べる。上位 5 件の各行は分類ラベルや記号ではなく
+「何が起きているか / なぜ困るか」を平易な文で書く。
+
 Each agent reports findings in its own section, using the severity/category
 format defined in its validator command.
 
