@@ -300,7 +300,7 @@ export const ZONE_OVERLAP_KIND = Object.freeze({
   UNDECIDABLE: 'undecidable',
 })
 
-const OWNER_KINDS = new Set(Object.values(ZONE_OWNER_KIND))
+const OWNER_KINDS = new Set(/** @type {string[]} */ (Object.values(ZONE_OWNER_KIND)))
 
 /**
  * Read a pair by its owners. Throws on an owner kind nobody declared (原則 #31 —
