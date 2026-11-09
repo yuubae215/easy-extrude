@@ -105,6 +105,7 @@ import { GraspSampleView }            from '../view/GraspSampleView.js'
 import { GraspDeclarationView }       from '../view/GraspDeclarationView.js'
 import { ArrangementStatusView }      from '../view/ArrangementStatusView.js'
 import { ArrangementController }      from './ArrangementController.js'
+import { ZoneOwnershipController }    from './ZoneOwnershipController.js'
 import { ROBOT_KINEMATICS, ROBOT_REACH_ENVELOPE, ROBOT_MODEL_LABEL } from '../view/robotSkeleton.js'
 import { SHIPPED_ROBOT_MODEL_ID }     from '../domain/robotModel.js'
 import { ContextService }             from '../service/ContextService.js'
@@ -617,6 +618,31 @@ export class AppController {
     // canonical document via ContextService. Registers its own uiStore callbacks.
     this._ctxCtrl = new ContextController(this)
 
+    // ── Zone owners and overlaps (ADR-170 S3) ─────────────────────────────
+    // Joins the live plates with the document's owners; lights the conflicted
+    // plates and feeds the zone's N-panel section. Refreshed on events: the
+    // document edge, scene lifecycle, and every committed operation (landing).
+    this._zoneOwnershipCtrl = new ZoneOwnershipController({
+      objects:    () => this._scene.objects.values(),
+      ctxService: this._ctxService,
+      speaker:    () => this._arrangementCtrl.speaker,
+    })
+    for (const ev of ['contextLoaded', 'contextChanged']) {
+      this._ctxService.on(ev, () => this._zoneOwnershipCtrl.schedule())
+    }
+    for (const ev of ['objectAdded', 'objectRemoved', 'objectPlaceTypeChanged']) {
+      this._service.on(ev, () => this._zoneOwnershipCtrl.schedule())
+    }
+    // Declare the selected zone's owner — in the speaker's name or "none" (O2).
+    useUIStore.getState().actions.registerCallback('onDeclareZoneOwner', (owner) => {
+      const ref = this._ctxService.refForSceneId(this._scene.activeId)
+      if (!ref) {
+        this._uiView.showToast('This zone is not in the document, so it has no owner to declare.', { type: 'warn' })
+        return
+      }
+      this._ctxCtrl.declareZoneOwner(ref, owner)
+    })
+
     // ── Grasp-search verification overlay (ADR-057) ────────────────────────
     // Dedicated coordinator (split out of ContextController) for the
     // UI→DSL→BFF→grasp-search walkthrough. The panel is the `'grasp'` tab inside
@@ -1081,6 +1107,8 @@ export class AppController {
       queueMicrotask(() => {
         this._spawnLandingFx(landing)
         this._updateTour(landing)
+        // A committed drag / undo may have moved a zone (ADR-170 S3).
+        this._zoneOwnershipCtrl?.schedule()
       }))
 
     // Expose console API for role-based provenance (ADR-034 §8.3)
@@ -1319,6 +1347,10 @@ export class AppController {
       graspDeclaration: () => this._graspCtrl?.declarationSnapshot() ?? null,
       // ADR-168 S1b — the Relations section's model and the drawn picture.
       arrangements: () => this._arrangementCtrl?.snapshot() ?? null,
+      // ADR-170 S3 — which plates are lit as an owner conflict, read from the
+      // views themselves (the 3D fact), by name.
+      zoneConflicts: () => [...this._scene.objects.values()]
+        .filter(o => o.meshView?.ownerConflict === true).map(o => o.name).sort(),
       addRobot:  () => this._addRobot(),
       addCamera: () => this._addCamera(),
       // Load a Layout DSL through the same path a Home template takes — so an

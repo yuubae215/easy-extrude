@@ -127,3 +127,75 @@ test('S2 — a zone moving in the same gesture is read through elevationOf, not 
   tilted.corners[0].z = 50   // not level → gives no floor
   assert.equal(floorOf({ thing: w, ...world([w, tilted], [contains('t', 'w')]) }), null)
 })
+
+// ── Overlaps (ADR-170 D1 / S3) ───────────────────────────────────────────────
+import {
+  overlapsZone, zoneOverlaps, overlapKindOf, OVERLAP, ZONE_OWNER_KIND, ZONE_OVERLAP_KIND,
+} from './zone.js'
+
+function plate(id, z, pts, placeType = 'Zone') {
+  const r = new AnnotatedRegion(id, id, pts.map(([x, y], i) => new Vertex(`${id}v${i}`, new Vector3(x, y, z))), [], null)
+  r.placeType = placeType
+  return r
+}
+const square = (x0, y0, s) => [[x0, y0], [x0 + s, y0], [x0 + s, y0 + s], [x0, y0 + s]]
+function box(x0, y0, z0, s = 100, h = 100) {
+  const corners = []
+  for (const z of [z0, z0 + h]) for (const [x, y] of square(x0, y0, s)) corners.push({ x, y, z })
+  return { id: 'box', corners }
+}
+const actor = (ref) => ({ kind: ZONE_OWNER_KIND.ACTOR, ref })
+const NONE = { kind: ZONE_OWNER_KIND.NONE }
+const UNDECLARED = { kind: ZONE_OWNER_KIND.UNDECLARED }
+
+test('a thing overlaps a zone when its foot is at the zone\'s height and they share area', () => {
+  const z = plate('z', 0, square(0, 0, 1000))
+  assert.equal(overlapsZone({ thing: box(100, 100, 0), zone: z }), OVERLAP.YES)
+  assert.equal(overlapsZone({ thing: box(950, 100, 0), zone: z }), OVERLAP.YES, 'part of the foot is enough')
+  assert.equal(overlapsZone({ thing: box(1000, 100, 0), zone: z }), OVERLAP.NO, 'an edge is not an area')
+  assert.equal(overlapsZone({ thing: box(2000, 100, 0), zone: z }), OVERLAP.NO)
+})
+
+test('a thing at another height does not overlap — the 2F zone above, or stacked on a box', () => {
+  assert.equal(overlapsZone({ thing: box(100, 100, 0), zone: plate('up', 4000, square(0, 0, 1000)) }), OVERLAP.NO)
+  assert.equal(overlapsZone({ thing: box(100, 100, 100), zone: plate('z', 0, square(0, 0, 1000)) }), OVERLAP.NO)
+})
+
+test('a memo Region is not a zone — nothing overlaps it in this sense', () => {
+  assert.equal(overlapsZone({ thing: box(100, 100, 0), zone: plate('memo', 0, square(0, 0, 1000), null) }), OVERLAP.NO)
+})
+
+test('a concave zone is undecidable, said as such', () => {
+  const L = [[0, 0], [2000, 0], [2000, 1000], [1000, 1000], [1000, 2000], [0, 2000]]
+  assert.equal(overlapsZone({ thing: box(100, 100, 0), zone: plate('L', 0, L) }), OVERLAP.UNDECIDABLE)
+})
+
+test('a pair reads by its owners — the four kinds (D2 as decided before S3)', () => {
+  assert.equal(overlapKindOf(actor('ann'), actor('ann')), ZONE_OVERLAP_KIND.SAME_OWNER)
+  assert.equal(overlapKindOf(actor('ann'), actor('bo')), ZONE_OVERLAP_KIND.CONFLICT)
+  assert.equal(overlapKindOf(actor('ann'), NONE), ZONE_OVERLAP_KIND.OWNERLESS)
+  assert.equal(overlapKindOf(UNDECLARED, actor('bo')), ZONE_OVERLAP_KIND.UNDECLARED)
+  assert.equal(overlapKindOf(NONE, UNDECLARED), ZONE_OVERLAP_KIND.UNDECLARED, 'undeclared is counted even beside none')
+  assert.throws(() => overlapKindOf({ kind: 'mine' }, actor('ann')), /unknown owner kind/)
+})
+
+test('zone pairs: overlapping at one height only, one record per pair, order-free', () => {
+  const a = plate('a', 0, square(0, 0, 1000))
+  const b = plate('b', 0, square(500, 500, 1000))
+  const c = plate('c', 0, square(1000, 0, 800))       // shares only an edge with a, overlaps b
+  const up = plate('up', 4000, square(0, 0, 1000))     // above a — another floor
+  const owners = { a: actor('ann'), b: actor('bo'), c: UNDECLARED, up: actor('cy') }
+  const pairs = zoneOverlaps({ zones: [up, c, b, a], ownerOf: z => owners[z.id] })
+  assert.deepEqual(pairs.map(p => [p.a.id, p.b.id, p.kind]), [
+    ['a', 'b', ZONE_OVERLAP_KIND.CONFLICT],
+    ['b', 'c', ZONE_OVERLAP_KIND.UNDECLARED],
+  ])
+})
+
+test('zone pairs: 0 or 1 zones give no pair; a concave pair is undecidable without reading owners', () => {
+  assert.deepEqual(zoneOverlaps({ zones: [], ownerOf: () => UNDECLARED }), [])
+  assert.deepEqual(zoneOverlaps({ zones: [plate('a', 0, square(0, 0, 10))], ownerOf: () => UNDECLARED }), [])
+  const L = plate('L', 0, [[0, 0], [2000, 0], [2000, 1000], [1000, 1000], [1000, 2000], [0, 2000]])
+  const pairs = zoneOverlaps({ zones: [L, plate('s', 0, square(0, 0, 500))], ownerOf: () => { throw new Error('not asked') } })
+  assert.deepEqual(pairs.map(p => p.kind), [ZONE_OVERLAP_KIND.UNDECIDABLE])
+})

@@ -15,8 +15,11 @@
  *                two; saying either would choose). Offered only while someone
  *                is speaking and both things are in the document; a claim
  *                needs a claimant (ADR-168 D5) and a subject the document has.
- *   link         the moved Solid's centre lies in an AnnotatedRegion: a
- *                `contains` SpatialLink, as before (heuristic C).
+ *   link         the moved Solid OVERLAPS a zone (ADR-170 D1 — its foot is at the
+ *                zone's height and shares area with it): belonging, offered as
+ *                a `contains` SpatialLink labelled "Belongs to". Until S3 any
+ *                Region whose plan held the Solid's centre was offered, a memo
+ *                Region included and the height unread (heuristic C).
  *
  * Until S2-1 the first kind was SpatialLinks `above` / `adjacent` with a
  * confidence — two words that each carried two facts (ADR-168 力学 1); those
@@ -28,9 +31,9 @@
  * @see ADR-041
  * @see docs/adr/ADR-168-a-spatial-relation-is-three-axes-and-three-slots.md
  */
-import { Box3, Vector3 } from 'three'
+import { Box3 } from 'three'
 import { Solid }           from '../domain/Solid.js'
-import { AnnotatedRegion } from '../domain/AnnotatedRegion.js'
+import { isZone, overlapsZone, OVERLAP } from '../domain/zone.js'
 import { observeContact, CONTACT_TOLERANCE_MM, OBSERVED_CONTACT } from '../domain/arrangementGeometry.js'
 import { sizeOfCorners } from '../domain/hollowBody.js'
 import { cellOfSide } from '../domain/relationCells.js'
@@ -86,26 +89,6 @@ function _solidBox(solid) {
 
 
 /**
- * Ray-casting point-in-polygon test on the XY plane.
- * @param {number} px
- * @param {number} py
- * @param {import('three').Vector3[]} poly  ordered ring of polygon vertices
- * @returns {boolean}
- */
-function _xyPointInPolygon(px, py, poly) {
-  let inside = false
-  const n = poly.length
-  for (let i = 0, j = n - 1; i < n; j = i++) {
-    const xi = poly[i].x, yi = poly[i].y
-    const xj = poly[j].x, yj = poly[j].y
-    if (((yi > py) !== (yj > py)) && px < (xj - xi) * (py - yi) / (yj - yi) + xi) {
-      inside = !inside
-    }
-  }
-  return inside
-}
-
-/**
  * What to offer for the moved entity against the other scene objects.
  *
  * @param {Solid} moved                 entity that was just repositioned
@@ -122,7 +105,6 @@ export function inferSuggestions(moved, sceneObjects, { existingPairs, refOf, sp
   if (!(moved instanceof Solid)) return []
   const movedRef = speaker ? refOf(moved.id) : null
   const mBody = movedRef ? bodyOfSolid(moved) : null
-  const mBox = _solidBox(moved)
   /** @type {ArrangementSuggestion[]} */
   const arrangements = []
   /** @type {LinkSuggestion[]} */
@@ -148,16 +130,14 @@ export function inferSuggestions(moved, sceneObjects, { existingPairs, refOf, sp
       }
     }
 
-    // ── "contains" (AnnotatedRegion) — region (source) contains solid (target) ──
-    if (entity instanceof AnnotatedRegion
-        && !existingPairs.has(`${entity.id}|${moved.id}`) && !existingPairs.has(`${moved.id}|${entity.id}`)) {
-      const center = mBox.getCenter(new Vector3())
-      if (_xyPointInPolygon(center.x, center.y, entity.corners)) {
-        links.push({
-          kind: 'link', key: `link|contains|${entity.id}`, sourceId: entity.id, targetId: moved.id,
-          jointType: null, semanticType: 'contains', label: 'Contains',
-        })
-      }
+    // ── belonging (ADR-170 D3 / S3) — zone (source) contains solid (target) ──
+    if (isZone(entity)
+        && !existingPairs.has(`${entity.id}|${moved.id}`) && !existingPairs.has(`${moved.id}|${entity.id}`)
+        && overlapsZone({ thing: moved, zone: entity }) === OVERLAP.YES) {
+      links.push({
+        kind: 'link', key: `link|contains|${entity.id}`, sourceId: entity.id, targetId: moved.id,
+        jointType: null, semanticType: 'contains', label: 'Belongs to',
+      })
     }
   }
 

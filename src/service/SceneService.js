@@ -75,6 +75,7 @@ import {
 } from '../domain/originFrame.js'
 import { AnnotatedLine }   from '../domain/AnnotatedLine.js'
 import { AnnotatedRegion } from '../domain/AnnotatedRegion.js'
+import { pointInPolygonXY } from '../domain/planar.js'
 import { AnnotatedPoint }  from '../domain/AnnotatedPoint.js'
 import { AnnotatedLineView }   from '../view/AnnotatedLineView.js'
 import { AnnotatedRegionView } from '../view/AnnotatedRegionView.js'
@@ -124,27 +125,6 @@ function _minDistPolylineToPoints(linePoints, testPoints) {
     }
   }
   return minDist
-}
-
-/**
- * Ray-casting point-in-polygon test on the XY plane (odd-even rule).
- * Used for containment evaluation of contains SpatialLinks.
- * @param {number} px
- * @param {number} py
- * @param {import('three').Vector3[]} poly  ordered ring of polygon vertices (≥ 3)
- * @returns {boolean}
- */
-function _xyPointInPolygon(px, py, poly) {
-  let inside = false
-  const n = poly.length
-  for (let i = 0, j = n - 1; i < n; j = i++) {
-    const xi = poly[i].x, yi = poly[i].y
-    const xj = poly[j].x, yj = poly[j].y
-    if (((yi > py) !== (yj > py)) && px < (xj - xi) * (py - yi) / (yj - yi) + xi) {
-      inside = !inside
-    }
-  }
-  return inside
 }
 
 /**
@@ -1946,9 +1926,13 @@ export class SceneService extends EventEmitter {
           continue
         }
 
-        const allInside = solidCorners.every(c => _xyPointInPolygon(c.x, c.y, regionCorners))
+        const allInside = solidCorners.every(c => pointInPolygonXY(c.x, c.y, regionCorners))
         link.violated     = !allInside
-        link.errorMessage = link.violated ? '⚠️ Escaped outside the Zone' : ''
+        // Said in the place words (ADR-170 S3): belonging is declared and does
+        // not lapse outside — only a zone is a place; a memo Region keeps the old line.
+        link.errorMessage = !link.violated ? ''
+          : isZone(source) ? `⚠️ Belongs to "${source.name}", but is outside it`
+          : '⚠️ Escaped outside the Region'
 
         this._linkViews.get(link.id)?.setViolated?.(link.violated)
 

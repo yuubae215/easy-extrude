@@ -37,6 +37,7 @@
  */
 
 import { hasKey } from './Keyring.js'
+import { ZONE_OWNER_KIND } from '../domain/zone.js'
 import { isFrozenLineTarget, lineVersion } from './CriteriaLine.js'
 
 /**
@@ -287,4 +288,57 @@ export function declareOwner(ctx, reqRef, owner) {
     return next
   })
   return { ...ctx, requirements }
+}
+
+// ── Zone owners (ADR-170 O2 / S3) ────────────────────────────────────────────
+//
+// A zone's owner is the same word as a requirement's (who may change it), kept
+// in its own top-level list `owners[]` because a zone lives in the layout, which
+// knows no actors. One row per owned zone; no row = UNDECLARED. Never filled in
+// from who drew the plate or who claimed a belonging (O2 — "勝手に埋めない").
+// Gating a plate edit on the owner's key is not decided yet (DEF-077).
+
+/**
+ * The declared owner of a zone: an actor ref, `OWNER_NONE_DECLARED`, or
+ * `undefined` (nobody has said — the counted case).
+ * @param {object|null} ctx
+ * @param {string} zoneRef
+ * @returns {string|undefined}
+ */
+export function zoneOwnerOf(ctx, zoneRef) {
+  return (ctx?.owners ?? []).find(o => o.of === zoneRef)?.owner
+}
+
+/**
+ * The owner as the overlap reading takes it (`domain/zone.js` ZONE_OWNER_KIND).
+ * The one mapping from the document's value to the domain's kinds.
+ * @param {string|undefined} owner
+ * @returns {{kind: string, ref?: string}}
+ */
+export function zoneOwnerKind(owner) {
+  if (isOwnerUndeclared(owner)) return { kind: ZONE_OWNER_KIND.UNDECLARED }
+  if (isOwnerlessDeclared(owner)) return { kind: ZONE_OWNER_KIND.NONE }
+  return { kind: ZONE_OWNER_KIND.ACTOR, ref: owner }
+}
+
+/**
+ * Declare a zone's owner (input-immutable). Only an undeclared zone may be
+ * declared in S3 — changing a declared owner is decided with DEF-077, so it
+ * throws with the reason rather than writing over someone (原則 #11). The
+ * owner must be an actor of the document or `OWNER_NONE_DECLARED`.
+ * @param {object} ctx
+ * @param {string} zoneRef
+ * @param {string} owner
+ * @returns {object} new ctx
+ */
+export function declareZoneOwner(ctx, zoneRef, owner) {
+  const current = zoneOwnerOf(ctx, zoneRef)
+  if (!isOwnerUndeclared(current)) {
+    throw new Error(`"${zoneRef}" already has an owner (${isOwnerlessDeclared(current) ? 'declared to belong to nobody' : current}) — changing it is not decided yet`)
+  }
+  const actors = new Set((ctx.actors ?? []).map(a => a.ref))
+  if (!isOwnerlessDeclared(owner) && !actors.has(owner)) {
+    throw new Error(`"${owner}" is not an actor of the document`)
+  }
+  return { ...ctx, owners: [...(ctx.owners ?? []).map(o => ({ ...o })), { of: zoneRef, owner }] }
 }

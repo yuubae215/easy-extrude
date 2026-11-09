@@ -344,6 +344,7 @@ export class UIViewBridge {
       onAddFrame:           options.onAddFrame          ?? null,
       onSelectFrame:        options.onSelectFrame       ?? null,
       work:                 options.work                ?? null,
+      zone:                 options.zone                ?? null,
     })
   }
 

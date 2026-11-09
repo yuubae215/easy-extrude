@@ -291,3 +291,33 @@ test('a change to the agreed line carries the margin core/ assessed — or says 
   assert.equal(q.margin.kind, 'unassessed')
   assert.match(q.margin.reason, /not reachable/)
 })
+
+// ── ADR-170 S3: a zone's owner is one undoable document edit ─────────────────
+
+test('declaring a zone owner is one doc-edit command; undo takes it back; a second declaration is refused with its reason', async () => {
+  const { ContextService } = await import('../service/ContextService.js')
+  const svc = new ContextService({ async importFromJson() { return { imported: 0, skipped: 0 } } })
+  const { readFileSync } = await import('node:fs')
+  // The template with two zones and three actors (and the trace links a loaded document needs).
+  await svc.loadContext(JSON.parse(readFileSync(new URL('../../examples/cell_region_context.json', import.meta.url), 'utf8')),
+    { camera: null, renderer: null, container: null })
+
+  const ctrl = makeCtrl()
+  ctrl._ctxService = svc
+  const pushed = []
+  ctrl._commandStack = { canUndo: false, push(c) { pushed.push(c) } }
+  ctrl._refreshUndoRedoState = () => {}
+  const cc = new ContextController(ctrl)
+  cc._viewContext = () => ({ camera: null, renderer: null, container: null })
+
+  await cc.declareZoneOwner('vision_zone', 'vision_engineer')
+  assert.equal(pushed.length, 1)
+  assert.deepEqual(svc.getDoc().owners, [{ of: 'vision_zone', owner: 'vision_engineer' }])
+
+  assert.equal(cc.declareZoneOwner('vision_zone', 'mech_engineer'), null)
+  assert.match(ctrl._uiView.toasts.at(-1).msg, /already has an owner \(vision_engineer\)/)
+  assert.equal(pushed.length, 1, 'refused — nothing recorded')
+
+  await pushed[0].undo()
+  assert.equal(svc.getDoc().owners, undefined, 'undo returns the zone to undeclared')
+})

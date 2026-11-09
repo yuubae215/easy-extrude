@@ -497,6 +497,15 @@ G = Grab   X = Delete   Lynch class: Path / Edge
 **Lynch Class picker (polygon filter):**
 Shows only `District`.
 
+**Zone section (ADR-170 S3 — placeType が Zone のときだけ):**
+
+| Field | Content |
+|-------|---------|
+| Owner | `ann` / `nobody (declared)` / `not declared`。未宣言のときだけ `Own as 〈話している人〉` と `No owner` のボタン。出せないときは理由 (文書が無い・地区が文書に無い・話している人が居ない・宣言済みの変更は未決 — DEF-077) |
+| Overlaps | 同じ高さで面積をもって重なる地区ごとに 1 行 — 所有者の組で読む。衝突だけ `cautionTone`、他は二次色。件数の行は衝突と未宣言を**別々に**言う (合算しない) |
+
+[C] 3D Viewport: 衝突している 2 枚の板は輪郭と塗りが `cautionTone` に灯る (contains の違反の赤が優先)。
+
 #### [E] Status Bar
 ```
 G = Grab   X = Delete   Lynch class: District

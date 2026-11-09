@@ -59,6 +59,11 @@
  *       claim conflicts    — two claimants saying different things about the
  *                            same pair on the same axis and frame   → arrangementConflicts
  *
+ * ADR-170 S3 rule (additive within context/0.7):
+ *   R16 zone owner         — every `owners[]` row names a zone of the layout
+ *                            (only zones may carry one yet), an actor or
+ *                            "none", and at most one row per zone   → error
+ *
  * @module context/ContextValidator
  */
 
@@ -82,7 +87,8 @@ import {
 } from './ContextDslSchema.js'
 import { PROPOSAL_REF_PREFIX, PROPOSAL_STATE, sameClaimValue } from './Proposal.js'
 import { AGENDA_REF_PREFIX, AGENDA_STATE } from './Agenda.js'
-import { OWNER_NONE_DECLARED, TARGET_KIND, isOwnerUndeclared, claimExists } from './Ownership.js'
+import { OWNER_NONE_DECLARED, TARGET_KIND, isOwnerUndeclared, isOwnerlessDeclared, claimExists } from './Ownership.js'
+import { isZonePlaceType } from '../domain/zone.js'
 import { detectConflicts, detectNegotiationClusters } from './RequirementGraph.js'
 import { promoteAdmissible } from './AdmissiblePromotion.js'
 import { requiredKpis } from './RoleKpiCatalog.js'
@@ -593,6 +599,12 @@ export function validateContext(ctx) {
     if (issues.length === 0) arrangementConflicts = claimConflicts(arrangements)
   }
 
+  // ── R16: zone owners (ADR-170 O2 / S3) ──────────────────────────────────────
+  // Which overlaps are conflicts is read on screen from the live plates (the
+  // document's layout does not follow a drag); the document only says who owns
+  // each zone, and that is what is checked here.
+  errors.push(...zoneOwnerIssues(ctx))
+
   // ── R5: blocked acceptance checks ────────────────────────────────────────────
   for (const check of ctx.acceptance ?? []) {
     if (!VALID_CHECK_MODES.includes(check.mode)) {
@@ -675,4 +687,33 @@ export function navigate(obj, segments) {
     node = node[seg]
   }
   return node
+}
+
+/**
+ * R16 — the shape of `owners[]` against the document (ADR-170 S3). Pure.
+ * @param {object} ctx
+ * @returns {string[]}
+ */
+export function zoneOwnerIssues(ctx) {
+  const rows = ctx.owners ?? []
+  if (rows.length === 0) return []
+  const entities = ctx.specification?.layout?.entities ?? []
+  const byRef = new Map(entities.map(e => [e?.ref, e]))
+  const actors = new Set((ctx.actors ?? []).map(a => a?.ref))
+  const seen = new Set()
+  const errors = []
+  for (const row of rows) {
+    const where = `owners: "${row?.of}"`
+    const entity = byRef.get(row?.of)
+    if (!entity) errors.push(`${where} is not an entity of specification.layout`)
+    else if (!isZonePlaceType(entity.placeType)) {
+      errors.push(`${where} is not a zone — only a zone may carry an owner yet; whether other kinds may is not decided (ADR-170 O2)`)
+    }
+    if (!isOwnerlessDeclared(row?.owner) && !actors.has(row?.owner)) {
+      errors.push(`${where}: owner "${row?.owner}" is neither an actor of the document nor "${OWNER_NONE_DECLARED}"`)
+    }
+    if (seen.has(row?.of)) errors.push(`${where} has more than one owner row — a zone has 0..1 owner (ADR-170 O2)`)
+    seen.add(row?.of)
+  }
+  return errors
 }

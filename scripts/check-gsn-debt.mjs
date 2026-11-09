@@ -433,7 +433,10 @@ const SUPPORT_LABELS = new Map([
 // BelongingSurvivesLeavingTheDistrict が support-verified へ (zone / placement / PosePolicyOwnership の node --test +
 // e2e/smoke.spec.js・e2e/zone-elevation.spec.js)。満期 GONE:…placement.js::SOLID の grounded 行が発火し、DEF-076 も
 // 同じコミットで決着。新しい goal AFloorThatArrivesLaterMovesNothing は証拠つきで起こしたので分子に入らない。
-const DEBT_BASELINE = 39
+// 2026-11-09: 39 → 38。ADR-170 S3 で OverlapAcrossOwnersGoesToNegotiation が support-verified へ (zone /
+// ZoneOwnershipController / ZoneOverlapOwnership / ZoneOwner の node --test + e2e/zone-elevation.spec.js)。満期
+// GREP:…zone.js::zoneOverlaps が発火。goal の文言は S3 で改訂した D2 に合わせた (議題化は DEF-078 — 登録簿の義務)。
+const DEBT_BASELINE = 38
 
 /**
  * G3 — 満期 trigger を持たない exploring goal の個数 (実測値)。

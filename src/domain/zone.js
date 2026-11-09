@@ -25,6 +25,12 @@
  *
  * What the rule buys (S2): `floorOf` — the one floor a thing stands on.
  *
+ * What S3 adds — `overlaps` (D1), derived and never stored: a footprint at the
+ * zone's height that shares area with the zone. Asked between a thing and a zone
+ * (`overlapsZone` — where belonging is offered) and between two zones
+ * (`zoneOverlaps` — read with the two zones' owners, O2 / D2). Only convex plates
+ * are decided; a concave one answers UNDECIDABLE rather than a guess (S3 Q5).
+ *
  * Pure: no THREE, no DOM. Links and objects are read through the arguments.
  *
  * @see docs/adr/ADR-170-the-floor-comes-from-belonging-to-a-district.md
@@ -32,6 +38,7 @@
 
 import { AnnotatedRegion } from './AnnotatedRegion.js'
 import { mm } from './worldUnits.js'
+import { convexHullXY, convexOverlapAreaXY, isConvexXY } from './planar.js'
 
 /** The placeType value that makes a Region a zone. */
 export const ZONE_PLACE_TYPE = 'Zone'
@@ -224,6 +231,115 @@ export function zoneElevationConflicts({ zones, contains }) {
   const out = []
   for (const [thingId, zs] of perThing) {
     if (distinctElevations(zs.map(z => z.elevation)).length > 1) out.push({ thingId, zones: zs })
+  }
+  return out
+}
+
+// ── Overlaps (ADR-170 D1 / S3) ───────────────────────────────────────────────
+
+/** Two plan areas sharing less than this (mm²) only touch — an edge is not an overlap. */
+export const OVERLAP_AREA_TOLERANCE = mm(1) * mm(1)
+
+/** The three answers to "do these overlap?" — UNDECIDABLE is said, never folded into NO. */
+export const OVERLAP = Object.freeze({
+  YES:         'overlaps',
+  NO:          'apart',
+  /** a plate is concave — S3 decides convex plates only (Q5) */
+  UNDECIDABLE: 'undecidable',
+})
+
+/**
+ * How two plates at the SAME height stand on the plan: same rules as below,
+ * without the height question.
+ */
+function planOverlap(a, b) {
+  if (a.length < 3 || b.length < 3) return OVERLAP.NO
+  if (!isConvexXY(a) || !isConvexXY(b)) return OVERLAP.UNDECIDABLE
+  return convexOverlapAreaXY(a, b) > OVERLAP_AREA_TOLERANCE ? OVERLAP.YES : OVERLAP.NO
+}
+
+/**
+ * Does a thing overlap a zone (D1)? Its footprint is the plan hull of its corners
+ * and it stands at its lowest corner; it overlaps when that height is the zone's
+ * elevation and the two share area. A thing stacked on another thing in the zone
+ * stands higher and does not overlap — D1 says the footprint at the zone's height.
+ *
+ * @param {{ thing:{corners?:ReadonlyArray<{x:number,y:number,z:number}>}|null, zone:any }} p
+ * @returns {string} an OVERLAP value
+ */
+export function overlapsZone({ thing, zone }) {
+  if (!isZone(zone) || !thing?.corners?.length) return OVERLAP.NO
+  const elevation = plateElevationOf(zone.corners)
+  if (elevation === null) return OVERLAP.NO
+  const bottom = Math.min(...thing.corners.map(c => c.z))
+  if (Math.abs(bottom - elevation) > ELEVATION_TOLERANCE) return OVERLAP.NO
+  if (zone.corners.length >= 3 && !isConvexXY(zone.corners)) return OVERLAP.UNDECIDABLE
+  return planOverlap(convexHullXY(thing.corners), zone.corners)
+}
+
+/** The owner of a zone as the overlap reading needs it (O2). The context side maps its value onto these. */
+export const ZONE_OWNER_KIND = Object.freeze({
+  ACTOR:      'actor',
+  /** declared to belong to nobody — a legitimate zero */
+  NONE:       'none',
+  /** nobody has said — the counted zero */
+  UNDECLARED: 'undeclared',
+})
+
+/** How two overlapping zones read, by their owners (D2 as decided before S3). */
+export const ZONE_OVERLAP_KIND = Object.freeze({
+  /** one actor owns both — nothing to talk about */
+  SAME_OWNER: 'same-owner',
+  /** two declared, different actors — a conflict, shown */
+  CONFLICT:   'conflict',
+  /** one is declared to belong to nobody — no one to talk to */
+  OWNERLESS:  'ownerless',
+  /** one owner is undeclared — counted, not negotiated */
+  UNDECLARED: 'undeclared',
+  /** a plate is concave — whether they overlap is not decided */
+  UNDECIDABLE: 'undecidable',
+})
+
+const OWNER_KINDS = new Set(Object.values(ZONE_OWNER_KIND))
+
+/**
+ * Read a pair by its owners. Throws on an owner kind nobody declared (原則 #31 —
+ * a fall-through would make "a kind nobody thought about" read as one of these).
+ * @param {{kind:string, ref?:string}} a
+ * @param {{kind:string, ref?:string}} b
+ * @returns {string} a ZONE_OVERLAP_KIND value other than UNDECIDABLE
+ */
+export function overlapKindOf(a, b) {
+  for (const o of [a, b]) {
+    if (!OWNER_KINDS.has(o?.kind)) throw new Error(`zone: unknown owner kind "${o?.kind}"`)
+  }
+  if (a.kind === ZONE_OWNER_KIND.UNDECLARED || b.kind === ZONE_OWNER_KIND.UNDECLARED) return ZONE_OVERLAP_KIND.UNDECLARED
+  if (a.kind === ZONE_OWNER_KIND.NONE || b.kind === ZONE_OWNER_KIND.NONE) return ZONE_OVERLAP_KIND.OWNERLESS
+  return a.ref === b.ref ? ZONE_OVERLAP_KIND.SAME_OWNER : ZONE_OVERLAP_KIND.CONFLICT
+}
+
+/**
+ * Every pair of zones that overlap (or cannot be told apart from overlapping) at
+ * one height, each read by its owners. Pairs are ordered by id so a pair is one
+ * record whatever order the zones were drawn in. Zones at different heights never
+ * pair — two floors do not share area.
+ *
+ * @param {{ zones: ReadonlyArray<any>, ownerOf: (zone:any) => {kind:string, ref?:string} }} p
+ * @returns {Array<{a:any, b:any, kind:string}>}
+ */
+export function zoneOverlaps({ zones, ownerOf }) {
+  const list = zones.filter(isZone).slice().sort((x, y) => (x.id < y.id ? -1 : x.id > y.id ? 1 : 0))
+  const out = []
+  for (let i = 0; i < list.length; i++) {
+    for (let j = i + 1; j < list.length; j++) {
+      const a = list[i], b = list[j]
+      const ea = plateElevationOf(a.corners), eb = plateElevationOf(b.corners)
+      if (ea === null || eb === null || Math.abs(ea - eb) > ELEVATION_TOLERANCE) continue
+      const plan = planOverlap(a.corners, b.corners)
+      if (plan === OVERLAP.NO) continue
+      const kind = plan === OVERLAP.UNDECIDABLE ? ZONE_OVERLAP_KIND.UNDECIDABLE : overlapKindOf(ownerOf(a), ownerOf(b))
+      out.push({ a, b, kind })
+    }
   }
   return out
 }

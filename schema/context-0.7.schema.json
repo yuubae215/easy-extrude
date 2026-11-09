@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://easy-extrude.dev/schema/context-0.7.json",
   "title": "ContextDSL",
-  "description": "Public schema for Context DSL up to context/0.7 (ADR-046, ADR-049, ADR-053, ADR-104, ADR-165, ADR-168). This is the SHAPE contract: closed field sets + enum vocabularies. The MEANING contract (R1-R13: orphan-spec, conflicts, negotiation clusters, blocked acceptance, stated->derived promotion, role-KPI obligations, undeclared ownership, proposal/agenda integrity, unheard criteria, undeclared job function, arrangement integrity R15) stays in ContextValidator.js (ADR-064 Phase 2). Each context/0.x is an additive superset of the prior, so 0.1-0.6 docs all conform here (0.6 stops writing the legacy role value `endUser`, which is still accepted on input and rejected by the validator in a 0.6 doc — ADR-165 D1); `version` is bound to SUPPORTED_VERSIONS by the drift test. Domain-open bags (Fact.attrs, constraint.properties, meta.baseline) are kept open on purpose, mirroring the grasp-contract discipline (PHILOSOPHY #29).",
+  "description": "Public schema for Context DSL up to context/0.7 (ADR-046, ADR-049, ADR-053, ADR-104, ADR-165, ADR-168, ADR-170). This is the SHAPE contract: closed field sets + enum vocabularies. The MEANING contract (R1-R13: orphan-spec, conflicts, negotiation clusters, blocked acceptance, stated->derived promotion, role-KPI obligations, undeclared ownership, proposal/agenda integrity, unheard criteria, undeclared job function, arrangement integrity R15, zone owners R16 — ADR-170) stays in ContextValidator.js (ADR-064 Phase 2). Each context/0.x is an additive superset of the prior, so 0.1-0.6 docs all conform here (0.6 stops writing the legacy role value `endUser`, which is still accepted on input and rejected by the validator in a 0.6 doc — ADR-165 D1); `version` is bound to SUPPORTED_VERSIONS by the drift test. Domain-open bags (Fact.attrs, constraint.properties, meta.baseline) are kept open on purpose, mirroring the grasp-contract discipline (PHILOSOPHY #29).",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -71,6 +71,13 @@
       "type": "array",
       "items": {
         "$ref": "#/$defs/arrangement"
+      }
+    },
+    "owners": {
+      "description": "ADR-170 O2 / S3 (additive within context/0.7): who may change a ZONE — one row per owned zone, `of` = the zone's layout ref, `owner` = an actor ref or \"none\" (declared to belong to nobody). A zone with no row is UNDECLARED, the counted zero: it is never filled in from who drew it (provenance) or who claimed a belonging. 0..1 row per zone (a second row is a validator error, R16). Only zones may carry a row yet; any other kind is \"not decided\", reported by R16.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/entityOwner"
       }
     },
     "decisions": {
@@ -569,6 +576,24 @@
           "type": "array"
         },
         "note": {
+          "type": "string"
+        }
+      }
+    },
+    "entityOwner": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "of",
+        "owner"
+      ],
+      "properties": {
+        "of": {
+          "description": "Layout ref of the owned entity — a zone (placeType Zone) in S3.",
+          "type": "string"
+        },
+        "owner": {
+          "description": "An actor ref, or \"none\". Distinct from any `by` (who said something) — ADR-104 D2.",
           "type": "string"
         }
       }

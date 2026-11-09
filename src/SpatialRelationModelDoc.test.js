@@ -94,7 +94,8 @@ test('§6 and the dictionary\'s place category name the same words, both ways (A
 })
 
 test('each place word names something the code has (ADR-170)', async () => {
-  const { ZONE_PLACE_TYPE, plateElevationOf, floorOf } = await import('./domain/zone.js')
+  const { ZONE_PLACE_TYPE, plateElevationOf, floorOf, overlapsZone, zoneOverlaps } = await import('./domain/zone.js')
+  const { zoneOwnerOf } = await import('./context/Ownership.js')
   const { SEMANTIC_TYPES } = await import('./domain/SpatialLink.js')
   const { PLACE_TYPE_MAP } = await import('./domain/PlaceTypeRegistry.js')
   const named = {
@@ -102,6 +103,8 @@ test('each place word names something the code has (ADR-170)', async () => {
     contains:  () => SEMANTIC_TYPES.includes('contains'),
     elevation: () => typeof plateElevationOf === 'function',
     floor:     () => typeof floorOf === 'function',
+    overlaps:  () => typeof overlapsZone === 'function' && typeof zoneOverlaps === 'function',
+    owner:     () => typeof zoneOwnerOf === 'function',
   }
   for (const w of placeTableWords()) {
     assert.ok(named[w], `§6 word "${w}" has no pin to code here — say what it names`)
