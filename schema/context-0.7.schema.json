@@ -780,6 +780,11 @@
           "items": {
             "type": "string"
           }
+        },
+        "offeringsReadAtVersion": {
+          "description": "ADR-165 D5 (additive, closes DEF-068). The version of the agreed line at which `offeringsReadBy` was recorded. Reads are of one version: once the line has moved past it they no longer count (derived on read, never rewritten in place). Absent on reads recorded before versions were kept.",
+          "type": "integer",
+          "minimum": 1
         }
       }
     },
@@ -1894,6 +1899,11 @@
                   }
                 }
               }
+            },
+            "lineVersion": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "The version of the agreed line this assessment is about (additive, closes DEF-068). When the line has moved past it the margin is stale: derived, shown, and read again. Absent on a margin recorded before versions were kept — its age is unknown."
             }
           }
         },
@@ -1906,6 +1916,11 @@
           "properties": {
             "kind": {
               "const": "unsatisfiable"
+            },
+            "lineVersion": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "The version of the agreed line this assessment is about (additive, closes DEF-068). When the line has moved past it the margin is stale: derived, shown, and read again. Absent on a margin recorded before versions were kept — its age is unknown."
             }
           }
         },
@@ -1918,6 +1933,11 @@
           "properties": {
             "kind": {
               "const": "noBaseline"
+            },
+            "lineVersion": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "The version of the agreed line this assessment is about (additive, closes DEF-068). When the line has moved past it the margin is stale: derived, shown, and read again. Absent on a margin recorded before versions were kept — its age is unknown."
             }
           }
         },
@@ -1934,6 +1954,11 @@
             },
             "reason": {
               "type": "string"
+            },
+            "lineVersion": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "The version of the agreed line this assessment is about (additive, closes DEF-068). When the line has moved past it the margin is stale: derived, shown, and read again. Absent on a margin recorded before versions were kept — its age is unknown."
             }
           }
         }

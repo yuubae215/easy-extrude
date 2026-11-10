@@ -56,7 +56,10 @@ import { applyAdmissibleEdit } from '../context/ContextEditModel.js'
 import { applyQuestionAnswer } from '../context/FormApplication.js'
 import { withEndUserStance, endUsersOf } from '../context/ActorStance.js'
 import { criteriaSliceOf, recordTrial, trialGuards, chooseCandidate, HEARING_STEP } from '../context/CriteriaHearing.js'
-import { currentLine, isFrozenLineTarget, readMargin, marginReadGuards, MARGIN_KIND } from '../context/CriteriaLine.js'
+import {
+  currentLine, isFrozenLineTarget, readMargin, marginReadGuards, MARGIN_KIND,
+  lineVersion, marginAtVersion, marginReassessGuards, withReassessedMargin,
+} from '../context/CriteriaLine.js'
 import {
   wireLineOf, isAnswerForLine, lineWithChange, seenSnapshotOf, marginOf,
 } from '../context/CriteriaTrialWire.js'
@@ -244,6 +247,7 @@ export class ContextController {
     registerCallback('onHearingChoose',          (id)         => this.hearingChoose(id))
     registerCallback('onProposalMarginRead',     (ref)        => this.readProposalMargin(ref))
     registerCallback('onProposalMarginReadGuards', (ref)      => this.marginReadGuardsFor(ref))
+    registerCallback('onProposalMarginReassess', (ref)        => this.reassessProposalMargin(ref))
     registerCallback('onAssetViewerOpen',        (assetId)    => this.openAssetViewer(assetId))
     registerCallback('onAssetParam',             (key, value) => this.setAssetParam(key, value))
     registerCallback('onAssetViewerCommit',      ()           => this.commitAsset())
@@ -1903,16 +1907,46 @@ export class ContextController {
   async _assessLineChange(doc, target, to) {
     const { line } = wireLineOf(currentLine(doc))
     const { line: proposedLine } = wireLineOf(lineWithChange(doc, target, to))
+    // The record says which version of the line it is about (read before the
+    // await — the line may move while the solver is asked).
+    const version = lineVersion(doc)
     if (!line || !proposedLine) {
-      return { kind: MARGIN_KIND.UNASSESSED, reason: 'the line or the proposed line has blanks' }
+      return marginAtVersion({ kind: MARGIN_KIND.UNASSESSED, reason: 'the line or the proposed line has blanks' }, version)
     }
     const answer = await this._askCriteriaSolver({ line, proposedLine })
-    if (!answer.ok) return { kind: MARGIN_KIND.UNASSESSED, reason: answer.message }
+    if (!answer.ok) return marginAtVersion({ kind: MARGIN_KIND.UNASSESSED, reason: answer.message }, version)
     try {
-      return marginOf(answer.body.proposal)
+      return marginAtVersion(marginOf(answer.body.proposal), version)
     } catch (err) {
-      return { kind: MARGIN_KIND.UNASSESSED, reason: err.message }
+      return marginAtVersion({ kind: MARGIN_KIND.UNASSESSED, reason: err.message }, version)
     }
+  }
+
+  /**
+   * Ask the solver again what a line proposal gives up, against the line as it
+   * is NOW (a margin is of one version — closes DEF-068). One undoable doc
+   * edit; the earlier reads are dropped with the old record. Refusals are said.
+   */
+  async reassessProposalMargin(proposalRef) {
+    const ui = this._ctrl._uiView
+    const doc = this._ctxService.getDoc()
+    const proposal = (doc?.proposals ?? []).find(p => p.ref === proposalRef)
+    if (!proposal) { ui.showToast(`No proposal "${proposalRef}".`, { type: 'warn' }); return }
+    const g = marginReassessGuards(doc, proposal)
+    if (!g.ok) { ui.showToast(g.reasons.join(' '), { type: 'warn' }); return }
+    const margin = await this._assessLineChange(doc, proposal.target, proposal.to)
+    // The line may have moved while the solver was asked: the answer would be
+    // stale on arrival, so it is dropped and said — never written as current.
+    if (lineVersion(this._ctxService.getDoc()) !== lineVersion(doc)) {
+      ui.showToast('The line moved while the solver was asked — assess again.', { type: 'warn' })
+      return
+    }
+    this._commitHearing(`Assess ${proposalRef} again`, d => withReassessedMargin(d, proposalRef, margin))
+    ui.showToast(
+      margin.kind === MARGIN_KIND.UNASSESSED
+        ? `The margin of ${proposalRef} could not be assessed: ${margin.reason}`
+        : `Assessed ${proposalRef} against line v${margin.lineVersion} — every approver reads the new answer`,
+      { type: margin.kind === MARGIN_KIND.UNASSESSED ? 'warn' : 'info' })
   }
 
   /**
