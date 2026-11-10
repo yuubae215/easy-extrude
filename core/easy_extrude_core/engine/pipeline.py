@@ -69,6 +69,7 @@ from ..contract import (
 )
 from .candidates import generate_candidates, generate_spec_candidates
 from .feasibility import (
+    AlternateSolutionCollisionSearch,
     HAND_PATH_STEPS,
     CollisionChecker,
     grasp_miss,
@@ -791,6 +792,13 @@ def search_report(
         if isinstance(solver, UniversalRobotsIkSolver)
         else None
     )
+    # 代表解が干渉したときの次点探し (ADR-145 Option B)。腕と同じ型の分岐で決める —
+    # 解を並べられないソルバには作らない。
+    alternate_search = (
+        AlternateSolutionCollisionSearch(solver)
+        if isinstance(solver, UniversalRobotsIkSolver)
+        else None
+    )
     vis_checker = (
         visibility_checker
         if visibility_checker is not None
@@ -845,6 +853,47 @@ def search_report(
             for o in pick:
                 funnel.arm_pick_hits[o] += 1
 
+    def phase_collision(candidate, ik_solution, phase, *, first_only) -> "tuple[bool, tuple[Hit, ...]]":
+        """相 1 つで当たるか (と、数えられる当たり)。**何も累積しない**。
+
+        注入されたチェッカ (テストの継ぎ目) は進入相の判定だけを置き換える。
+        判定の源はここ 1 つ — 帰属・分析・次点探しが同じ答えを読む。
+        """
+        if phase is MotionPhase.APPROACH and collision_checker is not None:
+            collides = not interference_free(
+                candidate, problem.obstacles, collision_checker,
+                solution=ik_solution, robot=problem.robot,
+            )
+            return collides, ()
+        hits = phase_hits(
+            problem, phase, candidate,
+            solution=ik_solution, arm=arm, first_only=first_only,
+        )
+        return bool(hits), hits
+
+    def collides_anywhere(candidate, ik_solution) -> bool:
+        """評価するどれかの相で当たるか (累積なし — 次点探しが読む)。"""
+        return any(
+            phase_collision(candidate, ik_solution, phase, first_only=True)[0]
+            for phase in evaluated_phases
+        )
+
+    def solution_clear_of_obstacles(candidate, representative):
+        """この候補に使う関節解: 代表解が通ればそれ、当たれば干渉しない次点。
+
+        次点も全部当たる (か、次点を出せないソルバ) なら **None** — 候補は代表解の
+        当たりで棄却され、帰属も代表解のまま (ADR-145 Option B / ADR-157 D3)。
+        代表解が通る候補では代表解を返すので、答えは次点探しの前と変わらない。
+        """
+        if not collides_anywhere(candidate, representative):
+            return representative
+        if alternate_search is None:
+            return None
+        return alternate_search.first_free(
+            candidate, problem.robot, representative,
+            lambda s: collides_anywhere(candidate, s),
+        )
+
     def interference_phase(candidate, ik_solution) -> "Optional[MotionPhase]":
         """最初に当たった相 (ADR-157 D3)。当たらなければ None。
 
@@ -857,18 +906,9 @@ def search_report(
                 measure_arm_path(candidate, ik_solution)
         first: Optional[MotionPhase] = None
         for phase in evaluated_phases:
-            if phase is MotionPhase.APPROACH and collision_checker is not None:
-                collides = not interference_free(
-                    candidate, problem.obstacles, collision_checker,
-                    solution=ik_solution, robot=problem.robot,
-                )
-                hits: "tuple[Hit, ...]" = ()
-            else:
-                hits = phase_hits(
-                    problem, phase, candidate,
-                    solution=ik_solution, arm=arm, first_only=not analysing,
-                )
-                collides = bool(hits)
+            collides, hits = phase_collision(
+                candidate, ik_solution, phase, first_only=not analysing
+            )
             if not collides:
                 continue
             if first is None:
@@ -930,12 +970,19 @@ def search_report(
                     funnel.occlusion_nearest_miss = occlusion
                 return None
         # ADR-135 D2 で保持した解をそのまま渡す (解き直さない)。腕は `JointSolution`
-        # のときだけ再構成される。棄却は最初に当たった相へ帰属する (ADR-157 D3)。
-        hit_phase = interference_phase(candidate, ik_solution)
-        if hit_phase is not None:
+        # のときだけ再構成される。代表解が当たれば干渉しない次点へ移る (ADR-145
+        # Option B) — 以後この候補の関節解は**選ばれた解**で、ワイヤに載るのもそれ。
+        clear = solution_clear_of_obstacles(candidate, ik_solution)
+        if clear is None:
+            # 全解が当たる。棄却は代表解が最初に当たった相へ帰属する (ADR-157 D3)。
+            hit_phase = interference_phase(candidate, ik_solution)
             funnel.rejected_by_interference += 1
             funnel.rejected_by_phase[hit_phase] += 1
             return None
+        ik_solution = clear
+        if analysing:
+            # 全相分析の累積 (腕の経路の測定を含む) は、実際に使う解について 1 回。
+            interference_phase(candidate, ik_solution)
         objective_scores = evaluate_objectives(candidate, problem, objective_names)
         total = weighted_sum(objective_scores, weights)
         return (total, candidate.pose, objective_scores, ik_solution, candidate.spec_id, candidate)

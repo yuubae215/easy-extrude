@@ -1614,3 +1614,53 @@ def test_camera_rectangular_view_fixture_is_reproduced_by_the_source():
             assert (
                 inside_rectangular_view(cam, Vec3(*probe["point"])) is probe["inside"]
             ), f'{case["name"]}: {probe["label"]}'
+
+
+# --- ADR-145 Option B: 干渉しない次点の関節解 (DEF-037 決着) ---------------------
+
+from easy_extrude_core.engine.feasibility import (  # noqa: E402
+    AlternateSolutionCollisionSearch,
+    IkSolution,
+)
+
+
+class _RankedFake:
+    """決まった優先順の解を返すソルバ (順序だけを問うための継ぎ目)。"""
+
+    def __init__(self, *joints):
+        self._ranked = tuple(JointSolution(joints=j) for j in joints)
+
+    def ranked_solutions(self, candidate, robot):
+        return self._ranked
+
+
+_A, _B, _C = (0.0,) * 6, (0.1,) * 6, (0.2,) * 6
+
+
+def test_alternate_search_takes_the_first_clear_solution_in_the_representatives_order():
+    search = AlternateSolutionCollisionSearch(_RankedFake(_A, _B, _C))
+    rep = JointSolution(joints=_A)
+    asked = []
+
+    def collides(s):
+        asked.append(s.joints)
+        return s.joints == _B
+
+    assert search.first_free(None, None, rep, collides).joints == _C
+    # 代表解は問い直さない (呼び手が既に当たると知っている)。順序は優先順。
+    assert asked == [_B, _C]
+    # 同じ問いをもう一度 — 同じ答え (探索は状態を持たない)。
+    assert search.first_free(None, None, rep, lambda s: s.joints == _B).joints == _C
+
+
+def test_alternate_search_returns_none_when_every_branch_collides_or_there_is_no_other_branch():
+    rep = JointSolution(joints=_A)
+    assert AlternateSolutionCollisionSearch(_RankedFake(_A, _B)).first_free(None, None, rep, lambda s: True) is None
+    assert AlternateSolutionCollisionSearch(_RankedFake(_A)).first_free(None, None, rep, lambda s: False) is None
+
+
+def test_alternate_search_never_treats_a_placeholder_solution_as_an_arm():
+    """素朴 IK の占位解 (`IkSolution`) には次点が無い — 型で分ける (原則 #2)。"""
+    search = AlternateSolutionCollisionSearch(_RankedFake(_A, _B))
+    assert search.alternates(None, None, IkSolution(joints=(0.0,))) == ()
+    assert search.first_free(None, None, IkSolution(joints=(0.0,)), lambda s: False) is None

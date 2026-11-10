@@ -621,3 +621,42 @@ def test_no_returned_candidate_means_no_replay():
 def test_firstcollision_carries_no_replay():
     wire = _wire(**_SCENES["close"])
     assert wire["diagnostics"]["interferenceAnalysis"] == {"kind": "firstCollision"}
+
+
+# --- ADR-145 Option B: 代表解が当たれば、干渉しない次点へ移る (DEF-037 決着) -------
+
+
+def test_the_analysis_counts_each_candidate_once_and_describes_the_solution_that_is_used():
+    """次点探しは同じ候補を何度も判定するが、分析の母集団は候補 1 件につき 1 回。
+
+    台座テンプレでは 4 件が次点で救われる。分析が述べるのは**実際に使う解** — 救われた
+    候補はもう当たらないので、ピック姿勢で腕が当たる候補は 0 件になる。
+    """
+    full = _wire_raw(_pedestal_raw(), "allPhases")
+    first = _wire_raw(_pedestal_raw(), "firstCollision")
+    analysis = full["diagnostics"]["interferenceAnalysis"]
+    assert analysis["candidatesAnalysed"] == full["diagnostics"]["candidatesGenerated"] == 36
+    assert analysis["armPath"]["atPickPose"]["candidates"] == 0
+    # 分析は答えを 1 ビットも変えない (救われる候補も、選ばれる解も同じ)。
+    assert full["candidates"] == first["candidates"]
+    assert full["diagnostics"]["rejectedByInterference"] == first["diagnostics"]["rejectedByInterference"] == 0
+
+
+def test_when_every_branch_collides_the_candidate_is_rejected_and_attributed_as_before():
+    """全解が当たる候補は救わない。棄却は代表解が最初に当たった相 (進入) へ帰属する。
+
+    肩の位置 (ベース + d1) を包む球は、腕がどの形をとっても肩で当たる。
+    """
+    raw = _pedestal_raw()
+    base = raw["graspSearch"]["robot"]["base"]
+    d1 = raw["graspSearch"]["robot"]["kinematics"]["dh"]["d1"]
+    raw["graspSearch"]["obstacles"].append(
+        {"kind": "sphere", "center": [base[0], base[1], base[2] + d1], "radius": 0.05})
+    full = _wire_raw(raw, "allPhases")
+    d = full["diagnostics"]
+    assert d["rejectedByInterference"] == d["candidatesGenerated"] == 36
+    assert full["candidates"] == []
+    approach = next(r for r in d["interferencePhases"] if r["phase"] == "approach")
+    assert approach["kind"] == "evaluated" and approach["rejected"] == 36
+    # 母集団は候補 1 件につき 1 回のまま — 8 解を試したぶんを数えない。
+    assert d["interferenceAnalysis"]["candidatesAnalysed"] == 36
