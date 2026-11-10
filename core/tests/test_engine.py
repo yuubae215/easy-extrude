@@ -1475,3 +1475,142 @@ def test_suction_hold_malformed_declarations_are_refused_not_defaulted(bad):
 
 def test_suction_hold_gravity_constant_is_standard():
     assert STANDARD_GRAVITY == 9.80665
+
+
+# --- ADR-171: 視野は矩形でも宣言できる (描く形 = 判定する形) --------------------
+
+from pathlib import Path  # noqa: E402
+import json as _json  # noqa: E402
+
+from easy_extrude_core.engine.feasibility import (  # noqa: E402
+    inside_rectangular_view,
+    sightline_occlusion_miss,
+)
+
+
+def _down_camera(**kw) -> Camera:
+    """真下を見るカメラ (画像の上 = ワールド +X)。"""
+    return Camera(
+        position=Vec3(0.0, 0.0, 1.0),
+        view_axis=Vec3(0.0, 0.0, -1.0),
+        image_up=Vec3(1.0, 0.0, 0.0),
+        **kw,
+    )
+
+
+def test_rectangular_view_judges_the_corners_the_cone_leaves_out():
+    """同じ半角で、円錐は四隅を落とし矩形は通す — DEF-061 が閉じた差そのもの。"""
+    half = 0.5
+    rect = _down_camera(fov_half_angles=(half, half))
+    cone = Camera(
+        position=Vec3(0.0, 0.0, 1.0), view_axis=Vec3(0.0, 0.0, -1.0), fov_half_angle=half
+    )
+    t = math.tan(half)
+    corner = Vec3(0.95 * t, 0.95 * t, 0.0)  # 奥行き 1 の四隅の少し内側
+    assert sightline_occlusion_miss(rect, corner, ()) == 0.0
+    assert sightline_occlusion_miss(cone, corner, ()) == math.inf
+    # 視軸上はどちらも見える。矩形の外はどちらも見えない。
+    assert sightline_occlusion_miss(rect, Vec3(0.0, 0.0, 0.0), ()) == 0.0
+    assert sightline_occlusion_miss(rect, Vec3(1.1 * t, 0.0, 0.0), ()) == math.inf
+
+
+def test_rectangular_view_width_and_height_are_two_facts():
+    """水平と垂直は別の数。画像の上 = +X なので、垂直はワールド X、水平はワールド Y。"""
+    cam = _down_camera(fov_half_angles=(0.6, 0.2))
+    assert inside_rectangular_view(cam, Vec3(0.0, 0.9 * math.tan(0.6), 0.0))
+    assert not inside_rectangular_view(cam, Vec3(0.9 * math.tan(0.6), 0.0, 0.0))
+    assert inside_rectangular_view(cam, Vec3(0.9 * math.tan(0.2), 0.0, 0.0))
+    # ロール (image_up) を 90° 回すと入れ替わる — 向きは image_up が決めている。
+    rolled = Camera(
+        position=Vec3(0.0, 0.0, 1.0),
+        view_axis=Vec3(0.0, 0.0, -1.0),
+        image_up=Vec3(0.0, 1.0, 0.0),
+        fov_half_angles=(0.6, 0.2),
+    )
+    assert inside_rectangular_view(rolled, Vec3(0.9 * math.tan(0.6), 0.0, 0.0))
+    # 後ろは見えない。
+    assert not inside_rectangular_view(cam, Vec3(0.0, 0.0, 2.0))
+
+
+def test_rectangular_view_still_measures_occlusion_inside():
+    cam = _down_camera(fov_half_angles=(0.5, 0.5))
+    blocker = Obstacle(center=Vec3(0.0, 0.0, 0.5), radius=0.1)
+    assert sightline_occlusion_miss(cam, Vec3(0.0, 0.0, 0.0), (blocker,)) == pytest.approx(0.1)
+
+
+@pytest.mark.parametrize(
+    "extra, message",
+    [
+        ({"fovHalfAngle": 0.5}, "同時に宣言できない"),
+        ({"__drop__": "imageUp"}, "viewAxis と imageUp"),
+        ({"__drop__": "viewAxis"}, "viewAxis と imageUp"),
+        ({"imageUp": [0.0, 0.0, 2.0]}, "平行"),
+        ({"fovHalfAngles": {"horizontal": 0.5, "vertical": 1.6}}, "半角"),
+    ],
+)
+def test_inconsistent_rectangular_declaration_is_refused_not_degraded(extra, message):
+    """欠けた・矛盾した矩形の宣言を円錐や「視野なし」へ倒さない (原則 #31)。"""
+    decl = _declaration_dict()
+    camera = {
+        "position": [0.0, 0.0, 1.0],
+        "viewAxis": [0.0, 0.0, -1.0],
+        "imageUp": [1.0, 0.0, 0.0],
+        "fovHalfAngles": {"horizontal": 0.5, "vertical": 0.3},
+    }
+    drop = extra.pop("__drop__", None)
+    camera.update(extra)
+    if drop:
+        del camera[drop]
+    decl["camera"] = camera
+    with pytest.raises(DeclarationError, match=message):
+        problem_from_declaration(GraspSearchDeclaration.model_validate(decl))
+
+
+def test_problem_from_declaration_reads_the_rectangular_camera():
+    decl = _declaration_dict()
+    decl["camera"] = {
+        "position": [0.0, 0.0, 1.0],
+        "viewAxis": [0.0, 0.0, -1.0],
+        "imageUp": [1.0, 0.0, 0.0],
+        "fovHalfAngles": {"horizontal": 0.5, "vertical": 0.3},
+    }
+    problem = problem_from_declaration(GraspSearchDeclaration.model_validate(decl))
+    assert problem.camera == _down_camera(fov_half_angles=(0.5, 0.3))
+
+
+def test_camera_rectangular_view_fixture_is_reproduced_by_the_source():
+    """fixtures/cross-language/camera-rectangular-view.json の数を core/ が再現する。
+
+    源は core/ (判定する側)。フロントの描く視錐台 (`frustumCorners`) が同じファイルを
+    読む (ADR-146 D3 / ADR-171) — 片側だけが読む数は対照にならない。
+    """
+    root = Path(__file__).resolve().parents[2]
+    fixture = _json.loads(
+        (root / "fixtures/cross-language/camera-rectangular-view.json").read_text()
+    )
+    tol = fixture["tolerance"]
+    assert len(fixture["cases"]) >= 3
+    for case in fixture["cases"]:
+        half = case["fovHalfAngles"]
+        cam = Camera(
+            position=Vec3(*case["pose"]["positionM"]),
+            view_axis=Vec3(*case["wire"]["viewAxis"]),
+            image_up=Vec3(*case["wire"]["imageUp"]),
+            fov_half_angles=(half["horizontal"], half["vertical"]),
+        )
+        right, up, forward = cam.view_basis()
+        th, tv = math.tan(half["horizontal"]), math.tan(half["vertical"])
+        signs = ((-1, 1), (1, 1), (1, -1), (-1, -1))  # 画像の順: 左上, 右上, 右下, 左下
+        for (sx, sy), want in zip(signs, case["cornerRays"]):
+            got = right.scaled(sx * th) + up.scaled(sy * tv) + forward
+            assert got.as_list() == pytest.approx(want, abs=tol)
+            # 稜線のわずかに内側は見え、外側は見えない (描く四隅 = 判定の境界)。
+            centre = forward
+            inner = cam.position + centre + (got - centre).scaled(0.99)
+            outer = cam.position + centre + (got - centre).scaled(1.01)
+            assert inside_rectangular_view(cam, inner)
+            assert not inside_rectangular_view(cam, outer)
+        for probe in case["probes"]:
+            assert (
+                inside_rectangular_view(cam, Vec3(*probe["point"])) is probe["inside"]
+            ), f'{case["name"]}: {probe["label"]}'

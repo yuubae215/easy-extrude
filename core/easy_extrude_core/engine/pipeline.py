@@ -543,10 +543,20 @@ def problem_from_declaration(declaration: GraspSearchDeclaration) -> Problem:
     if camera_raw:
         view_axis_raw = camera_raw.get("viewAxis")
         fov_raw = camera_raw.get("fovHalfAngle")
+        # 矩形視野 (ADR-171)。宣言の不整合 (円錐と両立 / viewAxis・imageUp 欠落) は
+        # Camera が ValueError で拒否する — 円錐へ倒さない。
+        rect_raw = camera_raw.get("fovHalfAngles")
+        image_up_raw = camera_raw.get("imageUp")
         camera = Camera(
             position=_vec3(camera_raw.get("position")),
             view_axis=_vec3(view_axis_raw) if view_axis_raw is not None else None,
             fov_half_angle=float(fov_raw) if fov_raw is not None else None,
+            fov_half_angles=(
+                (float(rect_raw["horizontal"]), float(rect_raw["vertical"]))
+                if rect_raw is not None
+                else None
+            ),
+            image_up=_vec3(image_up_raw) if image_up_raw is not None else None,
         )
 
     # ハンド宣言は kind 判別の union (ADR-118 / 契約 v5)。**kind 欠落や未知の kind を

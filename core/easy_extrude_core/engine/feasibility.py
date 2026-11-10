@@ -401,6 +401,29 @@ class VisibilityChecker(Protocol):
     ) -> float: ...
 
 
+def inside_rectangular_view(camera: Camera, point: Vec3) -> bool:
+    """点が矩形視野 (四角錐, 奥行き無制限) の内側か (純粋, 閉形式 — ADR-171)。
+
+    カメラ基底 (右, 上, 前) で視線を分解し、前方 (z > 0) かつ
+    |x| <= z·tan(水平半角) かつ |y| <= z·tan(垂直半角)。境界は内側。
+    フロントが描く視錐台 (`visionCamera.frustumCorners`) と同じ式で、一致は
+    共有フィクスチャ `fixtures/cross-language/camera-rectangular-view.json` が問う。
+    """
+    basis = camera.view_basis()
+    if basis is None or camera.fov_half_angles is None:
+        return False
+    right, up, forward = basis
+    ray = point - camera.position
+    z = ray.dot(forward)
+    if z <= _EPS:
+        return False
+    half_h, half_v = camera.fov_half_angles
+    return (
+        abs(ray.dot(right)) <= z * math.tan(half_h) + _EPS
+        and abs(ray.dot(up)) <= z * math.tan(half_v) + _EPS
+    )
+
+
 def sightline_occlusion_miss(
     camera: Camera, point: Vec3, obstacles: tuple[Obstacle, ...]
 ) -> float:
@@ -409,11 +432,15 @@ def sightline_occlusion_miss(
     候補粒度 (NaiveSightlineVisibilityChecker) とエンティティ粒度
     (scene.derivation の targetable 絞り込み, ADR-081 Decision 1) が同じ視線判定を
     共有するための単一実装 (第二の源を作らない)。返り値の規約は VisibilityChecker と
-    同じ: 0.0 = 見える / 正 = 最も深く遮る球の食い込み量 / inf = 視野円錐外。
+    同じ: 0.0 = 見える / 正 = 最も深く遮る球の食い込み量 / inf = 視野 (円錐または矩形) の外。
     """
     eye = camera.position
+    # 視野の形は円錐か矩形のどちらか 1 つ (Camera が両立を拒否する)。
+    if camera.fov_half_angles is not None:
+        if not inside_rectangular_view(camera, point):
+            return math.inf
     # 視野円錐 (視軸 + 半角の両宣言時のみ)。円錐外は遮蔽量で測れない -> inf。
-    if camera.view_axis is not None and camera.fov_half_angle is not None:
+    elif camera.view_axis is not None and camera.fov_half_angle is not None:
         axis = camera.view_axis.normalized()
         ray = (point - eye).normalized()
         if axis.norm() < _EPS or ray.norm() < _EPS:

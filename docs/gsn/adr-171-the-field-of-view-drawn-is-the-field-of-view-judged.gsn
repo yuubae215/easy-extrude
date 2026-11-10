@@ -1,0 +1,104 @@
+GOALS adr171_the_field_of_view_drawn_is_the_field_of_view_judged
+
+goal WhatIsDrawnAsVisibleIsWhatIsJudgedVisible
+uuid 5f68dcca-8cce-499e-852f-0b0c1e7683e6
+summary "画面に描かれたカメラの視錐台の内側と、判定エンジンが『視野の内』とする範囲が一致する。半角 1 つで円錐を宣言していた既存のワイヤ利用者の答えは 1 つも動かない"
+state UnderReview
+labels adr-171, grasp, vision, term-q, change-depiction-parity
+artifacts
+- "docs/adr/ADR-171-the-field-of-view-drawn-is-the-field-of-view-judged.md"
+- "docs/adr/ADR-164-a-declaration-lives-on-the-screen-of-the-entity-that-owns-the-fact.md"
+
+    context Adr171Scope
+    uuid ca456234-b819-45bf-8029-72b41904e879
+    summary "ADR-171 (Accepted 2026-11-10): request 契約の camera に fovHalfAngles + imageUp を任意で足し (版上げなし)、core/ は四角錐で判定する。フロントの宣言は矩形だけで、旧い 1 角は正方形として読む。DEF-061 を閉じた"
+
+    context RequirementCameFromTheOwner
+    uuid 4539f160-4110-400d-98ac-9dc20deb38bf
+    summary "当事者の言葉: 2026-10-11『後でソルバーも見直しましょう』(矩形を描くと決めた日) → 2026-11-10『決めずに残したものから、導入価値の高いものから優先度をつけて導入してください』、俯瞰の Q2 に『推奨で良い』"
+
+    justification ConeOnlyAndRectangleOnlyWereRejected
+    uuid fb9d4435-0e5b-4126-970e-5766993fbea5
+    summary "却下: 矩形だけにする案は既存の全リクエストを壊し回転対称のセンサの言い方を消す。円錐を描く案は当事者判断 (矩形) に反する。断り書きのままは、絵と判定が違うことを人に覚えさせ続ける"
+
+    assumption LegacyOneAngleCameraReadsAsTheSquareItWasDrawnAs
+    uuid 2f9ee507-9ab8-412d-ada6-e1fb39b4f4b5
+    summary "反証されうる仮説: フロントの旧い 1 角のカメラを正方形として送る読みが当事者の期待である (絵は変わらず判定が絵に追いつく — 四隅が『見える』へ動く)。Claude が選んだ読みで、当事者が『旧い文書は円錐のまま』を選べば D4 を改訂する"
+
+    assumption AnIdealPinholeIsEnough
+    uuid 15bf39a8-e92f-404d-bcc4-f90dca706335
+    summary "反証されうる仮説: レンズ歪み・近遠クリップ・被写界深度を見ない理想ピンホールの矩形で、配置検討の『見えるか』には足りる。実カメラとの差が判定を左右する例が出たら別の決定にする"
+
+    strategy ByOneClosedFormReadOnBothSides
+    uuid a8df3c94-cf7e-4397-acc4-d3ed8350de82
+    summary "判定を閉形式 1 本 (前・上・右の基底で視線を分解し tan で比べる) にし、描く側が同じ四角錐を再現していることを共有フィクスチャで両言語から問う。宣言の不整合は倒さず拒否する"
+
+        goal TheSolverJudgesTheRectangle
+        uuid 212fd04b-deee-4898-a06b-a5b3f2d08dac
+        summary "core/ は矩形の宣言で四隅を通し (同じ半角の円錐は落とす)、水平と垂直を別の数として扱い、imageUp を回せば入れ替わり、内側では遮蔽を従来どおり測る"
+        labels support-verified
+
+            solution CoreEngineTestsAreExecuted
+            uuid 0192fdf3-73ae-4143-b290-8f74f5b13b09
+            summary "cd core && uv run pytest (2026-11-10: 332 pass): test_engine.py の ADR-171 節 — 四隅の差・幅と高さ・遮蔽・宣言の読み取り"
+            artifacts
+            - "core/tests/test_engine.py"
+            - "core/easy_extrude_core/engine/feasibility.py"
+
+        goal AnInconsistentDeclarationIsRefusedNotDegraded
+        uuid 0680775b-6380-40b4-9579-f4c47bb31c31
+        summary "円錐との同時宣言・viewAxis か imageUp の欠落・視軸と平行な imageUp・範囲外の半角は DeclarationError (400) になり、円錐や視野なしへ倒れない。スキーマも同じことを言う"
+        labels support-verified
+
+            solution RefusalCasesAreExecuted
+            uuid 76d4d68e-c46e-4a36-8abd-105acf4dbc86
+            summary "test_engine.py の test_inconsistent_rectangular_declaration_is_refused_not_degraded (5 ケース) + pnpm test:contract (39 pass — スキーマの not / dependentRequired を含む request スキーマがコンパイルされ例が適合する)"
+            artifacts
+            - "core/tests/test_engine.py"
+            - "packages/grasp-contract/schema/grasp-search-request.schema.json"
+
+        goal TheDrawnFrustumIsTheJudgedPyramid
+        uuid 332d45f1-7c3e-43c7-9378-a0e78992ed4d
+        summary "フロントが描く四隅 (frustumCorners) とワイヤの向き (wireCameraOf の viewAxis / imageUp) が、core/ の判定する四角錐の稜線に乗る — 真下・単位姿勢・傾けて回した姿勢の 3 つで"
+        labels support-verified
+
+            solution SharedFixtureIsReadByBothLanguages
+            uuid da7d824a-6f95-48df-92ae-19e676f7e806
+            summary "fixtures/cross-language/camera-rectangular-view.json を core/tests/test_engine.py (稜線の 0.99 倍は見え 1.01 倍は見えない) と src/robotics/CrossLanguageDerivation.test.js (四隅と向きの一致) が読む。登録簿の個数は 4 → 5"
+            artifacts
+            - "fixtures/cross-language/camera-rectangular-view.json"
+            - "src/robotics/CrossLanguageDerivation.test.js"
+
+        goal ExistingWireAnswersDoNotMove
+        uuid 65911eb3-5e80-4494-9ee0-c32b319d7c91
+        summary "半角 1 つ (円錐) で宣言している手書きテンプレと既存のエンジン検査の答えは 1 つも変わらない"
+        labels support-verified
+
+            solution TemplatesAndOldConeTestsStayGreen
+            uuid 277a84e3-165e-4e8e-ab54-b8ba848e3bf0
+            summary "cd core && uv run pytest: test_templates.py と test_engine.py の円錐の検査 (fov のみの棄却は測れない、ほか) が無変更で緑"
+            artifacts
+            - "core/tests/test_templates.py"
+
+        goal TheFrontNeverSendsTheConeAndWritesOneShape
+        uuid abaf7b71-9f08-4891-8b8c-d5acdffe8d59
+        summary "フロントは視野を宣言したカメラを常に矩形 (fovHalfAngles + imageUp) で送り、旧い 1 角は正方形として読み、書き手は 2 角の形だけを書いて旧い鍵を残さない。両方が在る宣言は malformed"
+        labels support-verified
+
+            solution FrontUnitTestsAreExecuted
+            uuid b4c26a93-4ef6-4357-8982-f4339fc15514
+            summary "pnpm test (2026-11-10: 2232 pass): visionCamera.test.js (読み・書き・ワイヤ・ロール・視点の写し)、GraspController.test.js (旧形式が正方形で載る・視点の矩形が 1 回の undo で書かれる)、mocks の矩形の検査"
+            artifacts
+            - "src/domain/visionCamera.test.js"
+            - "src/controller/GraspController.test.js"
+
+        goal TheRealScreenShowsTheRectangle
+        uuid b645efcf-85c7-4e78-8b74-299fae8d7977
+        summary "実アプリで、カメラのパネルに半角 2 つの欄が出て、縦横の違う視錐台が描かれ、Run のリクエストに矩形が載る"
+        labels support-verified
+
+            solution PlaywrightCameraSpecIsExecuted
+            uuid 3d7a392e-460b-4eee-b3f0-fcea31074cf7
+            summary "VITE_GRASP_STUB=1 playwright test e2e/grasp-stub.spec.js -g S19 (2026-11-10: 1 passed) — Add メニューから足したカメラの Run のリクエストに fovHalfAngles {0.6, 0.6} と imageUp [1, 0, 0] が載る。加えて dev server で半角 2 つの欄に 0.3 を入れ『≈ 69° across × 34° up-down』と出ることを目視した (page error 0 件)。視錐台そのものの絵は目視していない (カメラが視点の外に在った) — 四隅の数は共有フィクスチャが問う"
+            artifacts
+            - "e2e/grasp-stub.spec.js"

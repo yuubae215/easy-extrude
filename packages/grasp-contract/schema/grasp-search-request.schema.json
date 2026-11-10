@@ -125,7 +125,7 @@
         },
         "camera": {
           "type": "object",
-          "description": "Declares the vision camera for the 'can it be seen' domain gate (ADR-081). Like `robot`, this only declares -- visibility evaluation itself is solved in core/. Optional: with no camera declared the visibility stage passes everything (rejectedByVisibility stays 0 and `visible` is vacuously true).",
+          "description": "Declares the vision camera for the 'can it be seen' domain gate (ADR-081). Like `robot`, this only declares -- visibility evaluation itself is solved in core/. Optional: with no camera declared the visibility stage passes everything (rejectedByVisibility stays 0 and `visible` is vacuously true). The field of view is declared in ONE of two shapes, never both: a cone (`fovHalfAngle`) or a rectangle (`fovHalfAngles` + `imageUp`, ADR-171).",
           "additionalProperties": false,
           "properties": {
             "position": {
@@ -148,13 +148,57 @@
             },
             "fovHalfAngle": {
               "type": "number",
-              "description": "Optional field-of-view half angle in radians (cone around viewAxis).",
+              "description": "Optional field-of-view half angle in radians (CONE around viewAxis). Not together with `fovHalfAngles`.",
               "minimum": 0
+            },
+            "fovHalfAngles": {
+              "type": "object",
+              "description": "Optional RECTANGULAR field of view (ADR-171): half angles in radians about the image's horizontal and vertical axes — an unbounded four-sided pyramid around viewAxis, oriented by `imageUp`. Requires `viewAxis` and `imageUp`. Not together with `fovHalfAngle`.",
+              "additionalProperties": false,
+              "required": [
+                "horizontal",
+                "vertical"
+              ],
+              "properties": {
+                "horizontal": {
+                  "type": "number",
+                  "exclusiveMinimum": 0,
+                  "exclusiveMaximum": 1.5707963267948966,
+                  "description": "Half angle across the image width (left-right), radians."
+                },
+                "vertical": {
+                  "type": "number",
+                  "exclusiveMinimum": 0,
+                  "exclusiveMaximum": 1.5707963267948966,
+                  "description": "Half angle across the image height (up-down), radians."
+                }
+              }
+            },
+            "imageUp": {
+              "type": "array",
+              "description": "World-frame direction of image-up (need not be unit length nor exactly perpendicular to viewAxis; the solver removes the viewAxis component). Fixes the rectangle's roll about viewAxis. Must not be parallel to viewAxis.",
+              "items": {
+                "type": "number"
+              },
+              "minItems": 3,
+              "maxItems": 3
             }
           },
           "required": [
             "position"
-          ]
+          ],
+          "dependentRequired": {
+            "fovHalfAngles": [
+              "viewAxis",
+              "imageUp"
+            ]
+          },
+          "not": {
+            "required": [
+              "fovHalfAngle",
+              "fovHalfAngles"
+            ]
+          }
         },
         "gripper": {
           "type": "object",

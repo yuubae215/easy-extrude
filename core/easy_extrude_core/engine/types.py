@@ -459,8 +459,16 @@ class Camera:
     - position: カメラ光学中心の位置。可視性 naive はここから把持点への視線
       (線分) が障害物球に遮られないかを判定する。
     - view_axis: 任意の視軸 (カメラが向く方向, 単位でなくてよい — 判定側で正規化)。
-    - fov_half_angle: 任意の視野円錐の半角 (ラジアン)。view_axis と両方宣言された
+    - fov_half_angle: 任意の視野**円錐**の半角 (ラジアン)。view_axis と両方宣言された
       ときだけ視野判定が効く (片方だけなら視野は無制限として扱う)。
+    - fov_half_angles: 任意の**矩形**視野の半角 (水平, 垂直) (ラジアン, 各 (0, π/2))。
+      view_axis と image_up が要る (ADR-171)。
+    - image_up: 画像の上方向 (ワールド, 単位でなくてよい)。矩形の向き (視軸まわりの
+      ロール) を決める。視軸と平行であってはならない。
+
+    視野の形は**円錐か矩形のどちらか 1 つ** — 両方を宣言した入力は拒否する
+    (どちらで判定されたかが応答から読めないため。原則 #31)。矩形の宣言で
+    view_axis / image_up が欠けるのも拒否する (無言で不活性な入力にしない)。
 
     宣言は graspSearch open payload の `camera` キー (layoutVersion 統治,
     contractVersion 版上げ不要 — ADR-081 §統治上の前提)。
@@ -469,6 +477,45 @@ class Camera:
     position: Vec3
     view_axis: Vec3 | None = None
     fov_half_angle: float | None = None
+    fov_half_angles: "tuple[float, float] | None" = None
+    image_up: Vec3 | None = None
+
+    def __post_init__(self) -> None:
+        if self.fov_half_angles is None:
+            return
+        if self.fov_half_angle is not None:
+            raise DeclarationError(
+                "camera: fovHalfAngle (円錐) と fovHalfAngles (矩形) は同時に宣言できない"
+            )
+        if self.view_axis is None or self.image_up is None:
+            raise DeclarationError(
+                "camera: fovHalfAngles (矩形) には viewAxis と imageUp の両方が要る"
+            )
+        for a in self.fov_half_angles:
+            if not (0.0 < a < math.pi / 2):
+                raise DeclarationError(
+                    f"camera: fovHalfAngles の各半角は (0, π/2) rad — got {a!r}"
+                )
+        if self.view_basis() is None:
+            raise DeclarationError("camera: imageUp が viewAxis と平行で、矩形の向きが決まらない")
+
+    def view_basis(self) -> "tuple[Vec3, Vec3, Vec3] | None":
+        """(右, 上, 前) の正規直交基底 (純粋)。矩形視野の向き。
+
+        前 = 視軸、上 = image_up から視軸成分を除いたもの、右 = 前 × 上
+        (ROS optical frame: +X 画像右 / +Y 画像下 / +Z 前 と同じ手系)。
+        決まらなければ None。
+        """
+        if self.view_axis is None or self.image_up is None:
+            return None
+        if self.view_axis.norm() < 1e-12:
+            return None
+        forward = self.view_axis.normalized()
+        up_raw = self.image_up - forward.scaled(self.image_up.dot(forward))
+        if up_raw.norm() < 1e-9:
+            return None
+        up = up_raw.normalized()
+        return forward.cross(up), up, forward
 
 
 class GripperKind(str, Enum):

@@ -108,7 +108,7 @@ export interface GraspSearchDeclaration {
     kinematics?: KinematicsUniversalRobots;
   };
   /**
-   * Declares the vision camera for the 'can it be seen' domain gate (ADR-081). Like `robot`, this only declares -- visibility evaluation itself is solved in core/. Optional: with no camera declared the visibility stage passes everything (rejectedByVisibility stays 0 and `visible` is vacuously true).
+   * Declares the vision camera for the 'can it be seen' domain gate (ADR-081). Like `robot`, this only declares -- visibility evaluation itself is solved in core/. Optional: with no camera declared the visibility stage passes everything (rejectedByVisibility stays 0 and `visible` is vacuously true). The field of view is declared in ONE of two shapes, never both: a cone (`fovHalfAngle`) or a rectangle (`fovHalfAngles` + `imageUp`, ADR-171).
    */
   camera?: {
     /**
@@ -126,9 +126,29 @@ export interface GraspSearchDeclaration {
      */
     viewAxis?: [number, number, number];
     /**
-     * Optional field-of-view half angle in radians (cone around viewAxis).
+     * Optional field-of-view half angle in radians (CONE around viewAxis). Not together with `fovHalfAngles`.
      */
     fovHalfAngle?: number;
+    /**
+     * Optional RECTANGULAR field of view (ADR-171): half angles in radians about the image's horizontal and vertical axes — an unbounded four-sided pyramid around viewAxis, oriented by `imageUp`. Requires `viewAxis` and `imageUp`. Not together with `fovHalfAngle`.
+     */
+    fovHalfAngles?: {
+      /**
+       * Half angle across the image width (left-right), radians.
+       */
+      horizontal: number;
+      /**
+       * Half angle across the image height (up-down), radians.
+       */
+      vertical: number;
+    };
+    /**
+     * World-frame direction of image-up (need not be unit length nor exactly perpendicular to viewAxis; the solver removes the viewAxis component). Fixes the rectangle's roll about viewAxis. Must not be parallel to viewAxis.
+     *
+     * @minItems 3
+     * @maxItems 3
+     */
+    imageUp?: [number, number, number];
   };
   /**
    * Declares the hand for the 'can it be grasped' domain gate (ADR-081), as a CLOSED KIND-DISCRIMINATED UNION (ADR-118, same governance as the response's `pose`). A parallel jaw and a suction cup do not measure the same quantity -- one asks whether the jaws close across the object, the other whether a flat enough patch of the surface can be sealed -- so they are separate branches rather than optional siblings on one flat object. Flattening them would make 'a suction cup with a jaw opening' representable. Declaration only: the gate itself is solved in core/. Optional as a whole: with no gripper declared the grasp stage passes everything (rejectedByGrasp stays 0 and `graspable` is vacuously true). The only intentional growth point is adding a kind, which bumps contractVersion.

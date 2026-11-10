@@ -35,7 +35,8 @@
 | 可視性 | カメラ→把持点の線分遮蔽 + 視野円錐 | `core/…/engine/feasibility.py: sightline_occlusion_miss` | core のみ |
 | カメラの視線 (ワイヤ) | カメラ実体の世界回転で optical `+Z` を回す (ROS optical frame: +Z 視線・+Y 画像の下)。保存せず毎回導出 (ADR-164 D3) | `src/domain/visionCamera.js: wireCameraOf` | front (公知の閉形式・宣言の写像) |
 | 視点の写し | THREE のカメラ基底 (−Z 視線・+Y 上) を x まわり半回転して optical 基底へ、基底 → 四元数は Shepperd 法 (ADR-164 D3) | `src/domain/visionCamera.js: cameraPoseFromViewport` / `quaternionFromBasis` | front (公知の閉形式) |
-| 視錐台 (描画) | 側面が ±半角の正方形錐 — 内接円錐がソルバの円錐と一致 (矩形の判定は DEF-061) | `src/domain/visionCamera.js: frustumCorners` | front (表示) |
+| 視錐台 (描画) | 四角錐 — 側面が ±水平半角・±垂直半角。判定される四角錐と同じ形 (ADR-171。一致は `fixtures/cross-language/camera-rectangular-view.json`) | `src/domain/visionCamera.js: frustumCorners` | front (表示 — 導出) |
+| 矩形の視野 (判定) | 前 f = 視軸、上 u = imageUp − (imageUp·f)f、右 r = f × u。視線 d について `d·f > 0 ∧ \|d·r\| ≤ (d·f)·tan(水平) ∧ \|d·u\| ≤ (d·f)·tan(垂直)`。円錐 (`fovHalfAngle`) との同時宣言は拒否 (ADR-171) | `core/easy_extrude_core/engine/feasibility.py: inside_rectangular_view` | core (源) |
 | 把持性 (平行ジョー) | 閉じ軸への射影幅 vs 開口。閉じ軸を宣言した仕様では対象 box の閉じ方向の厚み `2·Σ hᵢ·|aᵢ·x|` (ADR-152) | `core/…/engine/feasibility.py: NaiveParallelJawGraspChecker` | core のみ |
 | 深さのゲート | `depth − (toolLength − palm_z) > 0` なら把持性で棄却 (パームが面の下へ潜る) | `core/…/engine/feasibility.py: palm_depth_miss` | core のみ |
 | 把持性 (吸引) | カップ footprint 内の法線の揃い | `core/…/engine/feasibility.py: NaiveSuctionGraspChecker` | core のみ |

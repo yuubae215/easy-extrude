@@ -631,7 +631,7 @@ function CameraOwnerLine({ cameras, onSelect }) {
   const sel = cameras?.selected
   if (!sel) return null
   const fov = sel.state === 'malformed' ? 'unreadable'
-    : sel.fovHalfAngle != null ? `field of view ±${sel.fovHalfAngle} rad` : 'no field of view (line of sight only)'
+    : sel.fov != null ? `field of view ±${sel.fov.horizontal} × ±${sel.fov.vertical} rad (across × up)` : 'no field of view (line of sight only)'
   return (
     <div style={{ fontSize: '10px', color: COLOR.textSecondary, margin: '4px 0 2px', display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
       <span>{fov}</span>

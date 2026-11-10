@@ -32,6 +32,8 @@ import {
 import { flangeTarget, poseFromFrame } from './graspPoseGauge.js'
 import { toolParts } from '../domain/robotTool.js'
 import { mToMM } from '../domain/worldUnits.js'
+import { cameraDeclarationOf, wireCameraOf, frustumCorners } from '../domain/visionCamera.js'
+import { rotateVec3 } from '../domain/rotateVec3.js'
 
 const ROOT = path.resolve(import.meta.dirname, '../..')
 const read = p => fs.readFileSync(path.join(ROOT, p), 'utf8')
@@ -91,10 +93,22 @@ const CROSS_LANGUAGE_DERIVATIONS = [
       'core/tests/test_grasp_specs.py',
     ],
   },
+  {
+    subject: 'camera-rectangular-view',
+    fixture: 'fixtures/cross-language/camera-rectangular-view.json',
+    // 源は**判定する側** (ADR-171)。描く視錐台 (`frustumCorners`) とワイヤの向き
+    // (`wireCameraOf`) が、判定される四角錐の写しであり続けるかを問う — ずれると
+    // 「描かれている範囲が判定される範囲」が黙って崩れる (DEF-061 が在った理由)。
+    source: 'core/easy_extrude_core/engine/feasibility.py',
+    consumers: [
+      'src/robotics/CrossLanguageDerivation.test.js',
+      'core/tests/test_engine.py',
+    ],
+  },
 ]
 
 /** 宣言された複製の個数。増減は意図的な行為であること (ratchet — ADR-100 の形)。 */
-const DECLARED_DERIVATION_COUNT = 4
+const DECLARED_DERIVATION_COUNT = 5
 
 describe('cross-language derivations (ADR-146 D3)', () => {
   test('宣言された複製の個数が予算どおり', () => {
@@ -388,6 +402,41 @@ describe('hand-parts-in-flange: 描く手 (toolParts) が判定する手 (core/)
         for (let k = 0; k < 3; k++) {
           assert.ok(Math.abs(p.center[k] - c.parts[j].center[k]) <= tol, `${p.part} center[${k}]: ${p.center[k]} vs ${c.parts[j].center[k]}`)
           assert.ok(Math.abs(half[k] - c.parts[j].half[k]) <= tol, `${p.part} half[${k}]: ${half[k]} vs ${c.parts[j].half[k]}`)
+        }
+      }
+    })
+  }
+})
+
+describe('camera-rectangular-view: 描く視錐台とワイヤの向きが、判定される四角錐を再現する (ADR-171)', () => {
+  const fixture = JSON.parse(read('fixtures/cross-language/camera-rectangular-view.json'))
+  // ワイヤは 1e-4 に丸める (`wireCameraOf`) ので、向きの照合はその分だけ緩める。
+  const WIRE_TOL = 1e-4
+  for (const c of fixture.cases) {
+    const [qx, qy, qz, qw] = c.pose.quaternion
+    const quaternion = { x: qx, y: qy, z: qz, w: qw }
+    const [px, py, pz] = c.pose.positionM
+    test(`${c.name}: viewAxis と imageUp が一致する`, () => {
+      const wire = wireCameraOf(
+        { position: { x: mToMM(px), y: mToMM(py), z: mToMM(pz) }, quaternion },
+        cameraDeclarationOf({ camera: { fovHalfAngles: c.fovHalfAngles } }),
+      )
+      assert.deepEqual(wire.fovHalfAngles, c.fovHalfAngles)
+      for (let k = 0; k < 3; k++) {
+        assert.ok(Math.abs(wire.viewAxis[k] - c.wire.viewAxis[k]) <= WIRE_TOL, `viewAxis[${k}]`)
+        assert.ok(Math.abs(wire.imageUp[k] - c.wire.imageUp[k]) <= WIRE_TOL, `imageUp[${k}]`)
+        assert.ok(Math.abs(wire.position[k] - c.pose.positionM[k]) <= WIRE_TOL, `position[${k}]`)
+      }
+    })
+    test(`${c.name}: 描く四隅が、判定される四角錐の稜線に乗る`, () => {
+      // frustumCorners はフレーム局所 (奥行き = length)。世界へ回して奥行き 1 に揃える。
+      const corners = frustumCorners(c.fovHalfAngles, 1)
+      assert.equal(corners.length, 4)
+      for (const [i, corner] of corners.entries()) {
+        const w = rotateVec3(corner, quaternion)
+        const got = [w.x, w.y, w.z]
+        for (let k = 0; k < 3; k++) {
+          assert.ok(Math.abs(got[k] - c.cornerRays[i][k]) <= fixture.tolerance, `corner ${i}[${k}]: ${got[k]} vs ${c.cornerRays[i][k]}`)
         }
       }
     })

@@ -629,7 +629,8 @@ test('the camera is DERIVED from the camera entity, and the gripper from the tcp
   addCamera(gc, 'f_cam', { fovHalfAngle: 0.6 }, LOOK_DOWN_AT_1200)
   // Neither a `camera` nor a `gripper` param is a source any more.
   await gc.runGraspSearch({ weights: { reach: 1 }, topN: 3, camera: { position: [9, 9, 9] }, gripper: { kind: 'suction', cupDiameter: 9 } })
-  assert.deepEqual(sent.graspSearch.camera, { position: [0, 0, 1.2], viewAxis: [0, 0, -1], fovHalfAngle: 0.6 })
+  // A pre-ADR-171 one-number camera rides as the SQUARE that is drawn — never the cone.
+  assert.deepEqual(sent.graspSearch.camera, { position: [0, 0, 1.2], viewAxis: [0, 0, -1], fovHalfAngles: { horizontal: 0.6, vertical: 0.6 }, imageUp: [0, 1, 0] })
   assert.deepEqual(sent.graspSearch.gripper, wireGripperFromHand(JAW_HAND))
   assert.equal(sent.graspSearch.gripper.fingers.length + sent.graspSearch.gripper.body.length, TOOL_LENGTH_M)
   assert.deepEqual(sent.graspSearch.robot,
@@ -1005,7 +1006,7 @@ test('N cameras and none picked stops with no-camera — never "first one wins";
   gc.selectCamera('f_cam_b')
   assert.equal(store.getState().context.cameras.selectedId, 'f_cam_b')
   await gc.runGraspSearch({})
-  // identity rotation: optical +Z = world +Z; no fov declared → no cone key
+  // identity rotation: optical +Z = world +Z; no fov declared → no field-of-view keys
   assert.deepEqual(rec.sent.graspSearch.camera, { position: [1, 0, 0], viewAxis: [0, 0, 1] })
 })
 
@@ -1043,6 +1044,7 @@ test('copyViewToCamera writes the viewport pose + fov through ONE undoable comma
       position: { x: 0, y: 0, z: 3000 },
       matrixWorld: { elements: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 3000, 1] },
       fov: 60,
+      aspect: 1.5,
       updateMatrixWorld() {},
     },
   }
@@ -1050,7 +1052,11 @@ test('copyViewToCamera writes the viewport pose + fov through ONE undoable comma
   assert.equal(ctrl._commandStack.pushed.length, 1)
   const pose = calls.find(c => c[0] === 'pose')[2]
   assert.deepEqual(pose.position, { x: 0, y: 0, z: 3000 })
-  assert.ok(Math.abs(calls.find(c => c[0] === 'camera')[2].fovHalfAngle - Math.PI / 6) < 1e-3)
+  // The viewport's rectangle: vertical = half of THREE's fov, horizontal from the aspect.
+  const written = calls.find(c => c[0] === 'camera')[2]
+  assert.ok(Math.abs(written.fovHalfAngles.vertical - Math.PI / 6) < 1e-3)
+  assert.ok(Math.abs(written.fovHalfAngles.horizontal - Math.atan(1.5 * Math.tan(Math.PI / 6))) < 1e-3)
+  assert.equal('fovHalfAngle' in written, false, 'the pre-ADR-171 key is not kept beside the new one')
   // undo puts the old camera back through the same writers
   ctrl._commandStack.pushed[0].undo()
   assert.deepEqual(calls.at(-1), ['camera', 'f_cam', { fovHalfAngle: 0.6 }])

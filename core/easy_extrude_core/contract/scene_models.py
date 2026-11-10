@@ -103,16 +103,26 @@ class RobotWire(_ContractModel):
     wrist_cone_half_angle: float = math.pi  # 既定は無制限 (engine.types.Robot と同じ)
 
 
+class FovHalfAnglesWire(_ContractModel):
+    """矩形視野の半角 (水平・垂直, ラジアン — ADR-171)。"""
+
+    horizontal: float = Field(gt=0.0, lt=math.pi / 2)
+    vertical: float = Field(gt=0.0, lt=math.pi / 2)
+
+
 class CameraWire(_ContractModel):
     """カメラ宣言 (ADR-081 「見えるか」)。grasp-search 契約の camera と同形。
 
     宣言のみ (可視性の判定はコア側)。viewAxis + fovHalfAngle の両宣言時だけ
-    視野円錐が効く。
+    視野円錐が効く。fovHalfAngles (+ viewAxis + imageUp) は矩形視野 (ADR-171) —
+    円錐との両立と欠落はエンジンの Camera が拒否する。
     """
 
     position: list[float]
     view_axis: Optional[list[float]] = None
     fov_half_angle: Optional[float] = Field(default=None, ge=0.0)
+    fov_half_angles: Optional[FovHalfAnglesWire] = None
+    image_up: Optional[list[float]] = None
 
 
 class GripperWire(_ContractModel):

@@ -163,7 +163,7 @@ export class CoordinateFrame {
 
     /**
      * The vision camera's declaration (ADR-164 D3) — present only on a frame
-     * that IS a camera: `{ fovHalfAngle? }` (rad). The frame's own pose is the
+     * that IS a camera: `{ fovHalfAngles? }` (rad — ADR-171; pre-ADR-171 `fovHalfAngle`). The frame's own pose is the
      * camera's pose (ROS optical frame: +Z is the line of sight, +Y image-down).
      *
      * null = this frame is not a camera. Only `domain/visionCamera.js`

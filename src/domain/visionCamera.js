@@ -6,7 +6,8 @@
  * A CoordinateFrame that carries a `camera` declaration. Its pose is the frame's
  * own pose (position + rotation — moved with G / R like any frame, parentable
  * like any frame), and the declaration holds the one fact the pose does not:
- * how wide it sees (`fovHalfAngle`, radians). The same shape as a tcp's `hand`
+ * how wide it sees — `fovHalfAngles: { horizontal, vertical }` (radians, the half
+ * angles across the image's width and height). The same shape as a tcp's `hand`
  * (ADR-152 D3) and as ROS, where a camera IS a TF frame. Before this the camera
  * was a card of React state in the grasp panel, belonging to no entity (DEF-033).
  *
@@ -18,16 +19,18 @@
  * it — a stored world vector next to a rotation would be a second source that
  * goes stale the first time the camera is rotated (§1.1).
  *
- * ## The drawn shape is a square frustum; the solver judges a cone (DEF-061)
+ * ## What is drawn is what is judged — a rectangle (ADR-171, closes DEF-061)
  *
- * The wire carries ONE half angle and `core/` tests a cone around the axis. The
- * viewport draws a rectangular frustum (当事者判断 — the solver is to be
- * revisited, DEF-061). Until then the frustum drawn is the SQUARE one whose
- * inscribed cone is exactly the solver's cone: its side planes are at
- * ±fovHalfAngle, so everything judged visible is inside what is drawn, and only
- * the four corner wedges are drawn-but-not-judged. Said, not hidden. This is
- * 暫定 — the shape the solver judges is to be revisited (当事者判断 2026-10-11);
- * the deferral and its machine-readable expiry live in DEF-061.
+ * The viewport draws a rectangular frustum and `core/` judges the same
+ * four-sided pyramid: the wire carries `fovHalfAngles` + `imageUp` (the world
+ * direction of image-up, DERIVED from the frame's rotation like `viewAxis`).
+ * Until ADR-171 the wire had one half angle and the solver judged a cone, so the
+ * four corners were drawn but not judged.
+ *
+ * A camera written before ADR-171 declares one number, `fovHalfAngle: a`. It is
+ * READ as the square `{ horizontal: a, vertical: a }` — exactly the square that
+ * was always drawn for it — and every writer writes the two-angle form. Both
+ * fields on one camera is malformed (two answers to one question).
  *
  * ## Cardinality (原則 #31)
  *
@@ -67,7 +70,9 @@ export const CAMERA_CARDINALITY = Object.freeze({ NONE: 'none', SINGLE: 'single'
  * vision preset's (0.6 rad ≈ 69° full). A DECLARED number the user sees and
  * edits on the camera's panel — not a fill-in on read.
  */
-export const DEFAULT_CAMERA_DECLARATION = Object.freeze({ fovHalfAngle: 0.6 })
+export const DEFAULT_CAMERA_DECLARATION = Object.freeze({
+  fovHalfAngles: Object.freeze({ horizontal: 0.6, vertical: 0.6 }),
+})
 
 /**
  * How far the frustum is drawn, mm. PRESENTATION only (原則 #29): the wire has
@@ -89,28 +94,53 @@ export function isCameraFrame(obj) {
   return !!obj && obj.camera !== null && typeof obj.camera === 'object' && !Array.isArray(obj.camera)
 }
 
+const isHalfAngle = (v) => isFiniteNumber(v) && v > 0 && v < Math.PI / 2
+
 /**
- * Read a camera's declaration. `fovHalfAngle` may be absent (declared camera,
- * field of view undeclared → no cone gate; the solver still asks line of sight).
- * Never filled in on read.
+ * Read a camera's declaration. The field of view may be absent (declared
+ * camera, field of view undeclared → no field-of-view gate; the solver still
+ * asks line of sight). Never filled in on read. The pre-ADR-171 single
+ * `fovHalfAngle` reads as the square it was always drawn as.
  *
  * @param {{camera?: object}|null} frame
- * @returns {{state: 'declared'|'malformed', fovHalfAngle: number|null, errors: string[]}|null}
+ * @returns {{state: 'declared'|'malformed', fov: {horizontal: number, vertical: number}|null, errors: string[]}|null}
  *          null when the frame is not a camera
  */
 export function cameraDeclarationOf(frame) {
   if (!isCameraFrame(frame)) return null
-  const fov = frame.camera.fovHalfAngle
-  if (fov === undefined || fov === null) {
-    return { state: CAMERA_STATE.DECLARED, fovHalfAngle: null, errors: [] }
+  const legacy = frame.camera.fovHalfAngle ?? null
+  const rect = frame.camera.fovHalfAngles ?? null
+  const malformed = (message) => ({ state: CAMERA_STATE.MALFORMED, fov: null, errors: [message] })
+  if (legacy !== null && rect !== null) {
+    return malformed('field of view is declared twice (fovHalfAngle and fovHalfAngles) — keep one')
   }
-  if (!isFiniteNumber(fov) || !(fov > 0) || !(fov < Math.PI / 2)) {
-    return {
-      state: CAMERA_STATE.MALFORMED, fovHalfAngle: null,
-      errors: [`field-of-view half angle must be a number in (0, π/2) rad — got ${JSON.stringify(fov)}`],
+  if (rect !== null) {
+    if (typeof rect !== 'object' || !isHalfAngle(rect.horizontal) || !isHalfAngle(rect.vertical)) {
+      return malformed(`field-of-view half angles must be two numbers in (0, π/2) rad — got ${JSON.stringify(rect)}`)
     }
+    return { state: CAMERA_STATE.DECLARED, fov: { horizontal: rect.horizontal, vertical: rect.vertical }, errors: [] }
   }
-  return { state: CAMERA_STATE.DECLARED, fovHalfAngle: fov, errors: [] }
+  if (legacy !== null) {
+    if (!isHalfAngle(legacy)) {
+      return malformed(`field-of-view half angle must be a number in (0, π/2) rad — got ${JSON.stringify(legacy)}`)
+    }
+    return { state: CAMERA_STATE.DECLARED, fov: { horizontal: legacy, vertical: legacy }, errors: [] }
+  }
+  return { state: CAMERA_STATE.DECLARED, fov: null, errors: [] }
+}
+
+/**
+ * The stored declaration with a new field of view (or none) — THE writer's
+ * shape: always the two-angle form, the pre-ADR-171 key dropped. Other keys of
+ * the declaration are kept.
+ *
+ * @param {object|null|undefined} camera  the stored declaration
+ * @param {{horizontal: number, vertical: number}|null} fov
+ * @returns {object}
+ */
+export function withFieldOfView(camera, fov) {
+  const { fovHalfAngle: _legacy, fovHalfAngles: _rect, ...rest } = camera ?? {}
+  return fov ? { ...rest, fovHalfAngles: { horizontal: fov.horizontal, vertical: fov.vertical } } : rest
 }
 
 /** One camera — the typed aggregate the roster is made of. Identity = the frame's entity id. */
@@ -165,27 +195,36 @@ export function selectCamera(cameras, selectedId) {
 const round4 = (v) => Math.round(v * 1e4) / 1e4 + 0
 
 /**
- * The wire `camera` (request contract, ADR-081) DERIVED from a camera's world
- * pose and declaration: position mm → m, `viewAxis` = world rotation · optical +Z.
- * `fovHalfAngle` only when declared. Null for a malformed declaration or an
+ * The wire `camera` (request contract, ADR-081 / ADR-171) DERIVED from a
+ * camera's world pose and declaration: position mm → m, `viewAxis` = world
+ * rotation · optical +Z. With a declared field of view also `fovHalfAngles` and
+ * `imageUp` (= world rotation · optical −Y) — the rectangle `core/` judges is
+ * the one `frustumCorners` draws. Null for a malformed declaration or an
  * unresolved pose — the caller gates Run with the reason, it never ships a
  * guessed camera.
  *
  * @param {{position: {x:number,y:number,z:number}, quaternion: {x:number,y:number,z:number,w:number}}|null} worldPose  mm
  * @param {ReturnType<typeof cameraDeclarationOf>} declaration
- * @returns {{position: number[], viewAxis: number[], fovHalfAngle?: number}|null}
+ * @returns {{position: number[], viewAxis: number[], fovHalfAngles?: {horizontal: number, vertical: number}, imageUp?: number[]}|null}
  */
 export function wireCameraOf(worldPose, declaration) {
   if (!worldPose?.position || !worldPose?.quaternion) return null
   if (!declaration || declaration.state !== CAMERA_STATE.DECLARED) return null
   const p = worldPose.position
-  const a = rotateVec3(CAMERA_VIEW_AXIS_LOCAL, worldPose.quaternion)
-  const len = Math.hypot(a.x, a.y, a.z)
-  if (!(len > 0)) return null
+  const unitWorld = (local) => {
+    const v = rotateVec3(local, worldPose.quaternion)
+    const len = Math.hypot(v.x, v.y, v.z)
+    return len > 0 ? [round4(v.x / len), round4(v.y / len), round4(v.z / len)] : null
+  }
+  const viewAxis = unitWorld(CAMERA_VIEW_AXIS_LOCAL)
+  const imageUp = unitWorld(CAMERA_IMAGE_UP_LOCAL)
+  if (!viewAxis || !imageUp) return null
   return {
     position: [round4(mmToM(p.x)), round4(mmToM(p.y)), round4(mmToM(p.z))],
-    viewAxis: [round4(a.x / len), round4(a.y / len), round4(a.z / len)],
-    ...(declaration.fovHalfAngle !== null ? { fovHalfAngle: declaration.fovHalfAngle } : {}),
+    viewAxis,
+    ...(declaration.fov !== null
+      ? { fovHalfAngles: { horizontal: declaration.fov.horizontal, vertical: declaration.fov.vertical }, imageUp }
+      : {}),
   }
 }
 
@@ -224,12 +263,15 @@ export function quaternionFromBasis(xa, ya, za) {
  * down +Z with +Y down. So optical x = three x, optical y = −three y,
  * optical z = −three z (a half turn about x).
  *
- * `fovDeg` is THREE's VERTICAL full angle; the half of it is the square
- * frustum's half angle (the narrower of the viewport's two). An orthographic
- * viewport has no fov → `fovHalfAngle: null` (said by the caller, not guessed).
+ * `fovDeg` is THREE's VERTICAL full angle; half of it is the vertical half
+ * angle, and the horizontal one follows from the viewport's `aspect`
+ * (width / height): tan(h) = aspect · tan(v) — the copied camera sees exactly
+ * the viewport's rectangle. An orthographic viewport has no fov, and a
+ * perspective one whose aspect is unreadable has no rectangle → `fov: null`
+ * (said by the caller, not guessed).
  *
- * @param {{position: {x:number,y:number,z:number}|null, matrixWorldElements: number[]|null, fovDeg: number|null}} snap
- * @returns {{position: {x:number,y:number,z:number}, quaternion: {x:number,y:number,z:number,w:number}, fovHalfAngle: number|null}|null}
+ * @param {{position: {x:number,y:number,z:number}|null, matrixWorldElements: number[]|null, fovDeg: number|null, aspect?: number|null}} snap
+ * @returns {{position: {x:number,y:number,z:number}, quaternion: {x:number,y:number,z:number,w:number}, fov: {horizontal: number, vertical: number}|null}|null}
  */
 export function cameraPoseFromViewport(snap) {
   const p = snap?.position
@@ -245,32 +287,41 @@ export function cameraPoseFromViewport(snap) {
   const ya = unit(-e[4], -e[5], -e[6])
   const za = unit(-e[8], -e[9], -e[10])
   if (!xa || !ya || !za) return null
-  const fov = snap.fovDeg
+  const fovDeg = snap.fovDeg
+  const aspect = snap.aspect
+  let fov = null
+  if (isFiniteNumber(fovDeg) && fovDeg > 0 && fovDeg < 180 && isFiniteNumber(aspect) && aspect > 0) {
+    const vertical = (fovDeg * Math.PI / 180) / 2
+    fov = { horizontal: round4(Math.atan(aspect * Math.tan(vertical))), vertical: round4(vertical) }
+  }
   return {
     position: { x: p.x, y: p.y, z: p.z },
     quaternion: quaternionFromBasis(xa, ya, za),
-    fovHalfAngle: isFiniteNumber(fov) && fov > 0 && fov < 180 ? round4((fov * Math.PI / 180) / 2) : null,
+    fov,
   }
 }
 
 /**
- * The drawn frustum, frame-local (mm): apex at the origin, the far square at
- * +Z = `length`, with side planes at ±`fovHalfAngle` — the square whose
- * inscribed cone is the solver's cone (DEF-061). Corners in image order
- * (top-left, top-right, bottom-right, bottom-left; image-up is optical −Y).
+ * The drawn frustum, frame-local (mm): apex at the origin, the far rectangle at
+ * +Z = `length`, its side planes at ±`horizontal` (about the image's vertical
+ * axis) and ±`vertical` — the same four-sided pyramid `core/` judges
+ * (`inside_rectangular_view`; the agreement is asked by the shared fixture
+ * `fixtures/cross-language/camera-rectangular-view.json`). Corners in image
+ * order (top-left, top-right, bottom-right, bottom-left; image-up is optical −Y).
  *
- * @param {number} fovHalfAngle  rad, in (0, π/2)
+ * @param {{horizontal: number, vertical: number}|null} fov  rad, each in (0, π/2)
  * @param {number} [length]  mm
  * @returns {{x:number,y:number,z:number}[]|null}  null when the fov is not drawable
  */
-export function frustumCorners(fovHalfAngle, length = FRUSTUM_DISPLAY_LENGTH_MM) {
-  if (!isFiniteNumber(fovHalfAngle) || !(fovHalfAngle > 0) || !(fovHalfAngle < Math.PI / 2)) return null
-  const h = length * Math.tan(fovHalfAngle)
+export function frustumCorners(fov, length = FRUSTUM_DISPLAY_LENGTH_MM) {
+  if (!fov || !isHalfAngle(fov.horizontal) || !isHalfAngle(fov.vertical)) return null
+  const w = length * Math.tan(fov.horizontal)
+  const h = length * Math.tan(fov.vertical)
   return [
-    { x: -h, y: -h, z: length },
-    { x:  h, y: -h, z: length },
-    { x:  h, y:  h, z: length },
-    { x: -h, y:  h, z: length },
+    { x: -w, y: -h, z: length },
+    { x:  w, y: -h, z: length },
+    { x:  w, y:  h, z: length },
+    { x: -w, y:  h, z: length },
   ]
 }
 

@@ -1,0 +1,363 @@
+{
+  "$comment": "ADR-171 / ADR-146 D3: the rectangular field of view. SOURCE = core/easy_extrude_core/engine/feasibility.py (inside_rectangular_view) + engine/types.py (Camera.view_basis). Generated from the source; the front's drawn frustum (src/domain/visionCamera.js frustumCorners + wireCameraOf) must reproduce `wire` and `cornerRays`. cornerRays are world directions at unit depth along viewAxis, in image order (top-left, top-right, bottom-right, bottom-left). Quaternion is [x, y, z, w] of the camera frame (ROS optical: +Z forward, +X image-right, +Y image-down).",
+  "tolerance": 1e-05,
+  "cases": [
+    {
+      "name": "looking straight down, image-up = world +X",
+      "pose": {
+        "positionM": [
+          0.0,
+          0.0,
+          1.2
+        ],
+        "quaternion": [
+          0.707107,
+          -0.707107,
+          0.0,
+          0.0
+        ]
+      },
+      "fovHalfAngles": {
+        "horizontal": 0.6,
+        "vertical": 0.4
+      },
+      "wire": {
+        "viewAxis": [
+          0.0,
+          0.0,
+          -1.0
+        ],
+        "imageUp": [
+          1.0,
+          0.0,
+          0.0
+        ]
+      },
+      "cornerRays": [
+        [
+          0.422793,
+          0.684137,
+          -1.0
+        ],
+        [
+          0.422793,
+          -0.684137,
+          -1.0
+        ],
+        [
+          -0.422793,
+          -0.684137,
+          -1.0
+        ],
+        [
+          -0.422793,
+          0.684137,
+          -1.0
+        ]
+      ],
+      "probes": [
+        {
+          "label": "on the axis",
+          "point": [
+            0.0,
+            0.0,
+            0.2
+          ],
+          "inside": true
+        },
+        {
+          "label": "just inside the top-right corner",
+          "point": [
+            0.414337,
+            -0.670454,
+            0.2
+          ],
+          "inside": true
+        },
+        {
+          "label": "just outside the top-right corner",
+          "point": [
+            0.431249,
+            -0.69782,
+            0.2
+          ],
+          "inside": false
+        },
+        {
+          "label": "inside across, outside up-down",
+          "point": [
+            0.443933,
+            -0.342068,
+            0.2
+          ],
+          "inside": false
+        },
+        {
+          "label": "outside across, inside up-down",
+          "point": [
+            0.211397,
+            -0.718344,
+            0.2
+          ],
+          "inside": false
+        },
+        {
+          "label": "in a corner: outside the inscribed cone, inside the rectangle",
+          "point": [
+            0.380514,
+            -0.615723,
+            0.2
+          ],
+          "inside": true
+        },
+        {
+          "label": "behind the camera",
+          "point": [
+            0.0,
+            0.0,
+            2.2
+          ],
+          "inside": false
+        }
+      ]
+    },
+    {
+      "name": "identity (optical frame = world)",
+      "pose": {
+        "positionM": [
+          1.0,
+          -0.5,
+          0.3
+        ],
+        "quaternion": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      },
+      "fovHalfAngles": {
+        "horizontal": 0.35,
+        "vertical": 0.5
+      },
+      "wire": {
+        "viewAxis": [
+          0.0,
+          0.0,
+          1.0
+        ],
+        "imageUp": [
+          0.0,
+          -1.0,
+          0.0
+        ]
+      },
+      "cornerRays": [
+        [
+          -0.365028,
+          -0.546302,
+          1.0
+        ],
+        [
+          0.365028,
+          -0.546302,
+          1.0
+        ],
+        [
+          0.365028,
+          0.546302,
+          1.0
+        ],
+        [
+          -0.365028,
+          0.546302,
+          1.0
+        ]
+      ],
+      "probes": [
+        {
+          "label": "on the axis",
+          "point": [
+            1.0,
+            -0.5,
+            1.3
+          ],
+          "inside": true
+        },
+        {
+          "label": "just inside the top-right corner",
+          "point": [
+            1.357728,
+            -1.035376,
+            1.3
+          ],
+          "inside": true
+        },
+        {
+          "label": "just outside the top-right corner",
+          "point": [
+            1.372329,
+            -1.057229,
+            1.3
+          ],
+          "inside": false
+        },
+        {
+          "label": "inside across, outside up-down",
+          "point": [
+            1.182514,
+            -1.073618,
+            1.3
+          ],
+          "inside": false
+        },
+        {
+          "label": "outside across, inside up-down",
+          "point": [
+            1.38328,
+            -0.773151,
+            1.3
+          ],
+          "inside": false
+        },
+        {
+          "label": "in a corner: outside the inscribed cone, inside the rectangle",
+          "point": [
+            1.328526,
+            -0.991672,
+            1.3
+          ],
+          "inside": true
+        },
+        {
+          "label": "behind the camera",
+          "point": [
+            1.0,
+            -0.5,
+            -0.7
+          ],
+          "inside": false
+        }
+      ]
+    },
+    {
+      "name": "tilted and rolled",
+      "pose": {
+        "positionM": [
+          0.4,
+          0.2,
+          0.9
+        ],
+        "quaternion": [
+          0.299387,
+          -0.498978,
+          0.199591,
+          0.788385
+        ]
+      },
+      "fovHalfAngles": {
+        "horizontal": 0.5,
+        "vertical": 0.3
+      },
+      "wire": {
+        "viewAxis": [
+          -0.667264,
+          -0.671248,
+          0.322777
+        ],
+        "imageUp": [
+          0.613485,
+          -0.741062,
+          -0.272881
+        ]
+      },
+      "cornerRays": [
+        [
+          -0.708232,
+          -0.90919,
+          -0.256741
+        ],
+        [
+          -0.24675,
+          -0.89178,
+          0.73347
+        ],
+        [
+          -0.626296,
+          -0.433306,
+          0.902294
+        ],
+        [
+          -1.087778,
+          -0.450716,
+          -0.087917
+        ]
+      ],
+      "probes": [
+        {
+          "label": "on the axis",
+          "point": [
+            -0.267264,
+            -0.471248,
+            1.222777
+          ],
+          "inside": true
+        },
+        {
+          "label": "just inside the top-right corner",
+          "point": [
+            0.144839,
+            -0.687369,
+            1.625256
+          ],
+          "inside": true
+        },
+        {
+          "label": "just outside the top-right corner",
+          "point": [
+            0.16166,
+            -0.696191,
+            1.641684
+          ],
+          "inside": false
+        },
+        {
+          "label": "inside across, outside up-down",
+          "point": [
+            0.047368,
+            -0.707594,
+            1.381697
+          ],
+          "inside": false
+        },
+        {
+          "label": "outside across, inside up-down",
+          "point": [
+            0.0699,
+            -0.576726,
+            1.700431
+          ],
+          "inside": false
+        },
+        {
+          "label": "in a corner: outside the inscribed cone, inside the rectangle",
+          "point": [
+            0.111198,
+            -0.669727,
+            1.592401
+          ],
+          "inside": true
+        },
+        {
+          "label": "behind the camera",
+          "point": [
+            1.067264,
+            0.871248,
+            0.577223
+          ],
+          "inside": false
+        }
+      ]
+    }
+  ]
+}

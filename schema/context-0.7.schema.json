@@ -1069,7 +1069,7 @@
           ]
         },
         "camera": {
-          "description": "ADR-164 D3: this frame IS a vision camera — the entity the 'can it be seen' gate asks from. Its `position`/`rotation` are the camera's pose in the ROS OPTICAL convention: +Z is the line of sight, +X image-right, +Y image-down. The wire `camera.viewAxis` is DERIVED from that rotation, never stored. `fovHalfAngle` (rad, (0, π/2)) is the half angle the solver's cone uses; absent = no field-of-view gate (line of sight only), never filled in on read. Absent `camera` = an ordinary frame. Not on a robot base/tcp (a wrist camera is its own frame). 0..N cameras per scene; with N the search asks about the one picked (the robot picker's shape). Mirrors layout-1.1 `entity.camera`.",
+          "description": "ADR-164 D3: this frame IS a vision camera — the entity the 'can it be seen' gate asks from. Its `position`/`rotation` are the camera's pose in the ROS OPTICAL convention: +Z is the line of sight, +X image-right, +Y image-down. The wire `camera.viewAxis` is DERIVED from that rotation, never stored. The field of view is `fovHalfAngles` (rad, each in (0, π/2)): the half angles across the image's width and height — the rectangle the viewport draws and the solver judges (ADR-171). The wire `camera.imageUp` is DERIVED from the rotation like `viewAxis`. Absent = no field-of-view gate (line of sight only), never filled in on read. A pre-ADR-171 camera declares the single `fovHalfAngle`, read as the square with that half angle both ways; both on one camera is malformed (reported by the front's resolver). Absent `camera` = an ordinary frame. Not on a robot base/tcp (a wrist camera is its own frame). 0..N cameras per scene; with N the search asks about the one picked (the robot picker's shape). Mirrors layout-1.1 `entity.camera`.",
           "type": "object",
           "additionalProperties": false,
           "properties": {
@@ -1077,7 +1077,28 @@
               "type": "number",
               "exclusiveMinimum": 0,
               "exclusiveMaximum": 1.5707963267948966,
-              "description": "Half angle of the field of view, radians. The viewport draws the square frustum whose inscribed cone is this cone (DEF-061)."
+              "description": "Pre-ADR-171 form: ONE half angle, radians — read as the square frustum with this half angle both ways. Writers write `fovHalfAngles`."
+            },
+            "fovHalfAngles": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "horizontal",
+                "vertical"
+              ],
+              "description": "ADR-171 (additive): half angles of the rectangular field of view, radians. `horizontal` is across the image width, `vertical` across its height.",
+              "properties": {
+                "horizontal": {
+                  "type": "number",
+                  "exclusiveMinimum": 0,
+                  "exclusiveMaximum": 1.5707963267948966
+                },
+                "vertical": {
+                  "type": "number",
+                  "exclusiveMinimum": 0,
+                  "exclusiveMaximum": 1.5707963267948966
+                }
+              }
             }
           }
         },

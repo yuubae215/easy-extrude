@@ -53,7 +53,7 @@
 import { renderableEndEffectorFrame, nearestTargetIndex } from '../view/GraspGhostMath.js'
 import { defaultObjectiveWeights } from '../context/GraspDeclarationCatalog.js'
 import {
-  resolveCameras, selectCamera, cameraCardinality, cameraDeclarationOf, wireCameraOf,
+  resolveCameras, selectCamera, cameraCardinality, cameraDeclarationOf, wireCameraOf, withFieldOfView,
   cameraPoseFromViewport, CAMERA_STATE,
 } from '../domain/visionCamera.js'
 import { createSetCameraCommand } from '../command/SetCameraCommand.js'
@@ -309,8 +309,8 @@ export class GraspController {
 
   /**
    * "Copy the current view" (ADR-081 §5 → the camera's panel, ADR-164 D3): put
-   * the camera where the viewport is, looking where it looks, with its vertical
-   * half angle — ONE undoable act. An orthographic viewport has no fov: the
+   * the camera where the viewport is, looking where it looks, seeing the
+   * viewport's rectangle — ONE undoable act. An orthographic viewport has no fov: the
    * camera keeps its declared one and the toast says so. Refused (and said) for a
    * parented camera or when no viewport camera is readable.
    *
@@ -332,13 +332,14 @@ export class GraspController {
       position: cam.position ? { x: cam.position.x, y: cam.position.y, z: cam.position.z } : null,
       matrixWorldElements: cam.matrixWorld?.elements ? [...cam.matrixWorld.elements] : null,
       fovDeg: typeof cam.fov === 'number' ? cam.fov : null,
+      aspect: typeof cam.aspect === 'number' ? cam.aspect : null,
     }) : null
     if (!view) {
       ui?.showToast?.('The viewport camera cannot be read — nothing was copied.', { type: 'warn' })
       return false
     }
-    const camera = view.fovHalfAngle !== null ? { ...frame.camera, fovHalfAngle: view.fovHalfAngle } : { ...frame.camera }
-    if (view.fovHalfAngle === null) {
+    const camera = view.fov !== null ? withFieldOfView(frame.camera, view.fov) : { ...frame.camera }
+    if (view.fov === null) {
       ui?.showToast?.('Map view has no field of view — the pose was copied, the declared field of view is kept.', { type: 'info' })
     }
     return this._writeCamera(frameId, camera, { position: view.position, rotation: view.quaternion }, 'Copy view to camera')
