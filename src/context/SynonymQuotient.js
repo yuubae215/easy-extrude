@@ -152,6 +152,21 @@ export const QUOTIENT_TABLE = Object.freeze([
     synonyms: ['floor', 'its floor', '床', '足元の床', '立つ床'],
     gloss: { says: '物が属するゾーンの高さ — 物はその高さより下へは (S で宣言しない限り) 行かない。所属が無ければ床も無い', notSays: '物がいま何に載っているか (それは支持 — 導出)・物の種類 (床は種類から来ない — ADR-170 S2)' },
     example: { ja: 'このワークの床は組立エリアの高さにある', term: '床' } },
+  // Two derived/declared facts S3 needs (ADR-170 D1 / O2). `overlaps` is never
+  // stored — the footprint at the zone's height shares area with the zone.
+  // `owner` is ADR-104's word (who may change it), NOT `by` (who said it); a
+  // zone's owner is declared or absent, never filled in from who drew it.
+  { key: 'overlaps', en: 'overlaps', ja: '重なっている', cat: 'place',
+    synonyms: ['overlaps', 'overlapping', 'overlap', '重なっている', '重なる', '重なり', 'かぶっている'],
+    gloss: { says: '足元が地区と同じ高さで、面積をもって地区と重なっている — 物と地区、地区と地区のどちらにも言う (導出 — 保存しない)', notSays: '属しているか (所属は宣言 — contains)・辺だけ接している (面積 0 は重なりではない)' },
+    example: { ja: '組立エリアは検査エリアと重なっている', term: '重なっている' } },
+  // ja is 所有者 (ADR-104's word), not 持ち主: SPATIAL_RELATION_MODEL §3 already
+  // uses 持ち主 for a frame's parent (`parentId`) — a derived name kept out of
+  // this table, so it would not collide at load time, only in the reader's head.
+  { key: 'owner', en: 'owner', ja: '所有者', cat: 'place',
+    synonyms: ['owner', 'owned by', 'zone owner', '所有者', '所有している', '受け持ち'],
+    gloss: { says: '地区を変えてよい人として宣言された actor、または「誰のものでもない」(none) の宣言 — 欄が無ければ未宣言', notSays: '誰が描いたか・誰が所属を主張したか (来歴 — 所有者へ推し量らない)・中の物の持ち主' },
+    example: { ja: '組立エリアの持ち主は ann', term: '持ち主' } },
 
   // ── Spatial relation (ADR-168 — Arrangement axis values ⇄ NL) ─────────────
   // key === the domain's declarable value (domain/arrangement.js), pinned both

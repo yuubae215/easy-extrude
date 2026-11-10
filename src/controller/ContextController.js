@@ -48,7 +48,7 @@ import { createWithdrawProposalCommand } from '../command/WithdrawProposalComman
 import { createRejectProposalCommand } from '../command/RejectProposalCommand.js'
 import { createTableConflictCommand } from '../command/TableConflictCommand.js'
 import { createSettleAgendaCommand, createCloseUndecidedCommand } from '../command/CloseAgendaCommand.js'
-import { EDIT_PERMISSION, TARGET_KIND } from '../context/Ownership.js'
+import { EDIT_PERMISSION, TARGET_KIND, isOwnerlessDeclared, declareZoneOwner } from '../context/Ownership.js'
 import { makeProposal, PROPOSAL_REF_PREFIX } from '../context/Proposal.js'
 import { AGENDA_REF_PREFIX, AGENDA_SOURCE } from '../context/Agenda.js'
 import { validateContext } from '../context/ContextValidator.js'
@@ -562,6 +562,32 @@ export class ContextController {
       return null
     }
     return this._runDocEdit(beforeDoc, afterDoc, `Claim relation (${by})`, 'Could not record the relation')
+  }
+
+  /**
+   * Declare who owns a zone (ADR-170 O2 / S3) — an actor, or "none". Through the
+   * same doc-edit command as every other document change (原則 #1), so one undo
+   * takes it back. Only an undeclared zone is declared here; a declared owner
+   * is refused with its reason (changing it is decided with DEF-077 — 原則 #11).
+   *
+   * @param {string} zoneRef  Layout DSL ref of the zone
+   * @param {string} owner    an actor ref, or OWNER_NONE_DECLARED (context/Ownership.js)
+   */
+  declareZoneOwner(zoneRef, owner) {
+    if (!this._ctxService.loaded) {
+      this._ctrl._uiView.showToast('Open a context first — a zone\'s owner is declared in a document.', { type: 'warn' })
+      return null
+    }
+    const beforeDoc = this._ctxService.getDoc()
+    let afterDoc
+    try {
+      afterDoc = declareZoneOwner(beforeDoc, zoneRef, owner)
+    } catch (err) {
+      this._ctrl._uiView.showToast(err.message, { type: 'warn' })
+      return null
+    }
+    const label = isOwnerlessDeclared(owner) ? `Declare ${zoneRef} ownerless` : `Own ${zoneRef} as ${owner}`
+    return this._runDocEdit(beforeDoc, afterDoc, label, 'Could not record the owner')
   }
 
   /**

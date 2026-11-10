@@ -16,7 +16,7 @@ export function NPanelGeneric({ data }) {
     showPlaceType, placeType, placeTypeGeometry,
     spatialLinks, currentEntityId, onDeleteSpatialLink, getEntityName,
     frames, onAddFrame, onSelectFrame,
-    work,
+    work, zone,
   } = data
 
   const callbacks = useUIStore(s => s.callbacks)
@@ -89,6 +89,9 @@ export function NPanelGeneric({ data }) {
           onPlaceTypeChange={v => callbacks.onNPanelPlaceTypeChange?.(v)}
         />
       )}
+
+      {/* Zone owner and overlaps (ADR-170 S3) — only a zone is a place */}
+      {zone && <ZoneSection zone={zone} onDeclare={owner => callbacks.onDeclareZoneOwner?.(owner)} />}
 
       {/* Spatial Links */}
       {spatialLinks?.length > 0 && (
@@ -594,5 +597,46 @@ function SmallBtn({ onClick, title, children }) {
     >
       {children}
     </button>
+  )
+}
+
+// ── Zone section (ADR-170 O2 / S3) ─────────────────────────────────────────────
+
+/**
+ * Who owns this zone and which zones it overlaps. The owner is declared — in the
+ * speaker's name or as "nobody" — never filled in from who drew it (O2). When it
+ * cannot be declared the note says why (原則 #11). Each overlap is said by its
+ * owners; only a conflict takes the caution tone. Model: view/ZoneOwnershipMath.js.
+ */
+function ZoneSection({ zone, onDeclare }) {
+  return (
+    <Section title="Zone">
+      <div data-testid="zone-owner" style={{ fontSize: '11px', color: COLOR.textPrimary }}>
+        <span style={{ color: COLOR.textSecondary }}>Owner:</span> {zone.owner.text}
+      </div>
+      {zone.actions.length > 0 && (
+        <div style={{ display: 'flex', gap: '6px', marginTop: '4px' }}>
+          {zone.actions.map(a => (
+            <button
+              key={a.owner}
+              data-testid="zone-owner-declare"
+              onClick={() => onDeclare(a.owner)}
+              style={{ fontSize: '10px', fontFamily: 'inherit', background: COLOR.surface, color: COLOR.textPrimary, border: `1px solid ${COLOR.border}`, cursor: 'pointer' }}
+            >
+              {a.label}
+            </button>
+          ))}
+        </div>
+      )}
+      {zone.note && <div style={{ fontSize: '10px', color: COLOR.textSecondary, marginTop: '4px', lineHeight: '1.4' }}>{zone.note}</div>}
+      <div data-testid="zone-overlaps" style={{ marginTop: '6px', fontSize: '10px', lineHeight: '1.4' }}>
+        <div style={{ color: COLOR.textSecondary }}>
+          Overlaps: {zone.overlaps.length === 0 ? 'none at this height' : `${zone.overlaps.length} (conflicts ${zone.conflicts}, owner not declared ${zone.undeclared})`}
+        </div>
+        {zone.overlaps.map(o => (
+          <div key={o.otherId} data-testid="zone-overlap" data-kind={o.kind} style={{ color: COLOR[o.tone], marginTop: '2px' }}>{o.text}</div>
+        ))}
+      </div>
+    </Section>
   )
 }

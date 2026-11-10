@@ -16,6 +16,7 @@ import { CoordinateFrame } from '../domain/CoordinateFrame.js'
 import { isOriginFrame } from '../domain/originFrame.js'
 import { AnnotatedLine }   from '../domain/AnnotatedLine.js'
 import { AnnotatedRegion } from '../domain/AnnotatedRegion.js'
+import { isZone }          from '../domain/zone.js'
 import { AnnotatedPoint }  from '../domain/AnnotatedPoint.js'
 import { sizeOfCorners } from '../domain/hollowBody.js'
 import { SpatialLink }     from '../domain/SpatialLink.js'
@@ -208,6 +209,9 @@ export class UIStateManager {
       // D1: the WORK domain lives on the object's own panel). null when it is not
       // something a grasp can be for.
       work: obj instanceof Solid ? (ctrl._graspCtrl?.workDeclarationsOf(obj.id) ?? null) : null,
+      // A zone's owner and the zones it overlaps (ADR-170 S3). null for anything
+      // that is not a zone — a memo Region is not a place.
+      zone: isZone(obj) ? (ctrl._zoneOwnershipCtrl?.panelFor(obj.id) ?? null) : null,
     })
   }
 

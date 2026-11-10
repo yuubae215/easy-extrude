@@ -199,3 +199,77 @@ test('S2 Q3: a floor that arrives above a member does not make it jump on the ne
 // 原則 #24), but no window can select both today — a zone plate has no cuboid,
 // so the rectangle selection skips it, and the Outliner has no add-to-selection.
 // Declared in ADR-170 実装メモ (S2) rather than tested through a debug hook.
+
+// ── S3: owners and overlaps (ADR-170 O2 / D2) ────────────────────────────────
+//
+// The owner is declared in the speaker's name (never filled in), the conflict is
+// read from the LIVE plates (the document's layout does not follow a drag), and
+// the light follows every committed operation — so the move is made twice (two
+// typed grabs, the second one the one that overlaps) and then undone.
+
+async function importZonesDoc(page) {
+  const doc = await page.evaluate(async () => {
+    const { useUIStore } = await import('/easy-extrude/src/store/uiStore.js')
+    window.__ui = useUIStore
+    const { docFromLayout } = await import('/easy-extrude/src/context/DocBuilder.js')
+    const plate = (ref, name, x0) => ({
+      ref, type: 'AnnotatedRegion', name, placeType: 'Zone',
+      vertices: [{ x: x0, y: 0, z: 0 }, { x: x0 + 1000, y: 0, z: 0 }, { x: x0 + 1000, y: 1000, z: 0 }, { x: x0, y: 1000, z: 0 }],
+    })
+    const d = docFromLayout({ version: 'layout/1.1', meta: { name: 'owners' }, entities: [plate('assy', 'Assembly', 0), plate('qa', 'Inspection', 3000)], constraints: [] }, 'Owners e2e')
+    d.actors = [{ ref: 'ann' }, { ref: 'ben' }]
+    return d
+  })
+  const chooser = page.waitForEvent('filechooser')
+  await page.evaluate(() => window.__ui.getState().callbacks.onImportCtxJson())
+  await (await chooser).setFiles({ name: 'owners.ctx.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(doc)) })
+  await expect.poll(() => page.evaluate(() => window.__ui.getState().context?.arrangements?.kind ?? null)).not.toBe(null)
+}
+
+/** Select by document ref through the public verb (the Outliner row can sit under the header). */
+async function selectRef(page, ref, name) {
+  await page.evaluate((r) => window.__ui.getState().callbacks.onSelectRelationEntity(r), ref)
+  await expect.poll(() => page.evaluate(() => window.__easyExtrude.selectionState().activeName)).toBe(name)
+}
+
+test('a zone\'s owner is declared in the speaker\'s name; two owners overlapping light both plates, undo puts them out (ADR-170 S3)', async ({ page }) => {
+  const errors = await boot(page)
+  await importZonesDoc(page)
+  if (!(await page.evaluate(() => window.__ui.getState().nPanelVisible))) await page.keyboard.press('n')
+  const ownerRow = page.getByTestId('zone-owner')
+
+  // Nobody speaking: nothing is offered, and the panel says why — never filled in.
+  await selectRef(page, 'assy', 'Assembly')
+  await expect(ownerRow).toHaveText(/not declared/)
+  await expect(page.getByText(/Choose who is speaking/)).toBeVisible()
+  await expect(page.getByTestId('zone-owner-declare')).toHaveCount(0)
+
+  // Ann owns Assembly, Ben owns Inspection.
+  await page.getByTestId('relation-speaker').selectOption('ann')
+  await selectRef(page, 'assy', 'Assembly')
+  await page.getByRole('button', { name: 'Own as ann' }).click()
+  await expect(ownerRow).toHaveText(/ann/)
+  await expect(page.getByText(/Changing a declared owner is not decided yet/)).toBeVisible()
+  await page.getByTestId('relation-speaker').selectOption('ben')
+  await selectRef(page, 'qa', 'Inspection')
+  await page.getByRole('button', { name: 'Own as ben' }).click()
+  await expect(ownerRow).toHaveText(/ben/)
+  expect(await page.evaluate(() => window.__ui.getState().context)).toBeTruthy()
+  expect(await page.evaluate(() => window.__easyExtrude.zoneConflicts())).toEqual([])
+
+  // Bring Inspection over Assembly in two typed grabs; the second one overlaps.
+  await page.mouse.move(600, 400)
+  await typeKeys(page, ['g', 'x', '-', '1', '0', '0', '0', 'Enter'])
+  await expect.poll(async () => (await stateOf(page, 'Inspection')).footprint.x).toBeCloseTo(2500, 0)
+  expect(await page.evaluate(() => window.__easyExtrude.zoneConflicts())).toEqual([])
+  await typeKeys(page, ['g', 'x', '-', '1', '5', '0', '0', 'Enter'])
+  await expect.poll(() => page.evaluate(() => window.__easyExtrude.zoneConflicts())).toEqual(['Assembly', 'Inspection'])
+  await selectRef(page, 'qa', 'Inspection')
+  await expect(page.locator('[data-testid="zone-overlap"][data-kind="conflict"]')).toHaveText(/Conflict — overlaps "Assembly"/)
+
+  // Undo the overlapping grab: the light follows the committed operation.
+  await page.keyboard.press('Control+z')
+  await expect.poll(() => page.evaluate(() => window.__easyExtrude.zoneConflicts())).toEqual([])
+
+  expect(errors, errors.join(' | ')).toEqual([])
+})

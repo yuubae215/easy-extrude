@@ -108,6 +108,12 @@
  *                           by layout/ArrangementReport.js; shape and meaning
  *                           live in domain/arrangement.js (R15 asks it).
  *                           Concept model: docs/SPATIAL_RELATION_MODEL.md.
+ *
+ * ADR-170 S3 additive field (optional, still context/0.7 — the precedent is
+ * `hydratedLayout.unclaimedRelations`):
+ *   owners[]                who may change a zone: `{of: <zone ref>, owner:
+ *                           <actor ref> | "none"}`. No row = undeclared (the
+ *                           counted zero, never filled in). R16 asks it.
  */
 
 import { PROPOSAL_STATE, PROPOSAL_REF_PREFIX } from './Proposal.js'

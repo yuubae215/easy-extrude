@@ -10,7 +10,7 @@ artifacts
 
     context Adr170Scope
     uuid 08335655-2227-4c8c-a6a0-a3e01223cdf7
-    summary "ADR-170 (Accepted 2026-11-07 — S1・S2 実装済み; 起票 2026-11-05): 重なりは導出 (D1)、所有者の違う重なりは交渉 (D2)、所属は contains の宣言 (D3)、床は所属から (D4)、1 実体 1 高さ (D5)、地区が高さを持つ (D6)。O1 ロボット台座 = 例外にしない / O3 S キー = 床を持つ物の床下の宣言として残す (2026-11-07 当事者)。O2 所有者が未決"
+    summary "ADR-170 (Accepted 2026-11-07 — 全段実装済み (S3 2026-11-09); 起票 2026-11-05): 重なりは導出 (D1)、所有者の違う重なりは交渉 (D2)、所属は contains の宣言 (D3)、床は所属から (D4)、1 実体 1 高さ (D5)、地区が高さを持つ (D6)。O1 ロボット台座 = 例外にしない / O3 S キー = 床を持つ物の床下の宣言として残す (2026-11-07 当事者)。O2 所有者 = 宣言された owner、推し量らない (2026-11-08 当事者)"
 
     context RequirementCameFromTheOwner
     uuid e8ecbc1f-821f-481d-9bdd-e38f37540fa0
@@ -47,7 +47,7 @@ artifacts
 
             solution FloorFollowsBelongingNotFootprint
             uuid 6c01b9a6-87cf-4995-9a05-f6efd2b679c2
-            summary "S1: 所属は contains の宣言で、外へ動かしても消えない — 外にいる間は既存の判定が Escaped outside the Zone を出す。S2: 床は floorOf (所属とゾーンの高さだけ — 足元を読まない)。e2e/zone-elevation.spec.js: 4000 のゾーンの所属物を板の外 (x=3500) へ運んでも floorZ 4000 で、Z の Grab はそこで止まる"
+            summary "S1: 所属は contains の宣言で、外へ動かしても消えない — 外にいる間は既存の判定が出す (S3 で「Belongs to "…", but is outside it」に言い直した)。S2: 床は floorOf (所属とゾーンの高さだけ — 足元を読まない)。e2e/zone-elevation.spec.js: 4000 のゾーンの所属物を板の外 (x=3500) へ運んでも floorZ 4000 で、Z の Grab はそこで止まる"
             artifacts
             - "src/domain/zone.js"
             - "e2e/zone-elevation.spec.js"
@@ -85,9 +85,15 @@ artifacts
 
         goal OverlapAcrossOwnersGoesToNegotiation
         uuid d2e6a10d-423f-49d7-ba70-5c0ae8318fb8
-        summary "所有者の違う地区の重なりは ADR-049 の衝突として表に出て交渉に回り、描くことは止まらない"
-        labels support-exploring
+        summary "所有者の違う地区の重なりは衝突として画面に出て (N パネルの Zone 節と 3D の板)、描くことは止まらない。所有者は宣言で、推し量らない (O2)。片方 none / 片方未宣言は衝突にしない (S3 で D2 を改訂 — 議題化は DEF-078)"
+        labels support-verified
 
-            assumption OverlapAcrossOwnersGoesToNegotiationWillBeSettled
-            uuid 160d4ef8-6476-4a3a-a6ea-908a72c52ffb
-            summary "未着手 (S3)。O2 (所有者とは誰か) が決まってから。証拠予定: 重なりの導出 (D1 — S1 の俯瞰 Q4 で S3 へ移した) と、RequirementGraph の衝突に所有者の違うゾーンの重なりが現れる fixture。満期=GREP:src/domain/zone.js::zoneOverlaps"
+            solution OverlapAcrossOwnersIsShown
+            uuid 8e22eb09-c7de-4a84-a71a-a67a429f092e
+            summary "S3 (2026-11-09): zoneOverlaps が同じ高さ × 面積 > 0 の対を所有者の組で 5 つに読む (zone.test.js — 辺だけ・高さ違い・凹)。ZoneOwnershipController が画面の板と文書の owners[] を合わせ、衝突の 2 枚だけ灯す (単体 — 4 つの組・再投影)。灯りの書き手 1 つ・所有者の入口 1 つを ZoneOverlapOwnership.test.js が数える。e2e/zone-elevation.spec.js: ann / ben が所有 → 2 回目の掴みで重なると 2 枚が灯り N パネルが衝突を名指す → undo で消える。landing の更新を外すと落ちる"
+            artifacts
+            - "src/domain/zone.test.js"
+            - "src/controller/ZoneOwnershipController.test.js"
+            - "src/ZoneOverlapOwnership.test.js"
+            - "src/context/ZoneOwner.test.js"
+            - "e2e/zone-elevation.spec.js"

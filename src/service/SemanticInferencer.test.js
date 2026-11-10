@@ -90,15 +90,28 @@ test('several touched partners come out in partner-ref order (deterministic, not
   assert.deepEqual(out.map(s => s.partnerRef), ['a_right', 'z_left'])
 })
 
-test('contains is still offered as a SpatialLink, after the arrangements', () => {
-  const region = new AnnotatedRegion('zone', 'Zone', [
-    new Vertex('r0', new Vector3(0, 0, 0)), new Vertex('r1', new Vector3(500, 0, 0)),
-    new Vertex('r2', new Vector3(500, 500, 0)), new Vertex('r3', new Vector3(0, 500, 0)),
+/** A plate (mm) at height z; placeType 'Zone' makes it a zone, null a memo. */
+function plate(id, z, placeType = 'Zone') {
+  const r = new AnnotatedRegion(id, id, [
+    new Vertex(`${id}0`, new Vector3(0, 0, z)), new Vertex(`${id}1`, new Vector3(500, 0, z)),
+    new Vertex(`${id}2`, new Vector3(500, 500, z)), new Vertex(`${id}3`, new Vector3(0, 500, z)),
   ], null)
-  const out = inferSuggestions(bin, [bench, region, bin], ctx())
+  r.placeType = placeType
+  return r
+}
+
+test('belonging is offered as a contains SpatialLink, after the arrangements, when the foot overlaps the zone at its height (ADR-170 S3)', () => {
+  const zone = plate('zone', 800)
+  const out = inferSuggestions(bin, [bench, zone, bin], ctx())
   assert.deepEqual(out.map(s => s.kind), ['arrangement', 'link'])
   assert.equal(out[1].semanticType, 'contains')
   assert.equal(out[1].sourceId, 'zone')
+  assert.equal(out[1].label, 'Belongs to', 'said in the place word (contains = belongs to)')
+})
+
+test('no belonging is offered for a memo Region or for a zone at another height (ADR-170 S3 Q3)', () => {
+  assert.deepEqual(inferSuggestions(bin, [plate('memo', 800, null), bin], ctx()), [], 'a memo is not a place')
+  assert.deepEqual(inferSuggestions(bin, [plate('ground', 0), bin], ctx()), [], 'the bin stands at 800, the zone at 0')
 })
 
 test('bodyOfSolid reads the live pose in the shape the geometry takes', () => {

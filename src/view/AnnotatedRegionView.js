@@ -52,6 +52,7 @@ import { prefersReducedMotion, onReducedMotionChange } from '../theme/motion.js'
 import { EntityLabel } from './EntityLabel.js'
 import { idleClock } from './MotionMath.js'
 import { isZonePlaceType } from '../domain/zone.js'
+import { COLOR } from '../theme/tokens.js'
 import { edgeBand, lightCurtain } from './FloorLightGeometry.js'
 import {
   phaseFor, zoneFillFrame, zoneRimFrame, floorLightGains, lightTint,
@@ -69,6 +70,8 @@ const CONFIRMED_OPACITY  = 1.00
 const PENDING_OPACITY    = 0.90
 const RIM_PULSE_DURATION = ZONE_RIM_PERIOD   // seconds per rim ring cycle
 const VIOLATION_COLOR    = 0xEF4444
+/** Two declared owners overlap here (ADR-170 S3) — the caution token, not a new colour (ADR-100). */
+const OWNER_CONFLICT_COLOR = parseInt(COLOR.cautionTone.slice(1), 16)
 const WASH_GAIN          = 0.35   // interior wash = breath × this — the band carries the light
 const BAND_GAIN          = 1.6    // edge band = breath × this (additive, capped at 1)
 const BAND_INSET         = 0.78   // band runs from the edge 22% of the way to the centroid
@@ -220,6 +223,7 @@ export class AnnotatedRegionView {
     this._label?.setWanted(true)
     this._labelAnchor = new THREE.Vector3()
     this._containsViolated = false
+    this._ownerConflict = false
 
     // ── Set initial geometry ───────────────────────────────────────────────
     this._setPoints(points)
@@ -405,12 +409,29 @@ export class AnnotatedRegionView {
   }
 
   /**
+   * Called when this zone overlaps another whose declared owner differs
+   * (ADR-170 S3). The flag's only writer is ZoneOwnershipController (PHILOSOPHY #4);
+   * a contains violation still wins the colour (it says something is out of place now).
+   * @param {boolean} conflict
+   */
+  setOwnerConflict(conflict) {
+    if (this._ownerConflict === conflict) return
+    this._ownerConflict = conflict
+    this._applyColors()
+  }
+
+  /** Whether the plate is lit as an owner conflict (read by e2e). */
+  get ownerConflict() { return this._ownerConflict }
+
+  /**
    * Sole writer of every material colour (PHILOSOPHY #4): the ring and dots
    * carry the fact colour, the light carries it warmed toward the stage light,
    * and a violation overrides both with the danger colour.
    */
   _applyColors() {
-    const fact  = this._containsViolated ? VIOLATION_COLOR : this._colorForType(this._placeType)
+    const fact  = this._containsViolated ? VIOLATION_COLOR
+      : this._ownerConflict ? OWNER_CONFLICT_COLOR
+      : this._colorForType(this._placeType)
     const light = lightTint(fact)
     this._lineMat.color.setHex(fact)
     this._fillMat.color.setHex(fact)
