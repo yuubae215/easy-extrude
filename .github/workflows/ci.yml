@@ -147,6 +147,14 @@ jobs:
       - name: Observation trailers are counted, not just printed
         run: pnpm test:trailers
 
+      # コミット済み WASM 成果物の鮮度 (2026-11-10、DEF-024 決着)。CI は Rust / C++ の
+      # ツールチェーンを持たず成果物を再生成しない (ADR-064 Phase 1) ので、元コードを
+      # 編集して再生成を忘れてもどの検査も落ちなかった。成果物の隣の刻印
+      # (SOURCE_STAMP.json — ビルドスクリプトが刻む) と元コード・成果物の sha256 を
+      # 照合する。防ぐのは*忘れること*で、刻印を偽ることではない。
+      - name: Committed WASM artifacts match the sources they were built from
+        run: pnpm test:wasm-freshness
+
       - name: Type check
         run: pnpm typecheck
 
