@@ -13,7 +13,11 @@ import { graspFeatureGaps, graspFeatureSummary } from '../../domain/graspFeature
 import { sourceLabel } from '../../domain/searchGeometry.js'
 import { MASS_DECLARATION_STATE } from '../../domain/targetMass.js'
 import { phaseRows, analysisSummary, analysisFreshness, analysisAvailability, PART_LABEL } from '../../view/GraspPhaseMath.js'
-import { replayFor, phaseTimeline, replayFrame, replayCaption } from '../../view/GraspReplayMath.js'
+import {
+  replayFor, phaseTimeline, replayFrame, replayCaption,
+  REPLAY_SUBJECT, returnedSubject, rejectedSubject, sameSubject, subjectLabel, rejectedReplayList,
+} from '../../view/GraspReplayMath.js'
+import { PHASE_LABEL } from '../../view/GraspPhaseMath.js'
 import { DeltaChip, useReducedMotion } from '../Feedback/FeedbackPrimitives.jsx'
 import { barMotion } from '../../view/ChromeMath.js'
 import { NumField, SortChip, PICKER } from './GraspFields.jsx'
@@ -865,10 +869,15 @@ function InterferenceAnalysisCard({ grasp, analysisState, availability, onRun, r
  */
 function ReplayControls({ grasp, analysisState, replayState, callbacks }) {
   const reduced = useReducedMotion()
-  const r = replayFor(analysisState, grasp, grasp?.selectedRank ?? null)
+  // The subject: an open replay of a rejected representative stays on it,
+  // otherwise the selected candidate (the controller resolves it the same way).
+  const subject = replayState?.subject?.kind === REPLAY_SUBJECT.REJECTED
+    ? replayState.subject
+    : returnedSubject(grasp?.selectedRank ?? null)
+  const r = replayFor(analysisState, grasp, subject)
   const ready = r.kind === 'ready'
   const timeline = ready ? phaseTimeline(r.replay, grasp.diagnostics?.interferencePhases ?? null) : null
-  const open = ready && replayState?.rank === grasp.selectedRank
+  const open = ready && sameSubject(replayState?.subject, subject)
   const at = open ? replayState.at : 0
   const frame = open ? replayFrame(timeline, at) : null
   const names = analysisState?.obstacleLabels ?? []
@@ -879,7 +888,11 @@ function ReplayControls({ grasp, analysisState, replayState, callbacks }) {
   })
   return (
     <div style={{ marginTop: '8px', fontSize: '10px', color: COLOR.textSecondary }} data-testid="grasp-replay">
-      <div style={{ marginBottom: '4px' }}>replay — the judged samples of the selected candidate</div>
+      <div style={{ marginBottom: '4px' }}>
+        replay — the judged samples of {subject.kind === REPLAY_SUBJECT.REJECTED
+          ? <span style={{ color: COLOR.cautionTone }}>{subjectLabel(subject, names)} (the best candidate it stopped)</span>
+          : 'the selected candidate'}
+      </div>
       <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
         <button style={btn(ready)} disabled={!ready} title="previous judged sample"
           onClick={() => callbacks.onReplayStep?.(-1)}>◀</button>
@@ -933,6 +946,46 @@ function ReplayControls({ grasp, analysisState, replayState, callbacks }) {
             </div>
           )}
         </>
+      )}
+      <RejectedReplays grasp={grasp} analysisState={analysisState} active={subject} names={names} callbacks={callbacks} />
+    </div>
+  )
+}
+
+/**
+ * The interference rejections worth replaying (ADR-158 R3): per phase ×
+ * obstacle, the best candidate that obstacle stopped — chosen and ordered by
+ * core/, listed as given. Groups left out by the limit are counted, never
+ * hidden (原則 #11). Before an analysis the slot stays with its reason (#15).
+ */
+function RejectedReplays({ grasp, analysisState, active, names, callbacks }) {
+  const list = rejectedReplayList(analysisState, grasp)
+  return (
+    <div style={{ marginTop: '6px' }} data-testid="grasp-rejected-replays">
+      <div style={{ marginBottom: '2px' }}>rejected — the best candidate each obstacle stopped</div>
+      {list.kind !== 'ready' && <div>{list.reason}</div>}
+      {list.kind === 'ready' && list.items.length === 0 && <div>no candidate was rejected for interference</div>}
+      {list.kind === 'ready' && list.items.map(item => {
+        const s = rejectedSubject(item.phase, item.obstacleIndex)
+        const on = sameSubject(active, s)
+        return (
+          <button key={`${item.phase}:${item.obstacleIndex}`} type="button"
+            data-testid={`grasp-rejected-${item.phase}-${item.obstacleIndex}`}
+            onClick={() => callbacks.onReplayRejected?.(item.phase, item.obstacleIndex)}
+            title="Replay the best candidate this obstacle stopped"
+            style={{
+              display: 'block', width: '100%', textAlign: 'left', padding: '2px 6px', marginTop: '2px',
+              borderRadius: '3px', fontSize: '10px', cursor: 'pointer',
+              border: `1px solid ${on ? COLOR.cautionTone : COLOR.border}`,
+              background: on ? COLOR.surfaceRaised : 'transparent', color: COLOR.textPrimary,
+            }}>
+            {PHASE_LABEL[item.phase] ?? item.phase} × {names[item.obstacleIndex] ?? `obstacle #${item.obstacleIndex}`}
+            <span style={{ color: COLOR.textSecondary }}> — {item.rejected} rejected · best score {item.totalScore.toFixed(3)}</span>
+          </button>
+        )
+      })}
+      {list.kind === 'ready' && list.omitted > 0 && (
+        <div style={{ marginTop: '2px' }}>{list.omitted} more obstacle{list.omitted === 1 ? '' : 's'} stopped candidates — not returned (limit 8)</div>
       )}
     </div>
   )

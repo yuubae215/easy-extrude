@@ -403,6 +403,30 @@ Observe で分かった前提: 腕を描く入口 `RobotStageSet.previewSolution
 
 `pnpm test:contract` (パッケージ 70 + BFF 39) で、v12 の必須・上限・`rejected ≥ 1`・名前を載せないことを問う。
 
+### 決定 (R3 — フロント)
+
+- **再生の対象を閉じた kind にした** (`REPLAY_SUBJECT`: `returned {rank}` / `rejected {phase, obstacleIndex}`)。
+  棄却の代表は順位を持たないので、R2 の「rank で同一性を判定する」を `sameSubject` に置き換えた。
+  対象を決めるのは `GraspController._replaySubject` 1 か所 (開いている再生が棄却の代表ならそれ、
+  そうでなければ選んでいる候補)。姿勢は対象と一緒に `replayFor` が返す — 候補一覧を rank で引かない。
+- **一覧は core/ が返した順のまま並べる。** フロントは選ばず、並べ替えない (選び方はアイデア)。
+  行は「相 × 障害物 — 棄却数 · 最高点」、省いた組は「あと N 個の障害物が候補を止めた — 返していない
+  (上限 8)」と数で言う。
+- **候補を選ぶと棄却の再生は閉じる** (義務は発火する事象の側に — 原則 #32)。
+- 当たった障害物を光らせるのは R2 の `struckObstacles` のまま (返した候補と同じ絵)。
+
+### 検証 (R3 — フロント)
+
+- `pnpm test` → 2241 pass。`GraspReplayMath.test.js` で、対象の同一性と、一覧が分析の返したままで
+  あること、古い分析と v12 より前の応答では理由を言うことを問う。`GraspController.test.js` で、棄却の
+  代表が自分の姿勢から再生され、コマ送りしても対象が保たれ、候補を選ぶと閉じ、返っていない組は拒まれる
+  ことを問う。
+- **ブラウザで確認 (2026-11-11):** 本物のエンジンの応答を dev server に流し込んだ (台座テンプレ +
+  探針の球、返した候補 5 / 干渉の棄却 4)。一覧に「Approach × probe sphere — 4 rejected · best score 0.589」
+  「Approach × pedestal — 2 rejected」の 2 行が出た。前者を押すと、判定された標本 6/6 で「tool path ×
+  probe sphere」「arm × probe sphere」が出た。ページエラーは 0 件。
+- **見ていないもの:** 本物のエンジンを立てる e2e のレーンは今も無い (GSN の 2 goal の満期のまま)。
+
 ## Lens notes
 
 - 様態: 再生そのものは逐次 (BPMN)。スクラブは利用者の事象で任意の位置へ飛ぶ (CMMN 的) が、

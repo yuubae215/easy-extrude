@@ -1420,6 +1420,28 @@ stateDiagram-v2
   リクエストと今の `grasp.request` の同一性から毎回求める (原則 #23)。探索をやり直すと
   保存された何も書き換えずに `stale` になる。
 
+### Grasp replay subject — 何を再生しているか (ADR-158 R3)
+
+`context.graspReplay = {subject, at, playing}`。`subject` は閉じた kind:
+`returned {rank}` (返した候補) / `rejected {phase, obstacleIndex}` (棄却の組の代表)。
+書き手は `GraspController._writeReplay` ただ 1 つ、対象を決めるのは `_replaySubject` ただ 1 つ。
+
+```mermaid
+stateDiagram-v2
+    [*] --> 閉
+    閉 --> 返した候補 : ▶ / コマ送り [候補を選んでいる・分析が fresh]
+    閉 --> 棄却の代表 : 一覧の行を押す [分析が fresh・その組が返っている]
+    返した候補 --> 棄却の代表 : 一覧の行を押す
+    棄却の代表 --> 棄却の代表 : 別の行を押す
+    返した候補 --> 閉 : ✕ / 別の候補を選ぶ / 分析が stale
+    棄却の代表 --> 閉 : ✕ / 候補を選ぶ / 分析が stale
+```
+
+- **禁止遷移**: 棄却の代表 → 返した候補 (候補を選ぶと閉じる — 選んだ候補の再生は ▶ で開く)。
+  一覧に無い組を開く (`replayFor` が理由つきで拒む)。
+- 棄却の代表は**順位を持たない** — 対象の同一性は `sameSubject` が kind ごとに判定し、
+  rank を比べる経路は無い (原則 #2)。姿勢も対象と一緒に `replayFor` が返す。
+
 ---
 
 ## 把持の関係 — ok / hand-undeclared / broken-object / broken-tcp (ADR-164 D2)

@@ -1711,7 +1711,7 @@ const lastReplayFrame = (ghosts) => ghosts.at(-1).calls.filter(c => c[0] === 're
 test('replay: stepping draws the judged sample — the measured arm is translucent, the judged pick pose solid', () => {
   const { gc, stages, store, ghosts } = replaySetup()
   gc.stepReplay(1)                                    // opens on the first sample
-  assert.equal(store.getState().context.graspReplay.rank, 1)
+  assert.deepEqual(store.getState().context.graspReplay.subject, { kind: 'returned', rank: 1 })
   assert.deepEqual(stages.calls.at(-1), ['f_base', { authority: 'measured', joints: PRE }])
   const f0 = lastReplayFrame(ghosts)
   assert.equal(f0.kind, 'sample')
@@ -1723,6 +1723,28 @@ test('replay: stepping draws the judged sample — the measured arm is transluce
   assert.deepEqual(stages.calls.at(-1), ['f_base', { authority: 'solved', joints: PICK }])
   assert.equal(lastReplayFrame(ghosts).kind, 'sample', 'the s = 1 sample on the boundary, not the next segment')
   assert.equal(lastReplayFrame(ghosts).struck.length, 0)
+})
+
+test('replay R3: a rejected representative replays from its own pose, keeps its subject, and selecting a candidate ends it', () => {
+  const { gc, store, ghosts } = replaySetup()
+  const analysis = store.getState().context.graspAnalysis
+  const item = { phase: 'approach', obstacleIndex: 0, rejected: 4, totalScore: 0.7, pose: EE_POSE,
+    reachSolution: solved(SOLVED_B), phases: replayOf(1).phases }
+  store.getState().actions.contextSetGraspAnalysis({ ...analysis,
+    analysis: { ...analysis.analysis, rejectedReplays: { items: [item], omitted: 0 } } })
+  gc.openRejectedReplay('approach', 0)
+  const state = store.getState().context.graspReplay
+  assert.deepEqual(state.subject, { kind: 'rejected', phase: 'approach', obstacleIndex: 0 })
+  // stepping stays on the rejected subject even though candidate #1 is selected
+  gc.stepReplay(1)
+  assert.deepEqual(store.getState().context.graspReplay.subject, state.subject)
+  assert.match(lastReplayFrame(ghosts).caption, /^rejected · Approach × pedestal · /i)
+  // selecting a returned candidate ends the rejected replay (#32)
+  gc.selectCandidate(2)
+  assert.equal(store.getState().context.graspReplay ?? null, null)
+  // a group the analysis did not return is refused, never opened empty
+  gc.openRejectedReplay('lift', 0)
+  assert.equal(store.getState().context.graspReplay ?? null, null)
 })
 
 test('replay: a scrub between samples draws a derived frame that strikes nothing', () => {
@@ -1738,7 +1760,7 @@ test('replay: selecting another candidate ends it — twice in a row, never one 
   for (const [from, to, joints] of [[1, 2, SOLVED_B], [2, 1, SOLVED_A]]) {
     if (store.getState().context.grasp.selectedRank !== from) gc.selectCandidate(from)
     gc.stepReplay(1)
-    assert.equal(store.getState().context.graspReplay.rank, from)
+    assert.deepEqual(store.getState().context.graspReplay.subject, { kind: 'returned', rank: from })
     gc.selectCandidate(to)
     assert.equal(store.getState().context.graspReplay, null)
     assert.deepEqual(stages.calls.at(-1), ['f_base', drawn(joints)], 'the arm goes back to the candidate')

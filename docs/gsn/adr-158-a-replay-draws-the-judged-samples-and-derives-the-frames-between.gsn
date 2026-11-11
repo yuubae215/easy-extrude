@@ -95,6 +95,14 @@ artifacts
             - "packages/grasp-contract/test/contract.test.mjs"
             - "packages/grasp-contract/schema/grasp-search-response.schema.json"
 
+            solution RejectedReplayIsShownAndPlayed
+            uuid 92322d95-4e46-4d8b-94a9-c45d0e33103f
+            summary "フロント (2026-11-11): pnpm test 2241 pass — 再生の対象は閉じた kind (returned / rejected) で sameSubject が同一性を持ち、棄却の代表は自分の姿勢から再生され、候補を選ぶと閉じる。dev server に本物のエンジンの応答を流し込み、一覧の 2 行と、押した代表の判定標本 (tool path × probe sphere / arm × probe sphere) を目視した (page error 0)"
+            artifacts
+            - "src/view/GraspReplayMath.test.js"
+            - "src/controller/GraspController.test.js"
+            - "src/components/Grasp/GraspSearchPanel.jsx"
+
         goal TheReplayServesTheScenesItWasDesignedFor
         uuid ec2af048-2832-46ab-a54d-7eed67386447
         summary "S1 (棄却の理由を見る) で、パネルの数字だけより早くどの宣言を変えればよいかに着く。S5 (現場のスマホ) では reduced-motion でもコマ送りで同じ事実が見える"
