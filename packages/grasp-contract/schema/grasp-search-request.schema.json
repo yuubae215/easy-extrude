@@ -197,7 +197,11 @@
             "required": [
               "fovHalfAngle",
               "fovHalfAngles"
-            ]
+            ],
+            "properties": {
+              "fovHalfAngle": true,
+              "fovHalfAngles": true
+            }
           }
         },
         "gripper": {
