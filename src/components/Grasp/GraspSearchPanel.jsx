@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useUIStore, UNDECLARED_REACH } from '../../store/uiStore.js'
 import { renderableEndEffectorFrame } from '../../view/GraspGhostMath.js'
 import { funnelStages, dominantStage, funnelDelta, nearMissCloseness, specResultRows } from '../../view/GraspFunnelMath.js'
-import { domainKpis, ladderRisks } from '../../view/GraspLadderMath.js'
+import { domainKpis, ladderRisks, askedGates, rateText } from '../../view/GraspLadderMath.js'
 import { objectiveRows, unevaluatedNote } from '../../view/GraspScoreMath.js'
 import {
   OBJECTIVE, objectivesForHand, DEFAULT_OBJECTIVE_WEIGHT,
@@ -417,7 +417,7 @@ export function GraspSearchPanel() {
           feedback, especially when the list is empty. Presentation only:
           everything below derives from the wire facts via GraspFunnelMath. */}
       {status === 'results' && (
-        <DiagnosticsFunnel diagnostics={grasp.diagnostics} prev={grasp.prevDiagnostics} />
+        <DiagnosticsFunnel diagnostics={grasp.diagnostics} prev={grasp.prevDiagnostics} request={grasp.request} />
       )}
       {status === 'results' && (
         <SpecResults rows={specResultRows(grasp.diagnostics, grasp.candidates ?? [])} />
@@ -1051,7 +1051,7 @@ function SpecResults({ rows }) {
   )
 }
 
-function DiagnosticsFunnel({ diagnostics, prev }) {
+function DiagnosticsFunnel({ diagnostics, prev, request }) {
   const funnel = funnelStages(diagnostics)
   if (!funnel) return null   // legacy / absent diagnostics → degrade silently
 
@@ -1073,7 +1073,7 @@ function DiagnosticsFunnel({ diagnostics, prev }) {
 
   const dominant = dominantStage(diagnostics)
   const delta    = funnelDelta(prev, diagnostics)
-  const kpis     = domainKpis(diagnostics)
+  const kpis     = domainKpis(diagnostics, askedGates(request))
   const risks    = ladderRisks(kpis)
   // One meter per measurable domain nearest-miss (ADR-081): reach (Path),
   // occlusion (Vision), opening (Grasp). Null facts render no meter.
@@ -1141,7 +1141,7 @@ function LadderRisks({ risks, kpis }) {
         fallback-ladder forecast (heuristic, not a guarantee)
         {kpis && (
           <span style={{ color: '#667', marginLeft: '6px' }}>
-            seen {(kpis.vision.rate * 100).toFixed(0)}% · path {(kpis.path.rate * 100).toFixed(0)}% · grasp {(kpis.grasp.rate * 100).toFixed(0)}%
+            of those reached — seen {rateText(kpis.vision)} · path {rateText(kpis.path)} · grasp {rateText(kpis.grasp)}
           </span>
         )}
       </div>

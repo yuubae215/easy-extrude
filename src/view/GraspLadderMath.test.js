@@ -9,7 +9,11 @@
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { LADDER, domainKpis, ladderRisks } from './GraspLadderMath.js'
+import { LADDER, domainKpis as kpisOf, ladderRisks, askedGates, rateText } from './GraspLadderMath.js'
+
+/** Both gates asked (camera and gripper declared) — the existing fixtures' premise. */
+const BOTH = Object.freeze({ vision: true, grasp: true })
+const domainKpis = (d, asked = BOTH) => kpisOf(d, asked)
 
 /** Clean run: every domain passes everything (20 generated, 20 feasible). */
 const CLEAN = Object.freeze({
@@ -46,12 +50,16 @@ test('domainKpis derives per-domain rates from the exclusive stage counts', () =
   const k = domainKpis(MIXED)
   assert.equal(k.generated, 20)
   assert.equal(k.feasibleRate, 0.5)
+  // Each rate is over the candidates that REACHED the stage (order: reach → IK →
+  // grasp → visibility → interference). 20 → reach −2 → IK −1 → grasp −2 → vis −4 → interf −1.
   assert.equal(k.vision.rejected, 4)
-  assert.equal(k.vision.rate, 1 - 4 / 20)
-  // path aggregates its three stages (reach + IK + interference)
+  assert.equal(k.vision.entered, 15)
+  assert.equal(k.vision.rate, 1 - 4 / 15)
+  assert.equal(k.grasp.entered, 17)
+  assert.equal(k.grasp.rate, 1 - 2 / 17)
+  // path = the product of its three stages' pass rates (they are not adjacent)
   assert.equal(k.path.rejected, 4)
-  assert.equal(k.path.rate, 1 - 4 / 20)
-  assert.equal(k.grasp.rate, 1 - 2 / 20)
+  assert.ok(Math.abs(k.path.rate - (18 / 20) * (17 / 18) * (10 / 11)) < 1e-12)
   // near-misses are passed through as facts (nulls stay null)
   assert.equal(k.vision.nearestMiss, 0.008)
   assert.equal(k.path.nearestMiss, 0.02)
@@ -66,6 +74,38 @@ test('domainKpis is null on malformed or empty-generation input', () => {
   // v3-shaped diagnostics (missing ADR-081 stages) are not silently upgraded
   const { rejectedByVisibility, rejectedByGrasp, ...v3 } = MIXED
   assert.equal(domainKpis(v3), null)
+})
+
+test('a stage that rejects everything it is asked reads 0 %, even when earlier stages took most candidates', () => {
+  // 36 generated, reach drops 30, the 6 that reach the camera are all unseen.
+  // The old share-of-generated read this as "83 % seen".
+  const d = { ...CLEAN, candidatesGenerated: 36, rejectedByReach: 30, rejectedByVisibility: 6, feasible: 0, returned: 0 }
+  const k = domainKpis(d)
+  assert.equal(k.vision.entered, 6)
+  assert.equal(k.vision.rate, 0)
+  assert.equal(rateText(k.vision), '0%')
+  // and the total-loss rule can now fire for it
+  assert.ok(ladderRisks(k).some(r => r.domain === 'vision' && r.level === 5))
+})
+
+test('a gate nobody asked has no rate and no risk — never a fabricated 100 % (#11 / #31)', () => {
+  const k = kpisOf(CLEAN, { vision: false, grasp: false })
+  assert.deepEqual(k.vision, { asked: false })
+  assert.deepEqual(k.grasp, { asked: false })
+  assert.equal(rateText(k.vision), 'not asked')
+  assert.equal(k.path.asked, true)
+  assert.deepEqual(ladderRisks(kpisOf({ ...CLEAN, rejectedByReach: 20, feasible: 0, returned: 0 }, { vision: false, grasp: false })).map(r => r.domain), ['path'])
+  // which gates were asked comes from the request, and an unknown request gives no KPI at all
+  assert.deepEqual(askedGates({ graspSearch: { camera: { position: [0, 0, 1] } } }), { vision: true, grasp: false })
+  assert.equal(askedGates(null), null)
+  assert.equal(kpisOf(CLEAN, null), null)
+})
+
+test('a stage nobody reached has no rate either', () => {
+  const k = domainKpis({ ...CLEAN, rejectedByReach: 20, feasible: 0, returned: 0 })
+  assert.equal(k.vision.entered, 0)
+  assert.equal(rateText(k.vision), 'not reached')
+  assert.equal(k.path.rate, 0)
 })
 
 // ── ladderRisks ───────────────────────────────────────────────────────────────

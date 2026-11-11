@@ -229,6 +229,19 @@ export function wireCameraOf(worldPose, declaration) {
 }
 
 /**
+ * Does this request ask "can it be seen"? — the WIRE side of the camera's
+ * identity (ADR-081: the visibility gate is on exactly when the request carries
+ * a `camera`, and passes everything otherwise). Kept here with the frame-side
+ * predicate so "is there a camera" is decided in one module (IDENTITY_RULES).
+ *
+ * @param {object|null|undefined} graspSearch  the request's `graspSearch`
+ * @returns {boolean}
+ */
+export function requestAsksVisibility(graspSearch) {
+  return isCameraFrame(graspSearch)
+}
+
+/**
  * Quaternion of a rotation whose columns are the unit vectors `xa`, `ya`, `za`
  * (closed form — Shepperd's method).
  */

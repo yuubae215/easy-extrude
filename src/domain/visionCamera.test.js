@@ -13,7 +13,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   isCameraFrame, cameraDeclarationOf, CAMERA_STATE, resolveCameras, cameraCardinality,
-  selectCamera, wireCameraOf, cameraPoseFromViewport, frustumCorners, quaternionFromBasis, withFieldOfView,
+  selectCamera, wireCameraOf, cameraPoseFromViewport, frustumCorners, quaternionFromBasis, withFieldOfView, requestAsksVisibility,
   cameraSeedPose, nextCameraName, CAMERA_VIEW_AXIS_LOCAL,
 } from './visionCamera.js'
 import { rotateVec3 } from './rotateVec3.js'
@@ -175,4 +175,11 @@ test('seed: a new camera looks straight down from overhead, and the second does 
   closeVec([sight.x, sight.y, sight.z], [0, 0, -1])
   assert.notDeepEqual(cameraSeedPose(1).position, s0.position)
   assert.equal(nextCameraName([{ name: 'camera' }]), 'camera_2')
+})
+
+test('wire: a request asks "can it be seen" exactly when it carries a camera object', () => {
+  assert.equal(requestAsksVisibility({ camera: { position: [0, 0, 1] } }), true)
+  assert.equal(requestAsksVisibility({}), false)
+  assert.equal(requestAsksVisibility({ camera: null }), false)
+  assert.equal(requestAsksVisibility(null), false)
 })
