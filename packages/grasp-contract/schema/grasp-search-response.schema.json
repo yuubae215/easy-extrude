@@ -593,6 +593,9 @@
               "items": {
                 "$ref": "#/$defs/candidateReplay"
               }
+            },
+            "rejectedReplays": {
+              "$ref": "#/$defs/rejectedReplays"
             }
           },
           "required": [
@@ -600,7 +603,8 @@
             "candidatesAnalysed",
             "phases",
             "armPath",
-            "replays"
+            "replays",
+            "rejectedReplays"
           ]
         }
       ]
@@ -963,6 +967,84 @@
         "tcp",
         "hits",
         "arm"
+      ]
+    },
+    "rejectedReplays": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Interference-rejected candidates worth replaying (ADR-158 replay stage R3, contract v12). One per (phase the rejection was attributed to, obstacle hit in that phase), most-rejected groups first (ties: motion order, then obstacle index), at most 8. Which candidate represents a group is the solver's choice: the highest total score among that group's rejections (ties: generation order) -- 'the best candidate this obstacle stopped'. Groups beyond the limit are COUNTED in `omitted`, never silently dropped.",
+      "properties": {
+        "items": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/rejectedReplay"
+          }
+        },
+        "omitted": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Groups not returned because of the limit."
+        }
+      },
+      "required": [
+        "items",
+        "omitted"
+      ]
+    },
+    "rejectedReplay": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "phase": {
+          "enum": [
+            "transit",
+            "approach",
+            "close",
+            "lift",
+            "transport",
+            "place"
+          ],
+          "description": "The phase the rejection was attributed to (the first phase it hit, ADR-157 D3)."
+        },
+        "obstacleIndex": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Index into the request's obstacles[] hit in that phase. A candidate that hit several obstacles counts in each of their groups."
+        },
+        "rejected": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "How many rejected candidates this group counted (not exclusive across groups)."
+        },
+        "totalScore": {
+          "type": "number",
+          "minimum": 0,
+          "description": "The representative's weighted score, computed exactly as for returned candidates. It ranks nothing on the wire."
+        },
+        "pose": {
+          "$ref": "#/$defs/pose"
+        },
+        "reachSolution": {
+          "$ref": "#/$defs/reachSolution",
+          "description": "The solution the rejection was attributed to: the representative solution (every joint solution collided -- ADR-145 Option B)."
+        },
+        "phases": {
+          "type": "array",
+          "description": "Same shape as a returned candidate's replay: evaluated phases only, in motion order.",
+          "items": {
+            "$ref": "#/$defs/replayPhase"
+          }
+        }
+      },
+      "required": [
+        "phase",
+        "obstacleIndex",
+        "rejected",
+        "totalScore",
+        "pose",
+        "reachSolution",
+        "phases"
       ]
     }
   }

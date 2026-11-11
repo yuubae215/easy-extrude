@@ -82,6 +82,19 @@ artifacts
             - "core/tests/test_motion_phases.py"
             - "packages/grasp-contract/test/contract.test.mjs"
 
+        goal ARejectionIsReplayedByTheBestCandidateItStopped
+        uuid 8ced28ef-da80-4f5c-bf78-9e979e84a4f2
+        summary "R3 (2026-11-11, DEF-075 決着): 干渉で棄却された候補があれば、(帰属した相, 当たった障害物) の組ごとに、その組で棄却された候補のうち総合スコアが最も高いものが姿勢・関節解・標本つきでワイヤに載る。棄却の多い組から最大 8 件、省いた組は数で言う"
+        labels support-verified
+
+            solution RejectedReplayWireIsExecuted
+            uuid 58ddbbc5-9ad3-49c7-a4ed-00490d665969
+            summary "cd core && uv run pytest (2026-11-11: 345 pass): test_motion_phases.py の R3 節 — 引き上げ × 棚の代表と標本、代表の点が棚に当たった候補の最高点、帰属した相での組、順序と上限、空、代表解の腕。pnpm test:contract (パッケージ 70 + BFF 39): v12 の必須・上限・名前を載せない"
+            artifacts
+            - "core/tests/test_motion_phases.py"
+            - "packages/grasp-contract/test/contract.test.mjs"
+            - "packages/grasp-contract/schema/grasp-search-response.schema.json"
+
         goal TheReplayServesTheScenesItWasDesignedFor
         uuid ec2af048-2832-46ab-a54d-7eed67386447
         summary "S1 (棄却の理由を見る) で、パネルの数字だけより早くどの宣言を変えればよいかに着く。S5 (現場のスマホ) では reduced-motion でもコマ送りで同じ事実が見える"

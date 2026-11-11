@@ -15,6 +15,7 @@ GSN: docs/gsn/adr-157-interference-is-asked-per-motion-phase.gsn の葉。
 
 from __future__ import annotations
 
+import json
 import math
 
 import pytest
@@ -660,3 +661,112 @@ def test_when_every_branch_collides_the_candidate_is_rejected_and_attributed_as_
     assert approach["kind"] == "evaluated" and approach["rejected"] == 36
     # 母集団は候補 1 件につき 1 回のまま — 8 解を試したぶんを数えない。
     assert d["interferenceAnalysis"]["candidatesAnalysed"] == 36
+
+
+# --- ADR-158 R3: 棄却された候補の代表を再生する (DEF-075 決着) ---------------------
+
+
+def _rejected_by_group(wire: dict) -> "dict[tuple[str, int], dict]":
+    items = wire["diagnostics"]["interferenceAnalysis"]["rejectedReplays"]["items"]
+    return {(r["phase"], r["obstacleIndex"]): r for r in items}
+
+
+def test_the_lift_shelf_rejection_has_a_representative_with_its_samples():
+    """「引き上げ × 棚」の棄却が、姿勢と標本つきで 1 件返る (ADR-158 G3 の S1)。"""
+    wire = _wire(**_SCENES["lift"], analysis="allPhases")
+    d = wire["diagnostics"]
+    groups = _rejected_by_group(wire)
+    assert set(groups) == {("lift", 0)}
+    r = groups[("lift", 0)]
+    assert r["rejected"] == d["rejectedByInterference"] > 0
+    assert d["interferenceAnalysis"]["rejectedReplays"]["omitted"] == 0
+    # 再生は返す候補と同じ形: 評価した相だけを動作の順に。引き上げの標本に棚の当たりが在る。
+    assert [p["phase"] for p in r["phases"]] == ["approach", "lift"]
+    lift = next(p for p in r["phases"] if p["phase"] == "lift")
+    assert any(h["obstacleIndex"] == 0 for s in lift["samples"] for h in s["hits"])
+    # 腕は運動学の宣言が無いので未宣言 (描かない)。
+    assert r["reachSolution"] == {"kind": "undeclared"}
+
+
+def test_the_representative_is_the_highest_scoring_rejection_of_its_group():
+    """代表 = その組で棄却された候補のうち総合スコアが最も高いもの (当事者合意 2026-11-11)。
+
+    同じ場面の棚を外すと棄却された候補が全部返る — その中で棚に当たっていた候補の最高点が
+    代表の点と一致する。
+    """
+    shelved = _wire(**_SCENES["lift"], analysis="allPhases")
+    r = _rejected_by_group(shelved)[("lift", 0)]
+    no_shelf = dict(_SCENES["lift"], obstacles=[])
+    everyone = _wire(**no_shelf)["candidates"]
+    kept = {json.dumps(c["pose"], sort_keys=True) for c in shelved["candidates"]}
+    rejected_scores = [c["score"]["totalScore"] for c in everyone
+                       if json.dumps(c["pose"], sort_keys=True) not in kept]
+    assert len(rejected_scores) == r["rejected"]
+    assert r["totalScore"] == pytest.approx(max(rejected_scores))
+    rep = next(c for c in everyone if json.dumps(c["pose"], sort_keys=True) == json.dumps(r["pose"], sort_keys=True))
+    assert rep["score"]["totalScore"] == pytest.approx(r["totalScore"])
+    # 同じ問いを 2 回 — 同じ代表 (決定的)。
+    assert _rejected_by_group(_wire(**_SCENES["lift"], analysis="allPhases")) == _rejected_by_group(shelved)
+
+
+def test_groups_are_keyed_by_the_attributed_phase_and_cover_every_attributed_rejection():
+    """組は**帰属した相**で切る — 閉じる相でも当たる候補も、最初に当たった進入相の組に入る。"""
+    wire = _wire(**_SCENES["close"], analysis="allPhases")
+    d = wire["diagnostics"]
+    items = d["interferenceAnalysis"]["rejectedReplays"]["items"]
+    rejected_in = {r["phase"]: r["rejected"] for r in d["interferencePhases"] if r["kind"] == "evaluated"}
+    for phase, n in rejected_in.items():
+        groups = [r for r in items if r["phase"] == phase]
+        if n == 0:
+            assert groups == [], phase
+        else:
+            # 1 候補は当たった障害物ごとに数えるので、組の和は帰属数以上。
+            assert sum(r["rejected"] for r in groups) >= n, phase
+
+
+def test_groups_are_ordered_most_rejected_first_then_motion_order_then_obstacle():
+    from easy_extrude_core.engine.pipeline import _RejectedGroup, rejected_replay_groups
+
+    g = lambda n: _RejectedGroup(rejected=n, total=0.0, candidate=None, solution=None)  # noqa: E731
+    groups = {(MotionPhase.LIFT, 0): g(2), (MotionPhase.APPROACH, 3): g(2),
+              (MotionPhase.APPROACH, 1): g(2), (MotionPhase.CLOSE, 0): g(5)}
+    kept, omitted = rejected_replay_groups(groups)
+    assert [k for k, _ in kept] == [(MotionPhase.CLOSE, 0), (MotionPhase.APPROACH, 1),
+                                    (MotionPhase.APPROACH, 3), (MotionPhase.LIFT, 0)]
+    assert omitted == 0
+
+
+def test_the_limit_counts_what_it_leaves_out():
+    from easy_extrude_core.engine.pipeline import _RejectedGroup, rejected_replay_groups
+
+    groups = {(MotionPhase.LIFT, i): _RejectedGroup(rejected=i + 1, total=0.0, candidate=None, solution=None)
+              for i in range(11)}
+    kept, omitted = rejected_replay_groups(groups)
+    assert len(kept) == 8 and omitted == 3
+    assert [k[1] for k, _ in kept] == list(range(10, 2, -1))  # 多い順
+    assert rejected_replay_groups({}) == ([], 0)
+
+
+def test_without_analysis_or_without_rejections_there_is_nothing_to_replay():
+    assert _wire(**_SCENES["lift"])["diagnostics"]["interferenceAnalysis"] == {"kind": "firstCollision"}
+    clear = _wire(**dict(_SCENES["lift"], obstacles=[]), analysis="allPhases")
+    assert clear["diagnostics"]["interferenceAnalysis"]["rejectedReplays"] == {"items": [], "omitted": 0}
+
+
+def test_a_pedestal_rejection_carries_the_judged_arm_of_the_representative_solution():
+    """運動学が宣言されていれば代表の腕も載る — 帰属を決めた代表解 (全解が当たった)。"""
+    raw = _pedestal_raw()
+    base = raw["graspSearch"]["robot"]["base"]
+    d1 = raw["graspSearch"]["robot"]["kinematics"]["dh"]["d1"]
+    raw["graspSearch"]["obstacles"].append(
+        {"kind": "sphere", "center": [base[0], base[1], base[2] + d1], "radius": 0.05})
+    wire = _wire_raw(raw, "allPhases")
+    items = wire["diagnostics"]["interferenceAnalysis"]["rejectedReplays"]["items"]
+    shoulder = len(raw["graspSearch"]["obstacles"]) - 1
+    r = next(x for x in items if x["obstacleIndex"] == shoulder)
+    assert r["phase"] == "approach" and r["rejected"] == 36
+    assert r["reachSolution"]["kind"] == "solved"
+    approach = next(p for p in r["phases"] if p["phase"] == "approach")
+    judged = [s["arm"] for s in approach["samples"] if s["arm"]["kind"] == "judged"]
+    assert len(judged) == 1 and judged[0]["joints"] == r["reachSolution"]["joints"]
+    assert shoulder in judged[0]["obstacles"]

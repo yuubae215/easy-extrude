@@ -55,6 +55,8 @@ from ..contract import (
     ArmPathPhaseWire,
     ArmPathUndeclared,
     CandidateReplayWire,
+    RejectedReplayWire,
+    RejectedReplaysWire,
     ReplayArmJudged,
     ReplayArmMeasured,
     ReplayArmNoSolution,
@@ -664,6 +666,60 @@ class InterferenceAnalysisReport:
     # 返した候補ごとの再生の標本 (ADR-158 再生の段)。(rank, 評価した相ごとの標本) を
     # rank 順に、返した候補ちょうどぶん。
     replays: "tuple[tuple[int, tuple[PathReplay | SweepReplay, ...]], ...]" = ()
+    # 干渉で棄却された候補の代表 (ADR-158 R3 — DEF-075)。(相, 障害物) の組ごとに 1 件、
+    # 棄却の多い組から最大 REJECTED_REPLAY_LIMIT 件。省いた組の数は `rejected_replays_omitted`。
+    rejected_replays: "tuple[RejectedReplay, ...]" = ()
+    rejected_replays_omitted: int = 0
+
+
+#: 棄却の代表を返す組の上限 (ADR-158 R3 — 当事者合意 2026-11-11)。1 件 ≈ 3 kB。
+REJECTED_REPLAY_LIMIT = 8
+
+
+@dataclass(frozen=True)
+class RejectedReplay:
+    """干渉で棄却された候補の代表 1 件 (ADR-158 R3 — DEF-075)。
+
+    組 = (棄却が帰属した相, その相で当たった障害物)。代表の選び方は**その組で棄却された
+    候補のうち総合スコアが最も高いもの** = 「この障害物が無ければ一番良かった候補」
+    (当事者合意 2026-11-11 — 選び方はアイデアなので core/ が決める, ADR-146 軸 1)。
+    同点は生成順で先のもの (決定的)。
+    """
+
+    phase: MotionPhase
+    obstacle_index: int
+    # この組に数えた棄却候補の数 (候補は当たった障害物ごとに数えるので、組をまたいで排他ではない)。
+    rejected: int
+    total_score: float
+    pose: object
+    # 帰属を決めた解 = 代表解 (全解が当たったので棄却された — ADR-145 Option B)。
+    solution: object
+    phases: "tuple[PathReplay | SweepReplay, ...]"
+
+
+@dataclass
+class _RejectedGroup:
+    """(相, 障害物) の組の累積 (可変 — search_report の中でだけ生きる)。"""
+
+    rejected: int
+    total: float
+    candidate: object
+    solution: object
+
+
+def rejected_replay_groups(
+    groups: "dict[tuple[MotionPhase, int], _RejectedGroup]",
+    limit: int = REJECTED_REPLAY_LIMIT,
+) -> "tuple[list[tuple[tuple[MotionPhase, int], _RejectedGroup]], int]":
+    """返す組を決める (純粋)。棄却の多い順、同数は相の動作順・障害物添字の順。
+
+    返り値は (返す組, 省いた組の数)。省いたことを黙らない — 数を返す (原則 #11)。
+    """
+    ordered = sorted(
+        groups.items(),
+        key=lambda kv: (-kv[1].rejected, PHASE_ORDER.index(kv[0][0]), kv[0][1]),
+    )
+    return ordered[:limit], max(0, len(ordered) - limit)
 
 
 @dataclass(frozen=True)
@@ -717,8 +773,11 @@ class _Funnel:
     arm_on_path_only: "Counter[MotionPhase]" = None  # type: ignore[assignment]
     arm_no_solution: "Counter[MotionPhase]" = None  # type: ignore[assignment]
     arm_path_hits: "dict[MotionPhase, Counter[int]]" = None  # type: ignore[assignment]
+    # 干渉で棄却された候補の代表を選ぶための累積 (ADR-158 R3 — 全相分析のときだけ)。
+    rejected_groups: "dict[tuple[MotionPhase, int], _RejectedGroup]" = None  # type: ignore[assignment]
 
     def __post_init__(self) -> None:
+        self.rejected_groups = {}
         self.rejected_by_phase = Counter()
         self.collided_by_phase = Counter()
         self.hits_by_phase = {}
@@ -921,6 +980,38 @@ def search_report(
                 bucket[(h.part.value, h.obstacle_index)] += 1
         return first
 
+    def remember_rejected(candidate, ik_solution, hit_phase) -> None:
+        """棄却候補を (相, 障害物) の組の代表の候補として数える (ADR-158 R3)。
+
+        当たった障害物は帰属した相の判定と**同じ関数**で取る。進入相の判定が注入
+        チェッカに置き換わっていて障害物を名指せないときは組を作らない (推測しない)。
+        スコアは返す候補と同じ式 — 棄却候補の点数は探索の答えには効かない。
+        """
+        _collides, hits = phase_collision(candidate, ik_solution, hit_phase, first_only=False)
+        obstacles = sorted({h.obstacle_index for h in hits})
+        if not obstacles:
+            return
+        total = weighted_sum(evaluate_objectives(candidate, problem, objective_names), weights)
+        for idx in obstacles:
+            group = funnel.rejected_groups.get((hit_phase, idx))
+            if group is None:
+                funnel.rejected_groups[(hit_phase, idx)] = _RejectedGroup(1, total, candidate, ik_solution)
+                continue
+            group.rejected += 1
+            if total > group.total:   # 同点は先に生成されたほう (決定的)
+                group.total, group.candidate, group.solution = total, candidate, ik_solution
+
+    def replay_of(candidate, ik_solution) -> "tuple[PathReplay | SweepReplay, ...]":
+        """候補 1 件の再生の標本 — 返す候補も棄却の代表も同じ組み方 (ADR-158)。"""
+        return tuple(
+            phase_replay(
+                problem, p, candidate,
+                solution=ik_solution, arm=arm,
+                solver=solver if arm is not None else None,
+            )
+            for p in evaluated_phases
+        )
+
     def evaluate(candidate) -> "Optional[_Scored]":
         """候補 1 件をドメイン段階フィルタにかける (並びの根拠はモジュール docstring)。
 
@@ -978,6 +1069,8 @@ def search_report(
             hit_phase = interference_phase(candidate, ik_solution)
             funnel.rejected_by_interference += 1
             funnel.rejected_by_phase[hit_phase] += 1
+            if analysing:
+                remember_rejected(candidate, ik_solution, hit_phase)
             return None
         ik_solution = clear
         if analysing:
@@ -1048,6 +1141,7 @@ def search_report(
         )
         for i, (total, pose, objective_scores, ik_solution, spec_id, _candidate) in enumerate(top)
     ]
+    kept_groups, omitted_groups = rejected_replay_groups(funnel.rejected_groups)
     diagnostics = SearchDiagnostics(
         candidates_generated=funnel.generated,
         rejected_by_reach=funnel.rejected_by_reach,
@@ -1091,19 +1185,22 @@ def search_report(
                 # 返した候補だけを、判定と同じ点で組み直す (純粋・決定的)。集計の側
                 # (上の phases / arm_path) は全候補ぶんで、こちらは返す候補ぶん。
                 replays=tuple(
-                    (
-                        i + 1,
-                        tuple(
-                            phase_replay(
-                                problem, p, candidate,
-                                solution=ik_solution, arm=arm,
-                                solver=solver if arm is not None else None,
-                            )
-                            for p in evaluated_phases
-                        ),
-                    )
+                    (i + 1, replay_of(candidate, ik_solution))
                     for i, (_t, _p, _o, ik_solution, _s, candidate) in enumerate(top)
                 ),
+                rejected_replays=tuple(
+                    RejectedReplay(
+                        phase=phase,
+                        obstacle_index=idx,
+                        rejected=g.rejected,
+                        total_score=g.total,
+                        pose=g.candidate.pose,
+                        solution=g.solution,
+                        phases=replay_of(g.candidate, g.solution),
+                    )
+                    for (phase, idx), g in kept_groups
+                ),
+                rejected_replays_omitted=omitted_groups,
             )
             if analysing
             else None
@@ -1166,6 +1263,21 @@ def _analysis_wire(report: "Optional[InterferenceAnalysisReport]"):
             CandidateReplayWire(rank=rank, phases=[_replay_phase_wire(r) for r in phases])
             for rank, phases in report.replays
         ],
+        rejected_replays=RejectedReplaysWire(
+            items=[
+                RejectedReplayWire(
+                    phase=r.phase.value,
+                    obstacle_index=r.obstacle_index,
+                    rejected=r.rejected,
+                    total_score=r.total_score,
+                    pose=pose_to_payload(r.pose),
+                    reach_solution=reach_solution_of(r.solution),
+                    phases=[_replay_phase_wire(x) for x in r.phases],
+                )
+                for r in report.rejected_replays
+            ],
+            omitted=report.rejected_replays_omitted,
+        ),
     )
 
 
