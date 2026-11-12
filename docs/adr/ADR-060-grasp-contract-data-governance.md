@@ -211,6 +211,8 @@ ADR-059 を書く過程で二つの匂いが出た:
     （`movableJoints` / `forwardKinematics` の `q` — いずれも "in chain order"）が、
     それが契約側 `jointSpace.joints` の順序と**一致する契約である**ことは名指しされて
     いない。登録簿 `docs/DEFERRAL_LEDGER.md` の行として持つ（lane: `contract`）。
+    → **2026-11-10 完了**: `docs/code_contracts/architecture.md` §Joint Arrays on the Wire Are
+    Positional に名指しした（DEF-004 を削除）。
   - ADR-057 の `PoseCandidate` 消費、ADR-059 のゴースト消費（`GraspGhostView` 新設時の
     入力、frame 基準系の upstream 確認が前提）。
 - Docs: README index（Status 更新）, CLAUDE.md（履歴・BFF と契約節）, ADR-059 相互リンク

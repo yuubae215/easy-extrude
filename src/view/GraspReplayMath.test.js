@@ -11,6 +11,7 @@ import { readFileSync } from 'node:fs'
 import { MOTION_PHASES, UNEVALUATED_REASON_TEXT } from './GraspPhaseMath.js'
 import {
   phaseTimeline, replayFrame, replayFor, sampleStops, stepStop, playheadAt, armContinuous,
+  REPLAY_SUBJECT, returnedSubject, rejectedSubject, sameSubject, subjectLabel, rejectedReplayList,
   struckObstacles, replayCaption, REPLAY_ARM_TEXT, UNJUDGED_SPAN, BRANCH_JUMP_RAD, SAMPLE_SNAP,
 } from './GraspReplayMath.js'
 
@@ -202,4 +203,42 @@ test('replay: struck obstacles are the request\'s own shapes, judged if any hit 
 test('replay D3: no seconds / fps / speed travel on the wire — the time axis is the client\'s', () => {
   const text = JSON.stringify(schema.$defs.candidateReplay) + JSON.stringify(schema.$defs.replayPhase) + JSON.stringify(schema.$defs.replaySample)
   for (const k of ['"t"', 'fps', 'seconds', 'speed', 'durationMs']) assert.ok(!text.includes(`${k}":`) && !text.includes(`"${k}"`), k)
+})
+
+
+// ── ADR-158 R3: the subject of a replay — a returned candidate or a rejected representative ──
+
+test('subject: a returned candidate and a rejected representative are different kinds, matched by identity', () => {
+  assert.equal(sameSubject(returnedSubject(1), returnedSubject(1)), true)
+  assert.equal(sameSubject(returnedSubject(1), returnedSubject(2)), false)
+  assert.equal(sameSubject(rejectedSubject('lift', 0), rejectedSubject('lift', 0)), true)
+  assert.equal(sameSubject(rejectedSubject('lift', 0), rejectedSubject('lift', 1)), false)
+  assert.equal(sameSubject(rejectedSubject('lift', 0), rejectedSubject('close', 0)), false)
+  // a rejected representative has no rank — it never matches a returned one
+  assert.equal(sameSubject(returnedSubject(1), rejectedSubject('lift', 0)), false)
+  assert.equal(sameSubject(null, returnedSubject(1)), false)
+  assert.throws(() => sameSubject({ kind: 'maybe' }, { kind: 'maybe' }), /未宣言の再生の対象/)
+  assert.equal(subjectLabel(returnedSubject(3)), '#3')
+  assert.equal(subjectLabel(rejectedSubject('lift', 1), ['tray', 'shelf']), 'rejected · Lift out × shelf')
+  assert.match(subjectLabel(rejectedSubject('lift', 4), []), /obstacle #4/)
+})
+
+test('rejected: the list is the analysis\'s, as given — and a stale or pre-v12 analysis says why', () => {
+  const grasp = { status: 'results', request: { graspSearch: {} }, selectedRank: null, candidates: [] }
+  const item = { phase: 'lift', obstacleIndex: 0, rejected: 9, totalScore: 0.8, pose: { kind: 'endEffector' }, reachSolution: { kind: 'undeclared' }, ...fixtureReplay() }
+  const done = (analysis) => ({ status: 'done', request: grasp.request, analysis })
+  const list = rejectedReplayList(done({ replays: [], rejectedReplays: { items: [item], omitted: 3 } }), grasp)
+  assert.equal(list.kind, 'ready')
+  assert.deepEqual(list.items, [item])
+  assert.equal(list.omitted, 3)
+  assert.match(rejectedReplayList(done({ replays: [] }), grasp).reason, /before v12/)
+  assert.match(rejectedReplayList(null, grasp).reason, /Analyse all phases/)
+  assert.match(rejectedReplayList({ status: 'done', request: {}, analysis: {} }, grasp).reason, /earlier search/)
+  // the replay of a rejected subject carries its own pose (not looked up by rank)
+  const st = done({ replays: [], rejectedReplays: { items: [item], omitted: 0 } })
+  const r = replayFor(st, grasp, rejectedSubject('lift', 0))
+  assert.equal(r.kind, 'ready')
+  assert.equal(r.pose, item.pose)
+  assert.match(replayFor(st, grasp, rejectedSubject('lift', 1)).reason, /not among/)
+  assert.equal(REPLAY_SUBJECT.REJECTED, 'rejected')
 })

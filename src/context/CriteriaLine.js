@@ -45,10 +45,20 @@
  * each approver read it first (G3) — an unknown margin is never treated as
  * inside (PHILOSOPHY #31). A proposal without `margin` predates PR4.
  *
- * The margin is assessed against the line **as it stood when the proposal was
- * raised**. If another change to the line is approved while this one is open,
- * the record still describes the older line; re-assessing it is 後続 PR
- * (DEF-068) — until then the approver reads a margin that may be one version old.
+ * ## A margin is of one version of the line (closes DEF-068)
+ *
+ * The margin is assessed against the line **as it stood at that moment**, and
+ * the record says which: `margin.lineVersion`. If another change to the line is
+ * approved while this one is open, the version moves and the record describes
+ * an older line — `marginIsStale` (DERIVED from the two versions, never a
+ * stored flag). A stale margin is treated like an unknown one: every approver
+ * reads it (and is told it is old) before approving, whatever it said. Reads
+ * are of one version too (`offeringsReadAtVersion`): a read made before the
+ * line moved does not count after it. Anyone may ask the solver again
+ * (`withReassessedMargin`) — the new record carries the current version and
+ * nobody has read it yet. A margin recorded before versions were kept has no
+ * `lineVersion`; its age cannot be known and it is not gated on age (said here,
+ * not guessed either way).
  *
  * The history before agreement — changes made after seeing a trial — is
  * `CriteriaHearing.hearingHistory` (PR3). What this module records is the
@@ -87,11 +97,13 @@ export const MARGIN_KIND = Object.freeze({
  * **Must approvers read this proposal's margin before approving?** True for
  * every recorded margin except "evaluated, gives up nothing" (inside the
  * margin). Throws on an undeclared kind. A proposal with no `margin` predates
- * PR4 and is not gated.
+ * PR4 and is not gated. Given the document (`ctx`), a STALE margin also needs
+ * reading — what it said was about an older line.
  */
-export function marginNeedsReading(proposal) {
+export function marginNeedsReading(proposal, ctx = null) {
   const m = proposal?.margin
   if (!m) return false
+  if (ctx && marginIsStale(ctx, proposal)) return true
   switch (m.kind) {
     case MARGIN_KIND.EVALUATED:     return (m.offerings ?? []).length > 0
     case MARGIN_KIND.UNSATISFIABLE:
@@ -101,8 +113,42 @@ export function marginNeedsReading(proposal) {
   }
 }
 
-/** Why the margin must be read — one sentence per kind (the G3 reason and the row text share it). */
-export function marginSentence(proposal) {
+/**
+ * **Is this proposal's margin about an older line than the current one?**
+ * DERIVED: `margin.lineVersion < lineVersion(ctx)`. False when there is no
+ * margin, or its version was never recorded (age unknown — see the module doc).
+ */
+export function marginIsStale(ctx, proposal) {
+  const at = proposal?.margin?.lineVersion
+  const now = lineVersion(ctx)
+  return typeof at === 'number' && typeof now === 'number' && at < now
+}
+
+/**
+ * The approvers whose reading of the margin still counts: reads are of one
+ * version of the line, so they are void once the line has moved past them.
+ */
+export function marginReadBy(ctx, proposal) {
+  const reads = proposal?.offeringsReadBy ?? []
+  const at = proposal?.offeringsReadAtVersion
+  if (typeof at !== 'number') return marginIsStale(ctx, proposal) ? [] : reads
+  return at === lineVersion(ctx) ? reads : []
+}
+
+/**
+ * Why the margin must be read — one sentence per kind (the G3 reason and the
+ * row text share it). Given the document, a stale margin says which version it
+ * is about.
+ */
+export function marginSentence(proposal, ctx = null) {
+  const said = marginKindSentence(proposal)
+  if (said && ctx && marginIsStale(ctx, proposal)) {
+    return `${said} — but that was assessed against line v${proposal.margin.lineVersion}, and the line is now v${lineVersion(ctx)}`
+  }
+  return said
+}
+
+function marginKindSentence(proposal) {
   const m = proposal?.margin
   switch (m?.kind) {
     case MARGIN_KIND.EVALUATED:
@@ -396,10 +442,11 @@ export function lineApprovalGuards(ctx, proposal, keyring) {
   if (isStale(ctx, proposal)) {
     reasons.push(`"${proposal.target.ref}" has moved since this proposal was written, so approving it would overwrite a change nobody agreed to. Withdraw and re-draw the diff.`)
   }
-  if (marginNeedsReading(proposal)) {
-    const unread = approvers.filter(r => !(proposal.offeringsReadBy ?? []).includes(r))
+  if (marginNeedsReading(proposal, ctx)) {
+    const read = marginReadBy(ctx, proposal)
+    const unread = approvers.filter(r => !read.includes(r))
     if (unread.length) {
-      reasons.push(`${marginSentence(proposal)} — ${unread.join(', ')} must read what it gives up before approving (ADR-165 D5).`)
+      reasons.push(`${marginSentence(proposal, ctx)} — ${unread.join(', ')} must read what it gives up before approving (ADR-165 D5).`)
     }
   }
   return { ok: reasons.length === 0, reasons, approvers, outstanding, required }
@@ -416,9 +463,10 @@ export function marginReadGuards(ctx, proposal, keyring) {
   const keys = keyring instanceof Set ? keyring : new Set(keyring ?? [])
   const reasons = []
   if (proposal.state !== PROPOSAL_STATE.PROPOSED) reasons.push(`This proposal is already ${proposal.state}.`)
-  if (!marginNeedsReading(proposal)) reasons.push('There is nothing to read — the change is inside the margin.')
+  if (!marginNeedsReading(proposal, ctx)) reasons.push('There is nothing to read — the change is inside the margin.')
+  const read = marginReadBy(ctx, proposal)
   const readers = outstandingApprovers(ctx, proposal)
-    .filter(r => hasKey(keys, r) && !(proposal.offeringsReadBy ?? []).includes(r))
+    .filter(r => hasKey(keys, r) && !read.includes(r))
   if (readers.length === 0) {
     reasons.push(`Only an approver who has not read it yet can mark it read — waiting on ${outstandingApprovers(ctx, proposal).join(', ') || 'nobody'}.`)
   }
@@ -431,11 +479,67 @@ export function readMargin(ctx, ref, keyring) {
   if (!proposal) throw new Error(`[CriteriaLine] no proposal "${ref}"`)
   const g = marginReadGuards(ctx, proposal, keyring)
   if (!g.ok) throw new Error(g.reasons.join(' '))
+  // Reads that no longer count (made before the line moved) are dropped here,
+  // so the record never mixes readers of two versions.
+  const version = lineVersion(ctx)
   return {
     ...ctx,
     proposals: ctx.proposals.map(p => p.ref === ref
-      ? { ...p, offeringsReadBy: [...(p.offeringsReadBy ?? []), ...g.readers] }
+      ? {
+          ...p,
+          offeringsReadBy: [...marginReadBy(ctx, p), ...g.readers],
+          ...(typeof version === 'number' ? { offeringsReadAtVersion: version } : {}),
+        }
       : p),
+  }
+}
+
+/**
+ * Every reason a line proposal's margin cannot be assessed again now. Asking
+ * the solver is not an act of authority — no key is needed — but there must be
+ * something to gain: the record is stale, or the solver could not be asked.
+ *
+ * @returns {{ok: boolean, reasons: string[]}}
+ */
+export function marginReassessGuards(ctx, proposal) {
+  const reasons = []
+  if (proposal.state !== PROPOSAL_STATE.PROPOSED) reasons.push(`This proposal is already ${proposal.state}.`)
+  if (!isLineProposal(ctx, proposal)) reasons.push('Only a change to the agreed line has a margin.')
+  if (isStale(ctx, proposal)) {
+    reasons.push(`"${proposal.target.ref}" has moved since this proposal was written — withdraw and re-draw it; a new assessment would describe a change nobody can approve.`)
+  }
+  const m = proposal.margin
+  if (m && !marginIsStale(ctx, proposal) && m.kind !== MARGIN_KIND.UNASSESSED) {
+    reasons.push('This assessment is already about the current line.')
+  }
+  return { ok: reasons.length === 0, reasons }
+}
+
+/**
+ * Stamp a margin record with the version of the line it was assessed against.
+ * Null version (no agreement yet) leaves the record unstamped.
+ */
+export function marginAtVersion(margin, version) {
+  return typeof version === 'number' ? { ...margin, lineVersion: version } : { ...margin }
+}
+
+/**
+ * Replace a line proposal's margin with a fresh assessment (stamped by the
+ * caller with the version it was asked against). Nobody has read the new
+ * record. Throws when the gate refuses (never a silent no-op).
+ */
+export function withReassessedMargin(ctx, ref, margin) {
+  const proposal = (ctx?.proposals ?? []).find(p => p.ref === ref)
+  if (!proposal) throw new Error(`[CriteriaLine] no proposal "${ref}"`)
+  const g = marginReassessGuards(ctx, proposal)
+  if (!g.ok) throw new Error(g.reasons.join(' '))
+  return {
+    ...ctx,
+    proposals: ctx.proposals.map(p => {
+      if (p.ref !== ref) return p
+      const { offeringsReadBy: _reads, offeringsReadAtVersion: _at, ...rest } = p
+      return { ...rest, margin }
+    }),
   }
 }
 

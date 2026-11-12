@@ -17,6 +17,7 @@ import {
   LINE_STATUS, LINE_CHANGE, currentLine, lineStatus, lineVersion, agreeToLine,
   agreementGuards, isFrozenLineTarget, isLineProposal, lineDrift, lineHistory,
   lineTargets, requiredApprovers, lineFieldOf, marginNeedsReading, marginSentence, readMargin,
+  marginIsStale, marginReadBy, marginAtVersion, marginReassessGuards, withReassessedMargin,
 } from './CriteriaLine.js'
 import {
   makeProposal, addProposal, approveProposal, unapproveProposal, approvalGuards,
@@ -225,6 +226,92 @@ test('the outside-margin gate makes each approver read the margin first (G3)', (
   assert.equal(approvalGuards(read, read.proposals[0], ['b']).ok, true)
   assert.throws(() => readMargin(read, 'prop_1', ['b']), /who has not read it yet/, '2 度読んだことにはならない')
   assert.throws(() => readMargin(outside, 'prop_1', ['a']), /who has not read it yet/, '提案者は承認者ではない')
+})
+
+// ── A margin is of one version of the line (closes DEF-068) ─────────────────────
+
+const INSIDE = { kind: 'evaluated', baseline: 'x', proposed: 'x', offerings: [] }
+
+/** a, b, c agreed (v1); a proposes two changes; prop_1's margin was assessed at v1. */
+function twoOpenProposals(margin = INSIDE) {
+  let doc = agreedBy(heard(['a', 'b', 'c']), ['a', 'b', 'c'])
+  doc = propose(doc, { by: 'a', target: takt('a'), to: { op: '<=', value: 12 } })
+  const held = doc.requirements.find(r => r.ref === 'crit_a_humanClearance').criterion
+  doc = propose(doc, { ref: 'prop_2', by: 'a', target: clearance('a'), from: { ...held }, to: { ...held, value: 8 } })
+  return { ...doc, proposals: doc.proposals.map(p => p.ref === 'prop_1' ? { ...p, margin: marginAtVersion(margin, lineVersion(doc)) } : p) }
+}
+const approveSecond = (doc) => approveProposal(approveProposal(doc, 'prop_2', sig(['b'])), 'prop_2', sig(['c']))
+const prop1 = (doc) => doc.proposals.find(p => p.ref === 'prop_1')
+
+test('a margin goes stale when another change moves the line — derived from the two versions, never stored', () => {
+  const before = twoOpenProposals()
+  assert.equal(prop1(before).margin.lineVersion, 1)
+  assert.equal(marginIsStale(before, prop1(before)), false)
+  assert.equal(marginNeedsReading(prop1(before), before), false, 'inside the margin, current: nothing to read')
+
+  const after = approveSecond(before)
+  assert.equal(lineVersion(after), 2)
+  assert.deepEqual(prop1(after), prop1(before), 'the other approval does not touch this proposal — staleness is derived')
+  assert.equal(marginIsStale(after, prop1(after)), true)
+  // The same question asked twice gives the same answer (nothing was consumed by asking).
+  assert.equal(marginIsStale(after, prop1(after)), true)
+})
+
+test('a stale margin is read before approving even if it said "gives up nothing" — and says which version it is about', () => {
+  const after = approveSecond(twoOpenProposals())
+  assert.equal(marginNeedsReading(prop1(after), after), true)
+  const g = approvalGuards(after, prop1(after), ['b'])
+  assert.equal(g.ok, false)
+  assert.match(g.reasons.join(' '), /assessed against line v1, and the line is now v2 — b must read/)
+  assert.match(marginSentence(prop1(after), after), /inside the margin .* assessed against line v1.*now v2/)
+  const read = readMargin(after, 'prop_1', ['b'])
+  assert.equal(prop1(read).offeringsReadAtVersion, 2)
+  assert.equal(approvalGuards(read, prop1(read), ['b']).ok, true, 'having been told it is old, b may approve (Q3 a)')
+})
+
+test('a read made before the line moved does not count after it', () => {
+  const OUT = { kind: 'evaluated', baseline: 'x', proposed: 'y', offerings: [{ actor: 'b', key: 'positionAccuracy', from: 0.05, to: 0.1 }] }
+  let doc = readMargin(twoOpenProposals(OUT), 'prop_1', ['b'])
+  assert.deepEqual(marginReadBy(doc, prop1(doc)), ['b'])
+  assert.equal(approvalGuards(doc, prop1(doc), ['b']).ok, true)
+  doc = approveSecond(doc)
+  assert.deepEqual(prop1(doc).offeringsReadBy, ['b'], 'the record is history and is kept')
+  assert.deepEqual(marginReadBy(doc, prop1(doc)), [], 'but it was a read of v1')
+  assert.equal(approvalGuards(doc, prop1(doc), ['b']).ok, false)
+  // Reading again replaces the void reads — the record never mixes two versions.
+  const again = readMargin(doc, 'prop_1', ['c'])
+  assert.deepEqual(prop1(again).offeringsReadBy, ['c'])
+  assert.equal(prop1(again).offeringsReadAtVersion, 2)
+})
+
+test('re-assessing replaces the record with one about the current line, and nobody has read it', () => {
+  let doc = readMargin(twoOpenProposals({ kind: 'unsatisfiable' }), 'prop_1', ['b'])
+  assert.match(marginReassessGuards(doc, prop1(doc)).reasons.join(' '), /already about the current line/)
+  assert.throws(() => withReassessedMargin(doc, 'prop_1', INSIDE), /already about the current line/)
+  doc = approveSecond(doc)
+  assert.equal(marginReassessGuards(doc, prop1(doc)).ok, true)
+  const fresh = withReassessedMargin(doc, 'prop_1', marginAtVersion(INSIDE, lineVersion(doc)))
+  assert.equal(marginIsStale(fresh, prop1(fresh)), false)
+  assert.equal(prop1(fresh).margin.lineVersion, 2)
+  assert.equal('offeringsReadBy' in prop1(fresh), false)
+  assert.equal('offeringsReadAtVersion' in prop1(fresh), false)
+  assert.equal(approvalGuards(fresh, prop1(fresh), ['b']).ok, true, 'inside the current margin: nothing to read')
+  assert.deepEqual(validateContext(fresh).errors, [])
+})
+
+test('re-assessing is offered when the solver could not be asked, and refused once the proposal is settled', () => {
+  const doc = twoOpenProposals({ kind: 'unassessed', reason: 'solver unreachable' })
+  assert.equal(marginReassessGuards(doc, prop1(doc)).ok, true, 'a retry has something to gain')
+  const settled = approveSecond(doc)
+  assert.match(marginReassessGuards(settled, settled.proposals.find(p => p.ref === 'prop_2')).reasons.join(' '), /already approved/)
+  assert.throws(() => withReassessedMargin(doc, 'nope', INSIDE), /no proposal/)
+})
+
+test('a margin recorded before versions were kept has no age — it is not called stale, and not called current', () => {
+  const doc = twoOpenProposals()
+  const legacy = approveSecond({ ...doc, proposals: doc.proposals.map(p => p.ref === 'prop_1' ? { ...p, margin: INSIDE } : p) })
+  assert.equal(marginIsStale(legacy, prop1(legacy)), false)
+  assert.equal(marginAtVersion(INSIDE, null).lineVersion, undefined, 'no agreement, no stamp')
 })
 
 test('inside the margin needs no reading; every kind that is not "gives up nothing" does (#31)', () => {

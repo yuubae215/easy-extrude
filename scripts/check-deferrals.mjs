@@ -330,7 +330,12 @@ const ADR_DIR = join(ROOT, 'docs', 'adr')
 // 区別できないので、散文を書き換えて数を下げるのは**検査に合わせて履歴を消す**行為に
 // なる (この定数の doc が自分でそう書いている)。よって baseline を上げる。
 // 粒度の問題そのものは、語彙か覆う範囲を上げる次の ADR の担当である。
-const UNDECLARED_BASELINE = 4
+// 2026-11-10: 4 → 7。DEF-024 (WASM 成果物の鮮度検査) が決着して行を消した。その行は
+// 所在として `ADR-123` を覆っていたので、ADR-123 の「引き受けなかったもの」節に在る
+// 3 箇所 (語彙 `未実装` / `未着手` の*説明*と、当の DEF-024 の経緯) が母集団へ戻った。
+// 上の 2026-08-14 と同じ検査・同じ機構での再発であり、新しい残しは 1 つも書いていない
+// (同じ文脈なので Yellow Cards の 2 例目には数えない — 失敗メッセージの指示どおり)。
+const UNDECLARED_BASELINE = 7
 
 /**
  * 満期欄に機械可読の trigger (`満期=ADR-NNN`) を持たない行の数。**実測値**。
@@ -626,7 +631,7 @@ for (const row of ledger ?? []) {
  * **2 項以上**は予算ではなく不正 — 1 行の残しが 2 つの項を同時に滞留させると
  * 読むと、滞留が二重計上される (G5 が木について禁じた形の、行の側の鏡像)。
  */
-const UNATTRIBUTED_BASELINE = 10
+const UNATTRIBUTED_BASELINE = 8  // 2026-11-10: DEF-004 (ADR-060) と DEF-024 (ADR-064) が片付いて 10 → 8
 
 /** @returns {{terms: string[], trees: string[]}} 行の帰属 (導出) */
 function attributionOf(row, sites) {

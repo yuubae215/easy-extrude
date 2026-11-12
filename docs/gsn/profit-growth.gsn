@@ -595,6 +595,12 @@ labels meta-goal, term-profit
                                     artifacts
                                     - "docs/gsn/adr-120-unevaluated-is-not-zero.gsn"
 
+                                    solution Adr172Tree
+                                    uuid aa018ad6-caf4-469f-b9db-301f44ebd7f3
+                                    summary "ADR-172 の論証木 (top goal EachFactOnTheResponseHasOneNameAndOneWayToSayNotAsked) を吊る。応答が 1 つの事実を 1 つの名前で言い、問うていない段を 0 や空虚な true で言わない — 棄却の後にどの宣言を変えるかを探すとき、読み違えの元が型から消える (ADR は Proposed — 主張は未来形)。この木の goal ごとの証拠と鮮度の正本は木の側 (ADR-153 D2)"
+                                    artifacts
+                                    - "docs/gsn/adr-172-a-response-says-each-fact-in-one-vocabulary.gsn"
+
                                     solution Adr158Tree
                                     uuid 1af8fdc7-f244-4a7f-8898-a8fd29712236
                                     summary "ADR-158 の論証木 (top goal AReplayShowsWhereItHitsFromJudgedSamples) を吊る。棄却された候補がどの相のどの時点で何に当たるかを、core が判定した標本から再生して見せる — 数字から想像していた棄却の理由が絵で読める (ADR は Proposed — 吊り先は決まっていても主張はまだ未来形)。この木の goal ごとの証拠と鮮度の正本は木の側 — ここは寄与する項だけを持つ (ADR-153 D2: 1 本の木は事業木にちょうど 1 回吊られ、投資はその項へ帰属する)"
@@ -649,6 +655,12 @@ labels meta-goal, term-profit
                                 uuid 4a04c4b4-b9db-461b-b4f2-6f4fc1f5bf41
                                 summary "画面に描かれた腕・ツール・TCP・シーンと、ソルバが解いているものが同じ 1 つであり、そうでないときは黙っていない。バックエンド無しのプレビューは、それ以上を主張しない"
                                 state UnderReview
+
+                                    solution Adr171Tree
+                                    uuid 072ad1af-a10a-4864-b60c-15a09c102e2a
+                                    summary "ADR-171 の論証木 (top goal WhatIsDrawnAsVisibleIsWhatIsJudgedVisible) を吊る。描かれた視錐台の内側が判定される視野である — 絵と判定が違うことを人に覚えさせる画面は、読めても信じられない。この木の goal ごとの証拠と鮮度の正本は木の側 — ここは寄与する項だけを持つ (ADR-153 D2)"
+                                    artifacts
+                                    - "docs/gsn/adr-171-the-field-of-view-drawn-is-the-field-of-view-judged.gsn"
 
                                     solution Adr132Tree
                                     uuid 565c5e19-a7c8-4524-80b1-e118a134e1ea

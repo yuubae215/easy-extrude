@@ -1,6 +1,6 @@
 import { useUIStore } from '../../../store/uiStore.js'
 import { COLOR } from '../../../theme/tokens.js'
-import { DEFAULT_CAMERA_DECLARATION, CAMERA_STATE } from '../../../domain/visionCamera.js'
+import { DEFAULT_CAMERA_DECLARATION, CAMERA_STATE, withFieldOfView } from '../../../domain/visionCamera.js'
 import { CommitField, FaceChip } from '../../Grasp/GraspFields.jsx'
 import { Section } from '../npanelShared.jsx'
 
@@ -44,8 +44,15 @@ export function CameraDeclarations({ camera, frameId }) {
 }
 
 function CameraEditor({ camera, frameId, onSet, callbacks }) {
-  const fov = camera.fovHalfAngle
+  const fov = camera.fov ?? null
   const malformed = camera.state === CAMERA_STATE.MALFORMED
+  // One field edited at a time; the other keeps its value. With no field of view
+  // yet, the first number entered declares the square (both ways) — said below.
+  const commit = (axis) => (v) => {
+    if (!(v > 0 && v < Math.PI / 2)) return
+    const base = fov ?? { horizontal: v, vertical: v }
+    onSet(withFieldOfView(null, { ...base, [axis]: v }))
+  }
   return (
     <div data-declaration="camera" style={{ fontSize: '10px', color: COLOR.textSecondary }}>
       {malformed && (
@@ -55,10 +62,16 @@ function CameraEditor({ camera, frameId, onSet, callbacks }) {
       )}
       <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end', flexWrap: 'wrap', marginBottom: '4px' }}>
         <CommitField
-          label="field-of-view half angle (rad)"
-          value={fov ?? null}
+          label="half angle across (rad)"
+          value={fov?.horizontal ?? null}
           step="0.05"
-          onCommit={(v) => { if (v > 0 && v < Math.PI / 2) onSet({ fovHalfAngle: v }) }}
+          onCommit={commit('horizontal')}
+        />
+        <CommitField
+          label="half angle up-down (rad)"
+          value={fov?.vertical ?? null}
+          step="0.05"
+          onCommit={commit('vertical')}
         />
         {fov != null && (
           <FaceChip label="no field of view" active={false} onClick={() => onSet({})} />
@@ -66,8 +79,8 @@ function CameraEditor({ camera, frameId, onSet, callbacks }) {
       </div>
       <div style={{ marginBottom: '6px' }}>
         {fov != null
-          ? <>≈ {fullDeg(fov)}° across. Drawn as the square whose inscribed cone is what is judged — the four corners are drawn, not judged.</>
-          : !malformed && <>no field of view declared — only the line of sight is judged, and no frustum is drawn</>}
+          ? <>≈ {fullDeg(fov.horizontal)}° across × {fullDeg(fov.vertical)}° up-down. The frustum drawn is the rectangle that is judged.</>
+          : !malformed && <>no field of view declared — only the line of sight is judged, and no frustum is drawn. The first number entered declares both ways.</>}
       </div>
 
       <button

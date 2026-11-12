@@ -53,6 +53,26 @@ const scale = (a, k) => [a[0] * k, a[1] * k, a[2] * k]
 const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
 const norm = (a) => Math.sqrt(dot(a, a))
 
+/**
+ * Is `point` inside the camera's rectangular field of view (ADR-171)? Forward =
+ * viewAxis, up = imageUp minus its forward part, right = forward × up; inside
+ * when in front and |x| ≤ z·tan(horizontal), |y| ≤ z·tan(vertical).
+ */
+function insideRectangularView(camera, point) {
+  const f = unit(camera.viewAxis ?? [])
+  const upRaw = camera.imageUp
+  if (!f || !upRaw) return false
+  const along = dot(upRaw, f)
+  const u = unit([upRaw[0] - along * f[0], upRaw[1] - along * f[1], upRaw[2] - along * f[2]])
+  if (!u) return false
+  const r = cross(f, u)
+  const ray = sub(point, camera.position ?? [0, 0, 0])
+  const z = dot(ray, f)
+  if (!(z > 0)) return false
+  return Math.abs(dot(ray, r)) <= z * Math.tan(camera.fovHalfAngles.horizontal) + 1e-12
+    && Math.abs(dot(ray, u)) <= z * Math.tan(camera.fovHalfAngles.vertical) + 1e-12
+}
+
 /** Unit vector, or null when the input is degenerate (never a fabricated axis). */
 function unit(v) {
   const n = norm(v)
@@ -465,9 +485,13 @@ export function stubSolve(request, contractVersion) {
       const toPoint = unit(sub(point, eye))
       const fov = Number(camera.fovHalfAngle ?? Math.PI)
       let rejected = false
-      if (axis && toPoint && Math.acos(Math.max(-1, Math.min(1, dot(axis, toPoint)))) > fov) {
+      if (camera.fovHalfAngles) {
+        // Rectangular field of view (ADR-171) — the same closed form core/ judges.
+        if (!insideRectangularView(camera, point)) rejected = true
+      } else if (axis && toPoint && Math.acos(Math.max(-1, Math.min(1, dot(axis, toPoint)))) > fov) {
         rejected = true                          // outside the field of view: no depth to report
-      } else {
+      }
+      if (!rejected) {
         for (const o of obstacles) {
           const d = surfaceDistance(eye, point, o)
           if (d < 0) {

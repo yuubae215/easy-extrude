@@ -185,7 +185,7 @@ test('表が絵を名指す行は、代表の宣言で実際にその絵が出�
     // Drawn on the camera entity by its frame view (ADR-164 D3), from the same
     // function — a declared half angle must yield a drawable frustum.
     if (row.picture === 'frustum') {
-      assert.equal(frustumCorners(0.5)?.length, 4, `${field} → the frustum is never drawn`)
+      assert.equal(frustumCorners({ horizontal: 0.5, vertical: 0.4 })?.length, 4, `${field} → the frustum is never drawn`)
       continue
     }
     assert.ok(has(jawPic, row.picture) || has(cupPic, row.picture), `${field} → ${row.picture} is never drawn`)

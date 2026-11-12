@@ -60,25 +60,111 @@ export const REPLAY_ARM_TEXT = Object.freeze({
 })
 
 /**
- * The replay for one returned candidate, or why there is none. Fresh analysis
- * only: an analysis of an earlier search would replay a request the screen no
- * longer shows (鮮度は分析と同じ導出 — ADR-158 D4 / 原則 #23).
+ * What a replay is OF — a returned candidate, or the representative of an
+ * interference rejection (ADR-158 R3). A closed kind: the subject is matched by
+ * `sameSubject`, never by comparing ranks (a rejected representative has no rank).
+ */
+export const REPLAY_SUBJECT = Object.freeze({
+  RETURNED: 'returned',
+  REJECTED: 'rejected',
+})
+
+/** The subject of a returned candidate's replay. */
+export const returnedSubject = (rank) => ({ kind: REPLAY_SUBJECT.RETURNED, rank })
+
+/** The subject of a rejected group's representative: the group IS its identity (phase × obstacle). */
+export const rejectedSubject = (phase, obstacleIndex) => ({ kind: REPLAY_SUBJECT.REJECTED, phase, obstacleIndex })
+
+/** Whether two subjects name the same replay. Throws on an undeclared kind (原則 #31). */
+export function sameSubject(a, b) {
+  if (!a || !b || a.kind !== b.kind) return false
+  switch (a.kind) {
+    case REPLAY_SUBJECT.RETURNED: return a.rank === b.rank
+    case REPLAY_SUBJECT.REJECTED: return a.phase === b.phase && a.obstacleIndex === b.obstacleIndex
+    default: throw new Error(`GraspReplayMath: 未宣言の再生の対象 "${a.kind}" (ADR-158 R3)`)
+  }
+}
+
+/**
+ * Why there is no fresh all-phase analysis to replay from, or null when there is.
+ * Shared by both kinds of subject — they are replayed from the same analysis.
+ */
+function analysisUnavailable(analysisState, grasp) {
+  if (analysisState?.status !== 'done') return 'Analyse all phases first — the replay draws what that analysis judged.'
+  if (analysisFreshness(analysisState, grasp) !== 'fresh') return 'The analysis is of an earlier search — run it again to replay this one.'
+  return null
+}
+
+/**
+ * The replay for one subject, or why there is none. Fresh analysis only: an
+ * analysis of an earlier search would replay a request the screen no longer
+ * shows (鮮度は分析と同じ導出 — ADR-158 D4 / 原則 #23). Returns the pose the
+ * replay is of, so the caller never looks it up a second way.
+ *
+ * A bare number is read as a returned candidate's rank (the R2 call shape).
  *
  * @param {object|null} analysisState  `context.graspAnalysis`
  * @param {object|null} grasp          `context.grasp`
- * @param {number|null} rank           the selected candidate
- * @returns {{kind:'ready', replay:object}|{kind:'unavailable', reason:string}}
+ * @param {{kind:string}|number|null} subject
+ * @returns {{kind:'ready', replay:object, pose:object|null}|{kind:'unavailable', reason:string}}
  */
-export function replayFor(analysisState, grasp, rank) {
+export function replayFor(analysisState, grasp, subject) {
   const no = (reason) => ({ kind: 'unavailable', reason })
-  if (analysisState?.status !== 'done') return no('Analyse all phases first — the replay draws what that analysis judged.')
-  if (analysisFreshness(analysisState, grasp) !== 'fresh') return no('The analysis is of an earlier search — run it again to replay this one.')
-  if (rank == null) return no('Select a candidate to replay its motion.')
-  const replays = analysisState.analysis?.replays
-  if (!Array.isArray(replays)) return no('This backend returns no replay samples (contract before v11).')
-  const replay = replays.find(r => r.rank === rank)
-  if (!replay) return no(`The analysis returned no samples for candidate #${rank}.`)
-  return { kind: 'ready', replay }
+  const stale = analysisUnavailable(analysisState, grasp)
+  if (stale) return no(stale)
+  const s = typeof subject === 'number' ? returnedSubject(subject) : subject
+  if (s == null || (s.kind === REPLAY_SUBJECT.RETURNED && s.rank == null)) return no('Select a candidate to replay its motion.')
+  switch (s.kind) {
+    case REPLAY_SUBJECT.RETURNED: {
+      const replays = analysisState.analysis?.replays
+      if (!Array.isArray(replays)) return no('This backend returns no replay samples (contract before v11).')
+      const replay = replays.find(r => r.rank === s.rank)
+      if (!replay) return no(`The analysis returned no samples for candidate #${s.rank}.`)
+      const pose = (grasp?.candidates ?? []).find(c => c.rank === s.rank)?.pose ?? null
+      return { kind: 'ready', replay, pose }
+    }
+    case REPLAY_SUBJECT.REJECTED: {
+      const list = rejectedReplayList(analysisState, grasp)
+      if (list.kind !== 'ready') return no(list.reason)
+      const item = list.items.find(r => sameSubject(rejectedSubject(r.phase, r.obstacleIndex), s))
+      if (!item) return no('That rejection is not among the ones this analysis returned.')
+      return { kind: 'ready', replay: item, pose: item.pose ?? null }
+    }
+    default: throw new Error(`GraspReplayMath: 未宣言の再生の対象 "${s.kind}" (ADR-158 R3)`)
+  }
+}
+
+/**
+ * The short name of a replay's subject, for the ghost's caption and the panel:
+ * `#3` for a returned candidate, `rejected · Lift × shelf` for a rejected
+ * group's representative (the obstacle named by the sender's labels, or by its
+ * index — names never ride the wire).
+ */
+export function subjectLabel(subject, obstacleLabels = []) {
+  switch (subject?.kind) {
+    case REPLAY_SUBJECT.RETURNED: return `#${subject.rank}`
+    case REPLAY_SUBJECT.REJECTED:
+      return `rejected · ${lookup(PHASE_LABEL, subject.phase, 'phase')} × ${obstacleLabels[subject.obstacleIndex] ?? `obstacle #${subject.obstacleIndex}`}`
+    default: throw new Error(`GraspReplayMath: 未宣言の再生の対象 "${subject?.kind}" (ADR-158 R3)`)
+  }
+}
+
+/**
+ * The interference rejections the analysis returned a representative for
+ * (ADR-158 R3, contract v12): one per (phase × obstacle), most-rejected first,
+ * as the solver ordered them, with how many groups were left out. The client
+ * neither picks nor re-orders them — the choice is core/'s (ADR-146 axis 1).
+ *
+ * @returns {{kind:'ready', items:object[], omitted:number}|{kind:'unavailable', reason:string}}
+ */
+export function rejectedReplayList(analysisState, grasp) {
+  const stale = analysisUnavailable(analysisState, grasp)
+  if (stale) return { kind: 'unavailable', reason: stale }
+  const rr = analysisState.analysis?.rejectedReplays
+  if (!rr || !Array.isArray(rr.items)) {
+    return { kind: 'unavailable', reason: 'This backend returns no rejected candidates to replay (contract before v12).' }
+  }
+  return { kind: 'ready', items: rr.items, omitted: Number(rr.omitted) || 0 }
 }
 
 /**

@@ -271,7 +271,8 @@ test('a change to the agreed line carries the margin core/ assessed — or says 
   assert.equal(takt(asked[0].line), 10)
   assert.equal(takt(asked[0].proposedLine), 8, 'the proposed line is the line with the change written')
   const p = svc.getDoc().proposals.at(-1)
-  assert.deepEqual(p.margin, { kind: 'evaluated', baseline: 'x', proposed: 'y', offerings })
+  // The record says which version of the line it is about (closes DEF-068).
+  assert.deepEqual(p.margin, { kind: 'evaluated', baseline: 'x', proposed: 'y', offerings, lineVersion: 1 })
 
   // b reads it, then may approve.
   useUIStore.getState().actions.contextGrantKey('b')
@@ -280,6 +281,7 @@ test('a change to the agreed line carries the margin core/ assessed — or says 
     cc.readProposalMargin(p.ref)
     await settle()
     assert.deepEqual(svc.getDoc().proposals.at(-1).offeringsReadBy, ['b'])
+    assert.equal(svc.getDoc().proposals.at(-1).offeringsReadAtVersion, 1)
   } finally {
     useUIStore.getState().actions.contextRevokeKey('b')
   }
@@ -290,6 +292,22 @@ test('a change to the agreed line carries the margin core/ assessed — or says 
   const q = svc.getDoc().proposals.at(-1)
   assert.equal(q.margin.kind, 'unassessed')
   assert.match(q.margin.reason, /not reachable/)
+
+  // Asking again once the solver is back replaces the record (one doc edit);
+  // a record already about the current line is refused, and said.
+  const toasts = []
+  cc._ctrl._uiView.showToast = (m, o) => toasts.push([m, o?.type])
+  cc._ctrl._service = { bff }
+  const before = pushed.length
+  await cc.reassessProposalMargin(q.ref)
+  await settle()
+  const fresh = svc.getDoc().proposals.at(-1)
+  assert.deepEqual(fresh.margin, { kind: 'evaluated', baseline: 'x', proposed: 'y', offerings, lineVersion: 1 })
+  assert.equal(pushed.length, before + 1, 'one undoable command')
+  assert.equal(takt(asked.at(-1).proposedLine), 9, 'the solver was asked about THIS proposal\'s change')
+  await cc.reassessProposalMargin(q.ref)
+  assert.match(toasts.at(-1)[0], /already about the current line/)
+  assert.equal(pushed.length, before + 1, 'a refused re-assessment writes nothing')
 })
 
 // ── ADR-170 S3: a zone's owner is one undoable document edit ─────────────────

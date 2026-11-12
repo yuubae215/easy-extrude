@@ -420,6 +420,23 @@ test("grasp-search request rejects a camera without position (required)", () => 
   });
 });
 
+test("grasp-search request: the field of view is a cone OR a rectangle, and a rectangle needs its axes (ADR-171)", () => {
+  const example = examples["grasp-search-request"];
+  const withCamera = (camera) => ({ ...example, graspSearch: { ...example.graspSearch, camera } });
+  const rect = { position: [0, 0, 1], viewAxis: [0, 0, -1], imageUp: [1, 0, 0], fovHalfAngles: { horizontal: 0.5, vertical: 0.3 } };
+  accepts("grasp-search-request", withCamera(rect));
+  accepts("grasp-search-request", withCamera({ position: [0, 0, 1], viewAxis: [0, 0, -1], fovHalfAngle: 0.5 }));
+  // Both shapes at once: two answers to one question.
+  rejects("grasp-search-request", withCamera({ ...rect, fovHalfAngle: 0.5 }));
+  // A rectangle without its axes would be silently inert.
+  const { imageUp: _u, ...noUp } = rect;
+  rejects("grasp-search-request", withCamera(noUp));
+  const { viewAxis: _v, ...noAxis } = rect;
+  rejects("grasp-search-request", withCamera(noAxis));
+  rejects("grasp-search-request", withCamera({ ...rect, fovHalfAngles: { horizontal: 0.5 } }));
+  rejects("grasp-search-request", withCamera({ ...rect, fovHalfAngles: { horizontal: 0.5, vertical: 1.6 } }));
+});
+
 test("grasp-search request rejects unknown fields under camera (closed)", () => {
   const example = examples["grasp-search-request"];
   rejects("grasp-search-request", {
@@ -530,7 +547,7 @@ test("response: every motion phase has a row; an unevaluated one carries a reaso
 test("response: the all-phase analysis names phase, part and obstacle index — never a name", () => {
   const analysis = { kind: "allPhases", candidatesAnalysed: 4, phases: [
     { phase: "lift", collided: 2, hits: [{ part: "held", obstacleIndex: 1, candidates: 2 }] }],
-    armPath: { kind: "undeclared" }, replays: [] };
+    armPath: { kind: "undeclared" }, replays: [], rejectedReplays: { items: [], omitted: 0 } };
   accepts("grasp-search-response", { candidates: [], diagnostics: { ...diagnostics, interferenceAnalysis: analysis } });
   const named = structuredClone(analysis);
   named.phases[0].hits[0].obstacleName = "tray wall";
@@ -538,7 +555,7 @@ test("response: the all-phase analysis names phase, part and obstacle index — 
 });
 
 test("response v10: the arm is measured at the pick pose and along the path — measured, closed, never absent (ADR-158 PR1)", () => {
-  const base = { kind: "allPhases", candidatesAnalysed: 4, phases: [], replays: [] };
+  const base = { kind: "allPhases", candidatesAnalysed: 4, phases: [], replays: [], rejectedReplays: { items: [], omitted: 0 } };
   const measured = { kind: "measured", pathSamples: 6,
     atPickPose: { candidates: 1, hits: [{ obstacleIndex: 0, candidates: 1 }] },
     phases: [{ phase: "approach", onPath: 2, onPathOnly: 1, noSolutionOnPath: 0, hits: [{ obstacleIndex: 0, candidates: 2 }] }] };
@@ -563,7 +580,7 @@ test("response v11: a replay carries the judged samples per returned candidate �
   const close = { phase: "close", hits: [] };
   const lift = { phase: "lift", samples: [sample(0, { kind: "noSolution" }), sample(1, { kind: "undeclared" })] };
   const withReplays = (replays) => ({ candidates: [], diagnostics: { ...diagnostics,
-    interferenceAnalysis: { kind: "allPhases", candidatesAnalysed: 1, phases: [], armPath: { kind: "undeclared" }, replays } } });
+    interferenceAnalysis: { kind: "allPhases", candidatesAnalysed: 1, phases: [], armPath: { kind: "undeclared" }, replays, rejectedReplays: { items: [], omitted: 0 } } } });
   accepts("grasp-search-response", withReplays([{ rank: 1, phases: [approach, close, lift] }]));
   accepts("grasp-search-response", withReplays([]));
   // Required: no replay is an empty list, never an absent field.
@@ -582,6 +599,32 @@ test("response v11: a replay carries the judged samples per returned candidate �
   rejects("grasp-search-response", withReplays([{ rank: 1, phases: [{ ...approach, samples: [sample(0, approach.samples[0].arm, [{ part: "arm", obstacleIndex: 0 }]), approach.samples[1]] }] }]));
   // An arm nobody placed carries no joints.
   rejects("grasp-search-response", withReplays([{ rank: 1, phases: [{ ...approach, samples: [sample(0, { kind: "undeclared", joints: [0] }), approach.samples[1]] }] }]));
+});
+
+test("response v12: an interference rejection is replayed by its group's best candidate — counted, capped, never silently dropped (ADR-158 R3)", () => {
+  const sample = (s, hits = []) => ({ s, tcp: [0.5, 0, 0.1], hits, arm: { kind: "undeclared" } });
+  const lift = { phase: "lift", samples: [sample(0), sample(1, [{ part: "held", obstacleIndex: 0 }])] };
+  const pose = examples["grasp-search-response"].candidates[0].pose;
+  const item = { phase: "lift", obstacleIndex: 0, rejected: 9, totalScore: 0.82, pose,
+    reachSolution: { kind: "undeclared" }, phases: [lift] };
+  const withRejected = (rejectedReplays) => ({ candidates: [], diagnostics: { ...diagnostics,
+    interferenceAnalysis: { kind: "allPhases", candidatesAnalysed: 9, phases: [], armPath: { kind: "undeclared" }, replays: [], rejectedReplays } } });
+  accepts("grasp-search-response", withRejected({ items: [item], omitted: 0 }));
+  accepts("grasp-search-response", withRejected({ items: [], omitted: 0 }));
+  // Required: nothing rejected is an empty list with omitted 0, never an absent field.
+  const absent = withRejected({ items: [], omitted: 0 });
+  delete absent.diagnostics.interferenceAnalysis.rejectedReplays;
+  rejects("grasp-search-response", absent);
+  rejects("grasp-search-response", withRejected({ items: [] }));
+  // At most 8; the rest are counted.
+  rejects("grasp-search-response", withRejected({ items: Array(9).fill(item), omitted: 0 }));
+  accepts("grasp-search-response", withRejected({ items: Array(8).fill(item), omitted: 4 }));
+  // A group counted nobody is not a group; the representative names its obstacle by index only.
+  rejects("grasp-search-response", withRejected({ items: [{ ...item, rejected: 0 }], omitted: 0 }));
+  rejects("grasp-search-response", withRejected({ items: [{ ...item, obstacleName: "shelf" }], omitted: 0 }));
+  // The pose and the solution are required — a rejection without them is not replayable.
+  const { reachSolution: _r, ...noSolution } = item;
+  rejects("grasp-search-response", withRejected({ items: [noSolution], omitted: 0 }));
 });
 
 test("request: target.lift is a declared direction + distance, and the analysis mode is closed", () => {

@@ -46,5 +46,10 @@ emmake make -C "$BUILD_DIR" -j"$(nproc)"
 cp "$BUILD_DIR/robotics_engine.mjs"  "$OUT_DIR/"
 cp "$BUILD_DIR/robotics_engine.wasm" "$OUT_DIR/"
 
+# --- stamp: record which sources these artifacts were built from --------------
+# CI has no toolchain, so it cannot rebuild; it compares this record instead
+# (scripts/wasm-freshness.mjs — sources edited without a rebuild fail the gate).
+node "$ROOT/scripts/wasm-freshness.mjs" stamp robotics-wasm
+
 echo "robotics-wasm build complete → $OUT_DIR"
 ls -la "$OUT_DIR"/robotics_engine.*

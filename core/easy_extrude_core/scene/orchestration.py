@@ -181,6 +181,12 @@ def _settings_from_wire(request: PickSequenceRequest) -> GraspSettings:
             position=_vec(s.camera.position),
             view_axis=_vec(s.camera.view_axis) if s.camera.view_axis is not None else None,
             fov_half_angle=s.camera.fov_half_angle,
+            fov_half_angles=(
+                (s.camera.fov_half_angles.horizontal, s.camera.fov_half_angles.vertical)
+                if s.camera.fov_half_angles is not None
+                else None
+            ),
+            image_up=_vec(s.camera.image_up) if s.camera.image_up is not None else None,
         )
     gripper = None
     if s.gripper is not None:

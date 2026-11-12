@@ -390,4 +390,4 @@ $x^{*}$ = 期待値をすべて満たす案のうち J 最大。$J'$ / $x^{*\pri
 
 - 案の実態値をシーンから導く (`derived`)、人の見積・実測で上書きする (`declared`) 画面 — DEF-066。
 - 選ばれた案から重みを推し量って提案する (core/ — propose-only) — DEF-067。
-- 開いている提案のマージンが、別の変更の承認で 1 版古くなったときの再評価 — DEF-068。
+- ~~開いている提案のマージンが、別の変更の承認で 1 版古くなったときの再評価 — DEF-068。~~ **2026-11-10 決着** (当事者合意 Q3 a: 止めずに「古い」と言い、読んでから承認の規則に乗せる)。マージンは評価時の版 `lineVersion` を持ち、古さは今の版との比較から導出する (`marginIsStale`)。線が動く前の「読んだ」は数えない (`offeringsReadAtVersion`)。再評価は鍵なしの 1 回の doc edit (`withReassessedMargin`)。どちらも context/0.7 への版内の追加。問い所 = `src/context/CriteriaLine.test.js`。

@@ -436,7 +436,10 @@ const SUPPORT_LABELS = new Map([
 // 2026-11-09: 39 → 38。ADR-170 S3 で OverlapAcrossOwnersGoesToNegotiation が support-verified へ (zone /
 // ZoneOwnershipController / ZoneOverlapOwnership / ZoneOwner の node --test + e2e/zone-elevation.spec.js)。満期
 // GREP:…zone.js::zoneOverlaps が発火。goal の文言は S3 で改訂した D2 に合わせた (議題化は DEF-078 — 登録簿の義務)。
-const DEBT_BASELINE = 38
+// 2026-11-12: 38 → 41。ADR-172 (Proposed) の木の 3 goal (問うていない段の kind / 出どころの行が
+// 全体を分ける / リスクはエンジンが決める)。起票と同時に吊ったので証拠はまだ未来形で、3 つとも
+// 満期を GREP で書いた support-exploring — ADR-172 の実装で 3 つとも solution へ昇格し 38 に戻る。
+const DEBT_BASELINE = 41
 
 /**
  * G3 — 満期 trigger を持たない exploring goal の個数 (実測値)。
