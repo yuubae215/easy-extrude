@@ -439,7 +439,9 @@ const SUPPORT_LABELS = new Map([
 // 2026-11-12: 38 → 41。ADR-172 (Proposed) の木の 3 goal (問うていない段の kind / 出どころの行が
 // 全体を分ける / リスクはエンジンが決める)。起票と同時に吊ったので証拠はまだ未来形で、3 つとも
 // 満期を GREP で書いた support-exploring — ADR-172 の実装で 3 つとも solution へ昇格し 38 に戻る。
-const DEBT_BASELINE = 41
+// 2026-11-15: 41 → 38。ADR-172 を実装し、3 goal とも support-verified へ (test_stages.py / 契約パッケージ /
+// stub / GraspLadderMath.test.js / e2e のスタブのレーン)。
+const DEBT_BASELINE = 38
 
 /**
  * G3 — 満期 trigger を持たない exploring goal の個数 (実測値)。

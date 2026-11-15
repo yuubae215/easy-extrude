@@ -91,16 +91,18 @@ export function scoreColor(totalScore) {
 }
 
 /**
- * Score booleans → ghost line style (ADR-059 §B-2): all three verdicts true →
- * solid; any false → dashed. Derived from the wire's committed verdicts only.
+ * Candidate → ghost line style (ADR-059 §B-2, re-read under contract v13 —
+ * ADR-172 D5). A returned candidate passed every stage — that is what being in
+ * `candidates[]` means — so it is drawn solid. The per-candidate stage booleans
+ * this used to read were always true on the wire and are gone. Dashed is kept for
+ * a score that is not a returned candidate's (no total score): drawn, but not
+ * claimed.
  *
- * @param {{withinReach?: boolean, ikSolvable?: boolean, interferenceFree?: boolean}} score
+ * @param {{totalScore?: number}|null|undefined} score
  * @returns {'solid'|'dashed'}
  */
 export function ghostLineStyle(score) {
-  const s = score ?? {}
-  return (s.withinReach === true && s.ikSolvable === true && s.interferenceFree === true)
-    ? 'solid' : 'dashed'
+  return typeof score?.totalScore === 'number' && Number.isFinite(score.totalScore) ? 'solid' : 'dashed'
 }
 
 /**

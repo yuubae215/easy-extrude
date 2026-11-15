@@ -1,164 +1,101 @@
 /**
- * GraspLadderMath.test.js — deterministic KPI derivation + ladder-risk table
- * lookup (ADR-081 Decision 3, presentation layer). Run via `pnpm test:context`
- * (bare node --test, THREE-free).
- *
- * Governance under test: KPIs are pure derivations of the v4 wire facts (no
- * second source), the ladder mapping is a single-owner table lookup, and
- * malformed / empty input degrades to null / [] — never a fabricated forecast.
+ * GraspLadderMath.test.js — domain KPIs read from the contract v13 stage
+ * verdicts, and the engine's fallback risks worded for display (ADR-172 D8 —
+ * WHICH risk applies is core/'s; this module decides nothing). Run via
+ * `pnpm test` (bare node --test, THREE-free).
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { LADDER, domainKpis as kpisOf, ladderRisks, askedGates, rateText } from './GraspLadderMath.js'
+import { readFileSync } from 'node:fs'
+import { LADDER, RISK_REASON_TEXT, domainKpis, ladderRisks, rateText } from './GraspLadderMath.js'
 
-/** Both gates asked (camera and gripper declared) — the existing fixtures' premise. */
-const BOTH = Object.freeze({ vision: true, grasp: true })
-const domainKpis = (d, asked = BOTH) => kpisOf(d, asked)
+const judged = (stage, entered, rejected) => ({ stage, kind: 'judged', entered, rejected,
+  nearestMiss: rejected ? { kind: 'unmeasurable', reasons: ['noContactPair'] } : { kind: 'noRejection' } })
+const asIs = (stage, entered, rejected) => ({ ...judged(stage, entered, rejected),
+  nearestMiss: ['ik', 'interference'].includes(stage) ? { kind: 'noQuantity' } : judged(stage, entered, rejected).nearestMiss })
 
-/** Clean run: every domain passes everything (20 generated, 20 feasible). */
-const CLEAN = Object.freeze({
-  candidatesGenerated: 20,
-  rejectedByReach: 0,
-  rejectedByVisibility: 0,
-  rejectedByIk: 0,
-  rejectedByInterference: 0,
-  rejectedByGrasp: 0,
-  feasible: 20,
-  returned: 5,
-  reachNearestMiss: null,
-  occlusionNearestMiss: null,
-  graspNearestMiss: null,
-})
-
-/** Mixed run (invariant: 20 = 2+4+1+1+2+10). */
+/** 20 → reach −2 → IK −1 → grasp −2 → visibility −4 → interference −1 = 10. */
 const MIXED = Object.freeze({
-  ...CLEAN,
-  rejectedByReach: 2,
-  rejectedByVisibility: 4,
-  rejectedByIk: 1,
-  rejectedByInterference: 1,
-  rejectedByGrasp: 2,
-  feasible: 10,
-  reachNearestMiss: 0.02,
-  occlusionNearestMiss: 0.008,
-  graspNearestMiss: { kind: 'opening', shortfall: 0.012 },
+  candidatesGenerated: 20, feasible: 10, returned: 5,
+  stages: [asIs('reach', 20, 2), asIs('ik', 18, 1), asIs('grasp', 17, 2), asIs('visibility', 15, 4), asIs('interference', 11, 1)],
+  bySource: [],
+  fallbackRisks: [
+    { kind: 'domain', domain: 'path', level: 4, reason: 'someUnreachable' },
+    { kind: 'domain', domain: 'grasp', level: 4, reason: 'someUnclosable' },
+    { kind: 'domain', domain: 'vision', level: 3, reason: 'someUnseen' },
+  ],
 })
 
-// ── domainKpis ────────────────────────────────────────────────────────────────
-
-test('domainKpis derives per-domain rates from the exclusive stage counts', () => {
+test('domain rates are over the candidates that ENTERED each stage — the engine\'s entered, not a re-derivation', () => {
   const k = domainKpis(MIXED)
   assert.equal(k.generated, 20)
   assert.equal(k.feasibleRate, 0.5)
-  // Each rate is over the candidates that REACHED the stage (order: reach → IK →
-  // grasp → visibility → interference). 20 → reach −2 → IK −1 → grasp −2 → vis −4 → interf −1.
   assert.equal(k.vision.rejected, 4)
-  assert.equal(k.vision.entered, 15)
   assert.equal(k.vision.rate, 1 - 4 / 15)
-  assert.equal(k.grasp.entered, 17)
   assert.equal(k.grasp.rate, 1 - 2 / 17)
   // path = the product of its three stages' pass rates (they are not adjacent)
   assert.equal(k.path.rejected, 4)
   assert.ok(Math.abs(k.path.rate - (18 / 20) * (17 / 18) * (10 / 11)) < 1e-12)
-  // near-misses are passed through as facts (nulls stay null)
-  assert.equal(k.vision.nearestMiss, 0.008)
-  assert.equal(k.path.nearestMiss, 0.02)
-  assert.equal(k.grasp.nearestMiss, 0.012)
-  assert.equal(domainKpis(CLEAN).vision.nearestMiss, null)
 })
 
-test('domainKpis is null on malformed or empty-generation input', () => {
-  assert.equal(domainKpis(null), null)
-  assert.equal(domainKpis({}), null)
-  assert.equal(domainKpis({ ...CLEAN, candidatesGenerated: 0, feasible: 0, returned: 0 }), null)
-  // v3-shaped diagnostics (missing ADR-081 stages) are not silently upgraded
-  const { rejectedByVisibility, rejectedByGrasp, ...v3 } = MIXED
-  assert.equal(domainKpis(v3), null)
+test('a stage that rejects everything it is asked reads 0 %, even after earlier stages took most', () => {
+  const d = { candidatesGenerated: 36, feasible: 0, returned: 0, bySource: [], fallbackRisks: [],
+    stages: [asIs('reach', 36, 30), asIs('ik', 6, 0), asIs('grasp', 6, 0), asIs('visibility', 6, 6), asIs('interference', 0, 0)] }
+  assert.equal(rateText(domainKpis(d).vision), '0%')
 })
 
-test('a stage that rejects everything it is asked reads 0 %, even when earlier stages took most candidates', () => {
-  // 36 generated, reach drops 30, the 6 that reach the camera are all unseen.
-  // The old share-of-generated read this as "83 % seen".
-  const d = { ...CLEAN, candidatesGenerated: 36, rejectedByReach: 30, rejectedByVisibility: 6, feasible: 0, returned: 0 }
+test('a domain nobody asked has no rate — never a fabricated 100 % (#11 / #31)', () => {
+  const d = { candidatesGenerated: 5, feasible: 5, returned: 5, bySource: [], fallbackRisks: [],
+    stages: [asIs('reach', 5, 0), asIs('ik', 5, 0),
+      { stage: 'grasp', kind: 'notAsked', reason: 'gripperUndeclared' },
+      { stage: 'visibility', kind: 'notAsked', reason: 'cameraUndeclared' }, asIs('interference', 5, 0)] }
   const k = domainKpis(d)
-  assert.equal(k.vision.entered, 6)
-  assert.equal(k.vision.rate, 0)
-  assert.equal(rateText(k.vision), '0%')
-  // and the total-loss rule can now fire for it
-  assert.ok(ladderRisks(k).some(r => r.domain === 'vision' && r.level === 5))
-})
-
-test('a gate nobody asked has no rate and no risk — never a fabricated 100 % (#11 / #31)', () => {
-  const k = kpisOf(CLEAN, { vision: false, grasp: false })
   assert.deepEqual(k.vision, { asked: false })
-  assert.deepEqual(k.grasp, { asked: false })
-  assert.equal(rateText(k.vision), 'not asked')
-  assert.equal(k.path.asked, true)
-  assert.deepEqual(ladderRisks(kpisOf({ ...CLEAN, rejectedByReach: 20, feasible: 0, returned: 0 }, { vision: false, grasp: false })).map(r => r.domain), ['path'])
-  // which gates were asked comes from the request, and an unknown request gives no KPI at all
-  assert.deepEqual(askedGates({ graspSearch: { camera: { position: [0, 0, 1] } } }), { vision: true, grasp: false })
-  assert.equal(askedGates(null), null)
-  assert.equal(kpisOf(CLEAN, null), null)
+  assert.equal(rateText(k.grasp), 'not asked')
+  assert.equal(rateText(k.path), '100%')
 })
 
 test('a stage nobody reached has no rate either', () => {
-  const k = domainKpis({ ...CLEAN, rejectedByReach: 20, feasible: 0, returned: 0 })
-  assert.equal(k.vision.entered, 0)
-  assert.equal(rateText(k.vision), 'not reached')
-  assert.equal(k.path.rate, 0)
+  const d = { candidatesGenerated: 3, feasible: 0, returned: 0, bySource: [], fallbackRisks: [],
+    stages: [asIs('reach', 3, 3), asIs('ik', 0, 0), asIs('grasp', 0, 0), asIs('visibility', 0, 0), asIs('interference', 0, 0)] }
+  assert.equal(rateText(domainKpis(d).vision), 'not reached')
 })
 
-// ── ladderRisks ───────────────────────────────────────────────────────────────
-
-test('ladderRisks is empty for a clean run', () => {
-  assert.deepEqual(ladderRisks(domainKpis(CLEAN)), [])
-  assert.deepEqual(ladderRisks(null), [])
+test('KPIs are null on malformed, pre-v13 or empty-generation input', () => {
+  assert.equal(domainKpis(null), null)
+  assert.equal(domainKpis({}), null)
+  assert.equal(domainKpis({ ...MIXED, candidatesGenerated: 0 }), null)
 })
 
-test('partial rejections map to the shallow risk levels (L3/L4)', () => {
-  const risks = ladderRisks(domainKpis(MIXED))
-  const byDomain = Object.fromEntries(risks.map(r => [r.domain, r.level]))
-  assert.equal(byDomain.vision, 3) // unseen points → vision-retry takt loss
-  assert.equal(byDomain.path, 4)   // reach/IK/clearance → re-teach motion
-  assert.equal(byDomain.grasp, 4)  // grasp geometry → re-teach grasp
-  // feasible > 0 → no L6 row
-  assert.ok(!risks.some(r => r.level === 6))
-})
+// ── the engine's risks, worded ────────────────────────────────────────────────
 
-test('a total domain loss deepens the risk to L5', () => {
-  // every candidate visibility-rejected (the template L3-repro fixture shape)
-  const blind = {
-    ...CLEAN,
-    rejectedByVisibility: 20,
-    feasible: 0,
-    returned: 0,
-    occlusionNearestMiss: 0.0077,
-  }
-  const risks = ladderRisks(domainKpis(blind))
-  assert.deepEqual(risks.map(r => [r.domain, r.level]), [['vision', 5]])
-  assert.equal(risks[0].label, LADDER[5].label)
-})
-
-test('zero feasible with rejections in 2+ domains raises the L6 row deepest-first', () => {
-  const deadlock = {
-    ...CLEAN,
-    rejectedByVisibility: 10,
-    rejectedByGrasp: 10,
-    feasible: 0,
-    returned: 0,
-  }
-  const risks = ladderRisks(domainKpis(deadlock))
-  assert.equal(risks[0].level, 6)
-  assert.match(risks[0].reason, /vision \+ grasp/)
-  // deepest-first ordering
-  const levels = risks.map(r => r.level)
-  assert.deepEqual(levels, [...levels].sort((a, b) => b - a))
-})
-
-test('the ladder table is the single owner: rows carry its labels verbatim', () => {
-  const risks = ladderRisks(domainKpis(MIXED))
+test('ladderRisks words the engine\'s risks in the engine\'s order — it decides nothing', () => {
+  const risks = ladderRisks(MIXED)
+  assert.deepEqual(risks.map(r => [r.domain, r.level]), [['path', 4], ['grasp', 4], ['vision', 3]])
   for (const r of risks) {
     assert.equal(r.label, LADDER[r.level].label)
     assert.equal(r.cost, LADDER[r.level].cost)
   }
+  assert.match(risks[2].reason, /vision retries/)
+  assert.deepEqual(ladderRisks({ ...MIXED, fallbackRisks: [] }), [])
+  assert.deepEqual(ladderRisks(null), [])
+})
+
+test('the together row names the domains that cannot hold at once (L6)', () => {
+  const [r] = ladderRisks({ fallbackRisks: [{ kind: 'together', level: 6, domains: ['vision', 'grasp'] }] })
+  assert.equal(r.level, 6)
+  assert.match(r.reason, /vision \+ grasp together/)
+})
+
+test('an undeclared reason, kind or level throws rather than being shown as something else (#31)', () => {
+  assert.throws(() => ladderRisks({ fallbackRisks: [{ kind: 'domain', domain: 'path', level: 4, reason: 'vibes' }] }), /undeclared risk reason/)
+  assert.throws(() => ladderRisks({ fallbackRisks: [{ kind: 'maybe', level: 4 }] }), /undeclared risk kind/)
+  assert.throws(() => ladderRisks({ fallbackRisks: [{ kind: 'domain', domain: 'path', level: 9, reason: 'someUnreachable' }] }), /undeclared ladder level/)
+})
+
+test('the reason words cover exactly the contract\'s closed reason vocabulary (population = the schema)', () => {
+  const schema = JSON.parse(readFileSync(
+    new URL('../../packages/grasp-contract/schema/grasp-search-response.schema.json', import.meta.url), 'utf8'))
+  const domainBranch = schema.$defs.fallbackRisk.oneOf.find(b => b.properties.kind.const === 'domain')
+  assert.deepEqual(Object.keys(RISK_REASON_TEXT).sort(), [...domainBranch.properties.reason.enum].sort())
 })

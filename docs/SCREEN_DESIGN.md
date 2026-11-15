@@ -949,8 +949,10 @@ background; its state is `context.graspAnalysis`, separate from the search, so t
 read `part × obstacle — n`; a result for an earlier search is kept and captioned **stale**; the button keeps
 its slot and is disabled with the reason in the stub lane / without a backend / before a search), and the ranked candidate list.
 All text in the panel inherits `overflow-wrap: anywhere` and toasts wrap inside a 16px gutter (ADR-157 D8 —
-a reason ran off both edges of a phone). Each candidate shows the three boolean chips (`withinReach / ikSolvable /
-interferenceFree`), the `totalScore`, and **labelled `objectiveScores` bars** (the order-
+a reason ran off both edges of a phone). Each candidate shows the `totalScore` and **labelled `objectiveScores` bars**
+(the per-candidate stage chips left with contract v13 — every returned candidate passed every stage, ADR-172 D5;
+the funnel above says per stage what was judged, and a stage nobody asked reads "not asked — no camera / hand
+declared" instead of "−0"; the per-source rows list where each spec's candidates fell out) (the order-
 explaining signal — ADR-057 §F/G2) with **client-side sort** chips (total / per-objective, never
 re-runs the query); clicking a card sets `selectedRank` (`onSelectGraspCandidate`). **Stage-1
 spatial ghost (ADR-059)**: a candidate whose typed `pose.kind === 'endEffector'` frame passes

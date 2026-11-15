@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useUIStore, UNDECLARED_REACH } from '../../store/uiStore.js'
 import { renderableEndEffectorFrame } from '../../view/GraspGhostMath.js'
-import { funnelStages, dominantStage, funnelDelta, nearMissCloseness, specResultRows } from '../../view/GraspFunnelMath.js'
-import { domainKpis, ladderRisks, askedGates, rateText } from '../../view/GraspLadderMath.js'
+import {
+  funnelStages, dominantStage, funnelDelta, nearMissCloseness, nearMissMeters, specResultRows, UNMEASURABLE_REASON_TEXT,
+} from '../../view/GraspFunnelMath.js'
+import { domainKpis, ladderRisks, rateText } from '../../view/GraspLadderMath.js'
 import { objectiveRows, unevaluatedNote } from '../../view/GraspScoreMath.js'
 import {
   OBJECTIVE, objectivesForHand, DEFAULT_OBJECTIVE_WEIGHT,
@@ -417,7 +419,7 @@ export function GraspSearchPanel() {
           feedback, especially when the list is empty. Presentation only:
           everything below derives from the wire facts via GraspFunnelMath. */}
       {status === 'results' && (
-        <DiagnosticsFunnel diagnostics={grasp.diagnostics} prev={grasp.prevDiagnostics} request={grasp.request} />
+        <DiagnosticsFunnel diagnostics={grasp.diagnostics} prev={grasp.prevDiagnostics} />
       )}
       {status === 'results' && (
         <SpecResults rows={specResultRows(grasp.diagnostics, grasp.candidates ?? [])} />
@@ -839,7 +841,7 @@ function InterferenceAnalysisCard({ grasp, analysisState, availability, onRun, r
           <div style={{ marginBottom: '3px' }}>{summary.candidatesAnalysed} candidates reached clearance; hits per phase (a candidate can hit in several):</div>
           {summary.phases.map(p => (
             <div key={p.phase} style={{ marginBottom: '3px' }}>
-              <div style={{ color: p.collided > 0 ? COLOR.cautionTone : COLOR.factTone }}>{p.label}: {p.collided}</div>
+              <div style={{ color: p.touched > 0 ? COLOR.cautionTone : COLOR.factTone }}>{p.label}: {p.touched}</div>
               {p.hits.map((h, i) => (
                 <div key={i} style={{ paddingLeft: '10px', color: COLOR.textSecondary }}>
                   · {h.partLabel} × {h.obstacle} — {h.candidates}
@@ -980,7 +982,7 @@ function RejectedReplays({ grasp, analysisState, active, names, callbacks }) {
               background: on ? COLOR.surfaceRaised : 'transparent', color: COLOR.textPrimary,
             }}>
             {PHASE_LABEL[item.phase] ?? item.phase} × {names[item.obstacleIndex] ?? `obstacle #${item.obstacleIndex}`}
-            <span style={{ color: COLOR.textSecondary }}> — {item.rejected} rejected · best score {item.totalScore.toFixed(3)}</span>
+            <span style={{ color: COLOR.textSecondary }}> — {item.touched} rejected · best score {item.totalScore.toFixed(3)}</span>
           </button>
         )
       })}
@@ -1039,19 +1041,26 @@ function SpecResults({ rows }) {
   if (!rows) return null
   return (
     <div style={{ marginTop: '8px', fontSize: '10px', color: COLOR.textSecondary }}>
-      <div style={{ marginBottom: '2px' }}>by grasp spec (returned / feasible / generated)</div>
+      <div style={{ marginBottom: '2px' }}>by source (returned / feasible / generated — the rows add up to the funnel)</div>
       {rows.map((r, i) => (
-        <div key={r.id} style={{ display: 'flex', gap: '6px' }}>
-          <span style={{ minWidth: '14px' }}>{i + 1}</span>
-          <span style={{ flex: 1, color: r.returned > 0 ? COLOR.infoTone : COLOR.textSecondary }}>{r.id}</span>
-          <span>{r.returned} / {r.feasible} / {r.generated}</span>
+        <div key={r.id ?? '(derived)'} style={{ marginBottom: '2px' }}>
+          <div style={{ display: 'flex', gap: '6px' }}>
+            <span style={{ minWidth: '14px' }}>{r.id == null ? '' : i + 1}</span>
+            <span style={{ flex: 1, color: r.returned > 0 ? COLOR.infoTone : COLOR.textSecondary }}>{r.label}</span>
+            <span>{r.returned} / {r.feasible} / {r.generated}</span>
+          </div>
+          {/* where this source's candidates fell out (contract v13, ADR-172 D4 — DEF-048) */}
+          <div style={{ paddingLeft: '20px', color: COLOR.textSecondary }} data-testid={`source-stages-${r.id ?? 'derived'}`}>
+            {r.stages.filter(v => v.kind === 'judged' && v.rejected > 0)
+              .map(v => `${STAGE_LABELS[v.stage] ?? v.stage} −${v.rejected}`).join(' · ') || 'nothing rejected'}
+          </div>
         </div>
       ))}
     </div>
   )
 }
 
-function DiagnosticsFunnel({ diagnostics, prev, request }) {
+function DiagnosticsFunnel({ diagnostics, prev }) {
   const funnel = funnelStages(diagnostics)
   if (!funnel) return null   // legacy / absent diagnostics → degrade silently
 
@@ -1073,25 +1082,13 @@ function DiagnosticsFunnel({ diagnostics, prev, request }) {
 
   const dominant = dominantStage(diagnostics)
   const delta    = funnelDelta(prev, diagnostics)
-  const kpis     = domainKpis(diagnostics, askedGates(request))
-  const risks    = ladderRisks(kpis)
-  // One meter per measurable domain nearest-miss (ADR-081): reach (Path),
-  // occlusion (Vision), opening (Grasp). Null facts render no meter.
-  const meters = [
-    { key: 'reach',     miss: diagnostics.reachNearestMiss,     what: 'missed reach by' },
-    { key: 'occlusion', miss: diagnostics.occlusionNearestMiss, what: 'occluded by' },
-    // Contract v5 (ADR-118): the label comes from the wire's `kind`, so a suction
-    // seal shortfall is never printed as an "opening". Reporting one quantity under
-    // the other's name is the failure the union was added to prevent.
-    {
-      key:  'grasp',
-      miss: diagnostics.graspNearestMiss?.shortfall ?? null,
-      what: diagnostics.graspNearestMiss?.kind === 'sealPatch'
-        ? 'seal patch short by'
-        : 'opening short by',
-    },
-  ].map(m => ({ ...m, closeness: nearMissCloseness(m.miss) }))
-   .filter(m => m.closeness != null)
+  const kpis     = domainKpis(diagnostics)
+  // The engine decides the risks (ADR-172 D8); this only words them.
+  const risks    = ladderRisks(diagnostics)
+  // One meter per judged stage whose closest rejection was MEASURED (ADR-172 D3);
+  // an unmeasurable one says why instead of drawing an empty meter.
+  const meters = nearMissMeters(diagnostics)
+    .map(m => (m.measured ? { ...m, closeness: nearMissCloseness(m.value) } : m))
 
   return (
     <div style={{ marginTop: '10px', padding: '8px 10px', borderRadius: '5px', background: '#222', border: BORDER }}>
@@ -1100,15 +1097,17 @@ function DiagnosticsFunnel({ diagnostics, prev, request }) {
         {delta && <DeltaChip value={delta.generated} goodWhenPositive label="gen" />}
       </div>
 
-      {funnel.stages.map(s => (
-        <FunnelRow
-          key={s.key}
-          label={STAGE_LABELS[s.key] ?? s.key}
-          stage={s}
-          dominant={s.key === dominant}
-          delta={delta ? delta[s.key] : null}
-        />
-      ))}
+      {funnel.stages.map(s => (s.asked
+        ? (
+          <FunnelRow
+            key={s.key}
+            label={STAGE_LABELS[s.key] ?? s.key}
+            stage={s}
+            dominant={s.key === dominant}
+            delta={delta ? delta[s.key] : null}
+          />
+        )
+        : <NotAskedRow key={s.key} label={STAGE_LABELS[s.key] ?? s.key} reason={s.reason} />))}
 
       {/* Survivors */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '5px', fontSize: '10px' }}>
@@ -1118,9 +1117,13 @@ function DiagnosticsFunnel({ diagnostics, prev, request }) {
         {delta && <DeltaChip value={delta.feasible} goodWhenPositive label="feasible" />}
       </div>
 
-      {meters.map(m => (
-        <NearMissMeter key={m.key} label={m.key} what={m.what} miss={m.miss} closeness={m.closeness} />
-      ))}
+      {meters.map(m => (m.measured
+        ? <NearMissMeter key={m.key} label={STAGE_LABELS[m.key] ?? m.key} what={m.what} miss={m.value} closeness={m.closeness} />
+        : (
+          <div key={m.key} style={{ fontSize: '9px', color: '#997', marginTop: '4px', marginLeft: '70px' }}>
+            {STAGE_LABELS[m.key] ?? m.key}: no measurable shortfall — {m.reasons.map(r => UNMEASURABLE_REASON_TEXT[r] ?? r).join('; ')}
+          </div>
+        )))}
 
       {risks.length > 0 && <LadderRisks risks={risks} kpis={kpis} />}
     </div>
@@ -1159,6 +1162,21 @@ function LadderRisks({ risks, kpis }) {
           </span>
         </div>
       ))}
+    </div>
+  )
+}
+
+/** What a stage nobody asked says instead of a bar (ADR-172 D2 — never a "−0"). */
+const NOT_ASKED_TEXT = Object.freeze({
+  cameraUndeclared: 'not asked — no camera declared',
+  gripperUndeclared: 'not asked — no hand declared',
+})
+
+function NotAskedRow({ label, reason }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '3px' }} data-testid={`funnel-not-asked-${label}`}>
+      <span style={{ width: '64px', fontSize: '10px', textAlign: 'right', color: '#777' }}>{label}</span>
+      <span style={{ flex: 1, fontSize: '10px', color: '#777', fontStyle: 'italic' }}>{NOT_ASKED_TEXT[reason] ?? `not asked (${reason})`}</span>
     </div>
   )
 }
@@ -1218,13 +1236,6 @@ function NearMissMeter({ label, what, miss, closeness }) {
 
 function Candidate({ c, requestedWeights, selected, onSelect, onHover }) {
   const sc = c.score ?? {}
-  const chip = (label, ok) => (
-    <span style={{
-      fontSize: '9px', padding: '1px 5px', borderRadius: '3px',
-      background: ok ? '#1f3a1f' : '#3a1f1f', color: ok ? '#9d9' : '#d99',
-      border: `1px solid ${ok ? '#357035' : '#703535'}`,
-    }}>{label}{ok ? ' ✓' : ' ✗'}</span>
-  )
   // Every objective the run ASKED FOR, marked with whether the solver could
   // evaluate it (ADR-120). Absence of a key means "not measured", which is a
   // different fact from a 0 score — so the row keeps its slot and says so
@@ -1252,16 +1263,6 @@ function Candidate({ c, requestedWeights, selected, onSelect, onHover }) {
         <span style={{ marginLeft: 'auto', fontSize: '11px', color: '#9ad' }}>
           score {typeof sc.totalScore === 'number' ? sc.totalScore.toFixed(3) : '—'}
         </span>
-      </div>
-      {/* Five domain-stage chips (contract v4, ADR-081): visible/graspable are
-          vacuously true when the request declared no camera/gripper; on legacy
-          v3 payloads the two chips are simply absent (degrade, no guessing). */}
-      <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', marginBottom: objectives ? '6px' : 0 }}>
-        {chip('reach', sc.withinReach)}
-        {typeof sc.visible === 'boolean' && chip('seen', sc.visible)}
-        {chip('IK', sc.ikSolvable)}
-        {chip('clear', sc.interferenceFree)}
-        {typeof sc.graspable === 'boolean' && chip('grasp', sc.graspable)}
       </div>
       {/* objectiveScores bars — the order-explaining signal (ADR-057 G2). Absent on
           legacy solvers with no recorded request → nothing drawn (degrade — §1.3). */}

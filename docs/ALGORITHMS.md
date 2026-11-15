@@ -261,7 +261,20 @@ cup    : center (0, 0, L_b + h/2),           half (d/2, d/2, h/2)
 候補 c の棄却相と、応答の恒等式:
 
 $$\text{棄却相}(c) = \min\{\,k \mid v_k(c) = \texttt{collides}\,\},\qquad
-\texttt{rejectedByInterference} = \sum_{k \in \text{evaluated}} \texttt{rejected}_k$$
+\texttt{rejected}_{\text{interference}} = \sum_{k \in \text{evaluated}} \texttt{rejected}_k$$
+
+(左辺は診断の段の列 `stages` の干渉の段 — 契約 v13 / ADR-172。)
+
+### 段の「入った数」と、出どころの行 (ADR-172 — 式の正本はここ)
+
+探索は段を $s_1 \dots s_5$ (リーチ・IK・把持性・可視性・干渉) の順に短絡する。問うた段について
+
+$$\texttt{entered}(s_1) = \texttt{generated},\quad \texttt{entered}(s_{i+1}) = \texttt{entered}(s_i) - \texttt{rejected}(s_i),\quad \texttt{entered}(s_6) = \texttt{feasible}$$
+
+(問うていない段は誰も落とさないので、次の段にそのまま流れる)。出どころ $r$ (仕様ごと + 導出) の行は全体を分ける:
+$\sum_r \texttt{generated}_r = \texttt{generated}$、$\sum_r \texttt{feasible}_r = \texttt{feasible}$、段ごとに $\sum_r \texttt{rejected}_r(s) = \texttt{rejected}(s)$。
+フォールバックのリスクのドメインの通過率は、そのドメインの問うた段の通過率の積
+$\rho_D = \prod_{s \in D,\ \texttt{entered}(s) > 0} \bigl(1 - \texttt{rejected}(s)/\texttt{entered}(s)\bigr)$ で、$\rho_D = 0$ なら L5 (core/ — `engine/stages.py`)。
 
 爪の掃引 (閉じ軸 = フランジ x、爪の厚み `t`、閉じた内面間 `w = min(maxOpening, 2 Σ hᵢ |aᵢ·x|)`):
 

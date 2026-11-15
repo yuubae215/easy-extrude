@@ -87,11 +87,13 @@ test('scoreColor is monotone in each channel direction (no hue wrap surprises)',
   assert.ok(b(hi) > b(lo))
 })
 
-test('ghostLineStyle: all three verdicts true → solid, any false/missing → dashed', () => {
-  assert.equal(ghostLineStyle({ withinReach: true, ikSolvable: true, interferenceFree: true }), 'solid')
-  assert.equal(ghostLineStyle({ withinReach: true, ikSolvable: false, interferenceFree: true }), 'dashed')
-  assert.equal(ghostLineStyle({ withinReach: true, ikSolvable: true }), 'dashed')
-  assert.equal(ghostLineStyle(undefined), 'dashed')
+test('ghostLineStyle: a returned candidate (it passed every stage) is solid; a score that is not one is dashed (ADR-172 D5)', () => {
+  assert.equal(ghostLineStyle({ totalScore: 0.4, objectiveScores: {} }), 'solid')
+  assert.equal(ghostLineStyle({ totalScore: 0 }), 'solid')
+  assert.equal(ghostLineStyle({}), 'dashed')
+  assert.equal(ghostLineStyle(null), 'dashed')
+  // the retired v12 booleans no longer decide anything
+  assert.equal(ghostLineStyle({ withinReach: true, ikSolvable: true, interferenceFree: true }), 'dashed')
 })
 
 // ── revealFrame: the three-beat reveal timeline (ADR-065 Phase 5) ───────────────
