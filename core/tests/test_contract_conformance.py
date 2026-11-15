@@ -12,7 +12,7 @@ import pytest
 from jsonschema import Draft202012Validator
 from jsonschema.exceptions import ValidationError
 
-from contract_pkg import load_contract_json, load_request_schema, load_response_schema
+from contract_pkg import load_contract_json, load_request_schema, load_response_schema, all_passed_stages
 
 from easy_extrude_core.contract import (
     CONTRACT_VERSION,
@@ -91,11 +91,6 @@ def test_request_with_target_obstacles_sampling_conforms():
 
 def _score(reach_solution=None) -> ScoreBreakdown:
     return ScoreBreakdown(
-        within_reach=True,
-        visible=True,
-        ik_solvable=True,
-        interference_free=True,
-        graspable=True,
         objective_scores={"reach_margin": 0.8},
         total_score=0.8,
         # 既定は solved (契約 v6, ADR-135)。既定を持たせるのは呼び出し側の便宜で、
@@ -110,17 +105,13 @@ def _score(reach_solution=None) -> ScoreBreakdown:
 def _diagnostics(**overrides) -> SearchDiagnostics:
     base = dict(
         candidates_generated=1,
-        rejected_by_reach=0,
-        rejected_by_visibility=0,
-        rejected_by_ik=0,
-        rejected_by_interference=0,
-        rejected_by_grasp=0,
         feasible=1,
         returned=1,
-        reach_nearest_miss=None,
-        occlusion_nearest_miss=None,
-        grasp_nearest_miss=None,
-        grasp_specs=[],
+        # 契約 v13 (ADR-172): 段は問うた順に 5 つ、出どころの行の和 = 全体。
+        stages=all_passed_stages(1),
+        by_source=[{"source": {"kind": "derived"}, "candidatesGenerated": 1, "feasible": 1,
+                    "stages": all_passed_stages(1)}],
+        fallback_risks=[],
         # 契約 v8 (ADR-157): 6 相すべてに行。宣言の無いリクエストでは進入相だけ評価される。
         interference_phases=[
             {"phase": "transit", "kind": "unevaluated", "reason": "notYetDecided"},
@@ -157,7 +148,9 @@ def test_response_end_effector_pose_conforms_to_schema():
         diagnostics=_diagnostics(),
     )
     wire = resp.model_dump(by_alias=True)
-    assert wire["candidates"][0]["score"]["ikSolvable"] is True
+    # v13 (ADR-172 D5): 返す候補は 5 段の真偽値を持たない — 常に true で、見える・掴めるは
+    # 問うていなくても true だった。
+    assert "ikSolvable" not in wire["candidates"][0]["score"]
     assert wire["candidates"][0]["pose"]["kind"] == "endEffector"
     Draft202012Validator(schema).validate(wire)
 
@@ -179,6 +172,15 @@ def test_response_joint_space_pose_conforms_to_schema():
     Draft202012Validator(schema).validate(resp.model_dump(by_alias=True))
 
 
+def _reach_took_all(n: int) -> "list[dict]":
+    st = all_passed_stages(n)
+    st[0] = {**st[0], "rejected": n, "nearestMiss": {"kind": "measured", "quantity": "reachDistance", "value": 4.0}}
+    for v in st[1:]:
+        if v["kind"] == "judged":
+            v["entered"] = 0
+    return st
+
+
 def test_response_diagnostics_zero_candidates_conforms_to_schema():
     # 候補ゼロ + reachNearestMiss 数値のケース (契約 v3 の主目的: 空振りを説明する)。
     schema = load_response_schema()
@@ -186,10 +188,12 @@ def test_response_diagnostics_zero_candidates_conforms_to_schema():
         candidates=[],
         diagnostics=_diagnostics(
             candidates_generated=4,
-            rejected_by_reach=4,
             feasible=0,
             returned=0,
-            reach_nearest_miss=4.0,
+            stages=_reach_took_all(4),
+            by_source=[{"source": {"kind": "derived"}, "candidatesGenerated": 4, "feasible": 0,
+                        "stages": _reach_took_all(4)}],
+            fallback_risks=[{"kind": "domain", "domain": "path", "level": 5, "reason": "noneReachable"}],
         ),
     )
     Draft202012Validator(schema).validate(resp.model_dump(by_alias=True))
@@ -202,16 +206,11 @@ def test_response_diagnostics_rejects_unknown_field():
         "candidates": [],
         "diagnostics": {
             "candidatesGenerated": 0,
-            "rejectedByReach": 0,
-            "rejectedByVisibility": 0,
-            "rejectedByIk": 0,
-            "rejectedByInterference": 0,
-            "rejectedByGrasp": 0,
             "feasible": 0,
             "returned": 0,
-            "reachNearestMiss": None,
-            "occlusionNearestMiss": None,
-            "graspNearestMiss": None,
+            "stages": all_passed_stages(0),
+            "bySource": [],
+            "fallbackRisks": [],
             "extraField": "not allowed",
         },
     }
@@ -228,11 +227,6 @@ def test_schema_rejects_opaque_pose():
                 "rank": 1,
                 "pose": {"joints": [0.0, 0.1, 0.2]},
                 "score": {
-                    "withinReach": True,
-                    "visible": True,
-                    "ikSolvable": True,
-                    "interferenceFree": True,
-                    "graspable": True,
                     "objectiveScores": {"reach_margin": 0.8},
                     "totalScore": 0.8,
                 },
@@ -251,11 +245,6 @@ def test_schema_rejects_unnormalized_objective_score():
             {
                 "rank": 1,
                 "score": {
-                    "withinReach": True,
-                    "visible": True,
-                    "ikSolvable": True,
-                    "interferenceFree": True,
-                    "graspable": True,
                     "objectiveScores": {"reach_margin": 1.5},
                     "totalScore": 1.5,
                 },

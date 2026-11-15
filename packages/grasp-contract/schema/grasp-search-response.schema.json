@@ -20,33 +20,11 @@
     "diagnostics": {
       "type": "object",
       "additionalProperties": false,
-      "description": "Solver-decided facts about the search as a whole (the rejection funnel), so a client can explain an empty or thin result. Contract v4 (ADR-081) widens the funnel to the three validation domains -- visible (Vision) / reachable (Path: reach, IK, interference) / graspable (Grasp). Invariant: candidatesGenerated = rejectedByReach + rejectedByVisibility + rejectedByIk + rejectedByInterference + rejectedByGrasp + feasible (stages are exclusive; the filter short-circuits in the engine's measured cheapest-first order: reach -> IK -> grasp -> visibility -> interference, which decides which single stage a multiply-infeasible candidate is attributed to). Requests that declare no camera / no gripper always report 0 for the corresponding rejection stage. Presentation (wording, colors, meters, ladder-risk mapping, suggestions) is derived client-side and never carried here. Contract v8 (ADR-157) splits rejectedByInterference by motion phase (interferencePhases) and can carry an all-phase analysis (interferenceAnalysis). Contract v10 (ADR-158 PR1) adds the arm measured along the approach / lift paths to the all-phase analysis (interferenceAnalysis.armPath) -- measured, never counted as a rejection. Contract v11 (ADR-158 replay stage) adds, per returned candidate, the samples the judgement used (interferenceAnalysis.replays) -- progress within a phase, never seconds or a frame rate.",
+      "description": "Solver-decided facts about the search as a whole, so a client can explain an empty or thin result (contract v13, ADR-172). Invariants: `stages` lists every stage once in judging order; for judged stages entered(next) = entered - rejected, and the last survivors = feasible. `bySource` rows partition the search: candidatesGenerated, feasible and each stage's rejected sum to the whole (a stage judged in the whole is judged in every row). A stage the request did not ask is `notAsked` with no counts.",
       "properties": {
         "candidatesGenerated": {
           "type": "integer",
           "minimum": 0
-        },
-        "rejectedByReach": {
-          "type": "integer",
-          "minimum": 0
-        },
-        "rejectedByVisibility": {
-          "type": "integer",
-          "minimum": 0,
-          "description": "Rejected because the declared camera cannot see the grasp point (occluded sightline or outside the field of view). Always 0 when the request declares no camera."
-        },
-        "rejectedByIk": {
-          "type": "integer",
-          "minimum": 0
-        },
-        "rejectedByInterference": {
-          "type": "integer",
-          "minimum": 0
-        },
-        "rejectedByGrasp": {
-          "type": "integer",
-          "minimum": 0,
-          "description": "Rejected by the geometric grasp gate of the declared gripper (opening width / finger clearance / contact-pair existence). Always 0 when the request declares no gripper."
         },
         "feasible": {
           "type": "integer",
@@ -58,63 +36,26 @@
           "minimum": 0,
           "description": "Candidates actually included in candidates[] (= min(feasible among the set the strategy returns, topN)). Without grasp specs, or under `score` order, that set is every feasible candidate; under `priority` it is only the first spec with a feasible candidate (ADR-152 D5)."
         },
-        "reachNearestMiss": {
-          "type": [
-            "number",
-            "null"
-          ],
-          "minimum": 0,
-          "description": "Smallest distance by which a reach-rejected candidate missed the reachable shell (same length unit as the request geometry). null when nothing was rejected by reach."
+        "stages": {
+          "$ref": "#/$defs/stageList"
         },
-        "occlusionNearestMiss": {
-          "type": [
-            "number",
-            "null"
-          ],
-          "minimum": 0,
-          "description": "Smallest occlusion depth among visibility-rejected candidates (how deep the most-blocking obstacle cuts the closest-to-visible sightline; same length unit as the request geometry). null when no visibility rejection has a measurable occlusion depth (e.g. only outside-FOV rejections, or none at all)."
-        },
-        "graspNearestMiss": {
-          "description": "How close the best grasp-rejected candidate came, as a CLOSED KIND-DISCRIMINATED union (ADR-118, contract v5). Replaces v4 `openingNearestMiss`, whose name and unit assumed a parallel jaw: a suction cup misses by a seal-patch shortfall, not by an opening width, and reporting one as the other would have the client draw a meter labelled in the wrong quantity. null when no grasp rejection has a measurable miss (e.g. only contact-pair-missing rejections, or none at all), and always null when the request declares no gripper. `kind` is the discriminator and each branch is closed -- field presence is implied by kind, never optional. STRUCTURE (DEF-029, 2026-09-15): the `null` case sits OUTSIDE the discriminated union rather than as a third branch beside the two kinds. Semantically identical -- exactly the same instances validate -- but `null` was never a `kind`, and expressing it as one made the schema uncompilable under ajv strict (`discriminator` requires `type: object`, which a nullable union cannot declare). That is why this package's own test lane could not run.",
-          "oneOf": [
-            {
-              "type": "null"
-            },
-            {
-              "$ref": "#/$defs/graspMiss"
-            }
-          ]
-        },
-        "graspSpecs": {
+        "bySource": {
           "type": "array",
-          "description": "Per declared grasp spec, in request order, how many candidates it generated and how many passed every stage (ADR-152 D4, contract v7). EVERY sent spec has a row, including the ones whose candidates the strategy did not return -- a spec that was not returned and a spec that had nothing are different facts (原則 #31). Empty when the request sent no spec. Per-stage rejections per spec are not carried (deferred).",
           "items": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "id": {
-                "type": "string",
-                "minLength": 1
-              },
-              "candidatesGenerated": {
-                "type": "integer",
-                "minimum": 0
-              },
-              "feasible": {
-                "type": "integer",
-                "minimum": 0
-              }
-            },
-            "required": [
-              "id",
-              "candidatesGenerated",
-              "feasible"
-            ]
-          }
+            "$ref": "#/$defs/sourceRow"
+          },
+          "description": "One row per declared grasp spec (request order, including specs that generated nothing or were not returned), then one derived row when derived candidates were generated (no specs, or the derived fallback ran). The rows sum to the whole (ADR-172 D4)."
+        },
+        "fallbackRisks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/fallbackRisk"
+          },
+          "description": "Deepest first. Empty when no asked domain rejected anything."
         },
         "interferencePhases": {
           "type": "array",
-          "description": "Interference broken down by MOTION PHASE (ADR-157 D2/D3, contract v8), EXACTLY one row per phase in motion order: transit, approach, close, lift, transport, place. A phase is `evaluated` or `unevaluated` purely from the request's declarations (never per candidate). An evaluated row's `rejected` counts the candidates whose FIRST colliding phase it was (a candidate is attributed to the earliest phase it hits -- closing is only asked of a hand that got in). Invariant: the sum of `rejected` over evaluated rows = rejectedByInterference. An unevaluated row carries a closed `reason` and NO `rejected` -- 0 and not-judged are the same number otherwise (ADR-120). `notYetDecided` marks phases the solver has no method for yet (transit/transport/place); the rest name the missing declaration.",
+          "description": "Interference broken down by MOTION PHASE (ADR-157 D2/D3, contract v8), EXACTLY one row per phase in motion order: transit, approach, close, lift, transport, place. A phase is `evaluated` or `unevaluated` purely from the request's declarations (never per candidate). An evaluated row's `rejected` counts the candidates whose FIRST colliding phase it was (a candidate is attributed to the earliest phase it hits -- closing is only asked of a hand that got in). Invariant: the sum of `rejected` over evaluated rows = the interference stage's `rejected` (diagnostics.stages). An unevaluated row carries a closed `reason` and NO `rejected` -- 0 and not-judged are the same number otherwise (ADR-120). `notYetDecided` marks phases the solver has no method for yet (transit/transport/place); the rest name the missing declaration.",
           "minItems": 6,
           "maxItems": 6,
           "items": {
@@ -128,17 +69,11 @@
       },
       "required": [
         "candidatesGenerated",
-        "rejectedByReach",
-        "rejectedByVisibility",
-        "rejectedByIk",
-        "rejectedByInterference",
-        "rejectedByGrasp",
         "feasible",
         "returned",
-        "reachNearestMiss",
-        "occlusionNearestMiss",
-        "graspNearestMiss",
-        "graspSpecs",
+        "stages",
+        "bySource",
+        "fallbackRisks",
         "interferencePhases",
         "interferenceAnalysis"
       ]
@@ -266,24 +201,9 @@
     },
     "scoreBreakdown": {
       "type": "object",
-      "description": "Per-candidate score breakdown explaining why a pose ranked where it did. Contract v4 (ADR-081): the five booleans mirror the domain-staged filter (visible = Vision domain, withinReach/ikSolvable/interferenceFree = Path domain, graspable = Grasp domain). A returned candidate passed every stage, so all five are true; `visible` / `graspable` are vacuously true when the request declared no camera / no gripper (the request itself carries which case applies). Contract v6 (ADR-135) adds `reachSolution`: the joint configuration the solver decided, so a client can DRAW the reaching arm instead of only reading a boolean. `ikSolvable` stays -- the skeleton is an additional way to confirm reach, not a replacement for the flag.",
+      "description": "Per-candidate score breakdown explaining why a pose ranked where it did. Contract v13 (ADR-172 D5) dropped the five stage booleans: a returned candidate passed every stage, so they were always true, and visible/graspable were true even when nobody asked. Stage facts live in diagnostics.stages.",
       "additionalProperties": false,
       "properties": {
-        "withinReach": {
-          "type": "boolean"
-        },
-        "visible": {
-          "type": "boolean"
-        },
-        "ikSolvable": {
-          "type": "boolean"
-        },
-        "interferenceFree": {
-          "type": "boolean"
-        },
-        "graspable": {
-          "type": "boolean"
-        },
         "reachSolution": {
           "$ref": "#/$defs/reachSolution"
         },
@@ -303,51 +223,8 @@
         }
       },
       "required": [
-        "withinReach",
-        "visible",
-        "ikSolvable",
-        "interferenceFree",
-        "graspable",
         "totalScore",
         "reachSolution"
-      ]
-    },
-    "openingMiss": {
-      "type": "object",
-      "description": "Parallel jaw: the smallest amount by which the jaws failed to span the object.",
-      "additionalProperties": false,
-      "properties": {
-        "kind": {
-          "const": "opening"
-        },
-        "shortfall": {
-          "type": "number",
-          "minimum": 0,
-          "description": "Required width minus the jaw max opening (same length unit as the request geometry)."
-        }
-      },
-      "required": [
-        "kind",
-        "shortfall"
-      ]
-    },
-    "sealPatchMiss": {
-      "type": "object",
-      "description": "Suction cup: the smallest amount by which the sealable flat patch fell short of the cup.",
-      "additionalProperties": false,
-      "properties": {
-        "kind": {
-          "const": "sealPatch"
-        },
-        "shortfall": {
-          "type": "number",
-          "minimum": 0,
-          "description": "Cup diameter minus the diameter of the flat-enough patch found at the contact point (same length unit as the request geometry)."
-        }
-      },
-      "required": [
-        "kind",
-        "shortfall"
       ]
     },
     "reachSolution": {
@@ -374,13 +251,7 @@
           "const": "solved"
         },
         "joints": {
-          "type": "array",
-          "description": "Joint angles in RADIANS, in the chain order of the declared `robot.kinematics` (base to flange). Exactly six -- the closed form is derived for that exact structure, so a different count is a different arm.",
-          "items": {
-            "type": "number"
-          },
-          "minItems": 6,
-          "maxItems": 6
+          "$ref": "#/$defs/jointVector6"
         }
       },
       "required": [
@@ -401,21 +272,6 @@
         "kind"
       ]
     },
-    "graspMiss": {
-      "type": "object",
-      "description": "The measured miss of the best grasp-rejected candidate, as a CLOSED KIND-DISCRIMINATED union (ADR-118). `kind` is the discriminator and each branch is closed -- field presence is implied by kind, never optional.",
-      "oneOf": [
-        {
-          "$ref": "#/$defs/openingMiss"
-        },
-        {
-          "$ref": "#/$defs/sealPatchMiss"
-        }
-      ],
-      "discriminator": {
-        "propertyName": "kind"
-      }
-    },
     "interferencePhase": {
       "description": "One motion phase's interference row (ADR-157 D2). `kind` is the discriminator; each branch is closed.",
       "type": "object",
@@ -429,14 +285,7 @@
           "additionalProperties": false,
           "properties": {
             "phase": {
-              "enum": [
-                "transit",
-                "approach",
-                "close",
-                "lift",
-                "transport",
-                "place"
-              ]
+              "$ref": "#/$defs/phase"
             },
             "kind": {
               "const": "evaluated"
@@ -459,14 +308,7 @@
           "additionalProperties": false,
           "properties": {
             "phase": {
-              "enum": [
-                "transit",
-                "approach",
-                "close",
-                "lift",
-                "transport",
-                "place"
-              ]
+              "$ref": "#/$defs/phase"
             },
             "kind": {
               "const": "unevaluated"
@@ -529,57 +371,24 @@
                 "additionalProperties": false,
                 "properties": {
                   "phase": {
-                    "enum": [
-                      "transit",
-                      "approach",
-                      "close",
-                      "lift",
-                      "transport",
-                      "place"
-                    ]
-                  },
-                  "collided": {
-                    "type": "integer",
-                    "minimum": 0,
-                    "description": "Candidates that hit something in this phase. NOT exclusive across phases."
+                    "$ref": "#/$defs/phase"
                   },
                   "hits": {
                     "type": "array",
-                    "description": "Per (part, obstacle), how many candidates hit it in this phase; most first.",
+                    "description": "Per (part, obstacle), how many candidates touched it in this phase; most first.",
                     "items": {
-                      "type": "object",
-                      "additionalProperties": false,
-                      "properties": {
-                        "part": {
-                          "enum": [
-                            "tcpPath",
-                            "arm",
-                            "hand",
-                            "held"
-                          ],
-                          "description": "tcpPath = the TCP's path (stands in for an undeclared hand shape); held = the grasped object carried from lift on."
-                        },
-                        "obstacleIndex": {
-                          "type": "integer",
-                          "minimum": 0,
-                          "description": "Index into the request's obstacles[]. Naming it is the sender's job -- names never ride the wire."
-                        },
-                        "candidates": {
-                          "type": "integer",
-                          "minimum": 1
-                        }
-                      },
-                      "required": [
-                        "part",
-                        "obstacleIndex",
-                        "candidates"
-                      ]
+                      "$ref": "#/$defs/obstacleTally"
                     }
+                  },
+                  "touched": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "Candidates that touched something in this phase. OVERLAPPING across phases (a candidate can touch in several) -- counts that do not add up to a whole are named `touched`; counts that do are named `rejected` (ADR-172 D7)."
                   }
                 },
                 "required": [
                   "phase",
-                  "collided",
+                  "touched",
                   "hits"
                 ]
               }
@@ -607,25 +416,6 @@
             "rejectedReplays"
           ]
         }
-      ]
-    },
-    "armPathHit": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "obstacleIndex": {
-          "type": "integer",
-          "minimum": 0,
-          "description": "Index into the request's obstacles[]."
-        },
-        "candidates": {
-          "type": "integer",
-          "minimum": 1
-        }
-      },
-      "required": [
-        "obstacleIndex",
-        "candidates"
       ]
     },
     "armPath": {
@@ -674,7 +464,7 @@
                   "type": "array",
                   "description": "Per obstacle the arm (links + tool segment) touched, how many candidates; most first.",
                   "items": {
-                    "$ref": "#/$defs/armPathHit"
+                    "$ref": "#/$defs/obstacleTally"
                   }
                 }
               },
@@ -715,7 +505,7 @@
                     "type": "array",
                     "description": "Per obstacle the arm (links + tool segment) touched, how many candidates; most first.",
                     "items": {
-                      "$ref": "#/$defs/armPathHit"
+                      "$ref": "#/$defs/obstacleTally"
                     }
                   }
                 },
@@ -807,11 +597,7 @@
               "const": "judged"
             },
             "joints": {
-              "type": "array",
-              "items": {
-                "type": "number"
-              },
-              "description": "Joint values in chain order."
+              "$ref": "#/$defs/jointVector6"
             },
             "obstacles": {
               "type": "array",
@@ -838,11 +624,7 @@
               "const": "measured"
             },
             "joints": {
-              "type": "array",
-              "items": {
-                "type": "number"
-              },
-              "description": "Joint values in chain order."
+              "$ref": "#/$defs/jointVector6"
             },
             "obstacles": {
               "type": "array",
@@ -997,25 +779,13 @@
       "additionalProperties": false,
       "properties": {
         "phase": {
-          "enum": [
-            "transit",
-            "approach",
-            "close",
-            "lift",
-            "transport",
-            "place"
-          ],
+          "$ref": "#/$defs/phase",
           "description": "The phase the rejection was attributed to (the first phase it hit, ADR-157 D3)."
         },
         "obstacleIndex": {
           "type": "integer",
           "minimum": 0,
           "description": "Index into the request's obstacles[] hit in that phase. A candidate that hit several obstacles counts in each of their groups."
-        },
-        "rejected": {
-          "type": "integer",
-          "minimum": 1,
-          "description": "How many rejected candidates this group counted (not exclusive across groups)."
         },
         "totalScore": {
           "type": "number",
@@ -1035,17 +805,384 @@
           "items": {
             "$ref": "#/$defs/replayPhase"
           }
+        },
+        "touched": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "How many rejected candidates this group counted. OVERLAPPING across groups (a candidate that touched several obstacles counts in each) -- hence `touched`, not `rejected` (ADR-172 D7)."
         }
       },
       "required": [
         "phase",
         "obstacleIndex",
-        "rejected",
+        "touched",
         "totalScore",
         "pose",
         "reachSolution",
         "phases"
       ]
+    },
+    "stage": {
+      "enum": [
+        "reach",
+        "ik",
+        "grasp",
+        "visibility",
+        "interference"
+      ],
+      "description": "A domain-staged filter stage (ADR-081), the one name each stage has on the wire (ADR-172 D1)."
+    },
+    "phase": {
+      "enum": [
+        "transit",
+        "approach",
+        "close",
+        "lift",
+        "transport",
+        "place"
+      ],
+      "description": "A motion phase (ADR-157), the one name each phase has on the wire (ADR-172 D1)."
+    },
+    "jointVector6": {
+      "type": "array",
+      "items": {
+        "type": "number"
+      },
+      "minItems": 6,
+      "maxItems": 6,
+      "description": "Joint angles in RADIANS, in the chain order of the declared robot.kinematics (base to flange). Exactly six -- the closed form is derived for that structure."
+    },
+    "nearestMiss": {
+      "type": "object",
+      "description": "How close the closest rejection of a judged stage came (ADR-172 D3), a CLOSED KIND-DISCRIMINATED union. `measured` = the shortfall in the stage's own quantity; `unmeasurable` = there were rejections but none had a measurable shortfall (the reasons say why); `noRejection` = the stage rejected nothing; `noQuantity` = the stage has no shortfall quantity (IK, interference). Never null -- null used to mean two of these at once.",
+      "discriminator": {
+        "propertyName": "kind"
+      },
+      "oneOf": [
+        {
+          "type": "object",
+          "title": "missMeasured",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "quantity",
+            "value"
+          ],
+          "properties": {
+            "kind": {
+              "const": "measured"
+            },
+            "quantity": {
+              "enum": [
+                "reachDistance",
+                "occlusionDepth",
+                "openingShortfall",
+                "sealPatchShortfall"
+              ]
+            },
+            "value": {
+              "type": "number",
+              "minimum": 0,
+              "description": "Same length unit as the request geometry."
+            }
+          }
+        },
+        {
+          "type": "object",
+          "title": "missUnmeasurable",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "reasons"
+          ],
+          "properties": {
+            "kind": {
+              "const": "unmeasurable"
+            },
+            "reasons": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": {
+                "enum": [
+                  "outsideFieldOfView",
+                  "palmBelowSurface",
+                  "noContactPair"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "title": "missNoRejection",
+          "additionalProperties": false,
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "const": "noRejection"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "title": "missNoQuantity",
+          "additionalProperties": false,
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "const": "noQuantity"
+            }
+          }
+        }
+      ]
+    },
+    "stageVerdict": {
+      "type": "object",
+      "description": "One stage of the domain-staged filter (ADR-172 D2), a CLOSED KIND-DISCRIMINATED union. `judged` = the request asked this stage: `entered` candidates reached it (they passed every earlier stage) and it rejected `rejected` of them. `notAsked` = the request did not declare what this stage needs (a camera / a gripper); it carries NO counts -- a judged 0 and an unasked stage are different facts (原則 #31).",
+      "discriminator": {
+        "propertyName": "kind"
+      },
+      "oneOf": [
+        {
+          "type": "object",
+          "title": "stageJudged",
+          "additionalProperties": false,
+          "required": [
+            "stage",
+            "kind",
+            "entered",
+            "rejected",
+            "nearestMiss"
+          ],
+          "properties": {
+            "stage": {
+              "$ref": "#/$defs/stage"
+            },
+            "kind": {
+              "const": "judged"
+            },
+            "entered": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "rejected": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "nearestMiss": {
+              "$ref": "#/$defs/nearestMiss"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "title": "stageNotAsked",
+          "additionalProperties": false,
+          "required": [
+            "stage",
+            "kind",
+            "reason"
+          ],
+          "properties": {
+            "stage": {
+              "$ref": "#/$defs/stage"
+            },
+            "kind": {
+              "const": "notAsked"
+            },
+            "reason": {
+              "enum": [
+                "cameraUndeclared",
+                "gripperUndeclared"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "stageList": {
+      "type": "array",
+      "minItems": 5,
+      "maxItems": 5,
+      "items": {
+        "$ref": "#/$defs/stageVerdict"
+      },
+      "description": "Every stage exactly once, in the order the engine judged them (it short-circuits in this order, so a stage's `entered` is the previous judged stage's `entered` minus its `rejected`; the last stage's survivors are `feasible`)."
+    },
+    "sourceRow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source",
+        "candidatesGenerated",
+        "feasible",
+        "stages"
+      ],
+      "description": "Where a group of candidates came from (ADR-172 D4): one declared grasp spec, or the derived surface samples. Rows PARTITION the search: their candidatesGenerated, feasible and per-stage rejected each sum to the whole.",
+      "properties": {
+        "source": {
+          "type": "object",
+          "discriminator": {
+            "propertyName": "kind"
+          },
+          "oneOf": [
+            {
+              "type": "object",
+              "title": "sourceSpec",
+              "additionalProperties": false,
+              "required": [
+                "kind",
+                "id"
+              ],
+              "properties": {
+                "kind": {
+                  "const": "spec"
+                },
+                "id": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            },
+            {
+              "type": "object",
+              "title": "sourceDerived",
+              "additionalProperties": false,
+              "required": [
+                "kind"
+              ],
+              "properties": {
+                "kind": {
+                  "const": "derived"
+                }
+              }
+            }
+          ]
+        },
+        "candidatesGenerated": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "feasible": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "stages": {
+          "$ref": "#/$defs/stageList"
+        }
+      }
+    },
+    "fallbackRisk": {
+      "type": "object",
+      "description": "How deep operations would likely have to fall back (ADR-081's ladder), DECIDED BY THE ENGINE (ADR-172 D8). An empirical forecast, not an assurance. `domain` = one domain's rejections (its rate is the product of its judged stages' pass rates over the candidates that ENTERED them); `together` = nothing is feasible and two or more domains reject (the layout itself). A domain made only of stages nobody asked yields no risk. Wording is the client's, looked up from `reason`.",
+      "discriminator": {
+        "propertyName": "kind"
+      },
+      "oneOf": [
+        {
+          "type": "object",
+          "title": "riskDomain",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "domain",
+            "level",
+            "reason"
+          ],
+          "properties": {
+            "kind": {
+              "const": "domain"
+            },
+            "domain": {
+              "enum": [
+                "vision",
+                "path",
+                "grasp"
+              ]
+            },
+            "level": {
+              "type": "integer",
+              "minimum": 3,
+              "maximum": 5
+            },
+            "reason": {
+              "enum": [
+                "noneSeen",
+                "someUnseen",
+                "noneReachable",
+                "someUnreachable",
+                "noneClosable",
+                "someUnclosable"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "title": "riskTogether",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "level",
+            "domains"
+          ],
+          "properties": {
+            "kind": {
+              "const": "together"
+            },
+            "level": {
+              "const": 6
+            },
+            "domains": {
+              "type": "array",
+              "minItems": 2,
+              "uniqueItems": true,
+              "items": {
+                "enum": [
+                  "vision",
+                  "path",
+                  "grasp"
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    "obstacleTally": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "part",
+        "obstacleIndex",
+        "candidates"
+      ],
+      "description": "How many candidates a part touched an obstacle with (ADR-172 D6 -- the one tally type).",
+      "properties": {
+        "part": {
+          "enum": [
+            "tcpPath",
+            "arm",
+            "hand",
+            "held"
+          ],
+          "description": "tcpPath = the TCP's path (stands in for an undeclared hand shape); held = the grasped object carried from lift on."
+        },
+        "obstacleIndex": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Index into the request's obstacles[]. Naming it is the sender's job -- names never ride the wire."
+        },
+        "candidates": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
     }
   }
 }

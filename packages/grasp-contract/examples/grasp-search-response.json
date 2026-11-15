@@ -1,5 +1,5 @@
 {
-  "contractVersion": 12,
+  "contractVersion": 13,
   "candidates": [
     {
       "rank": 1,
@@ -21,11 +21,6 @@
         }
       },
       "score": {
-        "withinReach": true,
-        "visible": true,
-        "ikSolvable": true,
-        "interferenceFree": true,
-        "graspable": true,
         "objectiveScores": {
           "clearance": 0.9,
           "manipulability": 0.7
@@ -60,11 +55,6 @@
         ]
       },
       "score": {
-        "withinReach": true,
-        "visible": true,
-        "ikSolvable": true,
-        "interferenceFree": true,
-        "graspable": true,
         "totalScore": 0.55,
         "reachSolution": {
           "kind": "undeclared"
@@ -74,20 +64,143 @@
   ],
   "diagnostics": {
     "candidatesGenerated": 8,
-    "rejectedByReach": 2,
-    "rejectedByVisibility": 1,
-    "rejectedByIk": 0,
-    "rejectedByInterference": 1,
-    "rejectedByGrasp": 2,
     "feasible": 2,
     "returned": 2,
-    "reachNearestMiss": 0.031,
-    "occlusionNearestMiss": 0.008,
-    "graspNearestMiss": {
-      "kind": "opening",
-      "shortfall": 0.012
-    },
-    "graspSpecs": [],
+    "stages": [
+      {
+        "stage": "reach",
+        "kind": "judged",
+        "entered": 8,
+        "rejected": 2,
+        "nearestMiss": {
+          "kind": "measured",
+          "quantity": "reachDistance",
+          "value": 0.031
+        }
+      },
+      {
+        "stage": "ik",
+        "kind": "judged",
+        "entered": 6,
+        "rejected": 0,
+        "nearestMiss": {
+          "kind": "noQuantity"
+        }
+      },
+      {
+        "stage": "grasp",
+        "kind": "judged",
+        "entered": 6,
+        "rejected": 2,
+        "nearestMiss": {
+          "kind": "measured",
+          "quantity": "openingShortfall",
+          "value": 0.012
+        }
+      },
+      {
+        "stage": "visibility",
+        "kind": "judged",
+        "entered": 4,
+        "rejected": 1,
+        "nearestMiss": {
+          "kind": "measured",
+          "quantity": "occlusionDepth",
+          "value": 0.008
+        }
+      },
+      {
+        "stage": "interference",
+        "kind": "judged",
+        "entered": 3,
+        "rejected": 1,
+        "nearestMiss": {
+          "kind": "noQuantity"
+        }
+      }
+    ],
+    "bySource": [
+      {
+        "source": {
+          "kind": "derived"
+        },
+        "candidatesGenerated": 8,
+        "feasible": 2,
+        "stages": [
+          {
+            "stage": "reach",
+            "kind": "judged",
+            "entered": 8,
+            "rejected": 2,
+            "nearestMiss": {
+              "kind": "measured",
+              "quantity": "reachDistance",
+              "value": 0.031
+            }
+          },
+          {
+            "stage": "ik",
+            "kind": "judged",
+            "entered": 6,
+            "rejected": 0,
+            "nearestMiss": {
+              "kind": "noQuantity"
+            }
+          },
+          {
+            "stage": "grasp",
+            "kind": "judged",
+            "entered": 6,
+            "rejected": 2,
+            "nearestMiss": {
+              "kind": "measured",
+              "quantity": "openingShortfall",
+              "value": 0.012
+            }
+          },
+          {
+            "stage": "visibility",
+            "kind": "judged",
+            "entered": 4,
+            "rejected": 1,
+            "nearestMiss": {
+              "kind": "measured",
+              "quantity": "occlusionDepth",
+              "value": 0.008
+            }
+          },
+          {
+            "stage": "interference",
+            "kind": "judged",
+            "entered": 3,
+            "rejected": 1,
+            "nearestMiss": {
+              "kind": "noQuantity"
+            }
+          }
+        ]
+      }
+    ],
+    "fallbackRisks": [
+      {
+        "kind": "domain",
+        "domain": "path",
+        "level": 4,
+        "reason": "someUnreachable"
+      },
+      {
+        "kind": "domain",
+        "domain": "grasp",
+        "level": 4,
+        "reason": "someUnclosable"
+      },
+      {
+        "kind": "domain",
+        "domain": "vision",
+        "level": 3,
+        "reason": "someUnseen"
+      }
+    ],
     "interferencePhases": [
       {
         "phase": "transit",
@@ -102,7 +215,7 @@
       {
         "phase": "close",
         "kind": "unevaluated",
-        "reason": "gripperUndeclared"
+        "reason": "handShapeUndeclared"
       },
       {
         "phase": "lift",
