@@ -2,15 +2,13 @@
  * GraspLadderMath — domain KPIs and the operation-fallback ladder-risk lookup
  * (ADR-081 Decision 3, presentation layer).
  *
- * SCOPE / GOVERNANCE (PHILOSOPHY #29 / ADR-081):
- * - Domain KPIs are DETERMINISTIC pure derivations over the contract-v4
- *   diagnostics facts (visibility rate = 1 − rejectedByVisibility/generated,
- *   etc.). They are derived values, never a second source (kernel §1.1).
- * - The KPI → ladder-risk mapping is a TABLE LOOKUP owned by this one module
- *   (no per-call-site patches — PHILOSOPHY, 真実の源は一つ). It is an
- *   empirical forecast of "how deep operations would have to fall back", NOT
- *   an assurance case (ADR-081 Consequences), and it re-implements no solver
- *   judgment — every input is a wire fact.
+ * SCOPE / GOVERNANCE (PHILOSOPHY #29 / ADR-081 → ADR-172 D8):
+ * - Domain KPIs are read from the wire's stage verdicts (contract v13): each
+ *   judged stage carries `entered` and `rejected`, a stage nobody asked carries
+ *   no counts. They are derived values, never a second source (kernel §1.1).
+ * - WHICH fallback risk applies is decided by core/ (`diagnostics.fallbackRisks`
+ *   — curated judgement is an idea, ADR-146 axis 1). Until ADR-172 the rule
+ *   table lived here; this module now only words the engine's reasons and levels.
  * - The ladder L1..L6 is an ordered cost label set, not a state machine
  *   (ADR-081 Lens notes); executing fallbacks is the runtime program's job and
  *   out of this app's scope. L1/L2 already have homes (topN fallback, the
@@ -20,8 +18,7 @@
  *
  * @typedef {import('../../server/src/grasp/contract.response').GraspSearchResponse['diagnostics']} GraspDiagnostics
  */
-import { isFunnel } from './GraspFunnelMath.js'
-import { requestAsksVisibility } from '../domain/visionCamera.js'
+import { isFunnel, stageOf } from './GraspFunnelMath.js'
 
 /**
  * The operation-fallback ladder (ADR-081 Context). Levels are ordered cost
@@ -36,85 +33,47 @@ export const LADDER = Object.freeze({
   6: Object.freeze({ level: 6, cost: 'weeks', label: 'redesign the layout / cell' }),
 })
 
-/**
- * Which gates the request asked (the camera / gripper declarations). A gate
- * nobody asked has no rate: its rejection count is 0 because nothing was
- * judged, not because everything passed. Read from the request, never assumed.
- *
- * @param {object|null|undefined} request  the searched request (`{graspSearch}`)
- * @returns {{vision: boolean, grasp: boolean}|null}  null when the request is unknown
- */
-export function askedGates(request) {
-  const gs = request?.graspSearch
-  if (!gs || typeof gs !== 'object') return null
-  return { vision: requestAsksVisibility(gs), grasp: gs.gripper != null }
-}
+/** The stages each domain is made of (display grouping — the engine decides the risk). */
+export const DOMAIN_STAGES = Object.freeze({
+  vision: Object.freeze(['visibility']),
+  path: Object.freeze(['reach', 'ik', 'interference']),
+  grasp: Object.freeze(['grasp']),
+})
 
 /**
- * Deterministic per-domain KPIs from the v4 diagnostics facts.
+ * Per-domain KPIs read from the wire's stage verdicts (contract v13, ADR-172).
  *
- * **A rate is the share of the candidates that REACHED the stage which it let
- * through** (2026-11-11 — it used to be a share of every generated candidate).
- * The stages short-circuit in the order reach → IK → grasp → visibility →
- * interference, so a stage only judges what the earlier ones passed; dividing
- * by everything generated read "6 of 6 unseen after reach dropped 30" as
- * "83 % seen". `entered` is derived from the exclusive counts in that order.
- * The path domain (reach, IK, interference — not adjacent in the order) is the
- * product of its three stages' pass rates.
- *
- * A domain whose gate was not asked (no camera / no gripper declared) is
- * `{asked: false}` with no rate — never a fabricated 100 % (PHILOSOPHY #11 /
- * #31; the same split the motion phases make between judged and not judged).
- * `null` when the input is not a v4 funnel, nothing was generated, or which
- * gates were asked is unknown.
+ * A rate is the share of the candidates that ENTERED a stage which it let
+ * through — the engine now puts `entered` on the wire, so nothing is derived
+ * from the stage order here. The path domain (reach, IK, interference — not
+ * adjacent) is the product of its judged stages' pass rates. A domain whose
+ * stages nobody asked is `{asked: false}` — never a fabricated 100 %
+ * (PHILOSOPHY #11 / #31). `null` when the input is not a v13 funnel or nothing
+ * was generated.
  *
  * @param {GraspDiagnostics|null|undefined} d
- * @param {{vision: boolean, grasp: boolean}|null} asked  from `askedGates(request)`
- * @returns {null | {
- *   generated: number, feasible: number, returned: number, feasibleRate: number,
- *   vision:  { asked: boolean, entered?: number, rejected?: number, rate?: number, nearestMiss?: number|null },
- *   path:    { asked: true, rejected: number, rate: number, nearestMiss: number|null },
- *   grasp:   { asked: boolean, entered?: number, rejected?: number, rate?: number, nearestMiss?: number|null },
- * }}
  */
-export function domainKpis(d, asked) {
-  if (!isFunnel(d) || d.candidatesGenerated <= 0 || !asked) return null
-  const generated = d.candidatesGenerated
-  const miss = (v) => (typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : null)
-  // Who reached each stage, in the engine's order (exclusive counts — ADR-081).
-  const enteredReach = generated
-  const enteredIk = enteredReach - d.rejectedByReach
-  const enteredGrasp = enteredIk - d.rejectedByIk
-  const enteredVisibility = enteredGrasp - d.rejectedByGrasp
-  const enteredInterference = enteredVisibility - d.rejectedByVisibility
-  const pass = (rejected, entered) => (entered > 0 ? 1 - rejected / entered : null)
-  const stage = (isAsked, rejected, entered, nearestMiss) => (isAsked
-    ? { asked: true, entered, rejected, rate: pass(rejected, entered), nearestMiss: miss(nearestMiss) }
-    : { asked: false })
-  const pathRates = [
-    pass(d.rejectedByReach, enteredReach),
-    pass(d.rejectedByIk, enteredIk),
-    pass(d.rejectedByInterference, enteredInterference),
-  ]
+export function domainKpis(d) {
+  if (!isFunnel(d) || d.candidatesGenerated <= 0) return null
+  const domain = (stages) => {
+    const judged = stages.map(k => stageOf(d, k)).filter(v => v?.kind === 'judged')
+    if (judged.length === 0) return { asked: false }
+    const reached = judged.filter(v => v.entered > 0)
+    return {
+      asked: true,
+      entered: judged[0].entered,
+      rejected: judged.reduce((n, v) => n + v.rejected, 0),
+      rate: reached.length ? reached.reduce((r, v) => r * (1 - v.rejected / v.entered), 1) : null,
+    }
+  }
   return {
-    generated,
+    generated: d.candidatesGenerated,
     feasible: d.feasible,
     returned: d.returned,
-    feasibleRate: d.feasible / generated,
-    vision: stage(asked.vision, d.rejectedByVisibility, enteredVisibility, d.occlusionNearestMiss),
-    path: {
-      asked: true,
-      rejected: d.rejectedByReach + d.rejectedByIk + d.rejectedByInterference,
-      // A stage nobody reached contributes nothing (its pass rate is unknown, not 1).
-      rate: pathRates.some(r => r !== null)
-        ? pathRates.filter(r => r !== null).reduce((x, y) => x * y, 1)
-        : null,
-      nearestMiss: miss(d.reachNearestMiss),
-    },
-    // Contract v5 (ADR-118): the grasp near-miss is kind-discriminated —
-    // `opening` for a jaw, `sealPatch` for a cup. The KPI only needs the
-    // magnitude; the kind is what the panel labels the meter with.
-    grasp: stage(asked.grasp, d.rejectedByGrasp, enteredGrasp, d.graspNearestMiss?.shortfall ?? null),
+    feasibleRate: d.feasible / d.candidatesGenerated,
+    vision: domain(DOMAIN_STAGES.vision),
+    path: domain(DOMAIN_STAGES.path),
+    grasp: domain(DOMAIN_STAGES.grasp),
   }
 }
 
@@ -126,57 +85,38 @@ export function rateText(domain) {
 }
 
 /**
- * The KPI → ladder-risk lookup table. Each row: which domain KPI, the
- * condition (a pure predicate over that domain's KPIs + the whole set), the
- * forecast ladder level, and the reason wording. Ordered rows; first match
- * per domain wins (total-loss rows before partial-loss rows).
+ * What each engine-decided risk reason says (display words only — WHICH reason
+ * applies is decided by core/, ADR-172 D8). Throws on an undeclared reason.
  */
-const RISK_RULES = Object.freeze([
-  // Vision: some grasp points unseen → runtime lives at L3 (re-image retries
-  // eat takt); no candidate seen at all → the camera itself must move (L5).
-  { domain: 'vision', level: 5, when: (dom) => dom.rejected > 0 && dom.rate === 0,
-    reason: 'no candidate is visible from the declared camera — camera repositioning risk' },
-  { domain: 'vision', level: 3, when: (dom) => dom.rejected > 0,
-    reason: 'some grasp points are unseen — expect recurring vision retries (takt loss)' },
-  // Path: nothing reachable/solvable/collision-free → base or jig must move
-  // (L5); partial loss → approach / retreat re-teaching territory (L4).
-  { domain: 'path', level: 5, when: (dom) => dom.rejected > 0 && dom.rate === 0,
-    reason: 'no candidate is reachable and collision-free — base / fixture repositioning risk' },
-  { domain: 'path', level: 4, when: (dom) => dom.rejected > 0,
-    reason: 'reach / IK / clearance rejections — motion parameter re-teaching risk' },
-  // Grasp: geometry can never close on the target → hardware swap (L5);
-  // partial loss → grasp-pose re-teaching (L4).
-  { domain: 'grasp', level: 5, when: (dom) => dom.rejected > 0 && dom.rate === 0,
-    reason: 'the declared gripper cannot close on any candidate — gripper swap risk' },
-  { domain: 'grasp', level: 4, when: (dom) => dom.rejected > 0,
-    reason: 'grasp-geometry rejections — grasp pose / opening re-teaching risk' },
-])
+export const RISK_REASON_TEXT = Object.freeze({
+  noneSeen:        'no candidate is visible from the declared camera — camera repositioning risk',
+  someUnseen:      'some grasp points are unseen — expect recurring vision retries (takt loss)',
+  noneReachable:   'no candidate is reachable and collision-free — base / fixture repositioning risk',
+  someUnreachable: 'reach / IK / clearance rejections — motion parameter re-teaching risk',
+  noneClosable:    'the declared gripper cannot close on any candidate — gripper swap risk',
+  someUnclosable:  'grasp-geometry rejections — grasp pose / opening re-teaching risk',
+})
 
 /**
- * Forecast ladder risks from the domain KPIs (table lookup, deterministic).
- * Returns risks sorted deepest-first; empty array when every domain is clean.
- * Adds the L6 row when the domains cannot hold simultaneously (zero feasible
- * with rejections in 2+ domains — ADR-081's "同時成立が不能" reading).
+ * The engine's fallback risks (`diagnostics.fallbackRisks`, deepest first) as
+ * display rows: the level's label and cost from the LADDER table, the reason's
+ * words. Nothing is decided here — the rows come in the engine's order.
  *
- * @param {ReturnType<typeof domainKpis>} kpis
+ * @param {GraspDiagnostics|null|undefined} d
  * @returns {{ domain: string, level: number, cost: string, label: string, reason: string }[]}
  */
-export function ladderRisks(kpis) {
-  if (!kpis) return []
-  const risks = []
-  for (const domain of ['vision', 'path', 'grasp']) {
-    if (!kpis[domain].asked) continue   // a gate nobody asked carries no risk either way
-    const rule = RISK_RULES.find((r) => r.domain === domain && r.when(kpis[domain], kpis))
-    if (rule) {
-      risks.push({ domain, level: rule.level, ...LADDER[rule.level], reason: rule.reason })
+export function ladderRisks(d) {
+  const risks = Array.isArray(d?.fallbackRisks) ? d.fallbackRisks : []
+  return risks.map((r) => {
+    const rung = LADDER[r.level]
+    if (!rung) throw new Error(`GraspLadderMath: undeclared ladder level ${r.level}`)
+    if (r.kind === 'together') {
+      return { domain: 'all', level: r.level, ...rung,
+        reason: `no pose satisfies ${r.domains.join(' + ')} together — layout redesign risk` }
     }
-  }
-  const rejectingDomains = ['vision', 'path', 'grasp'].filter((k) => kpis[k].asked && kpis[k].rejected > 0)
-  if (kpis.feasible === 0 && rejectingDomains.length >= 2) {
-    risks.push({
-      domain: 'all', level: 6, ...LADDER[6],
-      reason: `no pose satisfies ${rejectingDomains.join(' + ')} together — layout redesign risk`,
-    })
-  }
-  return risks.sort((a, b) => b.level - a.level)
+    if (r.kind !== 'domain') throw new Error(`GraspLadderMath: undeclared risk kind "${r.kind}" (ADR-172 D8)`)
+    const reason = RISK_REASON_TEXT[r.reason]
+    if (!reason) throw new Error(`GraspLadderMath: undeclared risk reason "${r.reason}" (ADR-172 D8)`)
+    return { domain: r.domain, level: r.level, ...rung, reason }
+  })
 }
