@@ -104,7 +104,8 @@ def test_grasp_search_returns_schema_conforming_ranking():
     scores = [c["score"]["totalScore"] for c in body["candidates"]]
     assert scores[0] >= scores[1]
     # camelCase の wire 形 (by_alias) で返ること。
-    assert body["candidates"][0]["score"]["ikSolvable"] is True
+    assert "ikSolvable" not in body["candidates"][0]["score"]  # v13 (ADR-172 D5)
+    assert [v["stage"] for v in body["diagnostics"]["stages"]] == ["reach", "ik", "grasp", "visibility", "interference"]
 
 
 def test_grasp_search_defaults_contract_version_when_omitted():

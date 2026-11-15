@@ -66,7 +66,12 @@ contractVersion は public スキーマの `version: "layout/x.y"` とは別系�
 # ({items, omitted}): 干渉の棄却が帰属した (相, 障害物) の組ごとに、その組で棄却された
 # 候補のうち総合スコアが最も高いもの (姿勢・関節解・各相の標本)。棄却の多い組から最大 8 件、
 # 省いた組の数を `omitted` で言う。閉じた層への必須追加なので版上げ。
-CONTRACT_VERSION = 12
+# v13: 応答を 1 つの語彙で (ADR-172)。段の判定 `stages` (judged {entered, rejected, nearestMiss}
+# / notAsked {reason}) と出どころの行 `bySource` (和 = 全体 — DEF-048) とフォールバックの
+# リスク `fallbackRisks` (core が決める) が、平らな rejectedBy* 5 つ・near-miss 3 欄・
+# graspSpecs を置き換える。返す候補の 5 つの真偽値を消す。全相分析の `collided` と棄却の組の
+# `rejected` は `touched` (重なる数) に改名、当たりを数える型は 1 つ (`obstacleTally`)。
+CONTRACT_VERSION = 13
 
 
 class ContractVersionMismatch(ValueError):

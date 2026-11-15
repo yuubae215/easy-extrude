@@ -101,28 +101,21 @@ ReachSolution = ReachSolutionSolved | ReachSolutionUndeclared
 
 
 class ScoreBreakdown(_ContractModel):
-    """1 候補のスコア内訳 (ADR-074 / 契約 v4 でドメイン 5 段, ADR-081)。
+    """1 候補のスコア内訳 (ADR-074)。
 
-    テンプレの「なぜこの姿勢か」の可視化材料。visible / graspable はリクエストが
-    camera / gripper を宣言していない場合は空虚に True (どちらだったかはリクエスト
-    宣言の有無から読める — Schema の記述と同一)。
+    契約 v13 (ADR-172 D5) で 5 段の真偽値 (withinReach / visible / ikSolvable /
+    interferenceFree / graspable) を消した — 返す候補は 5 段すべてを通っているので常に
+    true で、見える・掴めるは問うていなくても true だった (0 と問うていないの混同)。
+    段ごとの事実は診断の `stages` が言う。
     """
 
-    # ドメイン段階フィルタの結果 (5 判定。段の実行順はエンジン所有 = 安い順実測,
-    # engine/pipeline.py)。
-    within_reach: bool
-    visible: bool
-    ik_solvable: bool
-    interference_free: bool
-    graspable: bool
     # 各 objective の正規化済み (0-1) 値。キーは objective 名。
     objective_scores: dict[str, float] = Field(default_factory=dict)
     # 加重和の総合スコア (0-1 正規化値の重み付き和)。
     total_score: float = Field(ge=0.0)
     # ソルバが決定した関節配置 (契約 v6, ADR-135)。kind 判別の閉じた union で、
-    # **必須**。判別しているのは到達可否ではなく「描ける関節ベクトルが在るか」で、
-    # 到達可否は上の `ik_solvable` が既に運んでいる (返る候補は短絡フィルタを
-    # 通っているので必ず True)。
+    # **必須**。判別しているのは到達可否ではなく「描ける関節ベクトルが在るか」
+    # (返る候補は IK の段を通っているので必ず届く)。
     reach_solution: ReachSolution = Field(discriminator="kind")
 
 
@@ -142,28 +135,98 @@ class PoseCandidate(_ContractModel):
     grasp_spec_id: Optional[str]
 
 
-class GraspNearestMiss(_ContractModel):
-    """把持棄却の「あとどれだけ」を、量の種別つきで運ぶ (契約 v5, ADR-118)。
-
-    kind 判別の有界 union。`opening` は平行ジョーの開口不足、`sealPatch` は吸引の
-    シールパッチ不足で、どちらも長さだがユーザーに見せる文言もメーターの基準も違う。
-    枝を足すのは契約の版を上げる意図的行為 (ADR-060 の統治をそのまま適用)。
-    """
-
-    kind: Literal["opening", "sealPatch"]
-    shortfall: float = Field(ge=0.0)
+StageName = Literal["reach", "ik", "grasp", "visibility", "interference"]
 
 
-class GraspSpecDiagnostics(_ContractModel):
-    """把持仕様 1 つぶんの結果 (契約 v7, ADR-152 D4)。
+class MissMeasuredWire(_ContractModel):
+    """最も惜しい差を量で測れた (契約 v13, ADR-172 D3)。量の種類は閉じた列挙。"""
 
-    戦略が候補を返さなかった仕様も行を持つ — 「返さなかった」と「無かった」は別の事実
-    (原則 #31)。段ごとの棄却内訳を仕様ごとに割るのは残し。
-    """
+    kind: Literal["measured"] = "measured"
+    quantity: Literal["reachDistance", "occlusionDepth", "openingShortfall", "sealPatchShortfall"]
+    value: float = Field(ge=0.0)
 
+
+class MissUnmeasurableWire(_ContractModel):
+    """棄却はあったが、差を量で測れなかった (視野の外・パームが潜る・接触対が無い)。"""
+
+    kind: Literal["unmeasurable"] = "unmeasurable"
+    reasons: list[Literal["outsideFieldOfView", "palmBelowSurface", "noContactPair"]] = Field(min_length=1)
+
+
+class MissNoRejectionWire(_ContractModel):
+    """この段は 1 件も落としていない。"""
+
+    kind: Literal["noRejection"] = "noRejection"
+
+
+class MissNoQuantityWire(_ContractModel):
+    """この段は差の量を持たない (IK は解けたか否か、干渉は当たったか否か)。"""
+
+    kind: Literal["noQuantity"] = "noQuantity"
+
+
+NearestMissWire = MissMeasuredWire | MissUnmeasurableWire | MissNoRejectionWire | MissNoQuantityWire
+
+
+class StageJudgedWire(_ContractModel):
+    """問うた段 (契約 v13, ADR-172 D2)。`entered` = この段に入った候補 (前の段をすべて通った)。"""
+
+    stage: StageName
+    kind: Literal["judged"] = "judged"
+    entered: int = Field(ge=0)
+    rejected: int = Field(ge=0)
+    nearest_miss: NearestMissWire = Field(discriminator="kind")
+
+
+class StageNotAskedWire(_ContractModel):
+    """問うていない段。**数を持たない** — 判定した 0 と問うていないは別の事実 (原則 #31)。"""
+
+    stage: StageName
+    kind: Literal["notAsked"] = "notAsked"
+    reason: Literal["cameraUndeclared", "gripperUndeclared"]
+
+
+StageVerdictWire = StageJudgedWire | StageNotAskedWire
+
+
+class SourceSpecWire(_ContractModel):
+    kind: Literal["spec"] = "spec"
     id: str = Field(min_length=1)
+
+
+class SourceDerivedWire(_ContractModel):
+    kind: Literal["derived"] = "derived"
+
+
+class SourceRowWire(_ContractModel):
+    """候補の出どころ 1 つの段ごとの判定 (契約 v13, ADR-172 D4)。行の和 = 全体。"""
+
+    source: SourceSpecWire | SourceDerivedWire = Field(discriminator="kind")
     candidates_generated: int = Field(ge=0)
     feasible: int = Field(ge=0)
+    stages: list[StageVerdictWire] = Field(min_length=5, max_length=5)
+
+
+class DomainRiskWire(_ContractModel):
+    """1 ドメインのフォールバック階梯のリスク (契約 v13, ADR-172 D8 — core が決める)。"""
+
+    kind: Literal["domain"] = "domain"
+    domain: Literal["vision", "path", "grasp"]
+    level: int = Field(ge=3, le=5)
+    reason: Literal[
+        "noneSeen", "someUnseen", "noneReachable", "someUnreachable", "noneClosable", "someUnclosable",
+    ]
+
+
+class TogetherRiskWire(_ContractModel):
+    """どの姿勢も 2 つ以上のドメインを同時に満たさない — 配置を作り直す (L6)。"""
+
+    kind: Literal["together"] = "together"
+    level: Literal[6] = 6
+    domains: list[Literal["vision", "path", "grasp"]] = Field(min_length=2)
+
+
+FallbackRiskWire = DomainRiskWire | TogetherRiskWire
 
 
 MotionPhaseName = Literal["transit", "approach", "close", "lift", "transport", "place"]
@@ -195,8 +258,11 @@ class InterferencePhaseUnevaluated(_ContractModel):
 InterferencePhase = InterferencePhaseEvaluated | InterferencePhaseUnevaluated
 
 
-class InterferenceHitWire(_ContractModel):
-    """全相分析の当たり 1 種 (部位 × 障害物) と、それに当たった候補数 (ADR-157 D6)。"""
+class ObstacleTallyWire(_ContractModel):
+    """部位 × 障害物の当たりと、それに当たった候補数 (契約 v13, ADR-172 D6 — 当たりを数える型は 1 つ)。
+
+    全相分析の相の当たりも、腕の測定 (`part: arm`) も、この型で数える。
+    """
 
     part: Literal["tcpPath", "arm", "hand", "held"]
     # リクエストの obstacles[] の添字。名前への写像はリクエストを組んだ側が持つ。
@@ -205,11 +271,12 @@ class InterferenceHitWire(_ContractModel):
 
 
 class InterferencePhaseAnalysisWire(_ContractModel):
-    """全相分析の相 1 つ。`collided` は相ごとに非排他 (1 候補が複数の相で当たりうる)。"""
+    """全相分析の相 1 つ。`touched` は相をまたいで重なる (1 候補が複数の相で当たりうる —
+    足しても全体にならない数は `touched`、足すと全体になる数は `rejected`。ADR-172 D7)。"""
 
     phase: MotionPhaseName
-    collided: int = Field(ge=0)
-    hits: list[InterferenceHitWire]
+    touched: int = Field(ge=0)
+    hits: list[ObstacleTallyWire]
 
 
 class InterferenceAnalysisFirstCollision(_ContractModel):
@@ -218,18 +285,11 @@ class InterferenceAnalysisFirstCollision(_ContractModel):
     kind: Literal["firstCollision"] = "firstCollision"
 
 
-class ArmPathHitWire(_ContractModel):
-    """腕が触れた障害物 1 つと、触れた候補数 (契約 v10, ADR-158 PR1)。"""
-
-    obstacle_index: int = Field(ge=0)
-    candidates: int = Field(ge=1)
-
-
 class ArmPathAtPickPoseWire(_ContractModel):
     """ピック姿勢 (判定に使った代表解) で腕が当たった候補。探索の進入相の腕の判定と同じ姿勢。"""
 
     candidates: int = Field(ge=0)
-    hits: list[ArmPathHitWire]
+    hits: list[ObstacleTallyWire]
 
 
 class ArmPathPhaseWire(_ContractModel):
@@ -242,7 +302,7 @@ class ArmPathPhaseWire(_ContractModel):
     on_path_only: int = Field(ge=0)
     # 経路のどこかで関節解が限界の内側に無かった候補 (腕がこの直線をたどれない)。
     no_solution_on_path: int = Field(ge=0)
-    hits: list[ArmPathHitWire]
+    hits: list[ObstacleTallyWire]
 
 
 class ArmPathUndeclared(_ContractModel):
@@ -291,7 +351,7 @@ class ReplayArmJudged(_ContractModel):
     """探索が判定に使った腕の姿勢 (進入相のピック姿勢 — 被覆表の atEndOnly)。"""
 
     kind: Literal["judged"] = "judged"
-    joints: list[float]
+    joints: list[float] = Field(min_length=6, max_length=6)
     obstacles: list[int]
 
 
@@ -299,7 +359,7 @@ class ReplayArmMeasured(_ContractModel):
     """測っただけの腕の姿勢 (ADR-158 PR1 — 直前の姿勢に近い枝。棄却には数えない)。"""
 
     kind: Literal["measured"] = "measured"
-    joints: list[float]
+    joints: list[float] = Field(min_length=6, max_length=6)
     obstacles: list[int]
 
 
@@ -345,9 +405,11 @@ class RejectedReplayWire(_ContractModel):
     組 (相 × 障害物) ごとに、その組で棄却された候補のうち総合スコアが最も高いもの。
     """
 
-    phase: Literal["transit", "approach", "close", "lift", "transport", "place"]
+    phase: MotionPhaseName
     obstacle_index: int = Field(ge=0)
-    rejected: int = Field(ge=1)
+    # この組に数えた棄却候補 — 1 候補は当たった障害物ごとに数えるので、組をまたいで
+    # 重なる (`touched`、ADR-172 D7)。
+    touched: int = Field(ge=1)
     total_score: float = Field(ge=0.0)
     pose: dict[str, Any]
     reach_solution: ReachSolution = Field(discriminator="kind")
@@ -383,38 +445,27 @@ InterferenceAnalysis = InterferenceAnalysisFirstCollision | InterferenceAnalysis
 
 
 class SearchDiagnostics(_ContractModel):
-    """探索全体の棄却ファネル + ドメイン別 near-miss (契約 v4, ADR-079/081)。
+    """探索全体の診断 (契約 v13, ADR-172)。
 
-    載せるのは「ソルバが決定した事実」の集計のみ。演出 (文言/色/メーター) は
-    クライアント導出でここには含めない。不変条件 (正本 Schema と同一):
-    candidates_generated = rejected_by_reach + rejected_by_visibility + rejected_by_ik
-    + rejected_by_interference + rejected_by_grasp + feasible。
+    載せるのは「ソルバが決定した事実」のみ。演出 (文言/色/メーター) はクライアント導出。
+    不変条件 (正本 Schema と同一): 段は問うた順に 5 つで、問うた段は
+    entered(次) = entered − rejected、最後の段を通った数 = feasible。出どころの行の和
+    (生成・通過・段ごとの棄却) = 全体。
     """
 
     candidates_generated: int = Field(ge=0)
-    rejected_by_reach: int = Field(ge=0)
-    rejected_by_visibility: int = Field(ge=0)
-    rejected_by_ik: int = Field(ge=0)
-    rejected_by_interference: int = Field(ge=0)
-    rejected_by_grasp: int = Field(ge=0)
-    # 5 判定すべて通過した候補数 (= 採点対象)。
+    # 5 段すべてを通った候補数 (= 採点対象)。戦略が返さなかった仕様の通過候補も含む。
     feasible: int = Field(ge=0)
-    # 実際に candidates[] へ載せた件数 (= min(feasible, topN))。
+    # 実際に candidates[] へ載せた件数。
     returned: int = Field(ge=0)
-    # リーチ棄却候補の到達殻までの最小不足距離。リーチ棄却ゼロなら None。
-    reach_nearest_miss: Optional[float] = Field(default=None, ge=0.0)
-    # 可視棄却候補の最小遮蔽量。測定可能な可視棄却が無ければ None (視野外のみ等)。
-    occlusion_nearest_miss: Optional[float] = Field(default=None, ge=0.0)
-    # 把持棄却候補の最小不足量を **種別つき** で運ぶ (契約 v5, ADR-118)。v4 の
-    # `opening_nearest_miss` は名前も単位も平行ジョー専用だったので、吸引の
-    # シールパッチ不足を同じ欄で報告すると、クライアントは違う量のメーターを描く。
-    # 測定可能な把持棄却が無ければ None (接触対なし等 / gripper 未宣言)。
-    grasp_nearest_miss: Optional[GraspNearestMiss] = None
-    # 送られた把持仕様ごとの生成数・通過数を、リクエストの順で**全仕様ぶん** (契約 v7,
-    # ADR-152 D4)。仕様を送らなければ空配列。必須 — 既定値を持たせない。
-    grasp_specs: list[GraspSpecDiagnostics]
+    # 段ごとの判定を問うた順に 5 つ (ADR-172 D2)。
+    stages: list[StageVerdictWire] = Field(min_length=5, max_length=5)
+    # 出どころの行 — 宣言した仕様ごと (リクエスト順) + 導出 (生成したときだけ)。和 = 全体 (D4)。
+    by_source: list[SourceRowWire]
+    # フォールバック階梯のリスク、深い順 (D8 — core が決める)。
+    fallback_risks: list[FallbackRiskWire]
     # 動作相ごとの干渉の内訳を、相の順に**6 行ちょうど** (契約 v8, ADR-157 D2/D3)。
-    # 評価した相の rejected の和 = rejected_by_interference。必須 — 既定値を持たせない。
+    # 評価した相の rejected の和 = 干渉の段の rejected。
     interference_phases: list[InterferencePhase] = Field(min_length=6, max_length=6)
     # 全相分析 (ADR-157 D6)。求めなかったときも firstCollision の枝として必ず在る。
     interference_analysis: InterferenceAnalysis = Field(discriminator="kind")

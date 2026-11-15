@@ -669,7 +669,8 @@ def test_search_returns_ranked_top_n_conforming_to_contract():
     assert scores[0] >= scores[1]
     # 通過候補なので 3 判定はすべて True。
     for c in resp.candidates:
-        assert c.score.within_reach and c.score.ik_solvable and c.score.interference_free
+        # v13 (ADR-172 D5): 返る候補は全段を通っている — 段の事実は診断の stages が言う。
+        assert c.score.reach_solution is not None
         assert 0.0 <= c.score.total_score <= 1.0
 
     # 契約 (中立 JSON Schema) に wire 形が準拠すること。
@@ -1066,8 +1067,7 @@ def test_search_report_five_stage_funnel_partitions_generated():
     # 生存候補の 5 判定はすべて True で wire に載る。
     report = search_report(_build_request(decl))
     for c in report.response.candidates:
-        assert c.score.within_reach and c.score.visible and c.score.ik_solvable
-        assert c.score.interference_free and c.score.graspable
+        assert c.score.reach_solution is not None  # 全段を通った (v13 — 真偽値は持たない)
 
 
 def test_injected_visibility_and_grasp_checkers_override_naive():
@@ -1166,8 +1166,9 @@ def test_suction_miss_is_reported_as_sealPatch_not_opening():
     d = report.diagnostics
     if d.rejected_by_grasp > 0:
         assert d.grasp_nearest_miss_kind == "sealPatch"
-        wire = report.response.diagnostics.grasp_nearest_miss
-        assert wire is not None and wire.kind == "sealPatch"
+        grasp = next(v for v in report.response.diagnostics.stages if v.stage == "grasp")
+        assert grasp.kind == "judged" and grasp.nearest_miss.kind == "measured"
+        assert grasp.nearest_miss.quantity == "sealPatchShortfall"
 
 
 def test_parallel_jaw_miss_is_still_reported_as_opening():
@@ -1177,7 +1178,8 @@ def test_parallel_jaw_miss_is_still_reported_as_opening():
     d = report.diagnostics
     assert d.rejected_by_grasp > 0
     assert d.grasp_nearest_miss_kind == "opening"
-    assert report.response.diagnostics.grasp_nearest_miss.kind == "opening"
+    grasp = next(v for v in report.response.diagnostics.stages if v.stage == "grasp")
+    assert grasp.nearest_miss.quantity == "openingShortfall"
 
 
 # --- ツールはフランジに剛体で付いている (ADR-150 D4) -----------------------------

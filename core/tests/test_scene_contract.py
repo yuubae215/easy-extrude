@@ -148,7 +148,7 @@ def test_response_serializes_to_camelcase_wire():
     # candidates は grasp の PoseCandidate wire 形 (rank + score 内訳) を再利用。
     cand = first["candidates"][0]
     assert "rank" in cand and "score" in cand
-    assert "withinReach" in cand["score"]
+    assert "totalScore" in cand["score"] and "withinReach" not in cand["score"]  # v13 (ADR-172 D5)
     # rank 1 は top-down 把持 (approach ~ [0,0,-1])。契約 v2 では pose は kind 判別 union で
     # approach はワイヤに載らず frame(-Z) から導出 -> codec で復元して意味を照合。
     assert cand["pose"]["kind"] == "endEffector"

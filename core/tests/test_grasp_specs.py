@@ -20,7 +20,7 @@ import pytest
 from fastapi.testclient import TestClient
 from jsonschema import Draft202012Validator
 
-from contract_pkg import load_response_schema
+from contract_pkg import load_response_schema, rejected_at, stage_of
 
 from easy_extrude_core.api import create_app
 from easy_extrude_core.contract import CONTRACT_VERSION, GraspSearchRequest
@@ -104,10 +104,15 @@ def _jaw(max_opening: float, shape: bool = False) -> dict:
 
 
 def _funnel_holds(diag: dict) -> None:
-    assert diag["candidatesGenerated"] == (
-        diag["rejectedByReach"] + diag["rejectedByVisibility"] + diag["rejectedByIk"]
-        + diag["rejectedByInterference"] + diag["rejectedByGrasp"] + diag["feasible"]
-    )
+    """段の恒等式と、出どころの行が全体を分けること (v13, ADR-172 D4)。"""
+    rejected = sum(v["rejected"] for v in diag["stages"] if v["kind"] == "judged")
+    assert diag["candidatesGenerated"] == rejected + diag["feasible"]
+    rows = diag["bySource"]
+    assert sum(r["candidatesGenerated"] for r in rows) == diag["candidatesGenerated"]
+    assert sum(r["feasible"] for r in rows) == diag["feasible"]
+    for i, v in enumerate(diag["stages"]):
+        if v["kind"] == "judged":
+            assert sum(r["stages"][i]["rejected"] for r in rows) == v["rejected"], v["stage"]
 
 
 # --- 候補生成 -------------------------------------------------------------------
@@ -159,7 +164,8 @@ def test_declared_closing_axis_measures_the_box_thickness_not_the_face_spread():
         gripper=_jaw(0.08),
     ))
     assert across_x["diagnostics"]["feasible"] == 0
-    assert across_x["diagnostics"]["graspNearestMiss"] == {"kind": "opening", "shortfall": pytest.approx(0.02)}
+    assert stage_of(across_x["diagnostics"], "grasp")["nearestMiss"] == {
+        "kind": "measured", "quantity": "openingShortfall", "value": pytest.approx(0.02)}
 
     across_y = _wire(_run(
         target={"graspSpecs": [{"id": "y", "samples": _top_samples(), "closingAxis": [0, 1, 0]}], "box": BOX},
@@ -189,7 +195,10 @@ def test_depth_past_the_palm_is_rejected_by_grasp():
         gripper=_jaw(0.08, shape=True),
     ))
     assert too_deep["diagnostics"]["feasible"] == 0
-    assert too_deep["diagnostics"]["rejectedByGrasp"] == 18
+    assert rejected_at(too_deep["diagnostics"], "grasp") == 18
+    # パームが潜る棄却は量で測れない — null ではなく理由つきで言う (v13, ADR-172 D3)。
+    assert stage_of(too_deep["diagnostics"], "grasp")["nearestMiss"] == {
+        "kind": "unmeasurable", "reasons": ["palmBelowSurface"]}
     _funnel_holds(too_deep["diagnostics"])
 
 
@@ -210,8 +219,8 @@ def test_priority_returns_only_the_first_spec_with_a_feasible_candidate():
     ))
     ids = {c["graspSpecId"] for c in wire["candidates"]}
     assert ids == {"top"}
-    rows = wire["diagnostics"]["graspSpecs"]
-    assert [r["id"] for r in rows] == ["top", "side"]
+    rows = wire["diagnostics"]["bySource"]
+    assert [r["source"].get("id") for r in rows] == ["top", "side"]
     # 返さなかった仕様も数える (原則 #31): side にも通過候補が在る。
     assert rows[1]["feasible"] > 0
     assert wire["diagnostics"]["feasible"] == rows[0]["feasible"] + rows[1]["feasible"]
@@ -224,7 +233,9 @@ def test_priority_falls_through_to_the_next_spec_when_the_first_has_none():
         gripper=_jaw(0.08),
     ))
     assert {c["graspSpecId"] for c in wire["candidates"]} == {"side"}
-    assert wire["diagnostics"]["graspSpecs"][0] == {"id": "top", "candidatesGenerated": 18, "feasible": 0}
+    row = wire["diagnostics"]["bySource"][0]
+    assert row["source"] == {"kind": "spec", "id": "top"}
+    assert (row["candidatesGenerated"], row["feasible"]) == (18, 0)
 
 
 def test_score_mixes_every_spec():
@@ -253,7 +264,8 @@ def test_fallback_derived_searches_the_surface_samples_only_when_no_spec_is_feas
 
 def test_no_specs_means_an_empty_spec_table_and_null_spec_ids():
     wire = _wire(_run(target={"surfaceSamples": _top_samples()}, gripper=_jaw(0.08)))
-    assert wire["diagnostics"]["graspSpecs"] == []
+    # 仕様を送らなければ、出どころは導出の 1 行だけ (v13, ADR-172 D4)。
+    assert [r["source"] for r in wire["diagnostics"]["bySource"]] == [{"kind": "derived"}]
     assert {c["graspSpecId"] for c in wire["candidates"]} == {None}
 
 
@@ -278,7 +290,7 @@ def test_an_unnarrowed_spec_answers_exactly_like_the_same_surface_samples():
     ))
     strip = lambda w: [{k: v for k, v in c.items() if k != "graspSpecId"} for c in w["candidates"]]
     assert strip(migrated) == strip(legacy)
-    for key in ("candidatesGenerated", "rejectedByGrasp", "feasible", "returned", "graspNearestMiss"):
+    for key in ("candidatesGenerated", "feasible", "returned", "stages"):
         assert migrated["diagnostics"][key] == legacy["diagnostics"][key]
 
 
@@ -305,7 +317,7 @@ def test_a_finger_through_the_tray_wall_is_rejected_but_only_when_the_shape_is_d
     # 開口 0.12: 爪の内面は中心から ±0.06 → +x の爪は x ∈ [0.56, 0.568]、壁は [0.555, 0.565]。
     with_shape = _wire(_run(target=target, gripper=_jaw(0.12, shape=True), obstacles=[_tray_wall()]))
     assert with_shape["diagnostics"]["feasible"] == 0
-    assert with_shape["diagnostics"]["rejectedByInterference"] == 6
+    assert rejected_at(with_shape["diagnostics"], "interference") == 6
     # 負の対照: 形なし = 進入線分だけ。線分は箱の中心線を降り、壁に届かない。
     without_shape = _wire(_run(target=target, gripper=_jaw(0.12), obstacles=[_tray_wall()]))
     assert without_shape["diagnostics"]["feasible"] == 6

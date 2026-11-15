@@ -19,6 +19,8 @@ import json
 import math
 
 import pytest
+
+from contract_pkg import rejected_at
 from fastapi.testclient import TestClient
 from jsonschema import Draft202012Validator
 
@@ -105,7 +107,7 @@ def _phases(wire: dict) -> dict:
 
 def _attribution_holds(diag: dict) -> None:
     evaluated = [r for r in diag["interferencePhases"] if r["kind"] == "evaluated"]
-    assert sum(r["rejected"] for r in evaluated) == diag["rejectedByInterference"]
+    assert sum(r["rejected"] for r in evaluated) == rejected_at(diag, "interference")
     assert [r["phase"] for r in diag["interferencePhases"]] == [p.value for p in PHASE_ORDER]
     for r in diag["interferencePhases"]:
         if r["kind"] == "unevaluated":
@@ -203,7 +205,7 @@ def test_closing_fingers_that_sweep_through_a_divider_are_rejected_at_close():
     wire = _wire(target=target, gripper=_jaw(0.14), obstacles=[_divider()])
     rows = _phases(wire)
     assert rows["approach"]["rejected"] == 0
-    assert rows["close"]["rejected"] == wire["diagnostics"]["rejectedByInterference"] > 0
+    assert rows["close"]["rejected"] == rejected_at(wire["diagnostics"], "interference") > 0
     assert wire["diagnostics"]["feasible"] == 0
     _attribution_holds(wire["diagnostics"])
     # 負の対照: 仕切りが遠ければ閉じても当たらない。
@@ -247,9 +249,9 @@ def test_the_analysis_names_the_phase_the_part_and_the_obstacle():
     ]
     lift_parts = {(h["part"], h["obstacleIndex"]) for h in by_phase["lift"]["hits"]}
     assert ("held", 1) in lift_parts
-    assert by_phase["close"]["collided"] == wire["diagnostics"]["rejectedByInterference"]
-    assert by_phase["lift"]["collided"] > 0  # 非排他: close で落ちた候補も lift で数える
-    assert analysis["candidatesAnalysed"] >= by_phase["close"]["collided"]
+    assert by_phase["close"]["touched"] == rejected_at(wire["diagnostics"], "interference")
+    assert by_phase["lift"]["touched"] > 0  # 重なる数 (touched): close で落ちた候補も lift で数える
+    assert analysis["candidatesAnalysed"] >= by_phase["close"]["touched"]
 
 
 def test_an_unknown_analysis_mode_is_a_declaration_error():
@@ -640,7 +642,7 @@ def test_the_analysis_counts_each_candidate_once_and_describes_the_solution_that
     assert analysis["armPath"]["atPickPose"]["candidates"] == 0
     # 分析は答えを 1 ビットも変えない (救われる候補も、選ばれる解も同じ)。
     assert full["candidates"] == first["candidates"]
-    assert full["diagnostics"]["rejectedByInterference"] == first["diagnostics"]["rejectedByInterference"] == 0
+    assert rejected_at(full["diagnostics"], "interference") == rejected_at(first["diagnostics"], "interference") == 0
 
 
 def test_when_every_branch_collides_the_candidate_is_rejected_and_attributed_as_before():
@@ -655,7 +657,7 @@ def test_when_every_branch_collides_the_candidate_is_rejected_and_attributed_as_
         {"kind": "sphere", "center": [base[0], base[1], base[2] + d1], "radius": 0.05})
     full = _wire_raw(raw, "allPhases")
     d = full["diagnostics"]
-    assert d["rejectedByInterference"] == d["candidatesGenerated"] == 36
+    assert rejected_at(d, "interference") == d["candidatesGenerated"] == 36
     assert full["candidates"] == []
     approach = next(r for r in d["interferencePhases"] if r["phase"] == "approach")
     assert approach["kind"] == "evaluated" and approach["rejected"] == 36
@@ -678,7 +680,7 @@ def test_the_lift_shelf_rejection_has_a_representative_with_its_samples():
     groups = _rejected_by_group(wire)
     assert set(groups) == {("lift", 0)}
     r = groups[("lift", 0)]
-    assert r["rejected"] == d["rejectedByInterference"] > 0
+    assert r["touched"] == rejected_at(d, "interference") > 0
     assert d["interferenceAnalysis"]["rejectedReplays"]["omitted"] == 0
     # 再生は返す候補と同じ形: 評価した相だけを動作の順に。引き上げの標本に棚の当たりが在る。
     assert [p["phase"] for p in r["phases"]] == ["approach", "lift"]
@@ -701,7 +703,7 @@ def test_the_representative_is_the_highest_scoring_rejection_of_its_group():
     kept = {json.dumps(c["pose"], sort_keys=True) for c in shelved["candidates"]}
     rejected_scores = [c["score"]["totalScore"] for c in everyone
                        if json.dumps(c["pose"], sort_keys=True) not in kept]
-    assert len(rejected_scores) == r["rejected"]
+    assert len(rejected_scores) == r["touched"]
     assert r["totalScore"] == pytest.approx(max(rejected_scores))
     rep = next(c for c in everyone if json.dumps(c["pose"], sort_keys=True) == json.dumps(r["pose"], sort_keys=True))
     assert rep["score"]["totalScore"] == pytest.approx(r["totalScore"])
@@ -721,7 +723,7 @@ def test_groups_are_keyed_by_the_attributed_phase_and_cover_every_attributed_rej
             assert groups == [], phase
         else:
             # 1 候補は当たった障害物ごとに数えるので、組の和は帰属数以上。
-            assert sum(r["rejected"] for r in groups) >= n, phase
+            assert sum(r["touched"] for r in groups) >= n, phase
 
 
 def test_groups_are_ordered_most_rejected_first_then_motion_order_then_obstacle():
@@ -764,7 +766,7 @@ def test_a_pedestal_rejection_carries_the_judged_arm_of_the_representative_solut
     items = wire["diagnostics"]["interferenceAnalysis"]["rejectedReplays"]["items"]
     shoulder = len(raw["graspSearch"]["obstacles"]) - 1
     r = next(x for x in items if x["obstacleIndex"] == shoulder)
-    assert r["phase"] == "approach" and r["rejected"] == 36
+    assert r["phase"] == "approach" and r["touched"] == 36
     assert r["reachSolution"]["kind"] == "solved"
     approach = next(p for p in r["phases"] if p["phase"] == "approach")
     judged = [s["arm"] for s in approach["samples"] if s["arm"]["kind"] == "judged"]

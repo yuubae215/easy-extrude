@@ -14,13 +14,43 @@ export type Pose = PoseEndEffector | PoseJointSpace;
  */
 export type ReachSolution = ReachSolutionSolved | ReachSolutionUndeclared;
 /**
- * The measured miss of the best grasp-rejected candidate, as a CLOSED KIND-DISCRIMINATED union (ADR-118). `kind` is the discriminator and each branch is closed -- field presence is implied by kind, never optional.
+ * Joint angles in RADIANS, in the chain order of the declared robot.kinematics (base to flange). Exactly six -- the closed form is derived for that structure.
+ *
+ * @minItems 6
+ * @maxItems 6
  */
-export type GraspMiss = OpeningMiss | SealPatchMiss;
+export type JointVector6 = [number, number, number, number, number, number];
+/**
+ * Every stage exactly once, in the order the engine judged them (it short-circuits in this order, so a stage's `entered` is the previous judged stage's `entered` minus its `rejected`; the last stage's survivors are `feasible`).
+ *
+ * @minItems 5
+ * @maxItems 5
+ */
+export type StageList = [StageVerdict, StageVerdict, StageVerdict, StageVerdict, StageVerdict];
+/**
+ * One stage of the domain-staged filter (ADR-172 D2), a CLOSED KIND-DISCRIMINATED union. `judged` = the request asked this stage: `entered` candidates reached it (they passed every earlier stage) and it rejected `rejected` of them. `notAsked` = the request did not declare what this stage needs (a camera / a gripper); it carries NO counts -- a judged 0 and an unasked stage are different facts (原則 #31).
+ */
+export type StageVerdict = StageJudged | StageNotAsked;
+/**
+ * A domain-staged filter stage (ADR-081), the one name each stage has on the wire (ADR-172 D1).
+ */
+export type Stage = "reach" | "ik" | "grasp" | "visibility" | "interference";
+/**
+ * How close the closest rejection of a judged stage came (ADR-172 D3), a CLOSED KIND-DISCRIMINATED union. `measured` = the shortfall in the stage's own quantity; `unmeasurable` = there were rejections but none had a measurable shortfall (the reasons say why); `noRejection` = the stage rejected nothing; `noQuantity` = the stage has no shortfall quantity (IK, interference). Never null -- null used to mean two of these at once.
+ */
+export type NearestMiss = MissMeasured | MissUnmeasurable | MissNoRejection | MissNoQuantity;
+/**
+ * How deep operations would likely have to fall back (ADR-081's ladder), DECIDED BY THE ENGINE (ADR-172 D8). An empirical forecast, not an assurance. `domain` = one domain's rejections (its rate is the product of its judged stages' pass rates over the candidates that ENTERED them); `together` = nothing is feasible and two or more domains reject (the layout itself). A domain made only of stages nobody asked yields no risk. Wording is the client's, looked up from `reason`.
+ */
+export type FallbackRisk = RiskDomain | RiskTogether;
 /**
  * One motion phase's interference row (ADR-157 D2). `kind` is the discriminator; each branch is closed.
  */
 export type InterferencePhase = InterferencePhaseEvaluated | InterferencePhaseUnevaluated;
+/**
+ * A motion phase (ADR-157), the one name each phase has on the wire (ADR-172 D1).
+ */
+export type Phase = "transit" | "approach" | "close" | "lift" | "transport" | "place";
 /**
  * The all-phase interference analysis (ADR-157 D6, contract v8), a CLOSED KIND-DISCRIMINATED union. `firstCollision` = not requested (the default; stated as a branch, never by omitting the key). `allPhases` = requested via graspSearch.interferenceAnalysis: every evaluated phase was judged to the end for every candidate that reached the interference stage, and the hits are counted per phase / part / obstacle. The answer itself (candidates, ranks, the funnel) is identical in both modes.
  */
@@ -55,21 +85,10 @@ export interface GraspSearchResponse {
    */
   candidates: PoseCandidate[];
   /**
-   * Solver-decided facts about the search as a whole (the rejection funnel), so a client can explain an empty or thin result. Contract v4 (ADR-081) widens the funnel to the three validation domains -- visible (Vision) / reachable (Path: reach, IK, interference) / graspable (Grasp). Invariant: candidatesGenerated = rejectedByReach + rejectedByVisibility + rejectedByIk + rejectedByInterference + rejectedByGrasp + feasible (stages are exclusive; the filter short-circuits in the engine's measured cheapest-first order: reach -> IK -> grasp -> visibility -> interference, which decides which single stage a multiply-infeasible candidate is attributed to). Requests that declare no camera / no gripper always report 0 for the corresponding rejection stage. Presentation (wording, colors, meters, ladder-risk mapping, suggestions) is derived client-side and never carried here. Contract v8 (ADR-157) splits rejectedByInterference by motion phase (interferencePhases) and can carry an all-phase analysis (interferenceAnalysis). Contract v10 (ADR-158 PR1) adds the arm measured along the approach / lift paths to the all-phase analysis (interferenceAnalysis.armPath) -- measured, never counted as a rejection. Contract v11 (ADR-158 replay stage) adds, per returned candidate, the samples the judgement used (interferenceAnalysis.replays) -- progress within a phase, never seconds or a frame rate.
+   * Solver-decided facts about the search as a whole, so a client can explain an empty or thin result (contract v13, ADR-172). Invariants: `stages` lists every stage once in judging order; for judged stages entered(next) = entered - rejected, and the last survivors = feasible. `bySource` rows partition the search: candidatesGenerated, feasible and each stage's rejected sum to the whole (a stage judged in the whole is judged in every row). A stage the request did not ask is `notAsked` with no counts.
    */
   diagnostics: {
     candidatesGenerated: number;
-    rejectedByReach: number;
-    /**
-     * Rejected because the declared camera cannot see the grasp point (occluded sightline or outside the field of view). Always 0 when the request declares no camera.
-     */
-    rejectedByVisibility: number;
-    rejectedByIk: number;
-    rejectedByInterference: number;
-    /**
-     * Rejected by the geometric grasp gate of the declared gripper (opening width / finger clearance / contact-pair existence). Always 0 when the request declares no gripper.
-     */
-    rejectedByGrasp: number;
     /**
      * Candidates that passed all five checks (= scored).
      */
@@ -78,28 +97,17 @@ export interface GraspSearchResponse {
      * Candidates actually included in candidates[] (= min(feasible among the set the strategy returns, topN)). Without grasp specs, or under `score` order, that set is every feasible candidate; under `priority` it is only the first spec with a feasible candidate (ADR-152 D5).
      */
     returned: number;
+    stages: StageList;
     /**
-     * Smallest distance by which a reach-rejected candidate missed the reachable shell (same length unit as the request geometry). null when nothing was rejected by reach.
+     * One row per declared grasp spec (request order, including specs that generated nothing or were not returned), then one derived row when derived candidates were generated (no specs, or the derived fallback ran). The rows sum to the whole (ADR-172 D4).
      */
-    reachNearestMiss: number | null;
+    bySource: SourceRow[];
     /**
-     * Smallest occlusion depth among visibility-rejected candidates (how deep the most-blocking obstacle cuts the closest-to-visible sightline; same length unit as the request geometry). null when no visibility rejection has a measurable occlusion depth (e.g. only outside-FOV rejections, or none at all).
+     * Deepest first. Empty when no asked domain rejected anything.
      */
-    occlusionNearestMiss: number | null;
+    fallbackRisks: FallbackRisk[];
     /**
-     * How close the best grasp-rejected candidate came, as a CLOSED KIND-DISCRIMINATED union (ADR-118, contract v5). Replaces v4 `openingNearestMiss`, whose name and unit assumed a parallel jaw: a suction cup misses by a seal-patch shortfall, not by an opening width, and reporting one as the other would have the client draw a meter labelled in the wrong quantity. null when no grasp rejection has a measurable miss (e.g. only contact-pair-missing rejections, or none at all), and always null when the request declares no gripper. `kind` is the discriminator and each branch is closed -- field presence is implied by kind, never optional. STRUCTURE (DEF-029, 2026-09-15): the `null` case sits OUTSIDE the discriminated union rather than as a third branch beside the two kinds. Semantically identical -- exactly the same instances validate -- but `null` was never a `kind`, and expressing it as one made the schema uncompilable under ajv strict (`discriminator` requires `type: object`, which a nullable union cannot declare). That is why this package's own test lane could not run.
-     */
-    graspNearestMiss: null | GraspMiss;
-    /**
-     * Per declared grasp spec, in request order, how many candidates it generated and how many passed every stage (ADR-152 D4, contract v7). EVERY sent spec has a row, including the ones whose candidates the strategy did not return -- a spec that was not returned and a spec that had nothing are different facts (原則 #31). Empty when the request sent no spec. Per-stage rejections per spec are not carried (deferred).
-     */
-    graspSpecs: {
-      id: string;
-      candidatesGenerated: number;
-      feasible: number;
-    }[];
-    /**
-     * Interference broken down by MOTION PHASE (ADR-157 D2/D3, contract v8), EXACTLY one row per phase in motion order: transit, approach, close, lift, transport, place. A phase is `evaluated` or `unevaluated` purely from the request's declarations (never per candidate). An evaluated row's `rejected` counts the candidates whose FIRST colliding phase it was (a candidate is attributed to the earliest phase it hits -- closing is only asked of a hand that got in). Invariant: the sum of `rejected` over evaluated rows = rejectedByInterference. An unevaluated row carries a closed `reason` and NO `rejected` -- 0 and not-judged are the same number otherwise (ADR-120). `notYetDecided` marks phases the solver has no method for yet (transit/transport/place); the rest name the missing declaration.
+     * Interference broken down by MOTION PHASE (ADR-157 D2/D3, contract v8), EXACTLY one row per phase in motion order: transit, approach, close, lift, transport, place. A phase is `evaluated` or `unevaluated` purely from the request's declarations (never per candidate). An evaluated row's `rejected` counts the candidates whose FIRST colliding phase it was (a candidate is attributed to the earliest phase it hits -- closing is only asked of a hand that got in). Invariant: the sum of `rejected` over evaluated rows = the interference stage's `rejected` (diagnostics.stages). An unevaluated row carries a closed `reason` and NO `rejected` -- 0 and not-judged are the same number otherwise (ADR-120). `notYetDecided` marks phases the solver has no method for yet (transit/transport/place); the rest name the missing declaration.
      *
      * @minItems 6
      * @maxItems 6
@@ -165,14 +173,9 @@ export interface PoseJointSpace {
   joints: number[];
 }
 /**
- * Per-candidate score breakdown explaining why a pose ranked where it did. Contract v4 (ADR-081): the five booleans mirror the domain-staged filter (visible = Vision domain, withinReach/ikSolvable/interferenceFree = Path domain, graspable = Grasp domain). A returned candidate passed every stage, so all five are true; `visible` / `graspable` are vacuously true when the request declared no camera / no gripper (the request itself carries which case applies). Contract v6 (ADR-135) adds `reachSolution`: the joint configuration the solver decided, so a client can DRAW the reaching arm instead of only reading a boolean. `ikSolvable` stays -- the skeleton is an additional way to confirm reach, not a replacement for the flag.
+ * Per-candidate score breakdown explaining why a pose ranked where it did. Contract v13 (ADR-172 D5) dropped the five stage booleans: a returned candidate passed every stage, so they were always true, and visible/graspable were true even when nobody asked. Stage facts live in diagnostics.stages.
  */
 export interface ScoreBreakdown {
-  withinReach: boolean;
-  visible: boolean;
-  ikSolvable: boolean;
-  interferenceFree: boolean;
-  graspable: boolean;
   reachSolution: ReachSolution;
   /**
    * objective name -> normalized 0-1 value (absolute basis, so scores are comparable across requests).
@@ -190,13 +193,7 @@ export interface ScoreBreakdown {
  */
 export interface ReachSolutionSolved {
   kind: "solved";
-  /**
-   * Joint angles in RADIANS, in the chain order of the declared `robot.kinematics` (base to flange). Exactly six -- the closed form is derived for that exact structure, so a different count is a different arm.
-   *
-   * @minItems 6
-   * @maxItems 6
-   */
-  joints: [number, number, number, number, number, number];
+  joints: JointVector6;
 }
 /**
  * No joint configuration was determined for this candidate. The fact is the absence itself, not any one cause of it: typically the request declared no `robot.kinematics`, so reachability was judged by the wrist-cone proxy (ADR-127 D3) which produces no joint angles, but any producer that judges reach without solving joints reports this branch. The client MUST NOT draw an arm pose for this candidate -- inventing one would show a configuration no solver decided, which is exactly what ADR-135's goal forbids.
@@ -204,28 +201,74 @@ export interface ReachSolutionSolved {
 export interface ReachSolutionUndeclared {
   kind: "undeclared";
 }
-/**
- * Parallel jaw: the smallest amount by which the jaws failed to span the object.
- */
-export interface OpeningMiss {
-  kind: "opening";
+export interface StageJudged {
+  stage: Stage;
+  kind: "judged";
+  entered: number;
+  rejected: number;
+  nearestMiss: NearestMiss;
+}
+export interface MissMeasured {
+  kind: "measured";
+  quantity: "reachDistance" | "occlusionDepth" | "openingShortfall" | "sealPatchShortfall";
   /**
-   * Required width minus the jaw max opening (same length unit as the request geometry).
+   * Same length unit as the request geometry.
    */
-  shortfall: number;
+  value: number;
+}
+export interface MissUnmeasurable {
+  kind: "unmeasurable";
+  /**
+   * @minItems 1
+   */
+  reasons: [
+    "outsideFieldOfView" | "palmBelowSurface" | "noContactPair",
+    ...("outsideFieldOfView" | "palmBelowSurface" | "noContactPair")[]
+  ];
+}
+export interface MissNoRejection {
+  kind: "noRejection";
+}
+export interface MissNoQuantity {
+  kind: "noQuantity";
+}
+export interface StageNotAsked {
+  stage: Stage;
+  kind: "notAsked";
+  reason: "cameraUndeclared" | "gripperUndeclared";
 }
 /**
- * Suction cup: the smallest amount by which the sealable flat patch fell short of the cup.
+ * Where a group of candidates came from (ADR-172 D4): one declared grasp spec, or the derived surface samples. Rows PARTITION the search: their candidatesGenerated, feasible and per-stage rejected each sum to the whole.
  */
-export interface SealPatchMiss {
-  kind: "sealPatch";
+export interface SourceRow {
+  source: SourceSpec | SourceDerived;
+  candidatesGenerated: number;
+  feasible: number;
+  stages: StageList;
+}
+export interface SourceSpec {
+  kind: "spec";
+  id: string;
+}
+export interface SourceDerived {
+  kind: "derived";
+}
+export interface RiskDomain {
+  kind: "domain";
+  domain: "vision" | "path" | "grasp";
+  level: number;
+  reason: "noneSeen" | "someUnseen" | "noneReachable" | "someUnreachable" | "noneClosable" | "someUnclosable";
+}
+export interface RiskTogether {
+  kind: "together";
+  level: 6;
   /**
-   * Cup diameter minus the diameter of the flat-enough patch found at the contact point (same length unit as the request geometry).
+   * @minItems 2
    */
-  shortfall: number;
+  domains: ["vision" | "path" | "grasp", "vision" | "path" | "grasp", ...("vision" | "path" | "grasp")[]];
 }
 export interface InterferencePhaseEvaluated {
-  phase: "transit" | "approach" | "close" | "lift" | "transport" | "place";
+  phase: Phase;
   kind: "evaluated";
   /**
    * Candidates whose first colliding phase this was.
@@ -233,7 +276,7 @@ export interface InterferencePhaseEvaluated {
   rejected: number;
 }
 export interface InterferencePhaseUnevaluated {
-  phase: "transit" | "approach" | "close" | "lift" | "transport" | "place";
+  phase: Phase;
   kind: "unevaluated";
   reason: "notYetDecided" | "gripperUndeclared" | "handShapeUndeclared" | "targetBoxUndeclared" | "liftUndeclared";
 }
@@ -250,25 +293,15 @@ export interface InterferenceAnalysisAllPhases {
    * Evaluated phases only, in motion order (unevaluated ones are explained by interferencePhases).
    */
   phases: {
-    phase: "transit" | "approach" | "close" | "lift" | "transport" | "place";
+    phase: Phase;
     /**
-     * Candidates that hit something in this phase. NOT exclusive across phases.
+     * Per (part, obstacle), how many candidates touched it in this phase; most first.
      */
-    collided: number;
+    hits: ObstacleTally[];
     /**
-     * Per (part, obstacle), how many candidates hit it in this phase; most first.
+     * Candidates that touched something in this phase. OVERLAPPING across phases (a candidate can touch in several) -- counts that do not add up to a whole are named `touched`; counts that do are named `rejected` (ADR-172 D7).
      */
-    hits: {
-      /**
-       * tcpPath = the TCP's path (stands in for an undeclared hand shape); held = the grasped object carried from lift on.
-       */
-      part: "tcpPath" | "arm" | "hand" | "held";
-      /**
-       * Index into the request's obstacles[]. Naming it is the sender's job -- names never ride the wire.
-       */
-      obstacleIndex: number;
-      candidates: number;
-    }[];
+    touched: number;
   }[];
   armPath: ArmPath;
   /**
@@ -276,6 +309,20 @@ export interface InterferenceAnalysisAllPhases {
    */
   replays: CandidateReplay[];
   rejectedReplays: RejectedReplays;
+}
+/**
+ * How many candidates a part touched an obstacle with (ADR-172 D6 -- the one tally type).
+ */
+export interface ObstacleTally {
+  /**
+   * tcpPath = the TCP's path (stands in for an undeclared hand shape); held = the grasped object carried from lift on.
+   */
+  part: "tcpPath" | "arm" | "hand" | "held";
+  /**
+   * Index into the request's obstacles[]. Naming it is the sender's job -- names never ride the wire.
+   */
+  obstacleIndex: number;
+  candidates: number;
 }
 export interface ArmPathUndeclared {
   kind: "undeclared";
@@ -294,7 +341,7 @@ export interface ArmPathMeasured {
     /**
      * Per obstacle the arm (links + tool segment) touched, how many candidates; most first.
      */
-    hits: ArmPathHit[];
+    hits: ObstacleTally[];
   };
   /**
    * Evaluated phases with a decided straight path (approach always, lift when declared), in motion order. The pick-pose point is excluded from these rows.
@@ -316,15 +363,8 @@ export interface ArmPathMeasured {
     /**
      * Per obstacle the arm (links + tool segment) touched, how many candidates; most first.
      */
-    hits: ArmPathHit[];
+    hits: ObstacleTally[];
   }[];
-}
-export interface ArmPathHit {
-  /**
-   * Index into the request's obstacles[].
-   */
-  obstacleIndex: number;
-  candidates: number;
 }
 export interface CandidateReplay {
   /**
@@ -390,10 +430,7 @@ export interface ReplayArmNoSolution {
  */
 export interface ReplayArmJudged {
   kind: "judged";
-  /**
-   * Joint values in chain order.
-   */
-  joints: number[];
+  joints: JointVector6;
   /**
    * Indices into the request's obstacles[] the arm (links + tool segment) touches at this sample.
    */
@@ -404,10 +441,7 @@ export interface ReplayArmJudged {
  */
 export interface ReplayArmMeasured {
   kind: "measured";
-  /**
-   * Joint values in chain order.
-   */
-  joints: number[];
+  joints: JointVector6;
   /**
    * Indices into the request's obstacles[] the arm (links + tool segment) touches at this sample.
    */
@@ -450,17 +484,13 @@ export interface RejectedReplays {
 }
 export interface RejectedReplay {
   /**
-   * The phase the rejection was attributed to (the first phase it hit, ADR-157 D3).
+   * A motion phase (ADR-157), the one name each phase has on the wire (ADR-172 D1).
    */
   phase: "transit" | "approach" | "close" | "lift" | "transport" | "place";
   /**
    * Index into the request's obstacles[] hit in that phase. A candidate that hit several obstacles counts in each of their groups.
    */
   obstacleIndex: number;
-  /**
-   * How many rejected candidates this group counted (not exclusive across groups).
-   */
-  rejected: number;
   /**
    * The representative's weighted score, computed exactly as for returned candidates. It ranks nothing on the wire.
    */
@@ -471,4 +501,8 @@ export interface RejectedReplay {
    * Same shape as a returned candidate's replay: evaluated phases only, in motion order.
    */
   phases: ReplayPhase[];
+  /**
+   * How many rejected candidates this group counted. OVERLAPPING across groups (a candidate that touched several obstacles counts in each) -- hence `touched`, not `rejected` (ADR-172 D7).
+   */
+  touched: number;
 }
