@@ -425,7 +425,7 @@ export function setEntityHand(doc, ref, hand) {
  *
  * @param {object} doc
  * @param {string} ref
- * @param {object|null} camera  `{ fovHalfAngle? }`
+ * @param {object|null} camera  `{ fovHalfAngles? }`
  * @param {{position?: object, rotation?: object}} [pose]
  * @returns {object} new doc
  */

@@ -4178,7 +4178,7 @@ export class SceneService extends EventEmitter {
    * again — the camera stops existing, it is not reset to a default.
    *
    * @param {string} frameId
-   * @param {object|null} camera  `{ fovHalfAngle? }`, stored as given (validated by readers)
+   * @param {object|null} camera  `{ fovHalfAngles? }`, stored as given (validated by readers)
    * @returns {boolean} whether it was written
    */
   setFrameCamera(frameId, camera) {
@@ -4651,11 +4651,11 @@ function _restoreRobotRole(frame, dto) {
  * Draw (or remove) a frame's frustum from its camera declaration (ADR-164 D3).
  * Called by every path that writes `camera` — restore, `setFrameCamera`,
  * `addCamera` — so the pixels follow the one fact (原則 #4). A malformed or
- * fov-less declaration draws nothing (no cone nobody declared).
+ * fov-less declaration draws nothing (no frustum nobody declared).
  * @param {CoordinateFrame} frame
  */
 function _syncCameraFrustum(frame) {
-  frame.meshView?.setCameraFrustum(cameraDeclarationOf(frame)?.fovHalfAngle ?? null)
+  frame.meshView?.setCameraFrustum(cameraDeclarationOf(frame)?.fov ?? null)
 }
 
 /**

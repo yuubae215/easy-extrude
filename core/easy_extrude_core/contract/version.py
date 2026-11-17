@@ -62,7 +62,11 @@ contractVersion は public スキーマの `version: "layout/x.y"` とは別系�
 # hits)。腕は閉じた kind 判別 (undeclared / noSolution / judged / measured) で、判定に
 # 使った姿勢と測っただけの姿勢を区別する。秒・fps は載せない (D3) — 間のフレームは
 # クライアントが導出する。閉じた層への必須追加なので版上げ。
-CONTRACT_VERSION = 11
+# v12: 棄却の再生 (ADR-158 R3 — DEF-075)。全相分析に**必須**の `rejectedReplays`
+# ({items, omitted}): 干渉の棄却が帰属した (相, 障害物) の組ごとに、その組で棄却された
+# 候補のうち総合スコアが最も高いもの (姿勢・関節解・各相の標本)。棄却の多い組から最大 8 件、
+# 省いた組の数を `omitted` で言う。閉じた層への必須追加なので版上げ。
+CONTRACT_VERSION = 12
 
 
 class ContractVersionMismatch(ValueError):

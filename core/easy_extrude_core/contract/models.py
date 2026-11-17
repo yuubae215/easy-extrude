@@ -339,6 +339,28 @@ class CandidateReplayWire(_ContractModel):
     phases: list[ReplayPhase]
 
 
+class RejectedReplayWire(_ContractModel):
+    """干渉で棄却された候補の代表 1 件 (契約 v12, ADR-158 R3)。
+
+    組 (相 × 障害物) ごとに、その組で棄却された候補のうち総合スコアが最も高いもの。
+    """
+
+    phase: Literal["transit", "approach", "close", "lift", "transport", "place"]
+    obstacle_index: int = Field(ge=0)
+    rejected: int = Field(ge=1)
+    total_score: float = Field(ge=0.0)
+    pose: dict[str, Any]
+    reach_solution: ReachSolution = Field(discriminator="kind")
+    phases: list[ReplayPhase]
+
+
+class RejectedReplaysWire(_ContractModel):
+    """棄却の代表の一覧と、上限で省いた組の数 (契約 v12)。"""
+
+    items: list[RejectedReplayWire]
+    omitted: int = Field(ge=0)
+
+
 class InterferenceAnalysisAllPhases(_ContractModel):
     """全相分析の結果 (契約 v8, ADR-157 D6)。答え (候補・ファネル) は変えない。"""
 
@@ -353,6 +375,8 @@ class InterferenceAnalysisAllPhases(_ContractModel):
     # 返した候補ごとの再生の標本 (契約 v11, ADR-158 再生の段)。rank 順に、返した候補
     # ちょうどぶん。フレームレートも秒も載らない — 間のフレームはクライアントが導出する。
     replays: list[CandidateReplayWire]
+    # 干渉で棄却された候補の代表 (契約 v12, ADR-158 R3 — DEF-075)。棄却の多い組から最大 8 件。
+    rejected_replays: RejectedReplaysWire
 
 
 InterferenceAnalysis = InterferenceAnalysisFirstCollision | InterferenceAnalysisAllPhases

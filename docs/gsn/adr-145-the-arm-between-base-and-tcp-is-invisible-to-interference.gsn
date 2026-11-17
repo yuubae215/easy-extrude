@@ -89,11 +89,30 @@ labels adr-145, adr-081, adr-127, adr-133, adr-135, adr-136, principle-1, princi
             - "core/easy_extrude_core/engine/feasibility.py"
             - "core/tests/test_engine.py"
 
+        goal ACandidateWithAClearBranchIsNotRejectedForInterference
+        uuid 5fc3d5e4-14bc-49c1-9100-869d73e97fe2
+        summary "Option B (2026-11-10): 干渉しない関節解が 1 つでもある候補は干渉を理由に棄却されず、返る関節解は優先順で最初に当たらない解である。代表解が通る候補の答えは変わらず、全解が当たる候補は従来どおり棄却・帰属される"
+        labels support-verified
+        state UnderReview
+
+            solution AlternateBranchAcceptanceValuesAreExecuted
+            uuid a3c1dd51-e218-4c36-b6b7-3ecceff48813
+            summary "cd core && uv run pytest (2026-11-10: 338 pass): test_templates.py — 次点を出さない対照で 4/32、既定で 0/36、救われた 4 件は返した解が当たらずそれより優先の解は全部当たる、上位 5 件は不変。test_motion_phases.py — 分析の母集団は候補 1 件 1 回、肩を包む球で 36 件すべて棄却・進入相へ帰属。test_engine.py — 探索の順序・代表解を問い直さない・占位解には次点が無い"
+            artifacts
+            - "core/tests/test_templates.py"
+            - "core/tests/test_motion_phases.py"
+            - "core/tests/test_engine.py"
+            - "core/easy_extrude_core/engine/feasibility.py"
+
+            assumption TheWireSentenceStillHoldsForAChosenBranch
+            uuid 14f86a2f-5c3d-43e6-a97e-ce16e3ba8a5e
+            summary "反証されうる仮説 (Claude が選んだ読み): response スキーマの reachSolutionSolved の文『到達する代表の関節配置を 1 つ、決定的に選ぶ』は選ぶ基準を述べていないので、干渉しない次点もこの文を満たし、版上げは要らない。当事者が『基準が変わった以上は版を上げて文を直す』を選べば改訂する"
+
     context OptionBIsDeferredNotRejected
     uuid 6e7f8091-a2b3-4c4d-a243-5e6f70819203
-    summary "干渉なしになるまで代替解(最大8解)を探索するモード (ADR-127 D5の再開) は、A (本ADR) の実装・実測を経てから必要性を判断する。docs/DEFERRAL_LEDGER.md に DEF-037 として登録 (満期 = 本ADRがAcceptedになりAが実装された後、実運用で『代表解が常に干渉して候補が失われる』ケースが確認された時点)"
+    summary "2026-11-10 に採用 (ADR-145 追記): 起票時は『A の実装・実測を経てから必要性を判断する』として DEF-037 に置いていた。台座テンプレで代表解だけが当たる 4 件が 4 件とも次点で通ると測れたので、当事者合意 (測って 1 件以上あれば入れる) のとおり入れた。下の goal ACandidateWithAClearBranchIsNotRejectedForInterference がその支え"
     artifacts
-    - "docs/DEFERRAL_LEDGER.md"
+    - "docs/adr/ADR-145-the-arm-between-base-and-tcp-is-invisible-to-interference.md"
 
     context ConnectionToProfitTreeDeferred
     uuid 7f809213-b3c4-4d5e-b354-6f708192a3b4

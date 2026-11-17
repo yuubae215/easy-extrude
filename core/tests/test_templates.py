@@ -12,6 +12,7 @@ L3 リスク再現例 (カメラを壁側に寄せると可視率が落ちる) �
 
 import json
 import math
+from dataclasses import dataclass
 from pathlib import Path
 
 from jsonschema import Draft202012Validator
@@ -20,6 +21,14 @@ from contract_pkg import load_response_schema
 
 from easy_extrude_core.contract import GraspSearchRequest, PickSequenceRequest
 from easy_extrude_core.engine import pipeline, pose_from_payload
+from easy_extrude_core.engine import generate_candidates
+from easy_extrude_core.engine.feasibility import JointSolution
+from easy_extrude_core.engine.phases import ArmModel, MotionPhase, phase_hits
+from easy_extrude_core.engine.pose_codec import pose_to_payload
+from easy_extrude_core.engine.ur_solver import (
+    UniversalRobotsIkSolver,
+    ik_solver_from_declaration,
+)
 from easy_extrude_core.scene import pick_sequence, run_pick_sequence
 from easy_extrude_core.scene.orchestration import (
     _scene_from_wire,
@@ -166,12 +175,33 @@ def _load_pedestal_request(*, declare_kinematics: bool = True) -> GraspSearchReq
     return GraspSearchRequest.model_validate(raw)
 
 
-def test_pedestal_template_rejects_the_arm_that_dives_into_its_own_plinth():
+@dataclass(frozen=True)
+class _RepresentativeOnly(UniversalRobotsIkSolver):
+    """次点を出さない対照のソルバ — 解は代表解 1 つだけ (ADR-145 Option A のままの世界)。"""
+
+    def ranked_solutions(self, candidate, robot):
+        return super().ranked_solutions(candidate, robot)[:1]
+
+
+def _representative_only_solver(request: GraspSearchRequest) -> _RepresentativeOnly:
+    declared = ik_solver_from_declaration(request.grasp_search.model_dump(by_alias=True))
+    return _RepresentativeOnly(
+        dh=declared.dh,
+        joint_limits=declared.joint_limits,
+        tolerance=declared.tolerance,
+        tool_length=declared.tool_length,
+    )
+
+
+def test_pedestal_template_the_arm_sweep_rejects_the_branch_that_dives_into_its_own_plinth():
     """ADR-145: 腕リンクの FK スイープだけが出せる棄却を受け入れ値として固定する。
 
     **対照 (宣言なし) が 0 であることが主張の本体** — TCP 進入経路は一度も
     ペデスタルに触れないので、宣言ありの棄却は腕を見たからこそ出た差である。
     対照が無いと「常に棄却する壊れたチェッカ」でも宣言あり側は緑になる。
+
+    **代表解だけで判定すると 4** (2026-11-10 までの既定の答え)。次点を探すようになった
+    あとも腕スイープ自体は同じ 4 件を当たりと言う — それを、次点を出さないソルバで問う。
 
     **10 → 4 (ADR-150 D5)**: フランジ x 軸の gauge を正すと θ6 が変わり、θ6 を含む
     代表解の選び方 (関節総移動量最小, ADR-127 D5) が 36 候補中 18 で別の枝を選ぶ。
@@ -179,16 +209,58 @@ def test_pedestal_template_rejects_the_arm_that_dives_into_its_own_plinth():
     (−125°前後) へ、1 件は逆向き。旧 gauge の θ6 は誤った x 軸に対して測られていた
     ので、10 は「どの枝を代表にするか」を無意味な θ6 が決めていた数である。
     """
-    declared = pipeline.search_report(_load_pedestal_request()).diagnostics
+    request = _load_pedestal_request()
+    representative_only = pipeline.search_report(
+        request, ik_solver=_representative_only_solver(request)
+    ).diagnostics
     control = pipeline.search_report(
         _load_pedestal_request(declare_kinematics=False)
     ).diagnostics
 
-    assert declared.candidates_generated == control.candidates_generated == 36
+    assert representative_only.candidates_generated == control.candidates_generated == 36
     assert control.rejected_by_interference == 0
-    assert declared.rejected_by_interference == 4
-    assert declared.feasible == 32
+    assert representative_only.rejected_by_interference == 4
+    assert representative_only.feasible == 32
     assert control.feasible == 36
+
+
+def test_pedestal_template_a_candidate_whose_representative_dives_is_kept_on_another_branch():
+    """ADR-145 Option B (DEF-037 決着): 代表解が台へ潜る 4 件は、肘を返した次点で通る。
+
+    4 件とも救われる = 「別配置なら掴めたはず」の候補を捨てていたのは、腕の届き方では
+    なく**代表の選び方が干渉を知らなかった**からである。救われた候補の関節解は代表解
+    ではなく、しかも実際に当たらない (選ばれた解で腕スイープを問い直す)。
+    """
+    request = _load_pedestal_request()
+    raw = json.loads(_PEDESTAL_TEMPLATE.read_text(encoding="utf-8"))
+    raw["graspSearch"]["topN"] = 1000
+    report = pipeline.search_report(GraspSearchRequest.model_validate(raw))
+    assert report.diagnostics.rejected_by_interference == 0
+    assert report.diagnostics.feasible == 36
+
+    problem = pipeline.problem_from_declaration(request.grasp_search)
+    solver = ik_solver_from_declaration(request.grasp_search.model_dump(by_alias=True))
+    arm = ArmModel(dh=solver.dh, tool_length=solver.tool_length)
+    by_pose = {
+        json.dumps(pose_to_payload(c.pose), sort_keys=True): c
+        for c in generate_candidates(problem)
+    }
+    moved = []
+    for returned in report.response.candidates:
+        candidate = by_pose[json.dumps(returned.pose, sort_keys=True)]
+        ranked = solver.ranked_solutions(candidate, problem.robot)
+        chosen = JointSolution(joints=tuple(returned.score.reach_solution.joints))
+        index = [s.joints for s in ranked].index(chosen.joints)
+        hits = lambda s: phase_hits(problem, MotionPhase.APPROACH, candidate, solution=s, arm=arm)  # noqa: E731
+        # 返した解は当たらない — どの候補でも。
+        assert not hits(chosen)
+        # そして優先順でそれより前の解は全部当たる (= 干渉しない解の中で最も優先の高い解)。
+        assert all(hits(s) for s in ranked[:index])
+        if index:
+            moved.append(returned.rank)
+    assert len(moved) == 4
+    # 救われた 4 件は末尾に入る — 上位 5 件 (テンプレの topN) の答えは動かない。
+    assert min(moved) > 5
 
 
 def test_pedestal_template_still_returns_usable_candidates():

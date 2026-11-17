@@ -178,6 +178,16 @@ function MarginBlock({ row, actors, callbacks }) {
           I have read what it gives up
         </button>
       )}
+      {row.line.marginReassess?.ok && (
+        <button
+          onClick={() => callbacks.onProposalMarginReassess?.(row.ref)}
+          data-testid={`line-margin-reassess-${row.ref}`}
+          title="Ask the solver what this change gives up against the line as it is now. Everyone reads the new answer."
+          style={{ background: 'transparent', border: `1px solid ${TONE.border}`, color: TONE.text, borderRadius: '3px', padding: '2px 8px', fontSize: '11px', cursor: 'pointer', marginTop: '2px', marginLeft: g ? '6px' : 0 }}
+        >
+          Assess again against the current line
+        </button>
+      )}
     </div>
   )
 }

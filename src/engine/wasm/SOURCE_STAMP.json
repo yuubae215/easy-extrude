@@ -1,0 +1,17 @@
+{
+  "$comment": "この成果物を作った元コードの記録。pnpm build:wasm が刻む — 手で書かない (scripts/wasm-freshness.mjs)。",
+  "lane": "wasm",
+  "sources": {
+    "wasm-engine/Cargo.lock": "2460d660501a12bb1cb0f35329c0ca3aab234568fb689b7d543207b5bb6c067e",
+    "wasm-engine/Cargo.toml": "e97c40d7bb860175d1a94bd2a6a9e4837a462ffcf1644bd6b9316d530de4c3ce",
+    "wasm-engine/src/lib.rs": "b42dd4d351f7132561f39e1f63d0051c82c072f6f92829516a572fad87330a33"
+  },
+  "artifacts": {
+    "src/engine/wasm/package.json": "ceb3c40df615ec165e61dcec9676df8ab0f5703cc394ef6dfb9672404df82506",
+    "src/engine/wasm/wasm_engine.d.ts": "6576270d7871c0c61a20b5d754c580b73da2c6de8c629f0bac88edd4ce1d7fdb",
+    "src/engine/wasm/wasm_engine.js": "033c11d86196fdf94f5138d4d9582b0fe3b7681105ab4690f1e71c38f10a17b5",
+    "src/engine/wasm/wasm_engine_bg.js": "1318f1d443df34a117d7a39763567f4322daeaabdc597dc772297839be81fde5",
+    "src/engine/wasm/wasm_engine_bg.wasm": "47bde7f35ca5e266cd8888267af5324e1233d56bcba3b1709a4b8eb64a6b9f31",
+    "src/engine/wasm/wasm_engine_bg.wasm.d.ts": "f4ff38686c59f1445989c79b3f6912079ec8241641438a2ce5d39915078aa440"
+  }
+}

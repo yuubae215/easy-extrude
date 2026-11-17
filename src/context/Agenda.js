@@ -42,7 +42,10 @@
 
 import { ownerOf, TARGET_KIND, isOwnerUndeclared, isOwnerlessDeclared } from './Ownership.js'
 import { PROPOSAL_STATE } from './Proposal.js'
-import { isLineProposal, requiredApprovers, marginNeedsReading, marginSentence } from './CriteriaLine.js'
+import {
+  isLineProposal, requiredApprovers, marginNeedsReading, marginSentence, marginIsStale, marginReadBy,
+  marginReassessGuards,
+} from './CriteriaLine.js'
 import { hasKey } from './Keyring.js'
 
 /** Ref prefix for agenda items (parallel to `conflict_` / `nc_` / `prop_`). */
@@ -268,8 +271,11 @@ export function projectAgenda(ctx, validatorResult = {}) {
         ? { line: {
             approvals: p.approvals ?? [], required: requiredApprovers(ctx, p),
             // ADR-165 D5 / D6 (PR4): what core/ said the change gives up, and who read it.
-            margin: p.margin ?? null, marginNeedsReading: marginNeedsReading(p),
-            marginSentence: marginSentence(p), offeringsReadBy: p.offeringsReadBy ?? [],
+            // A margin is of one version of the line: a stale one says so, its
+            // earlier reads no longer count, and it can be assessed again.
+            margin: p.margin ?? null, marginNeedsReading: marginNeedsReading(p, ctx),
+            marginSentence: marginSentence(p, ctx), offeringsReadBy: marginReadBy(ctx, p),
+            marginIsStale: marginIsStale(ctx, p), marginReassess: marginReassessGuards(ctx, p),
           } }
         : {}),
     }))

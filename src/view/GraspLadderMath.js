@@ -21,6 +21,7 @@
  * @typedef {import('../../server/src/grasp/contract.response').GraspSearchResponse['diagnostics']} GraspDiagnostics
  */
 import { isFunnel } from './GraspFunnelMath.js'
+import { requestAsksVisibility } from '../domain/visionCamera.js'
 
 /**
  * The operation-fallback ladder (ADR-081 Context). Levels are ordered cost
@@ -36,50 +37,92 @@ export const LADDER = Object.freeze({
 })
 
 /**
+ * Which gates the request asked (the camera / gripper declarations). A gate
+ * nobody asked has no rate: its rejection count is 0 because nothing was
+ * judged, not because everything passed. Read from the request, never assumed.
+ *
+ * @param {object|null|undefined} request  the searched request (`{graspSearch}`)
+ * @returns {{vision: boolean, grasp: boolean}|null}  null when the request is unknown
+ */
+export function askedGates(request) {
+  const gs = request?.graspSearch
+  if (!gs || typeof gs !== 'object') return null
+  return { vision: requestAsksVisibility(gs), grasp: gs.gripper != null }
+}
+
+/**
  * Deterministic per-domain KPIs from the v4 diagnostics facts.
  *
- * Rates are shares of `candidatesGenerated` that the domain did NOT reject —
- * exclusive-stage counts make the three domain rates directly comparable.
- * `null` when the input is not a v4 funnel or nothing was generated (no
- * evidence → no KPI, never a fabricated 100% — PHILOSOPHY #11).
+ * **A rate is the share of the candidates that REACHED the stage which it let
+ * through** (2026-11-11 — it used to be a share of every generated candidate).
+ * The stages short-circuit in the order reach → IK → grasp → visibility →
+ * interference, so a stage only judges what the earlier ones passed; dividing
+ * by everything generated read "6 of 6 unseen after reach dropped 30" as
+ * "83 % seen". `entered` is derived from the exclusive counts in that order.
+ * The path domain (reach, IK, interference — not adjacent in the order) is the
+ * product of its three stages' pass rates.
+ *
+ * A domain whose gate was not asked (no camera / no gripper declared) is
+ * `{asked: false}` with no rate — never a fabricated 100 % (PHILOSOPHY #11 /
+ * #31; the same split the motion phases make between judged and not judged).
+ * `null` when the input is not a v4 funnel, nothing was generated, or which
+ * gates were asked is unknown.
  *
  * @param {GraspDiagnostics|null|undefined} d
+ * @param {{vision: boolean, grasp: boolean}|null} asked  from `askedGates(request)`
  * @returns {null | {
  *   generated: number, feasible: number, returned: number, feasibleRate: number,
- *   vision:  { rejected: number, rate: number, nearestMiss: number|null },
- *   path:    { rejected: number, rate: number, nearestMiss: number|null },
- *   grasp:   { rejected: number, rate: number, nearestMiss: number|null },
+ *   vision:  { asked: boolean, entered?: number, rejected?: number, rate?: number, nearestMiss?: number|null },
+ *   path:    { asked: true, rejected: number, rate: number, nearestMiss: number|null },
+ *   grasp:   { asked: boolean, entered?: number, rejected?: number, rate?: number, nearestMiss?: number|null },
  * }}
  */
-export function domainKpis(d) {
-  if (!isFunnel(d) || d.candidatesGenerated <= 0) return null
+export function domainKpis(d, asked) {
+  if (!isFunnel(d) || d.candidatesGenerated <= 0 || !asked) return null
   const generated = d.candidatesGenerated
-  const pathRejected = d.rejectedByReach + d.rejectedByIk + d.rejectedByInterference
   const miss = (v) => (typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : null)
+  // Who reached each stage, in the engine's order (exclusive counts — ADR-081).
+  const enteredReach = generated
+  const enteredIk = enteredReach - d.rejectedByReach
+  const enteredGrasp = enteredIk - d.rejectedByIk
+  const enteredVisibility = enteredGrasp - d.rejectedByGrasp
+  const enteredInterference = enteredVisibility - d.rejectedByVisibility
+  const pass = (rejected, entered) => (entered > 0 ? 1 - rejected / entered : null)
+  const stage = (isAsked, rejected, entered, nearestMiss) => (isAsked
+    ? { asked: true, entered, rejected, rate: pass(rejected, entered), nearestMiss: miss(nearestMiss) }
+    : { asked: false })
+  const pathRates = [
+    pass(d.rejectedByReach, enteredReach),
+    pass(d.rejectedByIk, enteredIk),
+    pass(d.rejectedByInterference, enteredInterference),
+  ]
   return {
     generated,
     feasible: d.feasible,
     returned: d.returned,
     feasibleRate: d.feasible / generated,
-    vision: {
-      rejected: d.rejectedByVisibility,
-      rate: 1 - d.rejectedByVisibility / generated,
-      nearestMiss: miss(d.occlusionNearestMiss),
-    },
+    vision: stage(asked.vision, d.rejectedByVisibility, enteredVisibility, d.occlusionNearestMiss),
     path: {
-      rejected: pathRejected,
-      rate: 1 - pathRejected / generated,
+      asked: true,
+      rejected: d.rejectedByReach + d.rejectedByIk + d.rejectedByInterference,
+      // A stage nobody reached contributes nothing (its pass rate is unknown, not 1).
+      rate: pathRates.some(r => r !== null)
+        ? pathRates.filter(r => r !== null).reduce((x, y) => x * y, 1)
+        : null,
       nearestMiss: miss(d.reachNearestMiss),
     },
-    grasp: {
-      rejected: d.rejectedByGrasp,
-      rate: 1 - d.rejectedByGrasp / generated,
-      // Contract v5 (ADR-118): the grasp near-miss is kind-discriminated —
-      // `opening` for a jaw, `sealPatch` for a cup. The KPI only needs the
-      // magnitude; the kind is what the panel labels the meter with.
-      nearestMiss: miss(d.graspNearestMiss?.shortfall ?? null),
-    },
+    // Contract v5 (ADR-118): the grasp near-miss is kind-discriminated —
+    // `opening` for a jaw, `sealPatch` for a cup. The KPI only needs the
+    // magnitude; the kind is what the panel labels the meter with.
+    grasp: stage(asked.grasp, d.rejectedByGrasp, enteredGrasp, d.graspNearestMiss?.shortfall ?? null),
   }
+}
+
+/** The rate as words: a percentage, "not asked", or "nobody reached it". */
+export function rateText(domain) {
+  if (!domain?.asked) return 'not asked'
+  if (domain.rate === null || domain.rate === undefined) return 'not reached'
+  return `${(domain.rate * 100).toFixed(0)}%`
 }
 
 /**
@@ -122,12 +165,13 @@ export function ladderRisks(kpis) {
   if (!kpis) return []
   const risks = []
   for (const domain of ['vision', 'path', 'grasp']) {
+    if (!kpis[domain].asked) continue   // a gate nobody asked carries no risk either way
     const rule = RISK_RULES.find((r) => r.domain === domain && r.when(kpis[domain], kpis))
     if (rule) {
       risks.push({ domain, level: rule.level, ...LADDER[rule.level], reason: rule.reason })
     }
   }
-  const rejectingDomains = ['vision', 'path', 'grasp'].filter((k) => kpis[k].rejected > 0)
+  const rejectingDomains = ['vision', 'path', 'grasp'].filter((k) => kpis[k].asked && kpis[k].rejected > 0)
   if (kpis.feasible === 0 && rejectingDomains.length >= 2) {
     risks.push({
       domain: 'all', level: 6, ...LADDER[6],

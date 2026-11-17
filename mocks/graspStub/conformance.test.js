@@ -194,6 +194,17 @@ test('camera を宣言すると可視性が実際に効く (宣言が無視さ�
   assert.ok(blocked.diagnostics.occlusionNearestMiss > 0, '遮蔽の深さが測れたなら報告する')
 })
 
+test('矩形の視野 (fovHalfAngles + imageUp) は向きで効く — 背を向ければ全滅、向ければ通る (ADR-171)', () => {
+  const rect = (viewAxis) => stubSolve(request({
+    camera: { position: [600, 0, 2000], viewAxis, imageUp: [1, 0, 0], fovHalfAngles: { horizontal: 1.2, vertical: 1.2 } },
+  }), CONTRACT_VERSION)
+  const away = rect([0, 0, 1])
+  assert.ok(away.diagnostics.rejectedByVisibility > 0)
+  assert.equal(away.diagnostics.occlusionNearestMiss ?? null, null, '視野の外は遮蔽の深さでは測れない')
+  assertConforms(away, 'rectangular view, looking away')
+  assert.equal(rect([0, 0, -1]).diagnostics.rejectedByVisibility, 0)
+})
+
 test('平行ジョーの不足量は kind:"opening" として載る (契約 v5 / ADR-118)', () => {
   const res = stubSolve(request({
     gripper: { kind: 'parallelJaw', maxOpening: 0.001, fingerClearance: 0.0005 },

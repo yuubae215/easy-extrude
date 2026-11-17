@@ -35,7 +35,8 @@
 | 可視性 | カメラ→把持点の線分遮蔽 + 視野円錐 | `core/…/engine/feasibility.py: sightline_occlusion_miss` | core のみ |
 | カメラの視線 (ワイヤ) | カメラ実体の世界回転で optical `+Z` を回す (ROS optical frame: +Z 視線・+Y 画像の下)。保存せず毎回導出 (ADR-164 D3) | `src/domain/visionCamera.js: wireCameraOf` | front (公知の閉形式・宣言の写像) |
 | 視点の写し | THREE のカメラ基底 (−Z 視線・+Y 上) を x まわり半回転して optical 基底へ、基底 → 四元数は Shepperd 法 (ADR-164 D3) | `src/domain/visionCamera.js: cameraPoseFromViewport` / `quaternionFromBasis` | front (公知の閉形式) |
-| 視錐台 (描画) | 側面が ±半角の正方形錐 — 内接円錐がソルバの円錐と一致 (矩形の判定は DEF-061) | `src/domain/visionCamera.js: frustumCorners` | front (表示) |
+| 視錐台 (描画) | 四角錐 — 側面が ±水平半角・±垂直半角。判定される四角錐と同じ形 (ADR-171。一致は `fixtures/cross-language/camera-rectangular-view.json`) | `src/domain/visionCamera.js: frustumCorners` | front (表示 — 導出) |
+| 矩形の視野 (判定) | 前 f = 視軸、上 u = imageUp − (imageUp·f)f、右 r = f × u。視線 d について `d·f > 0 ∧ \|d·r\| ≤ (d·f)·tan(水平) ∧ \|d·u\| ≤ (d·f)·tan(垂直)`。円錐 (`fovHalfAngle`) との同時宣言は拒否 (ADR-171) | `core/easy_extrude_core/engine/feasibility.py: inside_rectangular_view` | core (源) |
 | 把持性 (平行ジョー) | 閉じ軸への射影幅 vs 開口。閉じ軸を宣言した仕様では対象 box の閉じ方向の厚み `2·Σ hᵢ·|aᵢ·x|` (ADR-152) | `core/…/engine/feasibility.py: NaiveParallelJawGraspChecker` | core のみ |
 | 深さのゲート | `depth − (toolLength − palm_z) > 0` なら把持性で棄却 (パームが面の下へ潜る) | `core/…/engine/feasibility.py: palm_depth_miss` | core のみ |
 | 把持性 (吸引) | カップ footprint 内の法線の揃い | `core/…/engine/feasibility.py: NaiveSuctionGraspChecker` | core のみ |
@@ -113,8 +114,24 @@ UR5e: `d1=0.1625, a2=−0.425, a3=−0.3922, d4=0.1333, d5=0.0997, d6=0.0996`。
 **クライアントも同じ規則を使わなければならない** — 違う代表を選ぶと、画面の腕と
 探索が解いた腕が*どちらも正しい解*でありながら別物になる。
 
-> **残し**: 「干渉しない解が見つかるまで 8 解を順に試す」モードは未実装 (DEF-037)。
-> 今日は代表解が干渉すれば候補は単に棄却される。
+### 2.4b 代表解が干渉したら、干渉しない次点 (ADR-145 Option B — 2026-11-10)
+
+代表解は**干渉を知らずに**選ばれる。代表解が (評価するどれかの相で) 当たったら、同じ優先順
+(関節総移動量の昇順、`ranked_solutions`) で次点を順に問い、**最初に当たらない解**をその候補の
+関節解にする = 干渉しない解の中で総移動量が最小。全部当たれば候補は棄却され、帰属は代表解が
+最初に当たった相のまま。
+
+```
+使う解 = min { Σ|q_i| : q ∈ IK(T) ∩ 関節限界 ∩ 干渉なし }      (空なら棄却)
+```
+
+- 代表解が通る候補では代表解のまま (この探索の前と同じ答え)。払うのは代表解が当たった候補だけで、
+  幅は高々 7 解。
+- ワイヤの `reachSolution.joints` に載るのは**選ばれた解**。クライアントが自分で解くのは
+  `reachSolution` が `undeclared` のとき (core/ が腕を解いていない = 次点探しも無い) だけなので、
+  上の「同じ規則」は破れない。
+- 置き場所: `core/` のみ (どの枝を選ぶかはアイデア — ADR-146 軸 1。フロントに写しを置かない)。
+- 実測 (台座テンプレ): 干渉棄却 4 件は 4 件とも次点で通る (肩 −2.35 → −1.05 rad の枝)。
 
 ### 2.5 2 つの gauge と固定の取付け (ADR-147 → ADR-150 D5)
 

@@ -752,7 +752,9 @@ test('S19 — カメラはシーンの実体: 足すと見えるかを問い、�
   const r1 = await runAndRequest()
   expect(r1.status).toBe('results')
   expect(r1.camera.viewAxis).toEqual([0, 0, -1])
-  expect(r1.camera.fovHalfAngle).toBe(0.6)
+  // 描く矩形がそのまま判定される (ADR-171): 半角 2 つ + 画像の上方向。
+  expect(r1.camera.fovHalfAngles).toEqual({ horizontal: 0.6, vertical: 0.6 })
+  expect(r1.camera.imageUp).toEqual([1, 0, 0])
 
   // 「今の視点を写す」: カメラが視点の位置に立ち、視線の向きを見る (1 回の undo)。
   const view = await page.evaluate(() => window.__easyExtrude.cameraState())

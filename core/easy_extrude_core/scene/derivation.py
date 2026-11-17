@@ -171,6 +171,11 @@ def build_request(
             camera_wire["viewAxis"] = settings.camera.view_axis.as_list()
         if settings.camera.fov_half_angle is not None:
             camera_wire["fovHalfAngle"] = settings.camera.fov_half_angle
+        if settings.camera.fov_half_angles is not None:
+            half_h, half_v = settings.camera.fov_half_angles
+            camera_wire["fovHalfAngles"] = {"horizontal": half_h, "vertical": half_v}
+        if settings.camera.image_up is not None:
+            camera_wire["imageUp"] = settings.camera.image_up.as_list()
         grasp_search["camera"] = camera_wire
     if settings.gripper is not None:
         # kind 判別 (ADR-118)。ここはドメイン型 -> ワイヤの写しなので、種別ごとに

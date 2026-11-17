@@ -1,0 +1,16 @@
+{
+  "$comment": "この成果物を作った元コードの記録。pnpm build:robotics-wasm が刻む — 手で書かない (scripts/wasm-freshness.mjs)。",
+  "lane": "robotics-wasm",
+  "sources": {
+    "robotics-wasm/CMakeLists.txt": "b077befa8463ae3ffce6aa0237cc73241cbfb9a2b7aa4528a65dbe242f001138",
+    "robotics-wasm/src/bindings.cpp": "5f9c11ae6d7b42525e500cf4ae6473314e7ec766e6ff4a3850e1f6b705973a38",
+    "robotics-wasm/vendor/eigen": "gitlink:3147391d946bb4b6c68edd901f2add6ac1f31f8c",
+    "robotics-wasm/vendor/orocos_kdl": "gitlink:db25b7e480e068df068232064f2443b8d52a83c7",
+    "robotics-wasm/vendor/ruckig": "gitlink:7de6b1035e1cad509251b31b3287d10fbcda6baf",
+    "scripts/build-robotics-wasm.sh": "4130284cb3c017ef3877d423ea72e4ea7ea35c30b8a7d9dab1e28afe8138b433"
+  },
+  "artifacts": {
+    "src/engine/robotics-wasm/robotics_engine.mjs": "3232a167d4a5cad99d42e1dfeeb0084b1ded202fe9ee138501770aad36b01e3c",
+    "src/engine/robotics-wasm/robotics_engine.wasm": "2a5431df60ea1db8d408d49bfe915cc5a182f7628e9a0751487405e96bbc51ae"
+  }
+}

@@ -134,18 +134,26 @@ class UniversalRobotsIkSolver:
         なく「述べていない」で、その区別を画面に出すのはフロントの責務である —
         向き無しでは解けない以上、core/ は恒等で解くしかない (原則 #31)。
         """
-        admissible = self.admissible_solutions(candidate, robot)
-        if not admissible:
-            return None
+        ranked = self.ranked_solutions(candidate, robot)
+        # 代表解 = 優先順の先頭。JointSolution = 「描ける 6 関節の配置」という型の主張
+        # (ADR-135)。素朴ソルバの占位 IkSolution と取り違えられない形にしてある。
+        return ranked[0] if ranked else None
 
-        # 代表解: 解析解は最大 8 個あるが段階0 が問うのは「解けるか」だけなので、
-        # **決定的に 1 つ**選ぶ。基準は「関節の総移動量が最小」= 原点姿勢に最も近い解。
-        # 順序ではなく量で選ぶのは、探索の入力が少し変わったときに代表解が飛ばない
-        # ようにするため (同点は `inverse_kinematics` の決定的な順序が破る)。
-        best = min(admissible, key=lambda q: (sum(abs(v) for v in q), q))
-        # JointSolution = 「描ける 6 関節の配置」という型の主張 (ADR-135)。素朴ソルバの
-        # 占位 IkSolution と取り違えられない形にしてある。
-        return JointSolution(joints=tuple(best))
+    def ranked_solutions(
+        self, candidate: GraspCandidate, robot: Robot
+    ) -> "tuple[JointSolution, ...]":
+        """関節限界内の解を**優先順**に全部 (最大 8)。先頭が代表解 (純粋)。
+
+        優先の基準は「関節の総移動量が最小」= 原点姿勢に最も近い解 (ADR-127 D5)。
+        順序ではなく量で選ぶのは、探索の入力が少し変わったときに代表解が飛ばない
+        ようにするため (同点は関節値の辞書順が破る — 決定的)。
+
+        代表解 (`solve`) と、代表解が干渉したときの次点 (`AlternateSolutionCollisionSearch`
+        — ADR-145 Option B) は**同じこの順**を読む。順序の規則を 2 か所に書かない (§1.1)。
+        """
+        admissible = self.admissible_solutions(candidate, robot)
+        ordered = sorted(admissible, key=lambda q: (sum(abs(v) for v in q), q))
+        return tuple(JointSolution(joints=tuple(q)) for q in ordered)
 
     def admissible_solutions(
         self, candidate: GraspCandidate, robot: Robot
@@ -177,7 +185,8 @@ class UniversalRobotsIkSolver:
         経路に沿って腕を**測る**ための選び方 (ADR-158 PR1)。把持姿勢で判定した
         代表解から出発して隣の点へ 1 刻みずつ渡すので、腕は判定したのと同じ枝を
         たどる。当たらない枝を探しには行かない (回避はしない — 当事者合意
-        2026-10-15「測るだけで良い」、代替解の探索は DEF-037)。
+        2026-10-15「測るだけで良い」)。把持姿勢そのものの枝は、代表解が干渉すれば
+        次点へ移る (`AlternateSolutionCollisionSearch`) — ここへ渡る seed はその選ばれた枝。
         """
         admissible = self.admissible_solutions(candidate, robot)
         if not admissible:

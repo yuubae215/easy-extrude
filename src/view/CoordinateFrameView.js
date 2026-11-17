@@ -307,21 +307,21 @@ export class CoordinateFrameView {
    * Draw (or remove) this frame's vision-camera frustum, frame-local in WORLD
    * units (mm) — a separate object from the axes group, because the axes are
    * scaled to a screen size and the frustum is a fact about the scene. The
-   * square whose inscribed cone is the solver's cone (`frustumCorners` — DEF-061),
-   * with a tick on the image-up edge (optical −Y) so the camera's roll is
-   * visible. `null` (not a camera, or no declared fov) removes it — a cone
-   * nobody declared is not drawn.
+   * rectangle the solver judges (`frustumCorners` — ADR-171), with a tick on
+   * the image-up edge (optical −Y) so the camera's roll is visible. `null`
+   * (not a camera, or no declared fov) removes it — a frustum nobody declared
+   * is not drawn.
    *
-   * @param {number|null} fovHalfAngle  rad
+   * @param {{horizontal: number, vertical: number}|null} fov  rad
    */
-  setCameraFrustum(fovHalfAngle) {
+  setCameraFrustum(fov) {
     if (this._frustum) {
       this._scene.remove(this._frustum)
       this._frustum.geometry.dispose()
       this._frustum.material.dispose()
       this._frustum = null
     }
-    const c = fovHalfAngle == null ? null : frustumCorners(fovHalfAngle)
+    const c = fov == null ? null : frustumCorners(fov)
     if (!c) return
     const pts = []
     const seg = (a, b) => pts.push(a.x, a.y, a.z, b.x, b.y, b.z)
@@ -329,8 +329,9 @@ export class CoordinateFrameView {
     for (let i = 0; i < 4; i++) { seg(apex, c[i]); seg(c[i], c[(i + 1) % 4]) }
     // Image-up tick: a small triangle standing on the top edge (c[0]–c[1], y = −h).
     const h = Math.abs(c[0].y), z = c[0].z
-    seg({ x: -h * 0.3, y: -h, z }, { x: 0, y: -h * 1.3, z })
-    seg({ x: 0, y: -h * 1.3, z }, { x: h * 0.3, y: -h, z })
+    const t = Math.min(h, Math.abs(c[0].x)) * 0.3
+    seg({ x: -t, y: -h, z }, { x: 0, y: -h - t, z })
+    seg({ x: 0, y: -h - t, z }, { x: t, y: -h, z })
     const geo = new THREE.BufferGeometry()
     geo.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3))
     const mat = new THREE.LineBasicMaterial({ color: hexNumber(COLOR.revealTone), transparent: true, opacity: OPACITY_LINE_FULL })

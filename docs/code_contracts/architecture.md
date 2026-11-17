@@ -1210,3 +1210,49 @@ The desktop onboarding tour (`uiStore.tour`, quest card + anchor pulse) is the o
 
 **Why.** `above` meant "vertically above, apart" in its definition and "resting on, touching" in the inferencer and
 the templates — one word, two facts, and each place silently dropped one of them (ADR-168 力学 1).
+
+## Joint Arrays on the Wire Are Positional, in Chain Order — and Chain Order Has One Reader (ADR-060 / ADR-135 D3)
+
+- **The fact.** Every bare array of joint values that crosses the wire — `pose.jointSpace.joints` and
+  `scoreBreakdown.reachSolution.joints` in the response, and the six DH lengths' order behind `robot.kinematics` in
+  the request — is **positional, in chain order: base → flange, movable joints only** (`fixed` joints consume no
+  value). The contract says so in the schema descriptions ("Joint values in chain order"); it carries no names.
+- **Chain order on the front is `movableJoints(chain)`** (`src/robotics/Kinematics.js`) and nothing else:
+  `forwardKinematics(chain, q)` reads `q` in that order, `kinematicsDeclarationFromUrdf` builds the request's DH from
+  it, and `ROBOT_JOINT_NAMES` (`src/view/robotSkeleton.js`) turns a wire array back into `{name: value}` with it.
+  So the order the solver was told and the order the arm is drawn back in come from the same URDF string.
+  **Never write the joint names down as a list, and never index a wire `joints` array by a hand-kept order** — a
+  permuted arm still renders as *an* arm, so the mistake is invisible on screen.
+- **Where it is asked.** `src/robotics/CrossLanguageDerivation.test.js` asserts `movableJoints(...)` names equal the
+  shared fixture's `jointOrder`, and both languages reproduce the same TCP poses from the fixture's `q` vectors
+  (`fixtures/cross-language/ur5e-forward-kinematics.json` / `ur5e-inverse-kinematics.json`) — a permutation on either
+  side fails the numbers. `core/` holds no joint names: its order is the DH index 1..6, pinned only by those numbers.
+- **Not covered.** `pose.kind: 'jointSpace'` is accepted by the contract but `core/` does not produce it today and
+  the front declines to draw it (`renderableEndEffectorFrame` returns null — no heuristic reading). The day a solver
+  emits it, its `chainRef` must name the chain whose `movableJoints` order the array is in; that pairing has no
+  check yet.
+
+**Why.** ADR-060 named the pose union's branches but left "which order" as a doc comment on the JS side only
+(`"in chain order"`); nothing said the JS chain order and the contract's were one agreement. ADR-135 D3 then made the
+drawn order a derivation for `reachSolution.joints`. This entry names the agreement for both arrays (closes DEF-004).
+
+## A Committed WASM Artifact Carries a Stamp of the Sources It Was Built From (ADR-064 Phase 1 — closes DEF-024)
+
+- **The rule.** Both WASM lanes ship committed artifacts and CI has no Rust / C++ toolchain, so CI cannot rebuild
+  them. Each artifact directory therefore carries `SOURCE_STAMP.json` — per-file sha256 of the lane's sources and of
+  its artifacts — written by the build (`pnpm build:wasm` / `pnpm build:robotics-wasm` end with
+  `node scripts/wasm-freshness.mjs stamp <lane>`). **Never write or edit the stamp by hand, and never run `stamp`
+  without having rebuilt** — the stamp is the claim "these artifacts came from these sources".
+- **What CI asks** (`pnpm test:wasm-freshness`, gate job): the sources still match the stamp (edited and not
+  rebuilt), the artifacts still match the stamp (replaced without the build), and neither the stamp nor either
+  population is empty (an empty lane would read as "all match" — #31). Sources are the lane's *tracked files*, derived
+  from the directory, so a file added to `wasm-engine/src/` shows up as a difference with no table to update; vendor
+  submodules are stamped by their pinned commit.
+- **What it does not ask.** That the stamp is true (it prevents forgetting, not lying), that the artifact works
+  (`pnpm test:wasm` — cargo — is still not in CI), or which toolchain version built it. The first stamps (2026-11-10)
+  were taken from the tree as it stood, **without a rebuild**: they record the then-current pairing, on the ledger's
+  earlier observation that sources and artifacts were both last touched by the same change.
+
+**Why.** Editing `wasm-engine/src/lib.rs` or `robotics-wasm/src/bindings.cpp` and forgetting to regenerate left every
+check green and shipped the old binary; the pairing lived only in the author's memory.
+

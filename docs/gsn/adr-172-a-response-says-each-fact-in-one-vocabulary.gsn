@@ -1,0 +1,52 @@
+GOALS adr172_a_response_says_each_fact_in_one_vocabulary
+
+goal EachFactOnTheResponseHasOneNameAndOneWayToSayNotAsked
+uuid 8bd5e5bd-0a99-4207-8356-2a0c77c65557
+summary "把持探索の応答の利用者は、1 つの事実を 1 つの名前で読み、判定した結果の 0 と問うていないを型で見分け、足してよい数と足してはいけない数を型で見分けられる。仕様ごとの段別の内訳は候補全体を漏れなく分ける行の上に載り、どの手戻りが要りそうかはエンジンが決める"
+state ToBeDeveloped
+labels adr-172, adr-081, adr-152, adr-120, adr-157, principle-31, principle-33, principle-29, grasp, contract, term-l-blind, change-diagnosis
+artifacts
+- "docs/adr/ADR-172-a-response-says-each-fact-in-one-vocabulary.md"
+
+    context Adr172Scope
+    uuid 4b7dcb28-c943-4e82-bc5b-8eddf76ae630
+    summary "ADR-172 (Proposed 2026-11-12): 把持探索の応答 1 本を共有の型で作り直す (契約 v13)。request 側の語を揃えるのは DEF-082 に残す。D1〜D8 の読み方は俯瞰で当事者が決める"
+
+    context RequirementCameFromTheOwner
+    uuid df4b50b9-2eff-41b1-a6b0-ca5ec962f4d6
+    summary "当事者の言葉: 『Q4 は現在の型の意味の棚卸しと必要ならリファクタリングを前提に調査してからやりたい』→『全体の型を俎上に上げてからじゃなくていい?』→『(リスク表は) 移しても良いよ エンジンに移して繋ぎ直す?』→『b までやってほしいけど、それは残しにして、a まで』"
+
+    justification MinimalAdditionWasRejected
+    uuid d0da34ce-65cf-45e5-a8b7-7a1827c96bd0
+    summary "却下: 仕様の行に段別の 5 つの数と導出の行だけを足す案は、0 と問うていないの混同・当たりの型の 4 重・列挙の書き写しを残し、次の欄でまた同じ欠陥を生む"
+
+    strategy ByOneSharedTypePerFact
+    uuid 0eea734b-260e-4d78-98c2-4010e8b9e299
+    summary "段・相・最も惜しい差・障害物の当たり・関節の配列を $defs に 1 つずつ置いてすべての欄が参照し、判定の有無は閉じた kind で、排他かどうかは欄の名前 (rejected / touched) で言う"
+
+        goal NotAskedIsAKindNeverAZeroOrAVacuousTrue
+        uuid a5d57072-69a2-46d6-9c8f-9f8cce674435
+        summary "カメラ・ハンドを宣言していない段は notAsked {reason} で返り、entered も rejected も持たない。返す候補の 5 つの真偽値は消える"
+        labels support-exploring
+
+            assumption NotAskedWillBeExecuted
+            uuid 7d790924-660d-49ed-a722-4620d0c790c8
+            summary "証拠の予定: core と契約パッケージの準拠テストで、カメラ・ハンド未宣言の探索が notAsked を返し、スキーマが notAsked に数を付けた応答を拒むことを問う。満期=GREP:packages/grasp-contract/schema/grasp-search-response.schema.json::notAsked"
+
+        goal BySourceRowsPartitionTheWholeSearch
+        uuid 44ccbff4-93df-4970-ad76-c9fea9e49541
+        summary "出どころの行 (宣言した仕様ごと + 導出) の和が、生成・通過・段ごとの棄却のすべてで全体に一致する。仕様が全滅して導出へ戻った探索にも導出の行が在る (DEF-048 を閉じる)"
+        labels support-exploring
+
+            assumption PartitionWillBeExecuted
+            uuid 1cf7b66a-1adc-48b5-ac98-2fcb8717d575
+            summary "証拠の予定: 2026-11-11 に実測した『生成 40 / 仕様の行の和 4』の場面を core のテストに焼き、行の和 = 全体を問う。満期=GREP:packages/grasp-contract/schema/grasp-search-response.schema.json::bySource"
+
+        goal TheFallbackRiskIsDecidedByTheEngine
+        uuid c5b723df-52f6-49ee-be25-428f38b2ad02
+        summary "フォールバックのリスク (ドメイン・段・理由の列挙) は core が段の判定から決めてワイヤに載せ、フロントは列挙から文言を引いて表示するだけ。問うていない段からリスクは出ない"
+        labels support-exploring
+
+            assumption RiskWillMoveToTheEngine
+            uuid f90cc9ad-6919-466e-bae3-57cdd49e9aff
+            summary "証拠の予定: core に階梯のリスクの表と単体テストを置き、src/view/GraspLadderMath.js から RISK_RULES が消える。満期=GREP:packages/grasp-contract/schema/grasp-search-response.schema.json::fallbackRisks"

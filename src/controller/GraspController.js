@@ -53,7 +53,7 @@
 import { renderableEndEffectorFrame, nearestTargetIndex } from '../view/GraspGhostMath.js'
 import { defaultObjectiveWeights } from '../context/GraspDeclarationCatalog.js'
 import {
-  resolveCameras, selectCamera, cameraCardinality, cameraDeclarationOf, wireCameraOf,
+  resolveCameras, selectCamera, cameraCardinality, cameraDeclarationOf, wireCameraOf, withFieldOfView,
   cameraPoseFromViewport, CAMERA_STATE,
 } from '../domain/visionCamera.js'
 import { createSetCameraCommand } from '../command/SetCameraCommand.js'
@@ -71,6 +71,7 @@ import { liftDeclarationGaps } from '../domain/targetLift.js'
 import { analysisAvailability } from '../view/GraspPhaseMath.js'
 import {
   replayFor, phaseTimeline, replayFrame, replayCaption,
+  REPLAY_SUBJECT, returnedSubject, rejectedSubject, sameSubject, subjectLabel,
   struckObstacles, stepStop, sampleStops, playheadAt,
 } from '../view/GraspReplayMath.js'
 import { prefersReducedMotion } from '../theme/motion.js'
@@ -201,6 +202,7 @@ export class GraspController {
     registerCallback('onReplayScrub',          (at)    => this.scrubReplay(at))
     registerCallback('onReplayStep',           (dir)   => this.stepReplay(dir))
     registerCallback('onReplayClose',          ()      => this.closeReplay())
+    registerCallback('onReplayRejected',       (phase, obstacleIndex) => this.openRejectedReplay(phase, obstacleIndex))
     registerCallback('onSelectCamera',         (id)    => this.selectCamera(id))
     registerCallback('onSetCamera',            (id, camera) => this.setCamera(id, camera))
     registerCallback('onCopyViewToCamera',     (id)    => this.copyViewToCamera(id))
@@ -309,8 +311,8 @@ export class GraspController {
 
   /**
    * "Copy the current view" (ADR-081 §5 → the camera's panel, ADR-164 D3): put
-   * the camera where the viewport is, looking where it looks, with its vertical
-   * half angle — ONE undoable act. An orthographic viewport has no fov: the
+   * the camera where the viewport is, looking where it looks, seeing the
+   * viewport's rectangle — ONE undoable act. An orthographic viewport has no fov: the
    * camera keeps its declared one and the toast says so. Refused (and said) for a
    * parented camera or when no viewport camera is readable.
    *
@@ -332,13 +334,14 @@ export class GraspController {
       position: cam.position ? { x: cam.position.x, y: cam.position.y, z: cam.position.z } : null,
       matrixWorldElements: cam.matrixWorld?.elements ? [...cam.matrixWorld.elements] : null,
       fovDeg: typeof cam.fov === 'number' ? cam.fov : null,
+      aspect: typeof cam.aspect === 'number' ? cam.aspect : null,
     }) : null
     if (!view) {
       ui?.showToast?.('The viewport camera cannot be read — nothing was copied.', { type: 'warn' })
       return false
     }
-    const camera = view.fovHalfAngle !== null ? { ...frame.camera, fovHalfAngle: view.fovHalfAngle } : { ...frame.camera }
-    if (view.fovHalfAngle === null) {
+    const camera = view.fov !== null ? withFieldOfView(frame.camera, view.fov) : { ...frame.camera }
+    if (view.fov === null) {
       ui?.showToast?.('Map view has no field of view — the pose was copied, the declared field of view is kept.', { type: 'info' })
     }
     return this._writeCamera(frameId, camera, { position: view.position, rotation: view.quaternion }, 'Copy view to camera')
@@ -1423,14 +1426,39 @@ export class GraspController {
    * selection, samples for that rank), shared with the panel.
    */
   _replayContext() {
-    const { grasp, graspAnalysis } = this._store.getState().context
-    const rank = grasp?.selectedRank ?? null
-    const r = replayFor(graspAnalysis ?? null, grasp ?? null, rank)
+    const { grasp, graspAnalysis, graspReplay } = this._store.getState().context
+    const subject = this._replaySubject(graspReplay, grasp)
+    const r = replayFor(graspAnalysis ?? null, grasp ?? null, subject)
     if (r.kind !== 'ready') return { ready: false, reason: r.reason }
     return {
-      ready: true, rank, grasp, replay: r.replay,
+      ready: true, subject, grasp, replay: r.replay, pose: r.pose,
       timeline: phaseTimeline(r.replay, grasp.diagnostics?.interferencePhases ?? null),
     }
+  }
+
+  /**
+   * What the replay is of (ADR-158 R3): an open replay of a rejected
+   * representative stays on it; otherwise it is the selected candidate. The
+   * ONE place the subject is resolved — play / step / scrub never decide it.
+   */
+  _replaySubject(state, grasp) {
+    if (state?.subject?.kind === REPLAY_SUBJECT.REJECTED) return state.subject
+    return returnedSubject(grasp?.selectedRank ?? null)
+  }
+
+  /**
+   * Open the replay of a rejected group's representative (ADR-158 R3) — the
+   * best candidate this obstacle stopped. Plays from the start (or opens on the
+   * first sample under reduced motion), like ▶ on a returned candidate.
+   */
+  openRejectedReplay(phase, obstacleIndex) {
+    const { grasp, graspAnalysis } = this._store.getState().context
+    const subject = rejectedSubject(phase, obstacleIndex)
+    const r = replayFor(graspAnalysis ?? null, grasp ?? null, subject)
+    if (r.kind !== 'ready') { this._ctrl._uiView?.showToast?.(r.reason, { type: 'warn' }); return }
+    this._playAnchor = null
+    this._writeReplay({ subject, at: 0, playing: false })
+    this.playReplay()
   }
 
   /**
@@ -1443,13 +1471,14 @@ export class GraspController {
     const cx = this._replayContext()
     if (!cx.ready) { this._ctrl._uiView?.showToast?.(cx.reason, { type: 'warn' }); return }
     const cur = this._store.getState().context.graspReplay
-    const resume = cur && cur.rank === cx.rank && cur.at < cx.timeline.total ? cur.at : 0
+    const same = sameSubject(cur?.subject, cx.subject)
+    const resume = same && cur.at < cx.timeline.total ? cur.at : 0
     if (prefersReducedMotion()) {
-      this._writeReplay({ rank: cx.rank, at: cur?.rank === cx.rank ? cur.at : (sampleStops(cx.timeline)[0] ?? 0), playing: false })
+      this._writeReplay({ subject: cx.subject, at: same ? cur.at : (sampleStops(cx.timeline)[0] ?? 0), playing: false })
       return
     }
     this._playAnchor = { t0: this._lastTickMs, at0: resume }
-    this._writeReplay({ rank: cx.rank, at: resume, playing: true })
+    this._writeReplay({ subject: cx.subject, at: resume, playing: true })
   }
 
   pauseReplay() {
@@ -1465,7 +1494,7 @@ export class GraspController {
     if (!cx.ready) { this._ctrl._uiView?.showToast?.(cx.reason, { type: 'warn' }); return }
     this._playAnchor = null
     const x = Math.min(cx.timeline.total, Math.max(0, Number(at) || 0))
-    this._writeReplay({ rank: cx.rank, at: x, playing: false })
+    this._writeReplay({ subject: cx.subject, at: x, playing: false })
   }
 
   /** Step to the next / previous judged sample (dir = +1 / −1). */
@@ -1473,11 +1502,11 @@ export class GraspController {
     const cx = this._replayContext()
     if (!cx.ready) { this._ctrl._uiView?.showToast?.(cx.reason, { type: 'warn' }); return }
     const cur = this._store.getState().context.graspReplay
-    const at = cur?.rank === cx.rank
+    const at = sameSubject(cur?.subject, cx.subject)
       ? stepStop(cx.timeline, cur.at, dir)
       : (sampleStops(cx.timeline)[0] ?? 0)
     this._playAnchor = null
-    this._writeReplay({ rank: cx.rank, at, playing: false })
+    this._writeReplay({ subject: cx.subject, at, playing: false })
   }
 
   /** Close the replay; the ghost and the arm go back to the selected candidate. */
@@ -1512,7 +1541,7 @@ export class GraspController {
     const state = this._store.getState().context.graspReplay
     if (!state) return
     const cx = this._replayContext()
-    if (!cx.ready || cx.rank !== state.rank) {
+    if (!cx.ready || !sameSubject(cx.subject, state.subject)) {
       this._endReplay()
       this._syncGhost()
       return
@@ -1536,8 +1565,9 @@ export class GraspController {
     if (stages) stages.previewSolution(robotEntity?.id ?? null, frame.arm)
     const armShown = frame.arm != null && robotEntity != null && stages?.isVisible?.(robotEntity.id) === true
 
-    const candidate = (cx.grasp.candidates ?? []).find(c => c.rank === cx.rank)
-    const wireFrame = candidate ? renderableEndEffectorFrame(candidate.pose) : null
+    // The pose comes with the subject (`replayFor`) — a rejected representative
+    // is not among the candidates, so it is never looked up by rank here.
+    const wireFrame = cx.pose ? renderableEndEffectorFrame(cx.pose) : null
     if (!wireFrame) { this._ghost?.showReplayFrame(null); return }
     if (!this._ghost) {
       if (!this._createGhostView) return
@@ -1560,7 +1590,7 @@ export class GraspController {
     this._ghost.showReplayFrame({
       position: mPointToMM(tcp), orientation: wireFrame.orientation,
       kind: frame.kind, closure: frame.closure, struck,
-      caption: `#${cx.rank} · ${replayCaption(frame, cx.timeline)}`,
+      caption: `${subjectLabel(cx.subject, this._store.getState().context.graspAnalysis?.obstacleLabels ?? [])} · ${replayCaption(frame, cx.timeline)}`,
     })
     this._ghost.setHandOnArm(armShown)
   }
@@ -1578,7 +1608,7 @@ export class GraspController {
     const cur = this._store.getState().context.grasp
     if (cur?.status !== 'results') return
     // Selecting another candidate ends the replay of the previous one (#32).
-    if (this._store.getState().context.graspReplay?.rank !== rank) this._endReplay()
+    if (!sameSubject(this._store.getState().context.graspReplay?.subject, returnedSubject(rank))) this._endReplay()
     this._store.getState().actions.contextSetGrasp({ ...cur, selectedRank: rank })
     this._syncGhost()
   }

@@ -37,6 +37,10 @@ export type ReplayPhase = ReplayPathPhase | ReplaySweepPhase;
  * The arm at one sample, as a CLOSED KIND-DISCRIMINATED union. judged = the pose the search judged (the approach phase's pick pose); measured = a pose only measured along the path (ADR-158 PR1 -- never counted as a rejection); noSolution = measured, but no joint solution within limits at this point; undeclared = robot.kinematics is not declared, nobody decided the arm's joints (draw no arm).
  */
 export type ReplayArm = ReplayArmUndeclared | ReplayArmNoSolution | ReplayArmJudged | ReplayArmMeasured;
+/**
+ * The JOINT CONFIGURATION the solver decided for this candidate, as a CLOSED KIND-DISCRIMINATED union (contract v6, ADR-135). A returned candidate always passed the IK stage (the filter short-circuits, so an IK-rejected candidate is never in candidates[]) -- what this union discriminates is therefore NOT reachable/unreachable, which `ikSolvable` already carries, but whether a DRAWABLE joint vector exists at all. It exists only when the request declared `robot.kinematics` and the closed-form solver ran; with no declaration the wrist-cone proxy judges reachability without producing joint angles, and there is nothing to draw. Required on every candidate: the absence of a joint configuration is DECLARED, never signalled by omitting the field (原則 #31). Presentation (how the arm is animated into the pose, ghost color, whether a preview is shown at all) is derived client-side and is NOT part of this contract (ADR-060).
+ */
+export type ReachSolution1 = ReachSolutionSolved | ReachSolutionUndeclared;
 
 /**
  * grasp-search service -> BFF output. Top-N ranking with score breakdown. Wire form uses camelCase.
@@ -271,6 +275,7 @@ export interface InterferenceAnalysisAllPhases {
    * Per returned candidate, in rank order and exactly one per returned candidate: the samples the judgement used, phase by phase (ADR-158 replay stage, contract v11). Only evaluated phases appear, in motion order (unevaluated ones are explained by interferencePhases). Time is progress within a phase (s in [0,1]) -- never seconds, never a frame rate: the frames between samples are derived by the client and are judged by nobody.
    */
   replays: CandidateReplay[];
+  rejectedReplays: RejectedReplays;
 }
 export interface ArmPathUndeclared {
   kind: "undeclared";
@@ -411,4 +416,59 @@ export interface ReplayArmMeasured {
 export interface ReplaySweepPhase {
   phase: "close";
   hits: ReplayHit[];
+}
+/**
+ * Interference-rejected candidates worth replaying (ADR-158 replay stage R3, contract v12). One per (phase the rejection was attributed to, obstacle hit in that phase), most-rejected groups first (ties: motion order, then obstacle index), at most 8. Which candidate represents a group is the solver's choice: the highest total score among that group's rejections (ties: generation order) -- 'the best candidate this obstacle stopped'. Groups beyond the limit are COUNTED in `omitted`, never silently dropped.
+ */
+export interface RejectedReplays {
+  /**
+   * @maxItems 8
+   */
+  items:
+    | []
+    | [RejectedReplay]
+    | [RejectedReplay, RejectedReplay]
+    | [RejectedReplay, RejectedReplay, RejectedReplay]
+    | [RejectedReplay, RejectedReplay, RejectedReplay, RejectedReplay]
+    | [RejectedReplay, RejectedReplay, RejectedReplay, RejectedReplay, RejectedReplay]
+    | [RejectedReplay, RejectedReplay, RejectedReplay, RejectedReplay, RejectedReplay, RejectedReplay]
+    | [RejectedReplay, RejectedReplay, RejectedReplay, RejectedReplay, RejectedReplay, RejectedReplay, RejectedReplay]
+    | [
+        RejectedReplay,
+        RejectedReplay,
+        RejectedReplay,
+        RejectedReplay,
+        RejectedReplay,
+        RejectedReplay,
+        RejectedReplay,
+        RejectedReplay
+      ];
+  /**
+   * Groups not returned because of the limit.
+   */
+  omitted: number;
+}
+export interface RejectedReplay {
+  /**
+   * The phase the rejection was attributed to (the first phase it hit, ADR-157 D3).
+   */
+  phase: "transit" | "approach" | "close" | "lift" | "transport" | "place";
+  /**
+   * Index into the request's obstacles[] hit in that phase. A candidate that hit several obstacles counts in each of their groups.
+   */
+  obstacleIndex: number;
+  /**
+   * How many rejected candidates this group counted (not exclusive across groups).
+   */
+  rejected: number;
+  /**
+   * The representative's weighted score, computed exactly as for returned candidates. It ranks nothing on the wire.
+   */
+  totalScore: number;
+  pose: Pose;
+  reachSolution: ReachSolution1;
+  /**
+   * Same shape as a returned candidate's replay: evaluated phases only, in motion order.
+   */
+  phases: ReplayPhase[];
 }

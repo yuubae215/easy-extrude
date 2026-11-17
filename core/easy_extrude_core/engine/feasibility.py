@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Iterator, Optional, Protocol
+from typing import Callable, Iterator, Optional, Protocol
 
 from .pose_codec import frame_axes
 from .ur_kinematics import UrDhParameters, forward_kinematics_chain
@@ -381,6 +381,62 @@ def interference_free(
     )
 
 
+class RankedIkSolver(Protocol):
+    """優先順に全部の関節解を出せるソルバ (最大 8 解の解析解)。先頭が代表解。"""
+
+    def ranked_solutions(
+        self, candidate: GraspCandidate, robot: Robot
+    ) -> "tuple[JointSolution, ...]": ...
+
+
+@dataclass(frozen=True)
+class AlternateSolutionCollisionSearch:
+    """代表解が干渉したとき、干渉しない次点の関節解を探す (ADR-145 Option B — DEF-037)。
+
+    解析解は 1 つの TCP 姿勢に最大 8 つの腕の形 (肩の左右・肘の上下・手首の反転) を
+    出す。代表解 (関節総移動量最小, ADR-127 D5) は**干渉を知らずに**選ばれるので、
+    代表だけが台へ潜り、肘を返せば通る候補を捨てていた (実測: 台座テンプレの干渉棄却
+    4 件は 4 件とも次点で通る — ADR-145 追記 2026-11-10)。
+
+    選び方 (アイデア — core/ が決める, ADR-146 軸 1): **代表解と同じ優先順で、最初に
+    干渉しない解**。つまり「干渉しない解の中で関節総移動量が最小」。代表解が通るなら
+    代表解のまま = この探索が入る前と 1 ビットも変わらない。
+
+    - 探索の幅は有界 (解は最大 8) で、払うのは**代表解が当たった候補だけ**。
+    - 干渉の判定そのものは持たない — `collides` (解 → 当たるか) を呼び手が渡す。相・部位・
+      注入チェッカの扱いを 2 か所に書かないため (判定の源はパイプラインの 1 つ)。
+    - 解を並べられるソルバ (`RankedIkSolver`) にだけ作る。素朴 IK には作らない —
+      パイプラインが腕 (`ArmModel`) を作るのと同じ型の分岐 1 つで決める (原則 #2)。
+    """
+
+    solver: RankedIkSolver
+
+    def alternates(
+        self, candidate: GraspCandidate, robot: Robot, representative: "IkSolution"
+    ) -> "tuple[JointSolution, ...]":
+        """代表解を除いた次点を優先順に (純粋)。"""
+        if not isinstance(representative, JointSolution):
+            return ()
+        return tuple(
+            s
+            for s in self.solver.ranked_solutions(candidate, robot)
+            if s.joints != representative.joints
+        )
+
+    def first_free(
+        self,
+        candidate: GraspCandidate,
+        robot: Robot,
+        representative: "IkSolution",
+        collides: "Callable[[IkSolution], bool]",
+    ) -> "Optional[JointSolution]":
+        """干渉しない最初の次点。無ければ None (= 全解が当たる — 候補は正しく棄却される)。"""
+        for solution in self.alternates(candidate, robot, representative):
+            if not collides(solution):
+                return solution
+        return None
+
+
 # --- 可視性 (見えるか: 注入 Protocol + naive 既定, ADR-081) -------------------
 
 
@@ -401,6 +457,29 @@ class VisibilityChecker(Protocol):
     ) -> float: ...
 
 
+def inside_rectangular_view(camera: Camera, point: Vec3) -> bool:
+    """点が矩形視野 (四角錐, 奥行き無制限) の内側か (純粋, 閉形式 — ADR-171)。
+
+    カメラ基底 (右, 上, 前) で視線を分解し、前方 (z > 0) かつ
+    |x| <= z·tan(水平半角) かつ |y| <= z·tan(垂直半角)。境界は内側。
+    フロントが描く視錐台 (`visionCamera.frustumCorners`) と同じ式で、一致は
+    共有フィクスチャ `fixtures/cross-language/camera-rectangular-view.json` が問う。
+    """
+    basis = camera.view_basis()
+    if basis is None or camera.fov_half_angles is None:
+        return False
+    right, up, forward = basis
+    ray = point - camera.position
+    z = ray.dot(forward)
+    if z <= _EPS:
+        return False
+    half_h, half_v = camera.fov_half_angles
+    return (
+        abs(ray.dot(right)) <= z * math.tan(half_h) + _EPS
+        and abs(ray.dot(up)) <= z * math.tan(half_v) + _EPS
+    )
+
+
 def sightline_occlusion_miss(
     camera: Camera, point: Vec3, obstacles: tuple[Obstacle, ...]
 ) -> float:
@@ -409,11 +488,15 @@ def sightline_occlusion_miss(
     候補粒度 (NaiveSightlineVisibilityChecker) とエンティティ粒度
     (scene.derivation の targetable 絞り込み, ADR-081 Decision 1) が同じ視線判定を
     共有するための単一実装 (第二の源を作らない)。返り値の規約は VisibilityChecker と
-    同じ: 0.0 = 見える / 正 = 最も深く遮る球の食い込み量 / inf = 視野円錐外。
+    同じ: 0.0 = 見える / 正 = 最も深く遮る球の食い込み量 / inf = 視野 (円錐または矩形) の外。
     """
     eye = camera.position
+    # 視野の形は円錐か矩形のどちらか 1 つ (Camera が両立を拒否する)。
+    if camera.fov_half_angles is not None:
+        if not inside_rectangular_view(camera, point):
+            return math.inf
     # 視野円錐 (視軸 + 半角の両宣言時のみ)。円錐外は遮蔽量で測れない -> inf。
-    if camera.view_axis is not None and camera.fov_half_angle is not None:
+    elif camera.view_axis is not None and camera.fov_half_angle is not None:
         axis = camera.view_axis.normalized()
         ray = (point - eye).normalized()
         if axis.norm() < _EPS or ray.norm() < _EPS:
