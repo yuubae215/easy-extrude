@@ -17,11 +17,15 @@ const schema = JSON.parse(readFileSync(
 const [evaluatedBranch, unevaluatedBranch] = schema.$defs.interferencePhase.oneOf
 const allPhasesBranch = schema.$defs.interferenceAnalysis.oneOf.find(b => b.properties.kind.const === 'allPhases')
 
+/** Follow a local `#/$defs/…` pointer (v13 shares the vocabularies — ADR-172 D1). */
+const deref = (node) => (node?.$ref ? schema.$defs[node.$ref.split('/').pop()] : node)
+
 test('語の表は契約の閉じた語彙をちょうど覆う (母集団はスキーマ — 足りなくても余っても落ちる)', () => {
-  assert.deepEqual([...MOTION_PHASES], evaluatedBranch.properties.phase.enum)
-  assert.deepEqual(Object.keys(PHASE_LABEL).sort(), [...evaluatedBranch.properties.phase.enum].sort())
+  const phaseEnum = deref(evaluatedBranch.properties.phase).enum
+  assert.deepEqual([...MOTION_PHASES], phaseEnum)
+  assert.deepEqual(Object.keys(PHASE_LABEL).sort(), [...phaseEnum].sort())
   assert.deepEqual(Object.keys(UNEVALUATED_REASON_TEXT).sort(), [...unevaluatedBranch.properties.reason.enum].sort())
-  const partEnum = allPhasesBranch.properties.phases.items.properties.hits.items.properties.part.enum
+  const partEnum = deref(allPhasesBranch.properties.phases.items.properties.hits.items).properties.part.enum
   assert.deepEqual(Object.keys(PART_LABEL).sort(), [...partEnum].sort())
 })
 
@@ -51,13 +55,13 @@ test('未宣言の相・理由・部位は throw する', () => {
   assert.throws(() => phaseRows({ interferencePhases: [{ phase: 'hover', kind: 'evaluated', rejected: 0 }] }), /未宣言/)
   assert.throws(() => phaseRows({ interferencePhases: [{ phase: 'lift', kind: 'unevaluated', reason: 'tooHard' }] }), /未宣言/)
   assert.throws(() => analysisSummary({ kind: 'allPhases', candidatesAnalysed: 1,
-    phases: [{ phase: 'lift', collided: 1, hits: [{ part: 'elbow', obstacleIndex: 0, candidates: 1 }] }],
+    phases: [{ phase: 'lift', touched: 1, hits: [{ part: 'elbow', obstacleIndex: 0, candidates: 1 }] }],
     armPath: { kind: 'undeclared' } }, []), /未宣言/)
 })
 
 test('障害物の番号は同じリクエストの障害物の名前へ戻る — 名前が無い番号も捨てない', () => {
   const s = analysisSummary({ kind: 'allPhases', candidatesAnalysed: 4, phases: [
-    { phase: 'lift', collided: 2, hits: [
+    { phase: 'lift', touched: 2, hits: [
       { part: 'held', obstacleIndex: 1, candidates: 2 },
       { part: 'hand', obstacleIndex: 7, candidates: 1 },
     ] }], armPath: { kind: 'undeclared' } }, ['Floor', 'Tray · shell 2/5'])

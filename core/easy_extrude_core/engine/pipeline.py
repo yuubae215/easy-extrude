@@ -44,13 +44,22 @@ from ..contract import (
     ScoreBreakdown,
 )
 from ..contract import SearchDiagnostics as SearchDiagnosticsWire
-from ..contract import GraspSpecDiagnostics
 from ..contract import (
     InterferenceAnalysisAllPhases,
     InterferenceAnalysisFirstCollision,
-    InterferenceHitWire,
+    ObstacleTallyWire,
+    StageJudgedWire,
+    StageNotAskedWire,
+    SourceRowWire,
+    SourceSpecWire,
+    SourceDerivedWire,
+    MissMeasuredWire,
+    MissUnmeasurableWire,
+    MissNoRejectionWire,
+    MissNoQuantityWire,
+    DomainRiskWire,
+    TogetherRiskWire,
     ArmPathAtPickPoseWire,
-    ArmPathHitWire,
     ArmPathMeasured,
     ArmPathPhaseWire,
     ArmPathUndeclared,
@@ -92,6 +101,26 @@ from .feasibility import (
     within_reach,
 )
 from .objectives import evaluate_objectives
+from .stages import (
+    DomainRisk,
+    FallbackRisk,
+    MissMeasured,
+    MissNoQuantity,
+    MissNoRejection,
+    MissUnmeasurable,
+    StageJudged,
+    StageNotAsked,
+    TogetherRisk,
+    MissQuantity,
+    NotAskedReason,
+    SourceTally,
+    Stage,
+    StageVerdict,
+    UnmeasurableReason,
+    fallback_risks,
+    merged,
+    stage_verdicts,
+)
 from .phases import (
     ARM_PATH_PHASES,
     PHASE_ORDER,
@@ -603,6 +632,34 @@ _MISS_KIND_BY_GRIPPER: dict[GripperKind, str] = {
     GripperKind.SUCTION: "sealPatch",
 }
 
+#: 把持性の段の最も惜しい差の量 (ADR-172 D3)。ハンドの種別で量が違う (ADR-118)。
+_MISS_QUANTITY_BY_GRIPPER: "dict[GripperKind, MissQuantity]" = {
+    GripperKind.PARALLEL_JAW: MissQuantity.OPENING_SHORTFALL,
+    GripperKind.SUCTION: MissQuantity.SEAL_PATCH_SHORTFALL,
+}
+
+
+@dataclass(frozen=True)
+class SpecRow:
+    """把持仕様 1 つぶんの生成数・通過数 (ドメイン型, ADR-152 D4)。段別は `SourceRow` が持つ。"""
+
+    id: str
+    candidates_generated: int
+    feasible: int
+
+
+@dataclass(frozen=True)
+class SourceRow:
+    """候補の出どころ 1 つ (仕様 1 つ、または導出) の段ごとの判定 (ADR-172 D4)。
+
+    `spec_id` が None なら導出。行の和 (生成・通過・段ごとの棄却) = 全体。
+    """
+
+    spec_id: "Optional[str]"
+    candidates_generated: int
+    feasible: int
+    stages: "tuple[StageVerdict, ...]"
+
 
 @dataclass(frozen=True)
 class SearchDiagnostics:
@@ -639,7 +696,13 @@ class SearchDiagnostics:
     grasp_nearest_miss: Optional[float]
     grasp_nearest_miss_kind: Optional[str]
     # 送られた把持仕様ごとの生成数・通過数 (ADR-152 D4)。仕様なしなら空。
-    grasp_specs: "tuple[GraspSpecDiagnostics, ...]" = ()
+    grasp_specs: "tuple[SpecRow, ...]" = ()
+    # 段ごとの判定を問うた順に 5 つ (ADR-172 D2)。問うていない段は notAsked。
+    stages: "tuple[StageVerdict, ...]" = ()
+    # 出どころの行 — 宣言した仕様ごと (リクエスト順) + 導出 (生成したときだけ)。和 = 全体 (D4)。
+    by_source: "tuple[SourceRow, ...]" = ()
+    # フォールバック階梯のリスク (ADR-172 D8 — core が決める)。深い順。
+    fallback_risks: "tuple[FallbackRisk, ...]" = ()
     # 動作相ごとの干渉の内訳 (ADR-157 D2/D3)。相の順に 6 つ — 評価した相は
     # 最初に当たった候補数 (int)、評価しなかった相は理由 (UnevaluatedReason)。
     interference_phases: "tuple[tuple[MotionPhase, int | UnevaluatedReason], ...]" = ()
@@ -775,9 +838,12 @@ class _Funnel:
     arm_path_hits: "dict[MotionPhase, Counter[int]]" = None  # type: ignore[assignment]
     # 干渉で棄却された候補の代表を選ぶための累積 (ADR-158 R3 — 全相分析のときだけ)。
     rejected_groups: "dict[tuple[MotionPhase, int], _RejectedGroup]" = None  # type: ignore[assignment]
+    # 出どころごとの段の集計 (ADR-172 D4)。鍵は仕様 id、導出は None。
+    sources: "dict[Optional[str], SourceTally]" = None  # type: ignore[assignment]
 
     def __post_init__(self) -> None:
         self.rejected_groups = {}
+        self.sources = {}
         self.rejected_by_phase = Counter()
         self.collided_by_phase = Counter()
         self.hits_by_phase = {}
@@ -786,6 +852,12 @@ class _Funnel:
         self.arm_on_path_only = Counter()
         self.arm_no_solution = Counter()
         self.arm_path_hits = {}
+
+    def source(self, spec_id: "Optional[str]") -> SourceTally:
+        """出どころの集計 (無ければ作る)。仕様 id、導出は None。"""
+        if spec_id not in self.sources:
+            self.sources[spec_id] = SourceTally()
+        return self.sources[spec_id]
 
 
 @dataclass(frozen=True)
@@ -1019,23 +1091,28 @@ def search_report(
         で段は変わらない — 全候補が同じ 1 つのファネルに数えられる。
         """
         funnel.generated += 1
+        tally = funnel.source(candidate.spec_id)
+        tally.generated += 1
         if not within_reach(candidate, problem.robot):
             funnel.rejected_by_reach += 1
             miss = reach_miss(candidate, problem.robot)
             if funnel.reach_nearest_miss is None or miss < funnel.reach_nearest_miss:
                 funnel.reach_nearest_miss = miss
+            tally.reject(Stage.REACH, miss=(MissQuantity.REACH_DISTANCE, miss))
             return None
         # ADR-135 D2: 解を**保持**する。ここで `ik_solvable()` を呼ぶと解は
         # その場で bool に潰れて捨てられ、同じ解をもう一度解かせる羽目になる。
         ik_solution = solver.solve(candidate, problem.robot)
         if ik_solution is None:
             funnel.rejected_by_ik += 1
+            tally.reject(Stage.IK)
             return None
         if problem.gripper is not None:
             # ADR-152 D5: 深さのゲート (パームが面の下へ潜る) は把持性の段。開口や
             # シールの不足とは量が違うので near-miss には数えない (kind を持たない)。
             if palm_depth_miss(candidate, problem.gripper, problem.tool_length) > 0.0:
                 funnel.rejected_by_grasp += 1
+                tally.reject(Stage.GRASP, unmeasurable=UnmeasurableReason.PALM_BELOW_SURFACE)
                 return None
             miss = grasp_miss(
                 candidate, problem.gripper, problem.target, grip_checker
@@ -1047,6 +1124,10 @@ def search_report(
                 ):
                     funnel.grasp_nearest_miss = miss
                     funnel.grasp_nearest_miss_kind = _MISS_KIND_BY_GRIPPER[problem.gripper.kind]
+                if math.isfinite(miss):
+                    tally.reject(Stage.GRASP, miss=(_MISS_QUANTITY_BY_GRIPPER[problem.gripper.kind], miss))
+                else:
+                    tally.reject(Stage.GRASP, unmeasurable=UnmeasurableReason.NO_CONTACT_PAIR)
                 return None
         if problem.camera is not None:
             occlusion = vis_checker.occlusion_miss(
@@ -1059,6 +1140,10 @@ def search_report(
                     or occlusion < funnel.occlusion_nearest_miss
                 ):
                     funnel.occlusion_nearest_miss = occlusion
+                if math.isfinite(occlusion):
+                    tally.reject(Stage.VISIBILITY, miss=(MissQuantity.OCCLUSION_DEPTH, occlusion))
+                else:
+                    tally.reject(Stage.VISIBILITY, unmeasurable=UnmeasurableReason.OUTSIDE_FIELD_OF_VIEW)
                 return None
         # ADR-135 D2 で保持した解をそのまま渡す (解き直さない)。腕は `JointSolution`
         # のときだけ再構成される。代表解が当たれば干渉しない次点へ移る (ADR-145
@@ -1069,6 +1154,7 @@ def search_report(
             hit_phase = interference_phase(candidate, ik_solution)
             funnel.rejected_by_interference += 1
             funnel.rejected_by_phase[hit_phase] += 1
+            tally.reject(Stage.INTERFERENCE)
             if analysing:
                 remember_rejected(candidate, ik_solution, hit_phase)
             return None
@@ -1076,6 +1162,7 @@ def search_report(
         if analysing:
             # 全相分析の累積 (腕の経路の測定を含む) は、実際に使う解について 1 回。
             interference_phase(candidate, ik_solution)
+        tally.feasible += 1
         objective_scores = evaluate_objectives(candidate, problem, objective_names)
         total = weighted_sum(objective_scores, weights)
         return (total, candidate.pose, objective_scores, ik_solution, candidate.spec_id, candidate)
@@ -1086,14 +1173,14 @@ def search_report(
     # 仕様ごとに評価し、戦略で返す集合を選ぶ (ADR-152 D5)。**全仕様を評価する** —
     # priority でも後ろの仕様を数えないと、「返さなかった」と「無かった」が
     # 診断で区別できない (原則 #31)。
-    spec_rows: list[GraspSpecDiagnostics] = []
+    spec_rows: list[SpecRow] = []
     if problem.grasp_specs:
         per_spec: list[list[_Scored]] = []
         for spec in problem.grasp_specs:
             before = funnel.generated
             spec_scored = evaluate_all(generate_spec_candidates(problem, spec))
             per_spec.append(spec_scored)
-            spec_rows.append(GraspSpecDiagnostics(
+            spec_rows.append(SpecRow(
                 id=spec.id,
                 candidates_generated=funnel.generated - before,
                 feasible=len(spec_scored),
@@ -1121,15 +1208,6 @@ def search_report(
             rank=i + 1,
             pose=pose_to_payload(pose),
             score=ScoreBreakdown(
-                # 通過した候補なので 5 判定はすべて True (短絡で弾かれた候補は載らない)。
-                # visible/graspable は該当ゲート未宣言 (camera/gripper なし) なら
-                # 空虚に True — どちらだったかはリクエスト宣言の有無から読める
-                # (契約 v4 Schema の記述と対応)。
-                within_reach=True,
-                visible=True,
-                ik_solvable=True,
-                interference_free=True,
-                graspable=True,
                 objective_scores=objective_scores,
                 total_score=total,
                 # 捨てずに運んできた代表解 (ADR-135)。`undeclared` は
@@ -1142,6 +1220,29 @@ def search_report(
         for i, (total, pose, objective_scores, ik_solution, spec_id, _candidate) in enumerate(top)
     ]
     kept_groups, omitted_groups = rejected_replay_groups(funnel.rejected_groups)
+    # 段の判定 (ADR-172)。問うていない段は宣言から決まる (候補に依らない)。
+    not_asked: "dict[Stage, NotAskedReason]" = {}
+    if problem.camera is None:
+        not_asked[Stage.VISIBILITY] = NotAskedReason.CAMERA_UNDECLARED
+    if problem.gripper is None:
+        not_asked[Stage.GRASP] = NotAskedReason.GRIPPER_UNDECLARED
+    # 出どころの行: 宣言した仕様はすべて (候補 0 でも)、導出は生成したときだけ。
+    source_keys: "list[Optional[str]]" = [spec.id for spec in problem.grasp_specs]
+    if None in funnel.sources:
+        source_keys.append(None)
+    source_rows = tuple(
+        SourceRow(
+            spec_id=key,
+            candidates_generated=funnel.source(key).generated,
+            feasible=funnel.source(key).feasible,
+            stages=stage_verdicts(funnel.source(key), not_asked),
+        )
+        for key in source_keys
+    )
+    whole = merged(funnel.source(k) for k in source_keys)
+    whole_stages = stage_verdicts(whole, not_asked)
+    if whole.generated != funnel.generated or whole.feasible != feasible_total:
+        raise AssertionError("出どころの行の和が全体と合わない (ADR-172 D4)")
     diagnostics = SearchDiagnostics(
         candidates_generated=funnel.generated,
         rejected_by_reach=funnel.rejected_by_reach,
@@ -1158,6 +1259,9 @@ def search_report(
         grasp_nearest_miss=funnel.grasp_nearest_miss,
         grasp_nearest_miss_kind=funnel.grasp_nearest_miss_kind,
         grasp_specs=tuple(spec_rows),
+        stages=whole_stages,
+        by_source=source_rows,
+        fallback_risks=fallback_risks(whole_stages, feasible_total),
         interference_phases=tuple(
             (p, funnel.rejected_by_phase[p] if p in evaluated_phases
              else phase_unevaluated_reason(problem, p))
@@ -1208,23 +1312,19 @@ def search_report(
     )
     diagnostics_wire = SearchDiagnosticsWire(
         candidates_generated=diagnostics.candidates_generated,
-        rejected_by_reach=diagnostics.rejected_by_reach,
-        rejected_by_visibility=diagnostics.rejected_by_visibility,
-        rejected_by_ik=diagnostics.rejected_by_ik,
-        rejected_by_interference=diagnostics.rejected_by_interference,
-        rejected_by_grasp=diagnostics.rejected_by_grasp,
         feasible=diagnostics.feasible,
         returned=diagnostics.returned,
-        reach_nearest_miss=diagnostics.reach_nearest_miss,
-        occlusion_nearest_miss=diagnostics.occlusion_nearest_miss,
-        grasp_nearest_miss=(
-            None if diagnostics.grasp_nearest_miss is None
-            else {
-                "kind": diagnostics.grasp_nearest_miss_kind,
-                "shortfall": diagnostics.grasp_nearest_miss,
-            }
-        ),
-        grasp_specs=list(diagnostics.grasp_specs),
+        stages=[_stage_wire(v) for v in diagnostics.stages],
+        by_source=[
+            SourceRowWire(
+                source=(SourceDerivedWire() if row.spec_id is None else SourceSpecWire(id=row.spec_id)),
+                candidates_generated=row.candidates_generated,
+                feasible=row.feasible,
+                stages=[_stage_wire(v) for v in row.stages],
+            )
+            for row in diagnostics.by_source
+        ],
+        fallback_risks=[_risk_wire(r) for r in diagnostics.fallback_risks],
         interference_phases=[_phase_row_wire(p, v) for p, v in diagnostics.interference_phases],
         interference_analysis=_analysis_wire(diagnostics.interference_analysis),
     )
@@ -1232,6 +1332,40 @@ def search_report(
         response=GraspSearchResponse(candidates=candidates, diagnostics=diagnostics_wire),
         diagnostics=diagnostics,
     )
+
+
+def _miss_wire(miss):
+    """最も惜しい差をワイヤの union へ写す唯一の場所 (ADR-172 D3)。分岐は型で行う。"""
+    if isinstance(miss, MissMeasured):
+        return MissMeasuredWire(quantity=miss.quantity.value, value=miss.value)
+    if isinstance(miss, MissUnmeasurable):
+        return MissUnmeasurableWire(reasons=[r.value for r in miss.reasons])
+    if isinstance(miss, MissNoRejection):
+        return MissNoRejectionWire()
+    if isinstance(miss, MissNoQuantity):
+        return MissNoQuantityWire()
+    raise TypeError(f"未宣言の最も惜しい差 {type(miss)!r} (ADR-172 D3)")
+
+
+def _stage_wire(verdict: "StageVerdict"):
+    """段の判定をワイヤの union へ写す唯一の場所 (ADR-172 D2)。"""
+    if isinstance(verdict, StageNotAsked):
+        return StageNotAskedWire(stage=verdict.stage.value, reason=verdict.reason.value)
+    if isinstance(verdict, StageJudged):
+        return StageJudgedWire(
+            stage=verdict.stage.value, entered=verdict.entered, rejected=verdict.rejected,
+            nearest_miss=_miss_wire(verdict.nearest_miss),
+        )
+    raise TypeError(f"未宣言の段の判定 {type(verdict)!r} (ADR-172 D2)")
+
+
+def _risk_wire(risk: "FallbackRisk"):
+    """フォールバックのリスクをワイヤの union へ (ADR-172 D8)。"""
+    if isinstance(risk, TogetherRisk):
+        return TogetherRiskWire(domains=[d.value for d in risk.domains])
+    if isinstance(risk, DomainRisk):
+        return DomainRiskWire(domain=risk.domain.value, level=risk.level, reason=risk.reason.value)
+    raise TypeError(f"未宣言のリスク {type(risk)!r} (ADR-172 D8)")
 
 
 def _phase_row_wire(phase: MotionPhase, value: "int | UnevaluatedReason"):
@@ -1250,9 +1384,9 @@ def _analysis_wire(report: "Optional[InterferenceAnalysisReport]"):
         phases=[
             InterferencePhaseAnalysisWire(
                 phase=p.value,
-                collided=collided,
+                touched=collided,
                 hits=[
-                    InterferenceHitWire(part=part, obstacle_index=idx, candidates=n)
+                    ObstacleTallyWire(part=part, obstacle_index=idx, candidates=n)
                     for part, idx, n in hits
                 ],
             )
@@ -1268,7 +1402,7 @@ def _analysis_wire(report: "Optional[InterferenceAnalysisReport]"):
                 RejectedReplayWire(
                     phase=r.phase.value,
                     obstacle_index=r.obstacle_index,
-                    rejected=r.rejected,
+                    touched=r.rejected,
                     total_score=r.total_score,
                     pose=pose_to_payload(r.pose),
                     reach_solution=reach_solution_of(r.solution),
@@ -1348,7 +1482,7 @@ def _arm_path_wire(report: "Optional[ArmPathReport]"):
         path_samples=report.path_samples,
         at_pick_pose=ArmPathAtPickPoseWire(
             candidates=report.at_pick_pose,
-            hits=[ArmPathHitWire(obstacle_index=i, candidates=n) for i, n in report.pick_hits],
+            hits=[ObstacleTallyWire(part="arm", obstacle_index=i, candidates=n) for i, n in report.pick_hits],
         ),
         phases=[
             ArmPathPhaseWire(
@@ -1356,7 +1490,7 @@ def _arm_path_wire(report: "Optional[ArmPathReport]"):
                 on_path=r.on_path,
                 on_path_only=r.on_path_only,
                 no_solution_on_path=r.no_solution_on_path,
-                hits=[ArmPathHitWire(obstacle_index=i, candidates=n) for i, n in r.hits],
+                hits=[ObstacleTallyWire(part="arm", obstacle_index=i, candidates=n) for i, n in r.hits],
             )
             for r in report.phases
         ],

@@ -298,13 +298,12 @@ export const openApiSpec = {
                 pose: { type: 'object', additionalProperties: true, description: 'Opaque at the contract boundary; shape owned by the service.' },
                 score: {
                   type: 'object',
-                  required: ['withinReach', 'ikSolvable', 'interferenceFree', 'totalScore'],
+                  description: 'Contract v13 (ADR-172): objectives, total and the joint solution. The stage facts are in diagnostics.stages — the per-candidate stage booleans were always true and are gone. The neutral schema in packages/grasp-contract is the source of truth; this is documentation.',
+                  required: ['totalScore', 'reachSolution'],
                   properties: {
-                    withinReach:      { type: 'boolean' },
-                    ikSolvable:       { type: 'boolean' },
-                    interferenceFree: { type: 'boolean' },
                     objectiveScores:  { type: 'object', additionalProperties: { type: 'number', minimum: 0, maximum: 1 } },
                     totalScore:       { type: 'number', minimum: 0 },
+                    reachSolution:    { type: 'object', additionalProperties: true },
                   },
                 },
               },

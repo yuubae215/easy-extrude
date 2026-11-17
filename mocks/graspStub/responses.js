@@ -8,6 +8,7 @@
  * schema alongside the solved ones.
  */
 import { stubSolve, envelopeCoveringSamples, interferencePhaseRows } from './solve.js'
+import { newTally, reject, stageDiagnostics } from './stages.js'
 import { STUB_SCENARIO } from './scenarios.js'
 
 /**
@@ -35,39 +36,39 @@ function withDeclaredEnvelope(request) {
 }
 
 /**
- * A funnel with the counts filled in. Callers pass only the stages they mean;
- * the identity `candidatesGenerated = Σ rejections + feasible` is enforced here
- * rather than trusted, because a hand-written funnel that violates it renders
- * bars wider than their track and nothing would say why.
+ * A v13 funnel (ADR-172) with the counts filled in, all from the derived source
+ * (the fixed scenarios send no grasp spec). Callers pass only the stages they
+ * mean. A stage with rejections is a stage that was asked; with none, the fixed
+ * scenarios ask everything (they stand for a fully declared cell), so a 0 here is
+ * a judged 0 — the scenarios never fake "not asked". The identity is enforced by
+ * `stageVerdicts` (it throws), because a hand-written funnel that violates it
+ * renders bars wider than their track and nothing would say why.
+ *
+ * Near misses: a number is a measured shortfall; `null` with rejections is
+ * unmeasurable (no contact pair / outside the field of view).
  */
 function funnel({
   generated, reach = 0, visibility = 0, ik = 0, interference = 0, grasp = 0,
   feasible = 0, returned = 0,
-  reachNearestMiss = null, occlusionNearestMiss = null, graspNearestMiss = null,
-  graspSpecs = [],
+  reachMiss = null, occlusionMiss = null, openingMiss = null,
 }) {
-  const sum = reach + visibility + ik + interference + grasp + feasible
-  if (sum !== generated) {
-    throw new Error(
-      `graspStub: funnel identity violated — generated ${generated} but stages sum to ${sum}. ` +
-      `The UI derives every bar from this identity; an inconsistent fixture would ` +
-      `teach a reviewer to distrust a meter that is actually correct.`,
-    )
+  const tally = newTally()
+  tally.generated = generated
+  tally.feasible = feasible
+  const put = (stage, n, measured, quantity, unmeasurable) => {
+    for (let i = 0; i < n; i++) {
+      reject(tally, stage, measured != null ? { miss: [quantity, measured] } : { unmeasurable })
+    }
   }
+  put('reach', reach, reachMiss, 'reachDistance', null)
+  put('ik', ik, null, null, null)
+  put('grasp', grasp, openingMiss, 'openingShortfall', 'noContactPair')
+  put('visibility', visibility, occlusionMiss, 'occlusionDepth', 'outsideFieldOfView')
+  put('interference', interference, null, null, null)
+  const asked = { camera: {}, gripper: {} }   // a fully declared cell (see above)
   return {
-    candidatesGenerated:    generated,
-    rejectedByReach:        reach,
-    rejectedByVisibility:   visibility,
-    rejectedByIk:           ik,
-    rejectedByInterference: interference,
-    rejectedByGrasp:        grasp,
-    feasible,
+    ...stageDiagnostics([{ source: { kind: 'derived' }, tally }], asked),
     returned,
-    reachNearestMiss,
-    occlusionNearestMiss,
-    graspNearestMiss,
-    // ADR-152 (v7): the fixed scenarios send no grasp spec — a stated empty table.
-    graspSpecs,
     // ADR-157 (v8): the fixed scenarios declare no hand and no lift, so only the
     // approach is evaluated and every interference rejection is attributed to it.
     ...interferencePhaseRows({}, interference),
@@ -84,8 +85,6 @@ function candidate(rank, totalScore, scores) {
       frame: { position: [600, 0, 480], orientation: [0, 0.7071067811865476, 0, 0.7071067811865476] },
     },
     score: {
-      withinReach: true, visible: true, ikSolvable: true,
-      interferenceFree: true, graspable: true,
       objectiveScores: scores,
       totalScore,
       // ADR-135: このスタブは IK を解かない (運動学を持たない) ので、関節配置は
@@ -125,8 +124,7 @@ export function fixedResponse(scenario, contractVersion) {
         diagnostics: funnel({
           generated: 24, reach: 9, ik: 4, grasp: 3, visibility: 5, interference: 3,
           feasible: 0, returned: 0,
-          reachNearestMiss: 38.4, occlusionNearestMiss: 12.75,
-          graspNearestMiss: { kind: 'opening', shortfall: 6.2 },
+          reachMiss: 38.4, occlusionMiss: 12.75, openingMiss: 6.2,
         }),
       }
 
@@ -141,7 +139,7 @@ export function fixedResponse(scenario, contractVersion) {
         diagnostics: funnel({
           generated: 18, reach: 7, ik: 4, grasp: 2, visibility: 3, interference: 1,
           feasible: 1, returned: 1,
-          reachNearestMiss: 5.1, occlusionNearestMiss: 2.4, graspNearestMiss: null,
+          reachMiss: 5.1, occlusionMiss: 2.4,
         }),
       }
 

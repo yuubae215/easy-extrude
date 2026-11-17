@@ -305,7 +305,8 @@ def test_the_declaration_actually_reaches_the_search_pipeline():
 
     assert naive.candidates, "素朴判定では候補が出る前提の fixture"
     assert not constrained.candidates, "宣言した関節限界が探索に効いていない"
-    assert constrained.diagnostics.rejected_by_ik > 0, "棄却が IK 段で数えられていない"
+    ik = next(v for v in constrained.diagnostics.stages if v.stage == "ik")
+    assert ik.rejected > 0, "棄却が IK 段で数えられていない"
 
 
 def test_wrong_number_of_joint_limit_pairs_throws():
@@ -452,7 +453,7 @@ def test_undeclared_kinematics_says_so_instead_of_shipping_placeholder_joints():
         # 枝に joints という欄自体が無いこと (占位値の漏れ口を塞ぐ)。
         assert not hasattr(c.score.reach_solution, "joints")
         # 到達可否は従来どおり bool が運ぶ — union は到達可否を判別していない。
-        assert c.score.ik_solvable is True
+        assert c.score.reach_solution is not None  # IK の段を通った (v13 — 真偽値は持たない)
 
 
 def test_carried_joints_survive_an_fk_round_trip_to_the_candidate_pose():

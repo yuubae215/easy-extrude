@@ -472,15 +472,18 @@ test('S13 — フロントだけで ADR-152 を評価できる: 仕様・戦略�
   await expect(page.getByText(/Done —/)).toBeVisible({ timeout: 30_000 })
 
   const g = await page.evaluate(() => window.__ui.getState().context.grasp)
-  const rows = Object.fromEntries(g.diagnostics.graspSpecs.map(r => [r.id, r]))
+  // Contract v13 (ADR-172): one row per source, and each row says where its candidates fell out.
+  const rows = Object.fromEntries(g.diagnostics.bySource.filter(r => r.source.kind === 'spec').map(r => [r.source.id, r]))
+  const rejectedAt = (row, stage) => row.stages.find(v => v.stage === stage).rejected
   expect(rows['across x'].feasible, 'x across an 80 mm part with a 60 mm opening').toBe(0)
+  expect(rejectedAt(rows['across x'], 'grasp'), 'the opening is what stopped it').toBeGreaterThan(0)
   expect(rows['across y'].feasible).toBeGreaterThan(0)
   expect(rows['too deep'].feasible, 'fingers below the table top').toBe(0)
-  expect(g.diagnostics.rejectedByGrasp).toBeGreaterThan(0)
-  expect(g.diagnostics.rejectedByInterference).toBeGreaterThan(0)
+  expect(rejectedAt(rows['too deep'], 'interference'), 'the table is what stopped it').toBeGreaterThan(0)
   expect(new Set(g.candidates.map(c => c.graspSpecId))).toEqual(new Set(['across y']))
-  // The panel says it too: per-spec rows and "via <spec>" on each candidate.
-  await expect(page.getByText(/by grasp spec/)).toBeVisible()
+  // The panel says it too: per-source rows with where they fell out, and "via <spec>" on each candidate.
+  await expect(page.getByText(/by source/)).toBeVisible()
+  await expect(page.getByTestId('source-stages-across x')).toContainText(/grasp −\d+/)
   await expect(page.getByText('via across y').first()).toBeVisible()
 
   expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])

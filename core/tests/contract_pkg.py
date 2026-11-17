@@ -37,3 +37,35 @@ def load_request_schema() -> dict:
 def load_schema(endpoint: str) -> dict:
     """任意のエンドポイントの中立 JSON Schema (`<endpoint>.schema.json`)。"""
     return load_contract_json(f"schema/{endpoint}.schema.json")
+
+
+# --- v13 (ADR-172) の診断をテストで組む・読むための小道具 -------------------------------
+
+STAGE_NAMES = ("reach", "ik", "grasp", "visibility", "interference")
+
+
+def all_passed_stages(generated: int) -> "list[dict]":
+    """全候補が全段を通った (カメラ・ハンドは問うていない) 段の列 (wire 形)。"""
+    return [
+        {"stage": "reach", "kind": "judged", "entered": generated, "rejected": 0,
+         "nearestMiss": {"kind": "noRejection"}},
+        {"stage": "ik", "kind": "judged", "entered": generated, "rejected": 0,
+         "nearestMiss": {"kind": "noQuantity"}},
+        {"stage": "grasp", "kind": "notAsked", "reason": "gripperUndeclared"},
+        {"stage": "visibility", "kind": "notAsked", "reason": "cameraUndeclared"},
+        {"stage": "interference", "kind": "judged", "entered": generated, "rejected": 0,
+         "nearestMiss": {"kind": "noQuantity"}},
+    ]
+
+
+def stage_of(diagnostics: "dict", name: str) -> "dict":
+    """wire の診断から段 1 つ (camelCase の dict)。"""
+    return next(v for v in diagnostics["stages"] if v["stage"] == name)
+
+
+def rejected_at(diagnostics: "dict", name: str) -> int:
+    """その段で落ちた数。問うていない段は 0 ではなく例外 (読み違えを黙らせない)。"""
+    v = stage_of(diagnostics, name)
+    if v["kind"] != "judged":
+        raise AssertionError(f"{name} は問うていない ({v['reason']}) — 数を持たない")
+    return v["rejected"]

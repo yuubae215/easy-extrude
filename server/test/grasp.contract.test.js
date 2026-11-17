@@ -140,6 +140,26 @@ test('the declaration itself stays OPEN — layoutVersion owns its detail', () =
   assert.equal(valid, true)
 })
 
+// Contract v13 (ADR-172): every stage once, in judging order; an unasked stage has no counts.
+const STAGES = (generated, { reach = 0, ik = 0, interference = 0, reachMiss } = {}) => {
+  const judged = (stage, entered, rejected, nearestMiss) => ({ stage, kind: 'judged', entered, rejected, nearestMiss })
+  return [
+    judged('reach', generated, reach, reach ? { kind: 'measured', quantity: 'reachDistance', value: reachMiss ?? 0.03 } : { kind: 'noRejection' }),
+    judged('ik', generated - reach, ik, { kind: 'noQuantity' }),
+    { stage: 'grasp', kind: 'notAsked', reason: 'gripperUndeclared' },
+    { stage: 'visibility', kind: 'notAsked', reason: 'cameraUndeclared' },
+    judged('interference', generated - reach - ik, interference, { kind: 'noQuantity' }),
+  ]
+}
+/** The v13 funnel: stages, one derived source row equal to the whole, no risk unless given. */
+const FUNNEL = (generated, feasible, counts = {}, fallbackRisks = []) => ({
+  candidatesGenerated: generated,
+  feasible,
+  stages: STAGES(generated, counts),
+  bySource: [{ source: { kind: 'derived' }, candidatesGenerated: generated, feasible, stages: STAGES(generated, counts) }],
+  fallbackRisks,
+})
+
 // Contract v8 (ADR-157): every response names all six motion phases — evaluated
 // ones with the count they were the FIRST collision of, the rest with a reason
 // and no count — and says whether the all-phase analysis was asked for.
@@ -163,30 +183,19 @@ test('valid response instance conforms to the response schema (both pose kinds)'
         rank: 1,
         graspSpecId: 'top-pinch',
         pose: { kind: 'endEffector', frame: { position: [0.1, 0.2, 0.3], orientation: [0, 0, 0, 1] } },
-        score: { withinReach: true, visible: true, ikSolvable: true, interferenceFree: true, graspable: true, totalScore: 0.92, reachSolution: { kind: 'solved', joints: [0, -1, 1.2, -1.8, -1.5708, 0] } },
+        score: { totalScore: 0.92, reachSolution: { kind: 'solved', joints: [0, -1, 1.2, -1.8, -1.5708, 0] } },
       },
       {
         rank: 2,
         graspSpecId: null,
         pose: { kind: 'jointSpace', chainRef: 'arm_left', joints: [0, 0.5, -0.5, 0, 1.2, 0] },
-        score: { withinReach: true, visible: true, ikSolvable: true, interferenceFree: false, graspable: true, totalScore: 0.41, reachSolution: { kind: 'undeclared' } },
+        score: { totalScore: 0.41, reachSolution: { kind: 'undeclared' } },
       },
     ],
-    // v3 rejection funnel — invariant: generated = reach + ik + interference + feasible
+    // v13 funnel (ADR-172) — stages in judging order, source rows summing to the whole
     diagnostics: {
-      candidatesGenerated: 5,
-      rejectedByReach: 2,
-      rejectedByVisibility: 0,
-      rejectedByIk: 1,
-      rejectedByInterference: 0,
-      rejectedByGrasp: 0,
-      feasible: 2,
+      ...FUNNEL(5, 2, { reach: 2, ik: 1 }, [{ kind: 'domain', domain: 'path', level: 4, reason: 'someUnreachable' }]),
       returned: 2,
-      reachNearestMiss: 0.03,
-      occlusionNearestMiss: null,
-      graspNearestMiss: null,
-      // v7 (ADR-152): per declared grasp spec, every one sent.
-      graspSpecs: [{ id: 'top-pinch', candidatesGenerated: 3, feasible: 1 }],
       ...PHASE_ROWS, // v8 (ADR-157): 6 motion-phase rows + the analysis branch
     },
   }
@@ -199,7 +208,7 @@ test('pre-union opaque pose shape is rejected (pose is a closed kind union since
       {
         rank: 1,
         pose: { joints: [0, 0, 0] }, // v1 opaque shape — no kind discriminator
-        score: { withinReach: true, visible: true, ikSolvable: true, interferenceFree: true, graspable: true, totalScore: 0.92 },
+        score: { totalScore: 0.92 },
       },
     ],
   })
@@ -214,18 +223,8 @@ test('zero-candidate response conforms — the funnel explains the emptiness', (
     contractVersion: CONTRACT_VERSION,
     candidates: [],
     diagnostics: {
-      candidatesGenerated: 8,
-      rejectedByReach: 8,
-      rejectedByVisibility: 0,
-      rejectedByIk: 0,
-      rejectedByInterference: 0,
-      rejectedByGrasp: 0,
-      feasible: 0,
+      ...FUNNEL(8, 0, { reach: 8, reachMiss: 0.12 }, [{ kind: 'domain', domain: 'path', level: 5, reason: 'noneReachable' }]),
       returned: 0,
-      reachNearestMiss: 0.12,
-      occlusionNearestMiss: null,
-      graspNearestMiss: null,
-      graspSpecs: [],
       ...PHASE_ROWS, // v8 (ADR-157): 6 motion-phase rows + the analysis branch
     },
   }
@@ -235,7 +234,7 @@ test('zero-candidate response conforms — the funnel explains the emptiness', (
 test('pre-v3 response without diagnostics fails conformance (diagnostics is required)', () => {
   const { valid, errors } = validateResponse({
     contractVersion: CONTRACT_VERSION,
-    candidates: [{ rank: 1, score: { withinReach: true, visible: true, ikSolvable: true, interferenceFree: true, graspable: true, totalScore: 0.5, reachSolution: { kind: 'solved', joints: [0, -1, 1.2, -1.8, -1.5708, 0] } } }],
+    candidates: [{ rank: 1, score: { totalScore: 0.5, reachSolution: { kind: 'solved', joints: [0, -1, 1.2, -1.8, -1.5708, 0] } } }],
   })
   assert.equal(valid, false)
   assert.match(errors.join(' '), /diagnostics/)
@@ -245,17 +244,8 @@ test('diagnostics with a smuggled presentation field fails (additionalProperties
   const { valid } = validateResponse({
     candidates: [],
     diagnostics: {
-      candidatesGenerated: 0,
-      rejectedByReach: 0,
-      rejectedByVisibility: 0,
-      rejectedByIk: 0,
-      rejectedByInterference: 0,
-      rejectedByGrasp: 0,
-      feasible: 0,
+      ...FUNNEL(0, 0),
       returned: 0,
-      reachNearestMiss: null,
-      occlusionNearestMiss: null,
-      graspNearestMiss: null,
       meterColor: '#f00', // presentation is derived client-side, never on the wire
     },
   })
@@ -263,8 +253,9 @@ test('diagnostics with a smuggled presentation field fails (additionalProperties
 })
 
 test('response missing a required score field fails conformance', () => {
+  // v13 (ADR-172 D5): the five stage booleans are gone — the score is objectives, total and the solution.
   const { valid } = validateResponse({
-    candidates: [{ rank: 1, score: { withinReach: true, ikSolvable: true /* no interferenceFree/totalScore */ } }],
+    candidates: [{ rank: 1, score: { objectiveScores: {} /* no totalScore / reachSolution */ } }],
   })
   assert.equal(valid, false)
 })
@@ -322,20 +313,10 @@ test('valid request is delegated and a conforming upstream response passes throu
     res.writeHead(200, { 'content-type': 'application/json' })
     res.end(JSON.stringify({
       contractVersion: CONTRACT_VERSION,
-      candidates: [{ rank: 1, graspSpecId: null, score: { withinReach: true, visible: true, ikSolvable: true, interferenceFree: true, graspable: true, totalScore: 0.5, reachSolution: { kind: 'solved', joints: [0, -1, 1.2, -1.8, -1.5708, 0] } } }],
+      candidates: [{ rank: 1, graspSpecId: null, score: { totalScore: 0.5, reachSolution: { kind: 'solved', joints: [0, -1, 1.2, -1.8, -1.5708, 0] } } }],
       diagnostics: {
-        candidatesGenerated: 1,
-        rejectedByReach: 0,
-        rejectedByVisibility: 0,
-        rejectedByIk: 0,
-        rejectedByInterference: 0,
-        rejectedByGrasp: 0,
-        feasible: 1,
+        ...FUNNEL(1, 1),
         returned: 1,
-        reachNearestMiss: null,
-        occlusionNearestMiss: null,
-        graspNearestMiss: null,
-        graspSpecs: [],
         ...PHASE_ROWS, // v8 (ADR-157): 6 motion-phase rows + the analysis branch
       },
     }))
@@ -348,18 +329,8 @@ test('valid request is delegated and a conforming upstream response passes throu
     // The BFF is a thin window: diagnostics passes through verbatim (no
     // client-side judgment logic, no reshaping).
     assert.deepEqual(json.diagnostics, {
-      candidatesGenerated: 1,
-      rejectedByReach: 0,
-      rejectedByVisibility: 0,
-      rejectedByIk: 0,
-      rejectedByInterference: 0,
-      rejectedByGrasp: 0,
-      feasible: 1,
+      ...FUNNEL(1, 1),
       returned: 1,
-      reachNearestMiss: null,
-      occlusionNearestMiss: null,
-      graspNearestMiss: null,
-      graspSpecs: [],
       ...PHASE_ROWS, // v8 (ADR-157): 6 motion-phase rows + the analysis branch
     })
   } finally {
@@ -373,7 +344,7 @@ test('upstream version drift is rejected with 502', async () => {
     res.writeHead(200, { 'content-type': 'application/json' })
     res.end(JSON.stringify({
       contractVersion: CONTRACT_VERSION + 7,
-      candidates: [{ rank: 1, score: { withinReach: true, visible: true, ikSolvable: true, interferenceFree: true, graspable: true, totalScore: 0.5, reachSolution: { kind: 'solved', joints: [0, -1, 1.2, -1.8, -1.5708, 0] } } }],
+      candidates: [{ rank: 1, score: { totalScore: 0.5, reachSolution: { kind: 'solved', joints: [0, -1, 1.2, -1.8, -1.5708, 0] } } }],
     }))
   })
   process.env.GRASP_SEARCH_URL = `http://localhost:${upstream.address().port}`
@@ -389,7 +360,7 @@ test('upstream version drift is rejected with 502', async () => {
 test('non-conforming upstream response is rejected with 502', async () => {
   const upstream = await startStub((_reqBody, res) => {
     res.writeHead(200, { 'content-type': 'application/json' })
-    res.end(JSON.stringify({ candidates: [{ rank: 1, score: { withinReach: true } }] })) // missing fields
+    res.end(JSON.stringify({ candidates: [{ rank: 1, score: { objectiveScores: {} } }] })) // missing fields
   })
   process.env.GRASP_SEARCH_URL = `http://localhost:${upstream.address().port}`
   try {
@@ -406,9 +377,7 @@ test('v8: an unevaluated phase row may not carry a count, and every phase needs 
     contractVersion: CONTRACT_VERSION,
     candidates: [],
     diagnostics: {
-      candidatesGenerated: 0, rejectedByReach: 0, rejectedByVisibility: 0, rejectedByIk: 0,
-      rejectedByInterference: 0, rejectedByGrasp: 0, feasible: 0, returned: 0,
-      reachNearestMiss: null, occlusionNearestMiss: null, graspNearestMiss: null, graspSpecs: [],
+      ...FUNNEL(0, 0), returned: 0,
       ...PHASE_ROWS,
     },
   }
@@ -422,7 +391,7 @@ test('v8: an unevaluated phase row may not carry a count, and every phase needs 
   const analysed = structuredClone(base)
   analysed.diagnostics.interferenceAnalysis = {
     kind: 'allPhases', candidatesAnalysed: 3,
-    phases: [{ phase: 'lift', collided: 2, hits: [{ part: 'held', obstacleIndex: 0, candidates: 2 }] }],
+    phases: [{ phase: 'lift', touched: 2, hits: [{ part: 'held', obstacleIndex: 0, candidates: 2 }] }],
     armPath: { kind: 'undeclared' },
     replays: [],
     rejectedReplays: { items: [], omitted: 0 },

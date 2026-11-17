@@ -87,7 +87,7 @@ export function phaseRows(diagnostics) {
  *
  * @param {object|null} analysis         the wire `interferenceAnalysis`
  * @param {string[]} obstacleLabels
- * @returns {{candidatesAnalysed:number, phases:{phase:string,label:string,collided:number,
+ * @returns {{candidatesAnalysed:number, phases:{phase:string,label:string,touched:number,
  *            hits:{part:string, partLabel:string, obstacle:string, candidates:number}[]}[]}|null}
  */
 export function analysisSummary(analysis, obstacleLabels) {
@@ -99,7 +99,7 @@ export function analysisSummary(analysis, obstacleLabels) {
     phases: analysis.phases.map(p => ({
       phase: p.phase,
       label: lookup(PHASE_LABEL, p.phase, 'phase'),
-      collided: p.collided,
+      touched: p.touched,
       hits: p.hits.map(h => ({
         part: h.part,
         partLabel: lookup(PART_LABEL, h.part, 'part'),

@@ -95,7 +95,7 @@ test('検証器は型違反と範囲違反を弾く', () => {
   assert.notDeepEqual(validateAgainst(wrongType, responseSchema), [])
 
   const negative = stubSolve(request(), CONTRACT_VERSION)
-  negative.diagnostics.rejectedByReach = -1
+  negative.diagnostics.stages[0].rejected = -1
   assert.notDeepEqual(validateAgainst(negative, responseSchema), [])
 })
 
@@ -138,12 +138,34 @@ test('シナリオの総数は宣言と一致する — 表の外に増えたも
 
 // ── The funnel identity the UI derives every bar from ────────────────────────
 
-/** `candidatesGenerated = Σ rejections + feasible` (contract v4 invariant). */
+/** A stage's verdict (contract v13, ADR-172). */
+const stageOf = (d, name) => d.stages.find(v => v.stage === name)
+/** The count a stage rejected; 0 for a stage nobody asked would be a lie, so it throws. */
+function rejectedAt(d, name) {
+  const v = stageOf(d, name)
+  if (v.kind !== 'judged') throw new Error(`${name} was not asked (${v.reason}) — it has no count`)
+  return v.rejected
+}
+
+/**
+ * The v13 identities (ADR-172): stages in judging order with entered following the
+ * short circuit, survivors = feasible, and the source rows adding up to the whole.
+ */
 function assertFunnelIdentity(d, label) {
-  const sum = d.rejectedByReach + d.rejectedByVisibility + d.rejectedByIk +
-              d.rejectedByInterference + d.rejectedByGrasp + d.feasible
-  assert.equal(d.candidatesGenerated, sum,
-    `${label}: generated ${d.candidatesGenerated} ≠ stages ${sum}`)
+  assert.deepEqual(d.stages.map(v => v.stage), ['reach', 'ik', 'grasp', 'visibility', 'interference'], label)
+  const check = (stages, generated, feasible, what) => {
+    let entered = generated
+    for (const v of stages) {
+      if (v.kind !== 'judged') continue
+      assert.equal(v.entered, entered, `${what}: ${v.stage} entered`)
+      entered -= v.rejected
+    }
+    assert.equal(entered, feasible, `${what}: survivors ≠ feasible`)
+  }
+  check(d.stages, d.candidatesGenerated, d.feasible, label)
+  assert.equal(d.bySource.reduce((n, r) => n + r.candidatesGenerated, 0), d.candidatesGenerated, `${label}: rows ≠ whole`)
+  assert.equal(d.bySource.reduce((n, r) => n + r.feasible, 0), d.feasible, `${label}: rows ≠ whole (feasible)`)
+  for (const r of d.bySource) check(r.stages, r.candidatesGenerated, r.feasible, `${label} / ${JSON.stringify(r.source)}`)
   assert.equal(d.returned, Math.min(d.feasible, 5), `${label}: returned must be min(feasible, topN)`)
 }
 
@@ -168,21 +190,22 @@ test('到達不能な候補は 1 つの段にだけ帰属する (段は排他)',
     samples:   [{ point: [1000, 0, 0], normal: [0, 0, 1] }],
     obstacles: [{ center: [1000, 0, 50], radius: 40 }],
   }), CONTRACT_VERSION)
-  assert.equal(res.diagnostics.rejectedByReach, 1)
-  assert.equal(res.diagnostics.rejectedByInterference, 0)
+  assert.equal(rejectedAt(res.diagnostics, 'reach'), 1)
+  assert.equal(rejectedAt(res.diagnostics, 'interference'), 0)
   assertFunnelIdentity(res.diagnostics, 'exclusive stages')
 })
 
 // ── The vacuous-gate rule the contract states explicitly ─────────────────────
 
-test('camera 未宣言なら rejectedByVisibility は必ず 0', () => {
+test('camera 未宣言なら可視性の段は notAsked — 0 ではない (v13, ADR-172 D2)', () => {
   const res = stubSolve(request({ obstacles: [{ center: [300, 0, 350], radius: 200 }] }), CONTRACT_VERSION)
-  assert.equal(res.diagnostics.rejectedByVisibility, 0)
+  assert.deepEqual(stageOf(res.diagnostics, 'visibility'), { stage: 'visibility', kind: 'notAsked', reason: 'cameraUndeclared' })
+  assert.ok(!res.diagnostics.fallbackRisks.some(r => r.domain === 'vision'), '問うていない段からリスクは出ない')
 })
 
-test('gripper 未宣言なら rejectedByGrasp は必ず 0', () => {
+test('gripper 未宣言なら把持性の段は notAsked — 0 ではない (v13, ADR-172 D2)', () => {
   const res = stubSolve(request(), CONTRACT_VERSION)
-  assert.equal(res.diagnostics.rejectedByGrasp, 0)
+  assert.deepEqual(stageOf(res.diagnostics, 'grasp'), { stage: 'grasp', kind: 'notAsked', reason: 'gripperUndeclared' })
 })
 
 test('camera を宣言すると可視性が実際に効く (宣言が無視されていない証拠)', () => {
@@ -190,8 +213,10 @@ test('camera を宣言すると可視性が実際に効く (宣言が無視さ�
     camera:    { position: [600, 0, 2000], viewAxis: [0, 0, -1], fovHalfAngle: 1.2 },
     obstacles: [{ center: [600, 0, 1000], radius: 300 }],
   }), CONTRACT_VERSION)
-  assert.ok(blocked.diagnostics.rejectedByVisibility > 0)
-  assert.ok(blocked.diagnostics.occlusionNearestMiss > 0, '遮蔽の深さが測れたなら報告する')
+  assert.ok(rejectedAt(blocked.diagnostics, 'visibility') > 0)
+  const miss = stageOf(blocked.diagnostics, 'visibility').nearestMiss
+  assert.equal(miss.quantity, 'occlusionDepth')
+  assert.ok(miss.value > 0, '遮蔽の深さが測れたなら報告する')
 })
 
 test('矩形の視野 (fovHalfAngles + imageUp) は向きで効く — 背を向ければ全滅、向ければ通る (ADR-171)', () => {
@@ -199,19 +224,21 @@ test('矩形の視野 (fovHalfAngles + imageUp) は向きで効く — 背を向
     camera: { position: [600, 0, 2000], viewAxis, imageUp: [1, 0, 0], fovHalfAngles: { horizontal: 1.2, vertical: 1.2 } },
   }), CONTRACT_VERSION)
   const away = rect([0, 0, 1])
-  assert.ok(away.diagnostics.rejectedByVisibility > 0)
-  assert.equal(away.diagnostics.occlusionNearestMiss ?? null, null, '視野の外は遮蔽の深さでは測れない')
+  assert.ok(rejectedAt(away.diagnostics, 'visibility') > 0)
+  assert.deepEqual(stageOf(away.diagnostics, 'visibility').nearestMiss,
+    { kind: 'unmeasurable', reasons: ['outsideFieldOfView'] }, '視野の外は遮蔽の深さでは測れない — null ではなく理由で言う')
   assertConforms(away, 'rectangular view, looking away')
-  assert.equal(rect([0, 0, -1]).diagnostics.rejectedByVisibility, 0)
+  assert.equal(rejectedAt(rect([0, 0, -1]).diagnostics, 'visibility'), 0)
 })
 
 test('平行ジョーの不足量は kind:"opening" として載る (契約 v5 / ADR-118)', () => {
   const res = stubSolve(request({
     gripper: { kind: 'parallelJaw', maxOpening: 0.001, fingerClearance: 0.0005 },
   }), CONTRACT_VERSION)
-  assert.ok(res.diagnostics.rejectedByGrasp > 0)
-  assert.equal(res.diagnostics.graspNearestMiss.kind, 'opening')
-  assert.ok(res.diagnostics.graspNearestMiss.shortfall > 0)
+  assert.ok(rejectedAt(res.diagnostics, 'grasp') > 0)
+  const miss = stageOf(res.diagnostics, 'grasp').nearestMiss
+  assert.equal(miss.quantity, 'openingShortfall')
+  assert.ok(miss.value > 0)
 })
 
 test('吸引の不足量は kind:"sealPatch" — 開口として報告しない (ADR-118)', () => {
@@ -220,9 +247,10 @@ test('吸引の不足量は kind:"sealPatch" — 開口として報告しない 
   const res = stubSolve(request({
     gripper: { kind: 'suction', cupDiameter: 10_000 },
   }), CONTRACT_VERSION)
-  assert.ok(res.diagnostics.rejectedByGrasp > 0)
-  assert.equal(res.diagnostics.graspNearestMiss.kind, 'sealPatch')
-  assert.ok(res.diagnostics.graspNearestMiss.shortfall > 0)
+  assert.ok(rejectedAt(res.diagnostics, 'grasp') > 0)
+  const miss = stageOf(res.diagnostics, 'grasp').nearestMiss
+  assert.equal(miss.quantity, 'sealPatchShortfall')
+  assert.ok(miss.value > 0)
   assertConforms(res, 'suction rejection')
 })
 
@@ -233,7 +261,7 @@ test('ロボットを遠ざけると reach 棄却へ変わる — 置き直し�
   const far  = stubSolve(request({ base: [0, 0, 0],   plan: { reachMin: 0, reachMax: 500 } }), CONTRACT_VERSION)
   assert.ok(near.diagnostics.feasible > 0, '近ければ届く')
   assert.equal(far.diagnostics.feasible, 0, '遠ざければ届かない')
-  assert.ok(far.diagnostics.reachNearestMiss > 0, '「あと何ミリ」が測れる')
+  assert.ok(stageOf(far.diagnostics, 'reach').nearestMiss.value > 0, '「あと何ミリ」が測れる')
 })
 
 test('同じ要求は同じ応答を返す (純粋 — レビュアーのスクショが再現する)', () => {
@@ -347,7 +375,7 @@ test('reachDeclared は solve の正の対照になる — 違いは宣言だけ
   assert.ok(on.body.candidates.length > 0, '対照が空では何も示せない')
   assert.equal(on.body.candidates.length, off.body.candidates.length,
     'リーチ段は何も棄却しない envelope なので候補数は変わらないはず')
-  assert.equal(on.body.diagnostics.rejectedByReach, 0,
+  assert.equal(rejectedAt(on.body.diagnostics, 'reach'), 0,
     '対照用の envelope が候補を落としていたら、差は宣言ではなく棄却になる')
 
   // 鍵の有無だけが動く。
@@ -489,15 +517,13 @@ test('ADR-152: grasp specs — priority returns the first feasible spec, every s
   const priority = solve({ order: 'priority', fallback: 'none' })
   assertConforms(priority, 'priority')
   assert.deepEqual(priority.candidates.map(c => c.graspSpecId), ['top'])
-  assert.deepEqual(priority.diagnostics.graspSpecs.map(r => r.id), ['top', 'side'])
-  assert.equal(priority.diagnostics.graspSpecs[1].feasible, 1)
+  assert.deepEqual(priority.diagnostics.bySource.map(r => r.source), [{ kind: 'spec', id: 'top' }, { kind: 'spec', id: 'side' }])
+  assert.equal(priority.diagnostics.bySource[1].feasible, 1)
 
   const score = solve({ order: 'score', fallback: 'none' })
   assertConforms(score, 'score')
   assert.deepEqual(new Set(score.candidates.map(c => c.graspSpecId)), new Set(['top', 'side']))
-  const d = score.diagnostics
-  assert.equal(d.candidatesGenerated,
-    d.rejectedByReach + d.rejectedByVisibility + d.rejectedByIk + d.rejectedByInterference + d.rejectedByGrasp + d.feasible)
+  assertFunnelIdentity({ ...score.diagnostics, returned: Math.min(score.diagnostics.feasible, 5) }, 'score')
 })
 
 // ── ADR-152 D5 (coarse copy): the stub honours what a spec DECLARES ────────────
@@ -529,22 +555,23 @@ test('ADR-152: closing-axis width, depth gate and finger interference in the stu
 
   const acrossX = solve({ closingAxis: [1, 0, 0], depth: 0.02 })   // 80 + 10 > 60
   assertConforms(acrossX, 'acrossX')
-  assert.equal(acrossX.diagnostics.rejectedByGrasp, 3)
-  assert.ok(Math.abs(acrossX.diagnostics.graspNearestMiss.shortfall - 0.03) < 1e-9)
+  assert.equal(rejectedAt(acrossX.diagnostics, 'grasp'), 3)
+  assert.ok(Math.abs(stageOf(acrossX.diagnostics, 'grasp').nearestMiss.value - 0.03) < 1e-9)
 
   const acrossY = solve({ closingAxis: [0, 1, 0], depth: 0.02 })   // 40 + 10 ≤ 60
   assert.equal(acrossY.diagnostics.feasible, 3)
 
   const pastPalm = solve({ closingAxis: [0, 1, 0], depth: 0.08 })   // > 150 − 78
-  assert.equal(pastPalm.diagnostics.rejectedByGrasp, 3)
+  assert.equal(rejectedAt(pastPalm.diagnostics, 'grasp'), 3)
+  assert.deepEqual(stageOf(pastPalm.diagnostics, 'grasp').nearestMiss, { kind: 'unmeasurable', reasons: ['palmBelowSurface'] })
 
   const intoTable = solve({ closingAxis: [0, 1, 0], depth: 0.07 })  // fingertips below the table top
-  assert.equal(intoTable.diagnostics.rejectedByInterference, 3)
+  assert.equal(rejectedAt(intoTable.diagnostics, 'interference'), 3)
 })
 
 // ── ADR-157 (contract v8): interference by motion phase ─────────────────────
 
-test('ADR-157: 相の行は 6 つで、評価した相の rejected の和が rejectedByInterference', () => {
+test('ADR-157: 相の行は 6 つで、評価した相の rejected の和が干渉の段の rejected', () => {
   const blocked = request({ obstacles: [{ kind: 'sphere', center: [0.4, 0, 0.5], radius: 0.2 }] })
   for (const body of [stubSolve(request(), CONTRACT_VERSION), stubSolve(blocked, CONTRACT_VERSION),
     ...DECLARED_SCENARIOS.map(s => responseFor(s, request(), CONTRACT_VERSION)).filter(r => r.status === 200).map(r => r.body)]) {
@@ -552,7 +579,7 @@ test('ADR-157: 相の行は 6 つで、評価した相の rejected の和が rej
     assert.deepEqual(d.interferencePhases.map(r => r.phase),
       ['transit', 'approach', 'close', 'lift', 'transport', 'place'])
     const sum = d.interferencePhases.filter(r => r.kind === 'evaluated').reduce((n, r) => n + r.rejected, 0)
-    assert.equal(sum, d.rejectedByInterference)
+    assert.equal(sum, rejectedAt(d, 'interference'))
     for (const r of d.interferencePhases) if (r.kind === 'unevaluated') assert.equal('rejected' in r, false)
     assert.deepEqual(d.interferenceAnalysis, { kind: 'firstCollision' })
   }

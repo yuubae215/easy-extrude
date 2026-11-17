@@ -223,48 +223,41 @@ const phaseRows = {
   interferenceAnalysis: { kind: "firstCollision" },
 };
 
-// empty result, rejected by reach -> reachNearestMiss is the smallest miss.
+// v13 (ADR-172): every stage once, in judging order; a stage nobody asked has no counts.
+const judged = (stage, entered, rejected, nearestMiss) => ({ stage, kind: "judged", entered, rejected, nearestMiss });
+const notAsked = (stage, reason) => ({ stage, kind: "notAsked", reason });
+const NO_QTY = { kind: "noQuantity" };
+const NONE = { kind: "noRejection" };
+const stagesOf = (reach, ik, interference) => [
+  judged("reach", reach.entered, reach.rejected, reach.miss),
+  judged("ik", ik.entered, ik.rejected, NO_QTY),
+  notAsked("grasp", "gripperUndeclared"),
+  notAsked("visibility", "cameraUndeclared"),
+  judged("interference", interference.entered, interference.rejected, NO_QTY),
+];
+const diagOf = (generated, feasible, stages) => ({
+  candidatesGenerated: generated, feasible, returned: 0, stages,
+  bySource: [{ source: { kind: "derived" }, candidatesGenerated: generated, feasible, stages }],
+  fallbackRisks: [], ...phaseRows,
+});
+
+// empty result, rejected by reach -> the reach stage measured its shortfall.
 const emptyByReach = {
   candidates: [],
-  diagnostics: {
-    candidatesGenerated: 4,
-    rejectedByReach: 4,
-    rejectedByVisibility: 0,
-    rejectedByIk: 0,
-    rejectedByInterference: 0,
-    rejectedByGrasp: 0,
-    feasible: 0,
-    returned: 0,
-    reachNearestMiss: 0.12,
-    occlusionNearestMiss: null,
-    graspNearestMiss: null,
-    graspSpecs: [],
-    ...phaseRows,
-  },
+  diagnostics: diagOf(4, 0, stagesOf(
+    { entered: 4, rejected: 4, miss: { kind: "measured", quantity: "reachDistance", value: 0.12 } },
+    { entered: 0, rejected: 0 }, { entered: 0, rejected: 0 })),
 };
-test("empty result rejected by reach (numeric reachNearestMiss) conforms", () =>
+test("empty result rejected by reach (measured reach shortfall) conforms", () =>
   accepts("grasp-search-response", emptyByReach));
 
-// empty result, nothing rejected by reach -> reachNearestMiss is null.
+// empty result, nothing rejected by reach -> the reach stage says noRejection, never null.
 const emptyByIk = {
   candidates: [],
-  diagnostics: {
-    candidatesGenerated: 3,
-    rejectedByReach: 0,
-    rejectedByVisibility: 0,
-    rejectedByIk: 3,
-    rejectedByInterference: 0,
-    rejectedByGrasp: 0,
-    feasible: 0,
-    returned: 0,
-    reachNearestMiss: null,
-    occlusionNearestMiss: null,
-    graspNearestMiss: null,
-    graspSpecs: [],
-    ...phaseRows,
-  },
+  diagnostics: diagOf(3, 0, stagesOf(
+    { entered: 3, rejected: 0, miss: NONE }, { entered: 3, rejected: 3 }, { entered: 0, rejected: 0 })),
 };
-test("empty result with no reach rejections (null reachNearestMiss) conforms", () =>
+test("empty result with no reach rejections (noRejection, not null) conforms", () =>
   accepts("grasp-search-response", emptyByIk));
 
 // The funnel is a closed object: no presentation ("Close!" copy, colors,
@@ -280,39 +273,69 @@ test("diagnostics rejects unknown fields (additionalProperties:false held)", () 
 test("response without diagnostics is rejected (required on the envelope)", () =>
   rejects("grasp-search-response", { candidates: response.candidates }));
 
-// A missing required funnel field is rejected (the funnel is closed + complete).
-test("diagnostics missing reachNearestMiss is rejected", () => {
-  const { reachNearestMiss, ...rest } = emptyByIk.diagnostics;
-  rejects("grasp-search-response", { candidates: [], diagnostics: rest });
+test("v13: the retired v12 funnel fields are rejected, and stages / bySource / fallbackRisks are required (ADR-172)", () => {
+  for (const retired of [{ rejectedByReach: 0 }, { reachNearestMiss: null }, { graspSpecs: [] }, { graspNearestMiss: null }]) {
+    rejects("grasp-search-response", { candidates: [], diagnostics: { ...emptyByIk.diagnostics, ...retired } });
+  }
+  for (const key of ["stages", "bySource", "fallbackRisks"]) {
+    const { [key]: _gone, ...rest } = emptyByIk.diagnostics;
+    rejects("grasp-search-response", { candidates: [], diagnostics: rest });
+  }
 });
 
-// Funnel invariant on the test data: generated = sum of exclusive rejection
-// stages + feasible, and returned = min(feasible, topN) <= feasible. The schema
-// can't express this arithmetic; the conformance data must satisfy it so the
-// canonical instances stay a faithful source of truth.
+test("v13: a stage nobody asked carries no counts, and every stage appears exactly once (ADR-172 D2)", () => {
+  const withStages = (stages) => ({ candidates: [], diagnostics: { ...emptyByIk.diagnostics, stages } });
+  const st = emptyByIk.diagnostics.stages;
+  rejects("grasp-search-response", withStages(st.map(v => v.kind === "notAsked" ? { ...v, entered: 3, rejected: 0 } : v)));
+  rejects("grasp-search-response", withStages(st.slice(1)));
+  rejects("grasp-search-response", withStages(st.map(v => v.stage === "grasp" ? { ...v, reason: "notInTheMood" } : v)));
+  // a judged stage always says how close it came — never null
+  rejects("grasp-search-response", withStages(st.map(v => v.stage === "reach" ? { ...v, nearestMiss: null } : v)));
+  // an unmeasurable shortfall says why, and only from the closed list
+  accepts("grasp-search-response", withStages(st.map(v => v.stage === "reach"
+    ? { ...v, nearestMiss: { kind: "unmeasurable", reasons: ["outsideFieldOfView"] } } : v)));
+  rejects("grasp-search-response", withStages(st.map(v => v.stage === "reach"
+    ? { ...v, nearestMiss: { kind: "unmeasurable", reasons: [] } } : v)));
+});
+
+test("v13: the engine's fallback risk is a closed kind — a domain at L3..L5, or several domains together at L6 (ADR-172 D8)", () => {
+  const withRisks = (fallbackRisks) => ({ candidates: [], diagnostics: { ...emptyByIk.diagnostics, fallbackRisks } });
+  accepts("grasp-search-response", withRisks([
+    { kind: "together", level: 6, domains: ["path", "grasp"] },
+    { kind: "domain", domain: "path", level: 5, reason: "noneReachable" },
+  ]));
+  rejects("grasp-search-response", withRisks([{ kind: "domain", domain: "path", level: 6, reason: "noneReachable" }]));
+  rejects("grasp-search-response", withRisks([{ kind: "domain", domain: "path", level: 4, reason: "noneReachable", text: "re-teach" }]));
+  rejects("grasp-search-response", withRisks([{ kind: "together", level: 6, domains: ["path"] }]));
+});
+
+// Funnel invariants on the test data. The schema cannot express this arithmetic;
+// the conformance data must satisfy it so the canonical instances stay faithful.
+const checkStages = (stages, generated, feasible) => {
+  let entered = generated;
+  for (const v of stages) {
+    if (v.kind === "notAsked") continue;
+    assert.equal(v.entered, entered, `${v.stage}: entered`);
+    if (v.rejected === 0 && v.nearestMiss.kind !== "noQuantity") assert.equal(v.nearestMiss.kind, "noRejection");
+    entered -= v.rejected;
+  }
+  assert.equal(entered, feasible, "the last stage's survivors are feasible");
+};
 for (const [label, d] of [
   ["canonical example", response.diagnostics],
   ["emptyByReach", emptyByReach.diagnostics],
   ["emptyByIk", emptyByIk.diagnostics],
 ]) {
   test(`funnel invariant holds for ${label}`, () => {
-    assert.equal(
-      d.candidatesGenerated,
-      d.rejectedByReach + d.rejectedByVisibility + d.rejectedByIk +
-        d.rejectedByInterference + d.rejectedByGrasp + d.feasible,
-    );
+    checkStages(d.stages, d.candidatesGenerated, d.feasible);
     assert.ok(d.returned <= d.feasible, "returned must not exceed feasible");
-    // reachNearestMiss is null exactly when nothing was rejected by reach.
-    assert.equal(d.reachNearestMiss === null, d.rejectedByReach === 0);
-    // The domain near-misses may be null even with rejections present (an
-    // unmeasurable rejection: outside-FOV / missing contact pair), but they
-    // must be null when their stage rejected nothing at all.
-    if (d.rejectedByVisibility === 0) assert.equal(d.occlusionNearestMiss, null);
-    // v5 (ADR-118) で `openingNearestMiss` は種別つきの `graspNearestMiss` へ
-    // 置き換わった。この行はその後も**古い名前を見ていた** — 契約から消えた鍵は
-    // 常に undefined なので、`== null` 系の比較なら永久に真を返す。退役した形を
-    // 検査に残すと違反を*見逃す*のではなく**緑を出す** (ADR-103)。
-    if (d.rejectedByGrasp === 0) assert.equal(d.graspNearestMiss, null);
+    // bySource partitions the whole (ADR-172 D4)
+    assert.equal(d.bySource.reduce((n, r) => n + r.candidatesGenerated, 0), d.candidatesGenerated);
+    assert.equal(d.bySource.reduce((n, r) => n + r.feasible, 0), d.feasible);
+    for (const r of d.bySource) checkStages(r.stages, r.candidatesGenerated, r.feasible);
+    for (const [i, v] of d.stages.entries()) {
+      if (v.kind === "judged") assert.equal(d.bySource.reduce((n, r) => n + r.stages[i].rejected, 0), v.rejected, v.stage);
+    }
   });
 }
 
@@ -395,17 +418,13 @@ test("grasp-search request rejects a malformed robot.tcpOrientation (wrong lengt
 });
 
 // --- v4 score booleans: the five domain-stage flags are all required --------
-test("score missing `visible` is rejected (v4 required)", () => {
-  const { visible, ...rest } = score;
-  rejects("grasp-search-response", withDiag([{ rank: 1, pose: endEffectorPose, score: rest }]));
+test("v13: the five stage booleans are retired from the score (ADR-172 D5)", () => {
+  for (const k of ["withinReach", "visible", "ikSolvable", "interferenceFree", "graspable"]) {
+    assert.equal(k in score, false, `${k} is still in the example`);
+    rejects("grasp-search-response", withDiag([{ ...response.candidates[0], score: { ...score, [k]: true } }]));
+  }
 });
 
-test("score missing `graspable` is rejected (v4 required)", () => {
-  const { graspable, ...rest } = score;
-  rejects("grasp-search-response", withDiag([{ rank: 1, pose: endEffectorPose, score: rest }]));
-});
-
-// --- camera / gripper declarations (ADR-081, optional, request side) ---------
 test("grasp-search request without camera/gripper still conforms (optional)", () => {
   const example = examples["grasp-search-request"];
   const { camera, gripper, ...graspSearch } = example.graspSearch;
@@ -476,26 +495,29 @@ test("response: a candidate without graspSpecId is rejected (required, nullable 
   rejects("grasp-search-response", { candidates: [bare], diagnostics });
 });
 
-test("response: graspSpecId names a spec, and diagnostics.graspSpecs counts every sent spec", () => {
+test("response: graspSpecId names a spec, and bySource has a row per sent spec plus the derived row (ADR-172 D4)", () => {
+  const st = (n) => [
+    judged("reach", n, 0, NONE), judged("ik", n, 0, NO_QTY),
+    notAsked("grasp", "gripperUndeclared"), notAsked("visibility", "cameraUndeclared"),
+    judged("interference", n, 0, NO_QTY)];
   accepts("grasp-search-response", {
     candidates: [{ ...response.candidates[0], graspSpecId: "top-pinch" }],
     diagnostics: {
       ...diagnostics,
-      graspSpecs: [
-        { id: "top-pinch", candidatesGenerated: 6, feasible: 2 },
-        { id: "top-suck", candidatesGenerated: 2, feasible: 0 },
+      bySource: [
+        { source: { kind: "spec", id: "top-pinch" }, candidatesGenerated: 6, feasible: 6, stages: st(6) },
+        { source: { kind: "spec", id: "top-suck" }, candidatesGenerated: 0, feasible: 0, stages: st(0) },
+        { source: { kind: "derived" }, candidatesGenerated: 2, feasible: 2, stages: st(2) },
       ],
     },
   });
 });
 
-test("response: diagnostics without graspSpecs is rejected, and a spec row is closed", () => {
-  const { graspSpecs, ...rest } = diagnostics;
-  rejects("grasp-search-response", { candidates: [], diagnostics: rest });
-  rejects("grasp-search-response", {
-    candidates: [],
-    diagnostics: { ...diagnostics, graspSpecs: [{ id: "a", candidatesGenerated: 1, feasible: 0, colour: "red" }] },
-  });
+test("response: a source row is closed and names its source by kind", () => {
+  const row = diagnostics.bySource[0];
+  rejects("grasp-search-response", { candidates: [], diagnostics: { ...diagnostics, bySource: [{ ...row, colour: "red" }] } });
+  rejects("grasp-search-response", { candidates: [], diagnostics: { ...diagnostics, bySource: [{ ...row, source: { kind: "spec" } }] } });
+  rejects("grasp-search-response", { candidates: [], diagnostics: { ...diagnostics, bySource: [{ ...row, source: { kind: "guessed" } }] } });
 });
 
 test("request: target carries named specs, a strategy and the target box", () => {
@@ -546,7 +568,7 @@ test("response: every motion phase has a row; an unevaluated one carries a reaso
 
 test("response: the all-phase analysis names phase, part and obstacle index — never a name", () => {
   const analysis = { kind: "allPhases", candidatesAnalysed: 4, phases: [
-    { phase: "lift", collided: 2, hits: [{ part: "held", obstacleIndex: 1, candidates: 2 }] }],
+    { phase: "lift", touched: 2, hits: [{ part: "held", obstacleIndex: 1, candidates: 2 }] }],
     armPath: { kind: "undeclared" }, replays: [], rejectedReplays: { items: [], omitted: 0 } };
   accepts("grasp-search-response", { candidates: [], diagnostics: { ...diagnostics, interferenceAnalysis: analysis } });
   const named = structuredClone(analysis);
@@ -557,8 +579,8 @@ test("response: the all-phase analysis names phase, part and obstacle index — 
 test("response v10: the arm is measured at the pick pose and along the path — measured, closed, never absent (ADR-158 PR1)", () => {
   const base = { kind: "allPhases", candidatesAnalysed: 4, phases: [], replays: [], rejectedReplays: { items: [], omitted: 0 } };
   const measured = { kind: "measured", pathSamples: 6,
-    atPickPose: { candidates: 1, hits: [{ obstacleIndex: 0, candidates: 1 }] },
-    phases: [{ phase: "approach", onPath: 2, onPathOnly: 1, noSolutionOnPath: 0, hits: [{ obstacleIndex: 0, candidates: 2 }] }] };
+    atPickPose: { candidates: 1, hits: [{ part: "arm", obstacleIndex: 0, candidates: 1 }] },
+    phases: [{ phase: "approach", onPath: 2, onPathOnly: 1, noSolutionOnPath: 0, hits: [{ part: "arm", obstacleIndex: 0, candidates: 2 }] }] };
   const withArm = (armPath) => ({ candidates: [], diagnostics: { ...diagnostics, interferenceAnalysis: { ...base, armPath } } });
   accepts("grasp-search-response", withArm(measured));
   accepts("grasp-search-response", withArm({ kind: "undeclared" }));
@@ -605,7 +627,7 @@ test("response v12: an interference rejection is replayed by its group's best ca
   const sample = (s, hits = []) => ({ s, tcp: [0.5, 0, 0.1], hits, arm: { kind: "undeclared" } });
   const lift = { phase: "lift", samples: [sample(0), sample(1, [{ part: "held", obstacleIndex: 0 }])] };
   const pose = examples["grasp-search-response"].candidates[0].pose;
-  const item = { phase: "lift", obstacleIndex: 0, rejected: 9, totalScore: 0.82, pose,
+  const item = { phase: "lift", obstacleIndex: 0, touched: 9, totalScore: 0.82, pose,
     reachSolution: { kind: "undeclared" }, phases: [lift] };
   const withRejected = (rejectedReplays) => ({ candidates: [], diagnostics: { ...diagnostics,
     interferenceAnalysis: { kind: "allPhases", candidatesAnalysed: 9, phases: [], armPath: { kind: "undeclared" }, replays: [], rejectedReplays } } });
@@ -620,7 +642,10 @@ test("response v12: an interference rejection is replayed by its group's best ca
   rejects("grasp-search-response", withRejected({ items: Array(9).fill(item), omitted: 0 }));
   accepts("grasp-search-response", withRejected({ items: Array(8).fill(item), omitted: 4 }));
   // A group counted nobody is not a group; the representative names its obstacle by index only.
-  rejects("grasp-search-response", withRejected({ items: [{ ...item, rejected: 0 }], omitted: 0 }));
+  rejects("grasp-search-response", withRejected({ items: [{ ...item, touched: 0 }], omitted: 0 }));
+  // v13 (ADR-172 D7): a count that overlaps across groups is `touched`, never `rejected`.
+  const { touched: _t, ...asRejected } = item;
+  rejects("grasp-search-response", withRejected({ items: [{ ...asRejected, rejected: 9 }], omitted: 0 }));
   rejects("grasp-search-response", withRejected({ items: [{ ...item, obstacleName: "shelf" }], omitted: 0 }));
   // The pose and the solution are required — a rejection without them is not replayable.
   const { reachSolution: _r, ...noSolution } = item;

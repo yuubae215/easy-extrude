@@ -2,6 +2,8 @@
 
 import pytest
 
+from contract_pkg import all_passed_stages
+
 from easy_extrude_core.contract import (
     CONTRACT_VERSION,
     ContractVersionMismatch,
@@ -19,17 +21,13 @@ from easy_extrude_core.contract import (
 def _diagnostics(**overrides) -> SearchDiagnostics:
     base = dict(
         candidates_generated=1,
-        rejected_by_reach=0,
-        rejected_by_visibility=0,
-        rejected_by_ik=0,
-        rejected_by_interference=0,
-        rejected_by_grasp=0,
         feasible=1,
         returned=1,
-        reach_nearest_miss=None,
-        occlusion_nearest_miss=None,
-        grasp_nearest_miss=None,
-        grasp_specs=[],
+        # 契約 v13 (ADR-172): 段は問うた順に 5 つ、出どころの行の和 = 全体。
+        stages=all_passed_stages(1),
+        by_source=[{"source": {"kind": "derived"}, "candidatesGenerated": 1, "feasible": 1,
+                    "stages": all_passed_stages(1)}],
+        fallback_risks=[],
         # 契約 v8 (ADR-157): 6 相すべてに行。宣言の無いリクエストでは進入相だけ評価される。
         interference_phases=[
             {"phase": "transit", "kind": "unevaluated", "reason": "notYetDecided"},
@@ -75,11 +73,6 @@ def test_response_roundtrip_top_n_with_breakdown():
                 rank=1,
                 pose={"joints": [0.0, 0.1, 0.2]},
                 score=ScoreBreakdown(
-                    within_reach=True,
-                    visible=True,
-                    ik_solvable=True,
-                    interference_free=True,
-                    graspable=True,
                     objective_scores={"reach_margin": 0.8},
                     total_score=0.8,
                     reach_solution=ReachSolutionSolved(
@@ -94,7 +87,6 @@ def test_response_roundtrip_top_n_with_breakdown():
     reloaded = GraspSearchResponse.model_validate(dumped)
     assert reloaded.contract_version == CONTRACT_VERSION
     assert reloaded.candidates[0].rank == 1
-    assert reloaded.candidates[0].score.ik_solvable is True
     # 代表解が往復で失われない (ADR-135 — 「運ぶ途中で捨てる」が元の欠陥)。
     assert reloaded.candidates[0].score.reach_solution.kind == "solved"
     assert len(reloaded.candidates[0].score.reach_solution.joints) == 6

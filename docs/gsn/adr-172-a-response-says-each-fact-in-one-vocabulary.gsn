@@ -3,14 +3,14 @@ GOALS adr172_a_response_says_each_fact_in_one_vocabulary
 goal EachFactOnTheResponseHasOneNameAndOneWayToSayNotAsked
 uuid 8bd5e5bd-0a99-4207-8356-2a0c77c65557
 summary "把持探索の応答の利用者は、1 つの事実を 1 つの名前で読み、判定した結果の 0 と問うていないを型で見分け、足してよい数と足してはいけない数を型で見分けられる。仕様ごとの段別の内訳は候補全体を漏れなく分ける行の上に載り、どの手戻りが要りそうかはエンジンが決める"
-state ToBeDeveloped
+state UnderReview
 labels adr-172, adr-081, adr-152, adr-120, adr-157, principle-31, principle-33, principle-29, grasp, contract, term-l-blind, change-diagnosis
 artifacts
 - "docs/adr/ADR-172-a-response-says-each-fact-in-one-vocabulary.md"
 
     context Adr172Scope
     uuid 4b7dcb28-c943-4e82-bc5b-8eddf76ae630
-    summary "ADR-172 (Proposed 2026-11-12): 把持探索の応答 1 本を共有の型で作り直す (契約 v13)。request 側の語を揃えるのは DEF-082 に残す。D1〜D8 の読み方は俯瞰で当事者が決める"
+    summary "ADR-172 (Accepted 2026-11-15): 把持探索の応答 1 本を共有の型で作り直した (契約 v13)。request 側の語を揃えるのは DEF-082 に残す"
 
     context RequirementCameFromTheOwner
     uuid df4b50b9-2eff-41b1-a6b0-ca5ec962f4d6
@@ -27,26 +27,36 @@ artifacts
         goal NotAskedIsAKindNeverAZeroOrAVacuousTrue
         uuid a5d57072-69a2-46d6-9c8f-9f8cce674435
         summary "カメラ・ハンドを宣言していない段は notAsked {reason} で返り、entered も rejected も持たない。返す候補の 5 つの真偽値は消える"
-        labels support-exploring
+        labels support-verified
 
-            assumption NotAskedWillBeExecuted
-            uuid 7d790924-660d-49ed-a722-4620d0c790c8
-            summary "証拠の予定: core と契約パッケージの準拠テストで、カメラ・ハンド未宣言の探索が notAsked を返し、スキーマが notAsked に数を付けた応答を拒むことを問う。満期=GREP:packages/grasp-contract/schema/grasp-search-response.schema.json::notAsked"
+            solution NotAskedIsExecuted
+            uuid d4240beb-4583-4b88-a719-8b7992a9120c
+            summary "cd core && uv run pytest tests/test_stages.py (2026-11-15) — カメラもハンドも無い探索で 2 段が notAsked、数を持たない。契約パッケージは notAsked に数を付けた応答と v12 の 5 つの真偽値を拒む。スタブも同じ形 (pnpm test:stub 40 pass)"
+            artifacts
+            - "core/tests/test_stages.py"
+            - "packages/grasp-contract/test/contract.test.mjs"
+            - "mocks/graspStub/conformance.test.js"
 
         goal BySourceRowsPartitionTheWholeSearch
         uuid 44ccbff4-93df-4970-ad76-c9fea9e49541
         summary "出どころの行 (宣言した仕様ごと + 導出) の和が、生成・通過・段ごとの棄却のすべてで全体に一致する。仕様が全滅して導出へ戻った探索にも導出の行が在る (DEF-048 を閉じる)"
-        labels support-exploring
+        labels support-verified
 
-            assumption PartitionWillBeExecuted
-            uuid 1cf7b66a-1adc-48b5-ac98-2fcb8717d575
-            summary "証拠の予定: 2026-11-11 に実測した『生成 40 / 仕様の行の和 4』の場面を core のテストに焼き、行の和 = 全体を問う。満期=GREP:packages/grasp-contract/schema/grasp-search-response.schema.json::bySource"
+            solution PartitionIsExecuted
+            uuid fba2582c-dc79-44be-a203-5160d6c21ab8
+            summary "cd core && uv run pytest tests/test_stages.py (2026-11-15) — 仕様が全滅して導出へ戻った探索 (生成 40) で仕様の行 4 + 導出の行 36、通過・段ごとの棄却も行の和 = 全体。e2e のスタブのレーンで仕様ごとの行がどの段で落ちたかを言う (20 pass)"
+            artifacts
+            - "core/tests/test_stages.py"
+            - "e2e/grasp-stub.spec.js"
 
         goal TheFallbackRiskIsDecidedByTheEngine
         uuid c5b723df-52f6-49ee-be25-428f38b2ad02
         summary "フォールバックのリスク (ドメイン・段・理由の列挙) は core が段の判定から決めてワイヤに載せ、フロントは列挙から文言を引いて表示するだけ。問うていない段からリスクは出ない"
-        labels support-exploring
+        labels support-verified
 
-            assumption RiskWillMoveToTheEngine
-            uuid f90cc9ad-6919-466e-bae3-57cdd49e9aff
-            summary "証拠の予定: core に階梯のリスクの表と単体テストを置き、src/view/GraspLadderMath.js から RISK_RULES が消える。満期=GREP:packages/grasp-contract/schema/grasp-search-response.schema.json::fallbackRisks"
+            solution RiskIsDecidedByTheEngine
+            uuid d7ddaffa-96d9-4995-ba1a-9c97bcf8a302
+            summary "core/easy_extrude_core/engine/stages.py の fallback_risks と test_stages.py (全滅で L5、経路は 3 段の積、問うていないドメインからリスクは出ない)。src/view/GraspLadderMath.js から規則の表が消え、理由の語は契約の閉じた列挙をちょうど覆う (GraspLadderMath.test.js)"
+            artifacts
+            - "core/easy_extrude_core/engine/stages.py"
+            - "src/view/GraspLadderMath.test.js"

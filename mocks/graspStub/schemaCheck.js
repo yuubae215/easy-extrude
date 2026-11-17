@@ -30,7 +30,7 @@ const ANNOTATIONS = new Set([
 /** Constraint keywords this validator understands. */
 const SUPPORTED = new Set([
   'type', 'properties', 'required', 'additionalProperties', 'items',
-  'minimum', 'maximum', 'minItems', 'minLength', 'maxItems', 'const', 'enum', 'oneOf', '$ref', '$defs',
+  'minimum', 'maximum', 'minItems', 'minLength', 'maxItems', 'uniqueItems', 'const', 'enum', 'oneOf', '$ref', '$defs',
 ])
 
 /**
@@ -119,6 +119,10 @@ export function validate(value, schema, root, path = '', errors = []) {
     }
     if (schema.maxItems !== undefined && value.length > schema.maxItems) {
       errors.push(`${path}: ${value.length} items > maxItems ${schema.maxItems}`)
+    }
+    if (schema.uniqueItems === true) {
+      const seen = new Set(value.map(v => JSON.stringify(v)))
+      if (seen.size !== value.length) errors.push(`${path}: items are not unique`)
     }
     if (schema.items) {
       value.forEach((item, i) => validate(item, schema.items, root, `${path}/${i}`, errors))

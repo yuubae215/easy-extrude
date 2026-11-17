@@ -1,9 +1,9 @@
 # 172. 応答は 1 つの事実を 1 つの語彙で言う — 段・相・障害物の当たり・「問うていない」を共有の型にし、フォールバックのリスクはエンジンが決める
 
-- Status: Proposed (2026-11-12 起票。方向は当事者合意 — 2026-11-11〜12 の棚卸しへの返事: 範囲は把持探索の応答 1 本 (request 側は残し)、返す候補の 5 つの真偽値は消す、ADR を Proposed で起こしてから俯瞰で合意する。D1〜D8 の読み方は俯瞰で当事者が決める)
+- Status: Accepted (実装済み 2026-11-15 — 契約 v13。方向は当事者合意 — 2026-11-11〜12 の棚卸しへの返事: 範囲は把持探索の応答 1 本 (request 側は残し)、返す候補の 5 つの真偽値は消す、ADR を Proposed で起こしてから俯瞰で合意する。俯瞰の 4 点 (入った数をワイヤに載せる / 足す数と重なる数を欄の名前で分ける / リスクの規則は中身を変えずに移す / #464 のマージ後に別の PR) は 2026-11-12 に「推奨で良い」)
 - Date: 2026-11-12
 - Deciders: yuubae215 (要求: 「Q4 は現在の型の意味の棚卸しと必要ならリファクタリングを前提に調査してからやりたい」→「全体の型を俎上に上げてからじゃなくていい?」→「(リスク表は) 移しても良いよ エンジンに移して繋ぎ直す?」→「b までやってほしいけど、それは残しにして、a まで」), Claude (起票)
-- 状態台帳: `docs/STATE_LEDGER.md` に行を足した (段の判定 — 案)。既存の「候補ごとの objective 評価」「相ごとの干渉判定」の行と同じ『判定した / 問うていない』の形を段に広げる
+- 状態台帳: `docs/STATE_LEDGER.md` の「段の判定」の行 (契約 v13)。既存の「候補ごとの objective 評価」「相ごとの干渉判定」の行と同じ『判定した / 問うていない』の形を段に広げる
 - 段: なし
 - Retires: GREP:packages/grasp-contract/schema/grasp-search-response.schema.json::rejectedByReach · GREP:src/view/GraspLadderMath.js::RISK_RULES · GREP:packages/grasp-contract/schema/grasp-search-response.schema.json::withinReach
 - Supersedes / Superseded by: なし。ADR-081 の §3 (ドメイン KPI とフォールバック階梯をフロントに置く) と ADR-152 D4 (仕様の行は生成数と通過数だけ) を部分的に置き換える。DEF-048 を受ける
@@ -68,7 +68,7 @@ flowchart LR
   — tradeoff: 利用者の書くファイル (テンプレ・文書) まで動く。当事者は望んでいるが、**残しとして
   分ける** (DEF-082) — request は open payload で統治の規則が違うので、別の回にするほうが安い。
 
-## Decision (案 — 読み方は俯瞰で当事者が決める)
+## Decision
 
 - **D1 — 共有の語。** `stage` (列挙: reach / ik / grasp / visibility / interference) と `phase`
   (列挙: 6 相) を `$defs` に 1 つずつ置き、すべての欄がそれを参照する。
@@ -109,12 +109,35 @@ flowchart LR
 - **request 側は触らない** — 段・相・障害物の語を request に揃えるのは DEF-082。
 - 2026-11-11 にフロントで直した率の分母 (ADR-081 追記) は、`entered` がワイヤに載るので導出が要らなくなる。
 
-## 検証 (証拠 — 予定)
+## 実装で決めたこと (俯瞰の後)
 
-goal ごとの支えの正本は `docs/gsn/adr-172-a-response-says-each-fact-in-one-vocabulary.gsn`。予定:
-core の準拠テスト (`bySource` の和 = 全体、仕様が全滅して導出へ戻ったとき導出の行が在る、`notAsked` の段は
-`entered` を持たない) / 契約パッケージのテスト (`unmeasurable` と `noRejection` の区別、`touched` と
-`rejected` の欄名) / フロントの単体テスト (問うていない段に率もリスクも出ない) / e2e。
+- **stub もリスクの表を写す。** スタブ (`mocks/graspStub/stages.js`) は代役の生産者で、同じ形を返さないとスタブのレーンで
+  ラダーが黙る。源は core/ (`engine/stages.py`) で、フロントは決めない。
+- **出どころの行が導出だけのときは表示しない。** 1 行が全体と同じなので漏斗に何も足さない (`specResultRows` は null)。
+- **ゴーストの線は、返す候補なら常に実線。** 返す候補は全段を通っている。
+- **前回のフロントの率の修正 (ADR-081 追記 2026-11-11) は `entered` を読むだけになった** — 段の並びからの導出も、
+  リクエストからカメラの有無を推す述語 (`requestAsksVisibility`) も消した。
+
+## 検証 (証拠)
+
+goal ごとの支えの正本は `docs/gsn/adr-172-a-response-says-each-fact-in-one-vocabulary.gsn`。入口だけ:
+
+- `pnpm test:core` → 355 passed (`test_stages.py` 10 件 — 2026-11-11 に実測した「生成 40 / 仕様の行の和 4」の場面で
+  導出の行が在り行の和 = 全体、問うていない段は数を持たない、全滅の段で L5、経路のドメインは 3 段の積)。
+- `pnpm test:contract` → 契約パッケージ (v12 の欄を拒む・notAsked に数を付けると拒む・リスクの閉じた kind・行の和の恒等式)
+  と BFF 39。
+- `pnpm test` → 2247 passed、`pnpm test:stub` → 40 passed。
+- e2e: `VITE_GRASP_STUB=1 playwright test e2e/grasp-stub.spec.js` → 20 passed (仕様ごとの行が「どの段で落ちたか」を言う)。
+- dev server のスタブのレーンで漏斗を目視した: カメラの無い探索で可視性の段が「not asked — no camera declared」、
+  全棄却の場面でエンジンのリスク (L6 → L5 → L4 → L3) がその順に出る。
+- **見ていないもの:** 本物の core を立てる e2e は今も無い。
+
+## 残し
+
+- **request 側の語を応答と同じ共有の型に揃える — 未着手 (DEF-082)。** 段・相・障害物の語が request では
+  別々に書かれている (例: `interferenceAnalysis` の列挙、`target.lift`)。当事者「b までやってほしいけど、それは
+  残しにして、a まで」(2026-11-12)。request は open payload で利用者の書くファイル (テンプレ・文書) まで動くので
+  別の回にした。
 
 ## Lens notes
 

@@ -66,11 +66,9 @@ def test_thin_container_template_runs_and_ranks():
     assert scores == sorted(scores, reverse=True)
     # 通過候補なので 5 判定 (見える/届く 3 種/掴める) はすべて True。
     for c in resp.candidates:
-        assert c.score.within_reach
-        assert c.score.visible
-        assert c.score.ik_solvable
-        assert c.score.interference_free
-        assert c.score.graspable
+        # v13 (ADR-172 D5): 返る候補は全段を通っている。カメラもハンドも宣言したので
+        # 可視性・把持性の段は「問うた」段として数を持つ。
+        assert c.score.reach_solution is not None
 
 
 def test_thin_container_top_pick_is_top_down():
@@ -125,9 +123,7 @@ def test_scene_template_pick_sequence_picks_all_workpieces():
         assert pick.picked
         assert pick.candidates, f"{pick.target_id} は少なくとも 1 候補を持つはず"
         top = pick.candidates[0]
-        assert top.score.visible and top.score.graspable
-        assert top.score.within_reach and top.score.ik_solvable
-        assert top.score.interference_free
+        assert top.score.reach_solution is not None  # 全段を通った (v13)
 
 
 def test_thin_container_domain_diagnostics_are_clean():
@@ -272,8 +268,7 @@ def test_pedestal_template_still_returns_usable_candidates():
     resp = pipeline.search_report(_load_pedestal_request()).response
     assert len(resp.candidates) == 5
     for c in resp.candidates:
-        assert c.score.interference_free
-        assert c.score.ik_solvable
+        assert c.score.reach_solution.kind == "solved"  # 全段を通り、関節解が載る (v13)
     ranks = [c.rank for c in resp.candidates]
     assert ranks == list(range(1, len(resp.candidates) + 1))
 

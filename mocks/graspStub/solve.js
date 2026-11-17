@@ -38,14 +38,7 @@
  * out — a reviewer's screenshot is reproducible (原則 #3).
  */
 
-/** Stages, in the engine's measured cheapest-first short-circuit order. */
-const STAGE = Object.freeze({
-  REACH:        'rejectedByReach',
-  IK:           'rejectedByIk',
-  GRASP:        'rejectedByGrasp',
-  VISIBILITY:   'rejectedByVisibility',
-  INTERFERENCE: 'rejectedByInterference',
-})
+import { newTally, reject, stageDiagnostics } from './stages.js'
 
 const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
 const add = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]]
@@ -379,14 +372,10 @@ export function stubSolve(request, contractVersion) {
   const preGraspDistance   = spread * 0.1
   const clearanceReference = spread * 0.05
 
-  const counts = {
-    rejectedByReach: 0, rejectedByIk: 0, rejectedByGrasp: 0,
-    rejectedByVisibility: 0, rejectedByInterference: 0,
-  }
-  let reachNearestMiss     = null
-  let occlusionNearestMiss = null
-  let graspNearestMiss     = null   // { kind, shortfall } — contract v5 (ADR-118)
-  const keepMin = (cur, v) => (cur == null || v < cur ? v : cur)
+  // v13 (ADR-172): one tally per source (a declared spec, or derived); the whole
+  // is their sum. Only the interference count is needed outside them (phase rows).
+  const sources = []   // [{ source, tally }] in source order
+  let interferenceRejected = 0
 
   // Counted rather than assumed to equal `samples.length`: a degenerate sample
   // generates no candidate, and folding it into the total would break the
@@ -396,6 +385,8 @@ export function stubSolve(request, contractVersion) {
   /** One group of samples (a spec, or the derived set) → its feasible candidates. */
   const evaluateGroup = (groupSamples, spec) => {
   const graspSpecId = spec?.id ?? null
+  const tally = newTally()
+  sources.push({ source: spec ? { kind: 'spec', id: spec.id } : { kind: 'derived' }, tally })
   const depth = Number(spec?.depth ?? 0)
   const closingAxis = spec?.closingAxis ? unit(spec.closingAxis) : null
   const feasible = []
@@ -404,6 +395,7 @@ export function stubSolve(request, contractVersion) {
     const outward = unit(sample.normal)
     if (!outward) continue                       // a normal-less sample defines no approach
     generated += 1
+    tally.generated += 1
     const approach = scale(outward, -1)          // face-on: approach opposes the normal
     const preGrasp = add(surface, scale(outward, preGraspDistance))
     // ADR-152 D5: the TCP goes `depth` past the face along the approach.
@@ -412,9 +404,8 @@ export function stubSolve(request, contractVersion) {
 
     // ── reach ────────────────────────────────────────────────────────────────
     if (distance < reachMin || distance > reachMax) {
-      counts[STAGE.REACH] += 1
       const miss = distance > reachMax ? distance - reachMax : reachMin - distance
-      reachNearestMiss = keepMin(reachNearestMiss, miss)
+      reject(tally, 'reach', { miss: ['reachDistance', miss] })
       continue
     }
 
@@ -424,7 +415,7 @@ export function stubSolve(request, contractVersion) {
       : unit(sub(point, base))
     if (reference) {
       const angle = Math.acos(Math.max(-1, Math.min(1, dot(reference, approach))))
-      if (angle > coneHalf) { counts[STAGE.IK] += 1; continue }
+      if (angle > coneHalf) { reject(tally, 'ik'); continue }
     }
 
     // ── grasp gate (vacuously true with no gripper declared) ─────────────────
@@ -443,11 +434,7 @@ export function stubSolve(request, contractVersion) {
         // sample spread around the contact point.
         const patch = required * 2
         if (cup > patch) {
-          counts[STAGE.GRASP] += 1
-          const shortfall = cup - patch
-          if (graspNearestMiss == null || shortfall < graspNearestMiss.shortfall) {
-            graspNearestMiss = { kind: 'sealPatch', shortfall }
-          }
+          reject(tally, 'grasp', { miss: ['sealPatchShortfall', cup - patch] })
           continue
         }
         graspSlack = patch > 0 ? Math.min(1, (patch - cup) / patch) : 1
@@ -457,7 +444,7 @@ export function stubSolve(request, contractVersion) {
         // sink below the approach face. Counted as a grasp rejection with no
         // measurable opening miss, as core/ does.
         if (depth > 0 && gripper.body && depth > toolLength - bodyLengthOf(gripper.body)) {
-          counts[STAGE.GRASP] += 1
+          reject(tally, 'grasp', { unmeasurable: 'palmBelowSurface' })
           continue
         }
         // A declared closing axis measures the width as the TARGET BOX's thickness
@@ -467,11 +454,7 @@ export function stubSolve(request, contractVersion) {
           ? 2 * boxExtentAlong(targetBox, closingAxis) + Number(gripper.fingerClearance ?? 0)
           : required
         if (maxOpening < width) {
-          counts[STAGE.GRASP] += 1
-          const shortfall = width - maxOpening
-          if (graspNearestMiss == null || shortfall < graspNearestMiss.shortfall) {
-            graspNearestMiss = { kind: 'opening', shortfall }
-          }
+          reject(tally, 'grasp', { miss: ['openingShortfall', width - maxOpening] })
           continue
         }
         graspSlack = width > 0 ? Math.min(1, (maxOpening - width) / width) : 1
@@ -485,6 +468,7 @@ export function stubSolve(request, contractVersion) {
       const toPoint = unit(sub(point, eye))
       const fov = Number(camera.fovHalfAngle ?? Math.PI)
       let rejected = false
+      let depthCut = null
       if (camera.fovHalfAngles) {
         // Rectangular field of view (ADR-171) — the same closed form core/ judges.
         if (!insideRectangularView(camera, point)) rejected = true
@@ -496,12 +480,17 @@ export function stubSolve(request, contractVersion) {
           const d = surfaceDistance(eye, point, o)
           if (d < 0) {
             rejected = true
-            occlusionNearestMiss = keepMin(occlusionNearestMiss, -d)
+            depthCut = -d
             break
           }
         }
       }
-      if (rejected) { counts[STAGE.VISIBILITY] += 1; continue }
+      if (rejected) {
+        reject(tally, 'visibility', depthCut != null
+          ? { miss: ['occlusionDepth', depthCut] }
+          : { unmeasurable: 'outsideFieldOfView' })
+        continue
+      }
     }
 
     // ── interference along the approach path ─────────────────────────────────
@@ -530,7 +519,7 @@ export function stubSolve(request, contractVersion) {
         if (obstacles.some(o => surfaceDistance(a, b, o) < f.thickness / 2)) { blocked = true; break }
       }
     }
-    if (blocked) { counts[STAGE.INTERFERENCE] += 1; continue }
+    if (blocked) { reject(tally, 'interference'); interferenceRejected += 1; continue }
 
     // ── survived every stage: score it ───────────────────────────────────────
     const span        = reachMax === Number.POSITIVE_INFINITY ? 0 : (reachMax - reachMin) / 2
@@ -549,6 +538,7 @@ export function stubSolve(request, contractVersion) {
     })
     const totalScore = totalScoreOf(scores, weights)
 
+    tally.feasible += 1
     feasible.push({
       graspSpecId,
       pose: {
@@ -560,8 +550,6 @@ export function stubSolve(request, contractVersion) {
         frame: { position: point, orientation: candidateFrameOrientation(approach) },
       },
       score: {
-        withinReach: true, visible: true, ikSolvable: true,
-        interferenceFree: true, graspable: true,
         objectiveScores: scores,
         totalScore: Math.max(0, totalScore),
         // ADR-135: このスタブは IK を解かない (運動学を持たない) ので、関節配置は
@@ -579,15 +567,11 @@ export function stubSolve(request, contractVersion) {
 
   // Strategy (ADR-152 D5): every spec is evaluated so each gets its row — a spec
   // the strategy did not return and a spec that had nothing are different facts.
-  const graspSpecs = []
   let returnable
   let feasibleTotal
   if (specs.length) {
     const perSpec = specs.map(sp => {
-      const before = generated
-      const found  = evaluateGroup(sp.samples ?? [], sp)
-      graspSpecs.push({ id: sp.id, candidatesGenerated: generated - before, feasible: found.length })
-      return found
+      return evaluateGroup(sp.samples ?? [], sp)
     })
     feasibleTotal = perSpec.reduce((n, f) => n + f.length, 0)
     returnable = strategy.order === 'score' ? perSpec.flat() : (perSpec.find(f => f.length) ?? [])
@@ -607,20 +591,15 @@ export function stubSolve(request, contractVersion) {
     contractVersion,
     candidates,
     diagnostics: {
-      candidatesGenerated: generated,
-      ...counts,
-      feasible: feasibleTotal,
+      // v13 (ADR-172): stages, source rows that add up to the whole, fallback risks.
+      ...stageDiagnostics(sources, gs),
       returned: candidates.length,
-      reachNearestMiss,
-      occlusionNearestMiss,
-      graspNearestMiss,
-      graspSpecs,
       // v8 (ADR-157): the stub judges no hand shape and no lift, so every
       // interference it fabricates is attributed to the approach. WHICH phases are
       // evaluated follows the same declaration rules core/ uses, so the panel's
       // phase rows read the same for the same request. The all-phase analysis is
       // never served here — the panel offers it only with a real backend.
-      ...interferencePhaseRows(gs, counts.rejectedByInterference),
+      ...interferencePhaseRows(gs, interferenceRejected),
     },
   }
 }

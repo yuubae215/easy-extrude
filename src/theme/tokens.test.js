@@ -429,8 +429,11 @@ const DECLARED_VOCABULARIES = {
 // editor's edge styles and of four JSX link legends left with the two retired
 // relation words; distinct 190 → 187 (#607d8b, #64748b and #6366f1 had no
 // other user).
-const UNDECLARED_OCCURRENCE_BASELINE = 686
-const UNDECLARED_DISTINCT_BASELINE   = 187
+// 2026-11-15: 686 → 682. ADR-172 D5 retired the per-candidate stage chips in the
+// grasp panel (the five booleans were always true) — four hex literals went with them;
+// distinct 187 → 183 (#1f3a1f / #3a1f1f / #357035 / #703535 had no other user).
+const UNDECLARED_OCCURRENCE_BASELINE = 682
+const UNDECLARED_DISTINCT_BASELINE   = 183
 
 const HEX_LITERAL = /#[0-9a-fA-F]{6}\b|\b0x[0-9a-fA-F]{6}\b/g
 
