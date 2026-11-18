@@ -14,13 +14,13 @@
     "viewport": { "width": 1280, "height": 720 },
     "deviceScaleFactor": 1,
     "storage": { "ee_tour": "dismissed" },
-    "ready": { "text": "空のプロジェクト" },
+    "ready": { "text": "Start from a process layout" },
     "settleMs": 800,
     "probes": { "worldToScreen": "window.__easyExtrude.worldToScreen" }
   },
   "capture": { "fps": 30, "clock": "virtual", "format": "png" },
   "style": {
-    "accent": "#4fc3f7",
+    "accent": "#ff7d2e",
     "cursor": { "visible": true, "size": 22, "trail": true },
     "keys": { "visible": true, "holdMs": 1200, "anchor": "bottom-center", "inset": [90, 58] },
     "captions": { "anchor": "bottom-left", "inset": [212, 58] }
@@ -32,7 +32,7 @@
   "steps": [
     { "do": "title", "text": "easy-extrude", "sub": "sketch  →  extrude  ·  in your browser", "duration": 2100, "enter": false },
 
-    { "do": "caption", "index": 1, "text": "New scene" },
+    { "do": "caption", "index": 1, "text": "Open the editor" },
     { "do": "use", "macro": "ee/new-blank-project" },
     { "do": "wait", "duration": 350 },
 
