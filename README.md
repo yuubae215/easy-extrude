@@ -11,6 +11,8 @@
 
 [**Try the Live Demo →**](https://yuubae215.github.io/easy-extrude/)
 
+<sub>GitHub Pages has no backend, so the demo is built in the grasp <b>stub lane</b> (ADR-117) — stubbed screens are labelled as such.</sub>
+
 <br>
 
 <img src="docs/media/hero-sketch-extrude.gif" alt="New scene → sketch a rectangle on the ground → extrude it into a solid → orbit" width="880">
@@ -31,7 +33,7 @@ Draw a rectangle. Extrude it into a solid. Select a face. Push it outward. That'
 Shift+A  →  Draw rectangle  →  Enter  →  Drag height  →  Enter  →  E to extrude
 ```
 
-It runs on desktop **and mobile**. It speaks the **ROS coordinate frame** convention out of the box (+X forward, +Y left, +Z up). And it has a full undo history, STEP import, IFC classification, and a spatial annotation system for robotics-aware scene construction.
+It runs on desktop **and mobile**. It speaks the **ROS coordinate frame** convention out of the box (+X forward, +Y left, +Z up; world unit = mm). It opens on a **Home screen** of work-cell templates, keeps a full undo history, and grows from plain modeling into robotics-aware scene construction: requirement capture, spatial relations, and a grasp-search backend that answers *where and how a robot can pick a part* — and *why not* when it can't.
 
 ---
 
@@ -46,7 +48,9 @@ It runs on desktop **and mobile**. It speaks the **ROS coordinate frame** conven
 - **Undo / Redo** (`Ctrl+Z` / `Ctrl+Y`) — full command history for every operation
 
 ### Spatial Annotations & Mapping
-- **Map Mode** — draw Routes, Zones, Boundaries, Hubs, and Anchors over the scene. Each place type carries its own drafting-table visual language (hatched zones, survey datum marks, hatched barriers, comet flow) animated on a phase derived from the entity's own identity, so a population of annotations never moves in lockstep
+- **Places** (`Shift+A`) — Routes, Zones, Boundaries, Hubs, and Anchors drawn over the scene; Map is a top-down *viewpoint*, not a separate mode (ADR-103). Annotations render as light falling on the floor, phased from each entity's own identity so a population never pulses in lockstep (ADR-093/166)
+- **Districts own the floor** — a zone stands at its declared elevation, a thing's floor comes from the district it belongs to, and overlaps are resolved by declared owners (ADR-170); the floor holds under rotation and extrusion too (ADR-169)
+- **Spatial relations in axes** — a relation between two things is said as direction × contact × mobility, claimed by a named person and checked against the layout; the words are shown where they point (ADR-168)
 - **Measure Tool** (`M`) — snap two endpoints; renders an amber dashed line with a live distance label
 - **Coordinate Frames** (`Shift+A → Frame`) — named SE(3) reference frames in a pose graph; supports nested hierarchy and `R`-key rotation
 - **Spatial Links** (`L`) — create typed directional relationships between any two entities; visualised as arrowheads in the scene
@@ -66,14 +70,19 @@ It runs on desktop **and mobile**. It speaks the **ROS coordinate frame** conven
 
 ### Requirement Context & Negotiation (ADR-046 … 052)
 - **Context DSL** — capture requirements as Facts, Decisions, Open Questions, KPIs and admissible regions *before* geometry exists; the scene is a derived projection of the approved context
-- **Multiple intake paths** — blank doc, template gallery, fork-&-tweak seeded examples, guided wizard, parametric 3D assets, and conservative NL → Fact extraction
+- **Multiple intake paths** — Home-screen templates that open as documents (ADR-089/162), blank doc, fork-&-tweak seeded examples, guided wizard, parametric 3D assets, and conservative NL → Fact extraction
 - **Conflict negotiation** — conflict matrix, negotiation clusters, per-actor admissible-region ghosts in 3D; approvals are undoable commands
+- **Criteria heard before design** — end users are interviewed one at a time for expectations and weights; the agreed line moves only by approved proposal, with versions and stale-margin detection (ADR-165)
+- **Adopt from the screen** — declaring on an on-screen object brings it into the document; adoption inverts the whole scene, then cuts the connected component (ADR-159/163)
 - **Why provenance** — every scene entity can be traced back through the 5W1H chain to the requirements that justify it (Why breadcrumb / Why tree)
 
-### Robotics & Grasp Search (ADR-053, ADR-074 … 079)
+### Robotics & Grasp Search (ADR-053, ADR-074 … 172)
+- **Robots as scene entities** — 0, 1 or N robots grounded in a TF tree (`world → robot_base → tcp`); real meshes by default with a lightweight toggle (ADR-149); the tool is fixed to the flange and the TCP is derived from its mounting (ADR-150/151); analytic UR IK (ADR-127)
+- **Declarations live on their owners** — grasp spec & strategy, gripper / suction hands, centre of mass, the grasp relation and the camera are declared on the panel of the entity that owns the fact (ADR-152/164/118/121); the camera's field of view is drawn as the rectangle that is judged (ADR-171)
 - **Robotics KPI checks** — URDF-style joint taxonomy, forward kinematics reach sampling, AABB collision baking; results are baked into the context doc as measured facts
 - **C++/Rust wasm engines** — KDL + ruckig compiled to WebAssembly for kinematics/trajectory; Rust wasm geometry engine
-- **Grasp search backend** — Python judgement engine (candidate generation → reach/IK/collision filters → weighted scoring) behind a FastAPI core API, proxied by the BFF under a versioned JSON-Schema contract (`packages/grasp-contract`); rejection-funnel diagnostics surface *why* candidates were rejected
+- **Grasp search backend** — Python judgement engine (candidate generation → staged domain filters: see / reach / grasp / interference → weighted scoring) behind a FastAPI core API, proxied by the BFF under a versioned JSON-Schema contract (`packages/grasp-contract`, currently **contract v13**). Interference is judged per motion phase including the arm links (ADR-145/157); the rejection funnel says *why* candidates were dropped, and an objective that could not be measured is never scored as 0 (ADR-120)
+- **Replay** — the judged samples of each phase are replayed in 3D, and each obstacle's rejection can be replayed by the best candidate it stopped (ADR-158)
 - **Propose-only recommendation lane** — embedding similarity only proposes and ranks; deterministic equivalence stays in the frontend core (ADR-056/077)
 
 ### Selection & Navigation
@@ -87,9 +96,11 @@ It runs on desktop **and mobile**. It speaks the **ROS coordinate frame** conven
 - **Touch Gestures** — tap to select, one-finger drag to orbit, two-finger pinch-zoom (incl. Map Mode), long-press for context menu (Grab / Duplicate / Rename / Delete)
 - **Pointer Events API** — all interactions use unified Pointer Events; no separate touch/mouse branches
 
-### Polish & Motion (ADR-065 … 068, 080)
-- **Governed motion system** — every effect declares its tier (Fact / Affordance / Delight), runs under a `MotionGovernor` budget, and degrades under `prefers-reduced-motion`
-- **Camera focus flight** (`F` / `Home` / double-click), ambient viewport stage with boot reveal, entity lifecycle voxel bursts, onboarding tour
+### Polish & Motion (ADR-065 … 068, 080, 166)
+- **Motion identity** — a studio work cell lit by exactly one stage light that casts real shadows; role-based easing (`land` / `fade` / `exit` / `loop`, one `spring`), crisp timing (≤ 300 ms responses), one accent colour (ADR-166)
+- **Governed motion system** — every effect declares its tier (Fact / Affordance / Delight), runs under a `MotionGovernor` budget, and degrades under `prefers-reduced-motion`; idle loops read a 20 fps idle clock so waiting things don't spin the GPU
+- **Camera focus flight** (`F` / `Home` / double-click), boot reveal, lifecycle voxels cut from the entity's own shape, onboarding tour
+- **English UI** — on-screen language is English; input language is free (ADR-161)
 
 ---
 
@@ -125,10 +136,13 @@ the optional C++ WASM build lane — see `robotics-wasm/`.)
 ### Full stack with grasp search (Python core API)
 
 ```bash
-cd core && uv sync --extra dev --extra serve       # first time only
-cd core && uv run python -m easy_extrude_core.api  # core API on :4001 (BFF upstream default)
-pnpm test:core                                     # core pytest incl. contract conformance
+cd core && uv sync --extra dev --extra serve   # first time only
+pnpm dev:stack                                 # core API (:4001) + BFF (:3001) + Vite (:5173)
+pnpm test:core                                 # core pytest incl. contract conformance
 ```
+
+`pnpm dev:all` starts BFF + Vite only (grasp search then answers 503). To try the grasp
+UX with no backend at all, run `pnpm dev:stub` (the same stub lane the live demo uses).
 
 ### Layout API — generate scenes from the CLI
 
@@ -241,6 +255,7 @@ For the full design rationale see [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
 |----------|----------|
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Monorepo layers, MVC/DDD design, entity taxonomy, coordinate system |
 | [`docs/NAVIGATION.md`](docs/NAVIGATION.md) | Keyword → "read first" index across all docs and ADRs |
+| [`docs/ALGORITHMS.md`](docs/ALGORITHMS.md) | Where each computation lives; kinematics, interference and gauge formulas |
 | [`docs/STATE_TRANSITIONS.md`](docs/STATE_TRANSITIONS.md) | Mode FSM, mobile input flow, toolbar states |
 | [`docs/SCREEN_DESIGN.md`](docs/SCREEN_DESIGN.md) | Information architecture per mode |
 | [`docs/LAYOUT_DESIGN.md`](docs/LAYOUT_DESIGN.md) | UI layout, z-index, responsive breakpoints, toolbar slots |
@@ -248,7 +263,7 @@ For the full design rationale see [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
 | [`docs/ROADMAP.md`](docs/ROADMAP.md) | Feature backlog and completed milestones |
 | [`docs/CODE_CONTRACTS.md`](docs/CODE_CONTRACTS.md) | Coding rules derived from real bugs |
 | [`docs/PHILOSOPHY.md`](docs/PHILOSOPHY.md) | Design principles distilled from post-mortems |
-| [`docs/adr/`](docs/adr/) | Architecture Decision Records (ADR-001 … ADR-080) |
+| [`docs/adr/`](docs/adr/) | Architecture Decision Records (ADR-001 … ADR-172) |
 | [`docs/CONCURRENCY.md`](docs/CONCURRENCY.md) | Optimistic vs. pessimistic locking strategy |
 | [`core/README.md`](core/README.md) | Python grasp-search engine and core API |
 
@@ -265,6 +280,8 @@ easy-extrude uses the **ROS world frame** convention:
 ```
 
 Right-handed. Matches [ROS REP-103](https://www.ros.org/reps/rep-0103.html). `camera.up = (0,0,1)`. The XY plane (Z=0) is the ground plane.
+
+The world unit is **millimetres**; robots, URDF and the grasp contract are converted to metres only at the wire boundary, and external coordinates declare their own frame (unit, handedness, up axis) before entering the world (ADR-136/139).
 
 This makes easy-extrude a natural fit for robotics scene construction and ROS-based simulation pipelines.
 
