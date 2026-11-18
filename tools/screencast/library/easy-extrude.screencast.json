@@ -8,10 +8,10 @@
   },
   "macros": {
     "ee/new-blank-project": {
-      "description": "Start ▾ dialog → 空のプロジェクト (the boot dialog opens on its own at first launch).",
+      "description": "Close the Home screen with ✕ — keeps the boot scene, which is the same default scene the Empty project card seeds (that card sits below the fold of the template list, where a pointer target cannot reach it without scrolling).",
       "params": {},
       "steps": [
-        { "do": "click", "target": { "text": "空のプロジェクト" }, "duration": 900 }
+        { "do": "click", "target": { "selector": "button[title^=\"Close (keep\"]" }, "duration": 900 }
       ]
     },
     "ee/add": {
