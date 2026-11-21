@@ -647,6 +647,12 @@ labels meta-goal, term-profit
                         state UnderReview
                         labels term-q, admits-depiction-parity, admits-quantity, admits-judgement-correctness
 
+                            solution Adr173Tree
+                            uuid 6b0f3e2a-9c41-4d7e-8a35-2f1c7d9e4b80
+                            summary "ADR-173 の論証木 (top goal DisagreementWithRealityIsCountedAndAttributed) を吊る。ずれを潰す 3 本の枝と違い、q そのものを実機の試行で測る — 判定と結果の食い違いを段へ帰属させ、エンジンを直したら同じ試行で数え直す (ADR は Proposed — 吊り先は決まっていても主張はまだ未来形)。この木の goal ごとの証拠と鮮度の正本は木の側 — ここは寄与する項だけを持つ (ADR-153 D2: 1 本の木は事業木にちょうど 1 回吊られ、投資はその項へ帰属する)"
+                            artifacts
+                            - "docs/gsn/adr-173-a-verdict-is-a-prediction-scored-against-real-trials.gsn"
+
                             strategy ByClosingEachGapBetweenVerdictAndReality
                             uuid 43280497-2037-4f2d-be47-5245e9b4fa1f
                             summary "Argument by 判定と現実の間にあるずれの種類ごとの除去 — 絵と判定のずれ (見ている機械と解いている機械が違う)、量のずれ (単位・座標系)、判定そのもののずれ (代理判定・判定されない部分) の 3 種"

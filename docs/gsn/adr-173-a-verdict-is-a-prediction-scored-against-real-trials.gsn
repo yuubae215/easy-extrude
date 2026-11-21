@@ -1,0 +1,76 @@
+GOALS adr173_a_verdict_is_a_prediction_scored_against_real_trials
+
+goal DisagreementWithRealityIsCountedAndAttributed
+uuid 48af2f5a-58d7-4ff0-9bb3-0dcd33110785
+summary "判定と実機の試行の食い違いが数えられ、食い違いはどの段・どの近似を見直すべきかへ帰属できる。エンジンを直したあとの食い違いは、記録を取り直さずに数え直せる"
+state UnderReview
+labels adr-173, grasp, field-trials, adr-122, adr-081, principle-24, principle-31, proposed, term-q, change-judgement-correctness
+artifacts
+- "docs/adr/ADR-173-a-verdict-is-a-prediction-scored-against-real-trials.md"
+
+    context Adr173Scope
+    uuid d98ab7f7-7aba-4cf3-a3ec-d4549d4ade18
+    summary "ADR-173 (Proposed 2026-11-21, 未実装): 試行は判定を再現できる入力 (request) と結果の閉じた語彙で記録し (D1/D2)、突き合わせは毎回いまのエンジンで再判定して段ごとの 4 区分と Wilson 区間を導出する (D3)。棄却候補の試行は『した』か『しないことを宣言した』かのどちらか (D4)。結果はソルバに戻さない (D5)。記録の置き場所 (Q1) ほか 4 点は段 G-10 の俯瞰で当事者が決める"
+
+    context NoTreeMeasuresQYet
+    uuid 8be93095-2a09-4dd7-87ad-5263f073c68f
+    summary "実測 (2026-11-21): profit-growth.gsn の VerdictIsTrustworthy (項 q) の下に吊られた木はどれも絵・量・代理のずれを潰す手段で、q そのものを測った証拠を持つ木は 0 本。core/ の把持性の判定は幾何的な必要条件で、平行ジョーの wrench cone は adr-081-grasp-validation.gsn で証拠予定のまま"
+    artifacts
+    - "docs/gsn/profit-growth.gsn"
+    - "docs/gsn/adr-081-grasp-validation.gsn"
+
+    context RequirementCameFromTheOwner
+    uuid f76999ff-3a31-43d8-b87c-4cf995bb217d
+    summary "当事者の言葉: 2026-11-21『掴めるか、ってどうやって検証可能？』→ 回答 §3 (判定を予測として扱い実機と突き合わせる) に『実機との突き合わせの仕組みを ADR に起票して』"
+
+    justification SimulationAndWireWereRejected
+    uuid 7beeca90-20f1-4cb7-9dc1-d3616bc25d85
+    summary "却下: 物理シミュレーションを実機の代わりにする案は代理で代理を採点する形で q を測れない (ADR-122 の却下と同じ)。試行の結果をワイヤに載せる案は、ソルバが決定していない事実を契約に足す (原則 #29) うえ、語彙が固まる前に版上げを強いる。自由記述の dogfooding のままは、判定が焼かれ・棄却候補が試されず・失敗が帰属できない"
+
+    justification StoringTheVerdictWouldCloseALoop
+    uuid 539c7c47-1b06-49dc-89a2-01fe72097459
+    summary "記録に判定 (取れる / 取れない / FP / TN) を書かない理由: 判定はエンジンの版とともに動く導出値で、焼けばエンジンを直した日に記録が嘘になる (原則 #24 の閉路、§1.1 の第二の源)。実機の結果だけが動かない源"
+
+    assumption FewTrialsStillSayAnything
+    uuid 9d57541e-4745-4411-87a6-b64e95fae4cc
+    summary "反証されうる仮説: 実機の試行は数十件のオーダーでも、Wilson 区間の下端と偽陽性の帰属先の偏りから次に直す近似を選べる。反証されうる形は、区間が広すぎて当事者が判断材料にしないこと — そのときは試行の計画 (配置の選び方) を別の決定にする"
+
+    strategy ByKeepingOutcomesFixedAndVerdictsRederived
+    uuid 00d7af95-1176-4417-8982-b8bffb062c53
+    summary "動かない事実 (実機の結果) と動く導出 (エンジンの判定) を別の源に置き、突き合わせを両者から毎回導出する。数えられない形 (試していない棄却候補・自由記述の失敗) は宣言と閉じた語彙で行を持たせる"
+
+        goal ARecordReproducesTheVerdictInsteadOfStoringIt
+        uuid 01896422-f0c9-49a7-85d5-58d6a085d0f8
+        summary "試行の記録は契約形式のリクエストと試した候補の姿勢を持ち、判定・スコアを持たない。記録のスキーマが判定の欄を拒否する"
+        labels support-exploring
+
+            assumption RecordSchemaTestWillSettleIt
+            uuid ca5ed4ad-68e9-436c-a9d6-0af35bd78bee
+            summary "未着手。決着させる検査は core/tests/test_field_trials.py — 判定の欄 (feasible / score) を持つ記録がスキーマで拒否され、見本の記録の request が templates/ と同じ形でいまのエンジンに通ること 満期=PATH:core/tests/test_field_trials.py"
+
+        goal EveryFailureNamesTheStageItIndicts
+        uuid 2278fe18-4944-4964-a041-5b31e68c81f4
+        summary "結果は閉じた 7 語 (held / missed / collided / slipped / peeled / dropped / notAttempted) で言い、偽陽性は語ごとの帰属先の段へ — collided は ADR-157 の相まで — 振り分けられる。語彙の外の結果と相の無い collided は拒否される"
+        labels support-exploring
+
+            assumption VocabularyTestWillSettleIt
+            uuid 33a2a0de-2b5d-4762-a715-e438e313eff1
+            summary "未着手。決着させる検査は test_field_trials.py — 語彙の外の結果・相の無い collided・理由の無い notAttempted が拒否され、偽陽性の内訳が帰属先の段ごとに出ること 満期=PATH:core/tests/test_field_trials.py"
+
+        goal TheTallyIsRederivedWithTodaysEngine
+        uuid e286167b-e302-4a7c-acfd-b869d47464b6
+        summary "突き合わせは記録の request をいまの core/ で再判定してから数え、率は点ではなく Wilson 区間で出し、前回と判定が変わった試行を差として列挙する。再判定できない記録は数えられない記録として出し、黙って捨てない"
+        labels support-exploring
+
+            assumption RederivationTestWillSettleIt
+            uuid 979cc17a-c667-4d5a-8014-b008e657e96e
+            summary "未着手。決着させる検査は test_field_trials.py — 同じ記録をしきい値の違う 2 つのエンジン設定で突き合わせると 4 区分が変わり記録は変わらないこと、3 回中 3 回の成功が [0.44, 1.00] と出ること、400 になる古い request が数えられない記録として出ること 満期=PATH:core/tests/test_field_trials.py"
+
+        goal UntriedRejectionsSayNotMeasured
+        uuid 01c4b799-4d70-443c-ab34-a69927898dec
+        summary "棄却候補を試していない段の偽陰性は 0 件ではなく『測っていない』と出る。記録は棄却候補を試したか、試さない理由を宣言したかのどちらかで、どちらも無い記録は拒否される"
+        labels support-exploring
+
+            assumption SamplingDeclarationTestWillSettleIt
+            uuid c2defaf7-2b6f-445b-999c-662beff0ba4a
+            summary "未着手。決着させる検査は test_field_trials.py — sampling の無い記録が拒否され、rejectedNotSampled の段の偽陰性が数ではなく『測っていない』として出ること 満期=PATH:core/tests/test_field_trials.py"
