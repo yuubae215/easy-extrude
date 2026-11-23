@@ -10,7 +10,7 @@ artifacts
 
     context Adr173Scope
     uuid d98ab7f7-7aba-4cf3-a3ec-d4549d4ade18
-    summary "ADR-173 (Proposed 2026-11-21, 未実装): 試行は判定を再現できる入力 (request) と結果の閉じた語彙で記録し (D1/D2)、突き合わせは毎回いまのエンジンで再判定して段ごとの 4 区分と Wilson 区間を導出する (D3)。棄却候補の試行は『した』か『しないことを宣言した』かのどちらか (D4)。結果はソルバに戻さない (D5)。記録の置き場所 (Q1) ほか 4 点は段 G-10 の俯瞰で当事者が決める"
+    summary "ADR-173 (Proposed 2026-11-21, 未実装): 試行は判定を再現できる入力 (request) と観測 (相 × 相手 × 前提) で記録し (D1/D2 — 2026-11-23 改訂: 原因の語を観測から外した)、突き合わせは毎回いまのエンジンで再判定して段ごとの 4 区分と Wilson 区間を導出する (D3)。棄却候補の試行は『した』か『しないことを宣言した』かのどちらか (D4)。結果はソルバに戻さない (D5)。Q1〜Q4 は 2026-11-23 に当事者が決着 (Q1/Q3/Q4 は推奨、Q2 は D2 の書き直し)"
 
     context NoTreeMeasuresQYet
     uuid 8be93095-2a09-4dd7-87ad-5263f073c68f
@@ -50,12 +50,12 @@ artifacts
 
         goal EveryFailureNamesTheStageItIndicts
         uuid 2278fe18-4944-4964-a041-5b31e68c81f4
-        summary "結果は閉じた 7 語 (held / missed / collided / slipped / peeled / dropped / notAttempted) で言い、偽陽性は語ごとの帰属先の段へ — collided は ADR-157 の相まで — 振り分けられる。語彙の外の結果と相の無い collided は拒否される"
+        summary "記録は観測だけを言う — 終わり方 (held / failed / notAttempted) と、失敗なら最初に予定と違った相 (ADR-157 の 6 相) × 予定外に触れた相手 (target / other / none)、試行ごとに前提 (姿勢・対象の位置が kept / deviated / notMeasured)。原因は記録に書かず、前提が守られた失敗だけを相 × 相手の表で段へ帰属させ、前提の破れと帰属不能は別に数える"
         labels support-exploring
 
             assumption VocabularyTestWillSettleIt
             uuid 33a2a0de-2b5d-4762-a715-e438e313eff1
-            summary "未着手。決着させる検査は test_field_trials.py — 語彙の外の結果・相の無い collided・理由の無い notAttempted が拒否され、偽陽性の内訳が帰属先の段ごとに出ること 満期=PATH:core/tests/test_field_trials.py"
+            summary "未着手。決着させる検査は test_field_trials.py — 意味を持たない相 × 相手の組 (lift 以降 × target)・理由の無い notAttempted・前提の欠けた試行が拒否され、前提の破れの試行が 4 区分から外れ、帰属不能があると q̂ が下端と上端の区間で出ること 満期=PATH:core/tests/test_field_trials.py"
 
         goal TheTallyIsRederivedWithTodaysEngine
         uuid e286167b-e302-4a7c-acfd-b869d47464b6
